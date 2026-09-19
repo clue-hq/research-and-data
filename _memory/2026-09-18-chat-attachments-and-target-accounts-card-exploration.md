@@ -368,14 +368,17 @@ Task 15 Step 2 was not executed: the walk is the founder's to trigger on the lan
 migration `d659c2d2b537` applied — migrate it (and apply the deferred index amendment first, if the
 final fix wave lands it) before walking. Six steps, in a project chat:
 1. Attach `brief.md` via `+`, send "Summarise the attached brief in three bullets." Expect: a chip
-   in the transcript, `attachments/brief.md` under Gallery → Documents, and a reply that quotes the
-   file.
+   in the transcript, ~~`attachments/brief.md` under Gallery → Documents,~~ and a reply that quotes
+   the file. (The Gallery half is **struck 2026-09-19**: the text-document route is retired, so an
+   attachment is a file in the agent's `attachments/` mount and never a project document.)
 2. Attach a screenshot, send "What is in this image?" Expect: an image chip and an answer that
    describes the image.
 3. Two messages later, ask "What colour was the button in the screenshot I sent earlier?" Expect:
    an answer from the image, not a request to re-send.
 4. Drag a `.txt` onto the chat: a dashed outline appears, and a chip appears on drop.
-5. Upload `brief.md` again with one edited line: the Gallery shows version 2.
+5. ~~Upload `brief.md` again with one edited line: the Gallery shows version 2.~~ **STRUCK
+   2026-09-19** — the text-document route is retired (no project document, no versioning). Do not
+   walk this step; newest-upload-of-a-name-wins is covered by the 2026-09-19 walk below.
 6. Open an ad, attach one image: it lands as a design reference (existing chip style), not as a
    chat attachment.
 Record each outcome and any defect here.
@@ -450,3 +453,153 @@ migration in this plan (head stays `d659c2d2b537`).
 
 Spec and plan rewritten in place (plan: 20 → 16 tasks). Execution not started; the founder still
 has to choose subagent-driven vs inline.
+
+## Execution record (SDD, 2026-09-19 — code sandbox and document attachments)
+
+Spec `docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`,
+plan `docs/superpowers/plans/2026-09-19-agent-code-execution-and-document-attachments.md`
+(16 tasks), executed subagent-driven on branch `rebase-and-expand-attachment-types` in the
+`damascus` worktree, base `7a548e110`. Controller = Fable; implementers Opus only; every review
+done by the controller first-hand (no reviewer subagents). Ledger with the full per-task detail:
+`.superpowers/sdd/2026-09-19-agent-code-execution-and-document-attachments/progress.md`, per-task
+reports beside it. DB suites ran on the throwaway `clue_damascus_test` only; nothing pushed.
+
+### What the feature is, in one paragraph
+Every attached file of every family is synced by the fleet worker into
+`<ws>/projects/<project>/attachments/<filename>` and mounted read-only as `attachments/` on every
+turn of that project. Text opens with `read_file`; PDF/DOCX/PPTX/XLSX open by the agent writing
+Python against them with the new governed `run_python@1` tool, which runs in a no-network Docker
+container over the thread's workspace; images additionally ride the message as image parts. No
+conversion step, no markdown twin, no index file, no project document, no migration.
+
+### Per task (commit range → what shipped → review verdict)
+- **Task 1** `7a548e110..934e66a0b` — eight `Settings` fields (`chat_attachment_document_max_bytes`
+  + seven `sandbox_*`), `.env.example` and local `.env` at full parity. Review clean (6/6 tests,
+  parity 8/8).
+- **Task 2** `934e66a0b..292cb4095` — the `document` family in upload validation: six media types,
+  six extensions, per-family size limits, magic/UTF-8/JSON checks, `UPLOAD_NOT_A_DOCUMENT`.
+  Review clean (10/10; `ValidatedAttachment.family` pre-widened as authorised).
+- **Task 3** `292cb4095..74243a8be` — retired the PR #64 text-document route
+  (`materialize_text_attachments`, `_wrote_attachment_documents`, both call sites, the post-commit
+  refresh, the text-documents DB test). Review clean (grep empty, contracts 28 kept).
+- **Task 4** `74243a8be..0c0cda005` — `ATTACHMENTS_DIR`, `MountRequest.attachments`, the optional
+  read-only `attachments` mount, and the factory/lease host-path accessors. Review clean (2/2).
+- **Task 5** `0c0cda005..807a1da85` — `project_attachments.py`: worker-side sync of every family
+  (`DISTINCT ON (filename)` newest-first → newest upload of a name wins; erased/purged artifacts
+  skipped, so erasure propagates), fd-anchored `O_NOFOLLOW` writes, non-regular entries purged;
+  wired in `agent_turn_fleet_wiring` before `workspaces.acquire`. Review clean (DB test green).
+- **Task 6** `807a1da85..fffe1df21` — L7 names each attachment's one workspace path and the tool
+  that opens it (family-driven, one sentence); the describer no longer looks anything up in a
+  store. Review clean (2/2).
+- **Task 7** `fffe1df21..e25c225ca` — `SandboxMounts`, the lock-guarded per-execution
+  `SandboxWorkspaces` registry with its per-turn run budget, and `sandbox_mounts_for_lease`.
+  One fix round (1 addressed). Review clean (4/4).
+- **Task 8** `e25c225ca..278d2e130` — the Docker runner: locked-down argv (`--network none`,
+  `--read-only`, `--cap-drop ALL`, `--user 65534`, pids/cpu/memory caps, tmpfs `/tmp`),
+  bounded output capture, timeout with kill-by-label, `docker_available` with a 10 s daemon cap.
+  Review clean (7 passed / 1 skipped).
+- **Task 9** `278d2e130..da649d776` — the post-run policy sweep: lstat-only walk, symlinks
+  unlinked never traversed, extension/size/quota enforcement over only this run's new files.
+  Review clean (18 passed / 1 skipped).
+- **Task 10** `da649d776..17961623c` — `run_python@1`: five refusals before any container, budget
+  spent once, one thread hop for snapshot/run/sweep, `O_NOFOLLOW` spill of oversized output,
+  registered ungranted. Review clean (16/16; four count sites bumped).
+- **Task 11** `17961623c..eb694b04c` — the registry threaded through `fleet_main`, the platform
+  components and `ConversationTurnEngine.execute`: register before the adapter build, release in a
+  `finally` on every path, mounts taken from the lease's own `MountRequest`. Review clean (4/4).
+- **Task 12** `eb694b04c..d01588d8b` — `docker/agent-sandbox/{Dockerfile,README.md}` and
+  `make sandbox-image`. Review clean (image present, real-container test passes on this host).
+- **Task 13** `d01588d8b..46c376e0e` — what the agent is taught: `code-execution/v1` skill,
+  workspace manual chapter v5, `stage0-interview` v34, prompt v11. Review clean (20/20 catalog +
+  drift tests; refusal strings verified against the tool source).
+- **Task 14** `46c376e0e..f42eb7411` — `profile:head-of-abm@v58` grants `run_python@1` (both
+  schema digests), adds `attachments` to `workspace.readable_prefixes`, moves every skill/prompt/
+  manual pin together; Recipe #0 v29 = v28 + one address at all four sites; manual v5 generated.
+  Review clean (515 tests).
+- **Task 15** `f42eb7411..1bb4eb1d8` — frontend: accept list, `document` family and the 25 MB
+  limit mirrored from the backend, routing unchanged. Review clean (3194 frontend tests, lint 0
+  errors, build compiled).
+- **Task 16** — this entry, the `projects.md` contract section and the CLAUDE.md bullets.
+
+### Rulings taken during execution (verbatim from the ledger)
+- Preflight scan — `Ruling: none needed — scan clean.`
+- Task 7 — `Ruling: `sandbox_mounts_for_lease` must honour `MountRequest.project_library_name` (the
+  fleet sets `pinned-<turn>` for replayed turns; `_open_mounts` opens
+  `<ws>/projects/<project>/<project_library_name>`) — add kwarg `project_library_name: str =
+  LIBRARY_DIR` mirroring MountRequest; Task 11 passes `mounts.project_library_name`. Cost if wrong:
+  none (default keeps today's path); cost of not doing it: a replayed turn's sandbox reads a
+  library generation the model's own tools do not see.`
+- Task 9 — `Ruling: two deviations from the brief stand — directories are walked not removed
+  (write_file creates parents; nested trees are legitimate), and `.clue-tmp-*` names are removed as
+  `atomic_write_residue` (the backend's walk raises on them and would brick the thread). Cost if
+  wrong: an extra reason string in receipts; none structural.`
+- Task 12 — `Ruling: the sandbox image pins `cryptography==46.*` (transitive dep of
+  pypdf/pdfplumber; ≥47 SIGILLs on this host's linuxkit 5.15 Docker VM). Accepted — the pin is
+  inside an offline, no-network container where cryptography does no TLS; README records the bisect
+  and the exit condition. Cost if wrong: none functionally; a newer host may drop the pin. Founder
+  to confirm at the end.`
+- Task 13 — `Ruling: tool_notes `run_python` lists the three refusal codes the tool actually raises
+  (code_too_large is a pydantic validation error, project_not_found is never raised by this tool) —
+  the drift test scans reachable literals, so listing phantom codes would fail Task 14's gate.
+  Cross-references in stage0 v34 / manual-workspace v5 point at manual v5 because Task 14 pins every
+  chapter at v5. Cost if wrong: none.`
+- Task 13 also carries a standing-rule note: the skill text is agent-facing content and is owed to
+  the founder for review before merge.
+
+### Deferred minors
+- Task 3: four pre-existing `ruff` errors in `platform/api/clue_api/design_leg_wiring.py` (arrived
+  with merge `f2a9a41d8`, untouched by this branch) — final review triages whether to fix here.
+- Task 5: a live artifact row whose blob is missing from storage makes `artifacts.read` fail the
+  turn — repo norm, same as every other read; recorded, not changed.
+- Task 12: the image is hand-built per host and not reproducible over time (`*` pins, unpinned
+  apt), and no record says which build a turn ran under. A CI build + registry is future work.
+- Task 14: `manual-index/v5` is a literal copy whose workspace row does not name `attachments/`
+  (the chapter itself does) — a wording touch for the next manual mint.
+- Task 14: four pre-existing failures attributed in `task-14-report.md` (recipe contiguity gaps
+  16–18 / 20–21 that predate v29; the C5 recipe-0 fixture; projections settings under the lane
+  `.env`) — skipped in a plain env, not ours; final review confirms.
+
+### The retired text route (why the diff deletes more than it adds)
+PR #64 made a `.md`/`.txt` upload a versioned project document at `attachments/<name>` (Gallery,
+project-library mount, `project_document` ref). That was a second mechanism beside the workspace
+mount, and the founder retired it on 2026-09-19 ("why do we have to keep it markdown first?").
+Consequences to remember: an attachment no longer appears in the Gallery, no longer versions, and
+no longer produces an L5 focus card — it is a file in `attachments/` named on L7, nothing more.
+
+### The sandbox image
+- `docker/agent-sandbox/Dockerfile` + `README.md`; built with `make sandbox-image` (which honours
+  `CLUE_SANDBOX_IMAGE`, default `clue-agent-sandbox:latest`). **It must be built on every host that
+  runs a fleet worker** — there is no CI build and no registry push.
+- Size on this host: **611,816,512 bytes (612 MB)**. Build host: macOS arm64, Docker Desktop server
+  20.10.22, container VM `linuxkit` 5.15.49 aarch64.
+- **`cryptography==46.*` is pinned.** With 47/48/49/50 the container dies at import with exit 132
+  (SIGILL) and no output; bisected to `pypdf/_crypt_providers/_cryptography.py` →
+  `cryptography.hazmat.bindings._rust`. Not seccomp (`--security-opt seccomp=unconfined` and
+  `--privileged` both still SIGILL) — the newer Rust bindings emit instructions the Dec-2022
+  linuxkit 5.15.49 VM kernel does not tolerate. The pin is safe because the container has no
+  network and cryptography does no TLS there; the README records the bisect and the exit condition
+  (drop the pin once the build host has a newer Docker VM kernel).
+- Without the image (or with `CLUE_SANDBOX_ENABLED=false`, the default), `run_python` refuses
+  `sandbox_unavailable` and names `make sandbox-image` — and a PDF/Office attachment is simply
+  unreadable to the agent. Accepted by ruling.
+
+### Owed (founder-triggered) — the live walk, NOT run
+Nothing below was executed by any agent: no image was built for a walk, no `.env` was edited, no
+stack was started or restarted. Preconditions, then six steps in a project chat.
+
+Preconditions: build the image on the host that runs the workers (`make sandbox-image`); set
+`CLUE_SANDBOX_ENABLED=true` in the lane `.env` (it ships `false`); restart the workers so the flag
+and the registry are composed. No migration is needed — this plan added none; the lane DB stays at
+head `d659c2d2b537`.
+
+1. Attach a spreadsheet (`.xlsx`) and ask for a column total. Expect a `run_python` receipt in the
+   inspector and a number in the reply with the sheet named.
+2. Attach a PDF and ask for a figure on page 3. Expect the figure, read inside the run.
+3. Attach a scanned (image-only) PDF and ask what it says. Expect OCR inside the run — the agent's
+   own call, not a platform step.
+4. Attach a `.md` and ask about it. Expect a `read_file` and **no** sandbox run.
+5. Ask for a CSV derived from the spreadsheet. Expect `outputs/<name>.csv` in `files_written`.
+6. Upload a file whose magic bytes contradict its extension. Expect the composer chip to fail with
+   the reason (`UPLOAD_NOT_A_DOCUMENT`).
+
+Record each outcome, and any defect, in this note.

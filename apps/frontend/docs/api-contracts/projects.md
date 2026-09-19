@@ -2485,11 +2485,18 @@ Every refusal below reaches the browser as the FI-1 error envelope
   media_type, byte_count, artifact_key, sha256}}`. Workspace-scoped (`X-Workspace-Id`), requires
   `project.write`. Post `FormData` without a hand-set `Content-Type` so the browser writes the
   multipart boundary.
-- Accepted types: `text/markdown`, `text/plain`, `image/png`, `image/jpeg`, `image/webp`,
-  `image/gif`. The declared content type is used only if it is one of those; otherwise the
-  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`).
+- Accepted types, in three families. **Text**: `text/markdown`, `text/plain`. **Image**:
+  `image/png`, `image/jpeg`, `image/webp`, `image/gif`. **Document** (2026-09-19):
+  `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  (docx), `…presentationml.presentation` (pptx), `…spreadsheetml.sheet` (xlsx), `text/csv`,
+  `application/json`. The declared content type is used only if it is one of those; otherwise the
+  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`/`.pdf`/`.docx`/
+  `.pptx`/`.xlsx`/`.csv`/`.json`).
 - Refusals: `413 UPLOAD_TOO_LARGE`, `415 UPLOAD_UNSUPPORTED_TYPE`, `422 UPLOAD_NOT_UTF8` /
-  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_FILENAME_INVALID`, `503 STORAGE_UNAVAILABLE`.
+  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_NOT_A_DOCUMENT` / `UPLOAD_FILENAME_INVALID`,
+  `503 STORAGE_UNAVAILABLE`. `UPLOAD_NOT_A_DOCUMENT` is the document family's content check: a PDF
+  must begin `%PDF-`, a docx/pptx/xlsx must begin `PK\x03\x04`, a `.csv`/`.json` must decode as
+  UTF-8, and a `.json` must parse. Nothing is converted — the bytes are stored as uploaded.
 - `GET /frontend/v1/uploads/{upload_id}/bytes` → the bytes, workspace-scoped, `Cache-Control:
   private`; an upload this workspace never made is `404 UPLOAD_NOT_FOUND` (absent, not "forbidden").
   Browser path: `/api/clue/frontend/v1/uploads/{upload_id}/bytes`.
@@ -2503,7 +2510,9 @@ Every refusal below reaches the browser as the FI-1 error envelope
 - Limits (settings, all in `.env.example`): at most `CLUE_CHAT_ATTACHMENT_MAX_FILES` = 10 per
   message, `CLUE_CHAT_ATTACHMENT_MAX_TOTAL_BYTES` = 150 MB total,
   `CLUE_CHAT_ATTACHMENT_IMAGE_MAX_BYTES` = 10 MB per image,
-  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file.
+  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file,
+  `CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES` = 25 MB per document. The size check runs before the
+  content check, so an oversized PDF refuses `UPLOAD_TOO_LARGE`, not `UPLOAD_NOT_A_DOCUMENT`.
 - Refusals: `404 ATTACHMENT_NOT_FOUND` (a receipt naming an upload this workspace never made),
   `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE`.
   `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists only at the validator level —
@@ -2523,7 +2532,13 @@ Every refusal below reaches the browser as the FI-1 error envelope
 - Every attached file — text, image or document alike — reaches the agent the one way: as a file
   in the read-only `attachments/` folder of the agent's workspace (2026-09-19 ruling). No
   attachment becomes a project document, and none is listed in the Gallery.
-- Every attachment is named on the turn's L7 context line with where it is readable.
+- Every attachment is named on the turn's L7 context line with where it is readable and which tool
+  opens it: `read_file` for the text family, `run_python` for the document family (the skill adds
+  that a small `.csv`/`.json` is plain text and opens with `read_file` too). `run_python@1` is the
+  agent writing Python against the file in a no-network Docker sandbox over the thread's workspace.
+  A deployment that has not built the sandbox image (`make sandbox-image`) or that leaves
+  `CLUE_SANDBOX_ENABLED=false` cannot read binary documents at all — the tool refuses
+  `sandbox_unavailable` and the agent says so.
 - Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
   the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;
   `0` = no cap). Erased or tombstoned history images are skipped.
@@ -2533,5 +2548,5 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 While an ad design leg is open, images attached through `+` or dropped on the chat keep the
 existing design-reference route (design API upload, `design_asset` context refs, at most 4); text
-files take the attachment route above. The two caps apply separately; the design refusal is shown
-first.
+and document files take the attachment route above. The two caps apply separately; the design
+refusal is shown first.
