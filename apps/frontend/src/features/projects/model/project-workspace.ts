@@ -345,10 +345,14 @@ const ProjectWorkspaceWireSchema = z.object({
   data: z.object({
     id: z.string().min(1),
     title: z.string().min(1),
+    description: z.string().default(""),
     brand_id: z.string().min(1),
     product_id: z.string().min(1).nullable(),
     status: z.enum(["draft", "active", "paused", "archived"]),
+    pinned: z.boolean().default(false),
     created_at: z.string().min(1),
+    updated_at: z.string().min(1).nullable().optional(),
+    archived_at: z.string().min(1).nullable().optional(),
     context_entities: ProjectHomeWireSchema.shape.data.shape.context_entities,
     agent_profiles: ProjectHomeWireSchema.shape.data.shape.agent_profiles,
     default_agent_profile_id: z.string().min(1).nullable(),
@@ -370,22 +374,27 @@ const ProjectWorkspaceWireSchema = z.object({
  * artifact read surface can supply real records.
  */
 export const ProjectWorkspaceSchema = z.object({
+  archivedAt: z.string().min(1).nullable().optional(),
   artifacts: z.tuple([]),
   brandId: z.string().min(1),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
   createdAt: z.string().min(1),
   defaultAgentProfileId: z.string().min(1).nullable(),
+  description: z.string().default(""),
   entities: z.array(ProjectEntitySchema),
   id: z.string().min(1),
   models: z.array(ProjectModelOptionSchema),
+  pinned: z.boolean().default(false),
   productId: z.string().min(1).nullable(),
   status: z.enum(["draft", "active", "paused", "archived"]),
   title: z.string().min(1),
+  updatedAt: z.string().min(1).nullable().optional(),
 }).strict();
 
 export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transform(
   ({ data }) =>
     ProjectWorkspaceSchema.parse({
+      archivedAt: data.archived_at ?? null,
       artifacts: [],
       brandId: data.brand_id,
       composerCapabilities: {
@@ -396,6 +405,7 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
       },
       createdAt: data.created_at,
       defaultAgentProfileId: data.default_agent_profile_id,
+      description: data.description,
       entities: data.context_entities.map((entity) => ({
         id: entity.object_id,
         ...(entity.account_id ? { accountId: entity.account_id } : {}),
@@ -413,9 +423,11 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
         label: profile.label,
         shortLabel: profile.short_label,
       })),
+      pinned: data.pinned,
       productId: data.product_id,
       status: data.status,
       title: data.title,
+      updatedAt: data.updated_at ?? null,
     }),
 );
 export const GalleryLayoutSchema = z.enum(["grid", "list"]);
