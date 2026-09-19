@@ -1,0 +1,30 @@
+{
+  "name": "addressing-04-ask",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "the logo is too small",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "addressed_artifacts": null,
+    "clarifying_question": "Which design's logo — Apollo, Mercy, Premier, or all three?",
+    "reasoning": "This could be one ad or every ad and nothing in the message says which."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false,
+    "addressed": null,
+    "ask": "Which design's logo — Apollo, Mercy, Premier, or all three?"
+  },
+  "why": "The judge's own ask: a message that could be for one design or for all of them, with nothing saying which. Asking costs one exchange; guessing costs a generation run per artifact. This is a deliberate question, not a fail-safe."
+}

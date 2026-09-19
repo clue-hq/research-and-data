@@ -66,3 +66,39 @@ records `document_versions`; (11) frontend `artifactsToAutoOpen` list + account 
 (12) records, offline gate with no keys, the six live proofs handed to the founder.
 Single-document legs stay byte-identical (one-envelope batches call `drive`, no enqueue).
 Execution: SDD, Opus implementers only, Fable reviews each task first-hand.
+
+## Task 8 landed — exit judgment v3 (which documents, or ask)
+- `clue_design/exit_judgment.py`: `EXIT_JUDGMENT_PROMPT_VERSION = "v3"`, `DEFAULT_ADDRESS_QUESTION`,
+  `ExitJudgment.{addressed_artifacts, clarifying_question}` (strict: ints or the exact string
+  `"all"`; `extra="forbid"` unchanged), `ExitDecision.{addressed, ask}`,
+  `decide_exit(judgment, *, artifact_count=1)`, and `render_exit_judgment_prompt(artifacts=…)`
+  rendering `<<<ARTIFACTS …>>>` (v2's `artifact=` kwarg kept — it becomes the one-item list).
+  Close decisions are untouched and never carry an address.
+- Decision rule: stay + non-blank question → `ask` (not fail-safe). Stay on one artifact, or
+  `"all"` → `addressed=None` (= the whole set). In-range non-empty list → deduped/sorted tuple.
+  Anything else on N>1 (absent/malformed/empty/out-of-range) → `fail_safe=True` +
+  `ask=DEFAULT_ADDRESS_QUESTION`. N==1 behaves exactly as v2.
+- Runner: `_exit_judge_artifact_line` → `_exit_judge_artifact_lines` (numbered, account resolved
+  via `design_accounts.get_web_account`; a row with no `document_id` contributes no line, so the
+  document-less legacy leg still reaches the prompt's "(unknown …)" fallback);
+  `_exit_judge_tag_lines` now takes `leg_documents` and marks a tagged leg document `(artifact N)`;
+  `_judge_exit` lost its `pinned_document` param and calls `decide_exit(artifact_count=max(1, N))`.
+  `run_leg_turn` returns `_finalize_awaiting_input` with the question (no run rows, no fleet tasks,
+  leg stays `open_awaiting_user`, log `design_leg.addressing_asked`) and otherwise narrows
+  `addressed`. NOTE: when the address narrows to ONE document the turn takes the shipped
+  single-run seam (`lane.drive`, no `design_job` enqueue) — the batch branch is `len(documents) > 1`.
+- Judge builder (`agent_turn_fleet_wiring`): `artifacts=` kwarg, in the prompt and the Langfuse
+  observation input; output-token floor 400 → 600 (the answer can now carry a question).
+- Golden set: kind `"addressing"` + six `addressing-0*.json` fixtures (tagged-one, named-two,
+  general-all, judge's own ask, null-judgment fail-safe, out-of-range fail-safe). `_score` now
+  compares `addressed` and ask-PRESENCE; `score_judge` stands the canned judgment in for any
+  fixture whose expected decision is the fail-safe (not just `kind == "fail_safe"`), so the
+  unusable-address negatives stay comparable kind-for-kind. `test_a_judge_that_never_exits…` now
+  expects `addressing` in the regressed set — a judge that names no documents on a 3-doc leg makes
+  the engine ask instead of dispatching, which IS a v3 regression.
+- Gates: ruff check+format, mypy (4 files), `lint-imports` 28/0, and
+  `pytest tests/design/test_exit_judgment_golden.py tests/api/test_p37_exit_judge_unit.py
+  tests/api/test_p37_exit_bridge_db.py tests/api/test_multi_artifact_leg_engine_db.py
+  tests/api/test_p34_design_leg_engine_db.py` → 88 passed.
+- Open: the v3 prompt text was written under the founder's approval of the SUBSTANCE (step-1 gate
+  reported satisfied by the orchestrator); the exact wording is in the task-8 report for review.

@@ -164,3 +164,40 @@ def test_without_langfuse_no_config_is_passed_to_the_model() -> None:
     judge, model = _judge_with(AIMessage(content=_VERDICT))
     assert _run(judge) is not None
     assert model.configs == [{}]
+
+
+def test_v3_the_judge_is_shown_the_legs_numbered_artifacts() -> None:
+    """A multi-document leg passes ``artifacts=``; the whole numbered list must reach the
+    model and the tag must carry its number, or the judge cannot answer an address."""
+
+    judge, model = _judge_with(AIMessage(content=_VERDICT))
+    verdict = run_async(
+        judge(
+            brief="Three launch ads.",
+            history=(),
+            message="the two hospital ones need a softer palette",
+            artifacts=(
+                '1. "Apollo ad" (scene ad) [account: Apollo Clinics]',
+                '2. "Mercy ad" (scene ad) [account: Mercy Health]',
+                '3. "Premier ad" (scene ad) [account: Premier Gastro]',
+            ),
+            tags=('design "Mercy ad" (scene ad) (artifact 2)',),
+        )
+    )
+    assert verdict is not None
+    prompt = model.prompts[0]
+    assert '<<<ARTIFACTS\n1. "Apollo ad" (scene ad) [account: Apollo Clinics]' in prompt
+    assert '3. "Premier ad" (scene ad) [account: Premier Gastro]\nARTIFACTS>>>' in prompt
+    assert '- design "Mercy ad" (scene ad) (artifact 2)' in prompt
+    assert "addressed_artifacts" in prompt and "clarifying_question" in prompt
+
+
+def test_the_judges_output_budget_leaves_room_for_a_question() -> None:
+    """v3's answer can carry a clarifying question on top of the reasoning; a truncated
+    verdict is an unparseable one, which costs a whole fail-safe turn."""
+
+    model = _FakeModel(AIMessage(content=_VERDICT))
+    models = _FakeModels(model)
+    judge = build_design_leg_exit_judge(models=models, profiles=_FakeProfiles())
+    assert _run(judge) == _LOCKED
+    assert models.build_calls[0]["max_output_tokens"] == 600

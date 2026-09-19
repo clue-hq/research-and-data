@@ -234,6 +234,7 @@ class DesignLegExitJudge(Protocol):
         brief: str,
         history: tuple[tuple[str, str], ...],
         message: str,
+        artifacts: tuple[str, ...] = (),
         artifact: str | None = None,
         tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None: ...
@@ -282,27 +283,37 @@ def exit_summary(reason: str, reasoning: str | None = None) -> str:
     return f"{base} Exit judge: {words}"[:4_000]
 
 
-async def _exit_judge_artifact_line(
+async def _exit_judge_artifact_lines(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    pinned_document: dict[str, Any] | None,
-) -> str | None:
-    """One line naming the artifact this session is bound to — title, kind, account."""
+    leg_documents: Sequence[Mapping[str, Any]],
+) -> tuple[str, ...]:
+    """The leg's artifacts as the judge is shown them (spec §3.5): one NUMBERED line each,
+    in position order — ``1. "<title>" (scene ad) [account: <name>]``.
 
-    if pinned_document is None:
-        return None
-    kind = "web page" if pinned_document.get("doc_kind") == "web" else "scene ad"
-    title = str(pinned_document.get("title") or "Untitled design")
-    line = f'design "{title}" ({kind})'
-    account_id = pinned_document.get("account_id")
-    if account_id:
-        account = await design_accounts.get_web_account(
-            conn, workspace_id=workspace_id, account_id=str(account_id)
-        )
-        if account is not None:
-            line += f', for account "{account["name"]}"'
-    return line
+    The number is ``position + 1``, which is the address the judge answers in and the
+    runner maps straight back to a document. A row with no document (the document-less
+    legacy leg the runner synthesises) contributes no line, so that leg reaches the prompt's
+    honest "(unknown — treat the brief as the artifact)" exactly as it did under v2.
+    """
+
+    lines: list[str] = []
+    for document in leg_documents:
+        if not document.get("document_id"):
+            continue
+        kind = "web page" if document.get("doc_kind") == "web" else "scene ad"
+        title = str(document.get("title") or "Untitled design")
+        line = f'{int(document["position"]) + 1}. "{title}" ({kind})'
+        account_id = document.get("account_id")
+        if account_id:
+            account = await design_accounts.get_web_account(
+                conn, workspace_id=workspace_id, account_id=str(account_id)
+            )
+            if account is not None:
+                line += f" [account: {account['name']}]"
+        lines.append(line)
+    return tuple(lines)
 
 
 async def _exit_judge_tag_lines(
@@ -310,14 +321,19 @@ async def _exit_judge_tag_lines(
     *,
     workspace_id: str,
     focus_refs: Sequence[DomainObjectRef],
-    pinned_document: dict[str, Any] | None,
+    leg_documents: Sequence[Mapping[str, Any]],
 ) -> tuple[str, ...]:
     """What the message tagged, one label per line, ids never shown.
 
     Design documents, files and reference images resolve through the transcript's own
     presentation reader; accounts and contacts through the identity reads the composer
-    uses. Selected elements on the canvas collapse to a count — they are on the current
-    artifact by construction.
+    uses. Selected elements on the canvas collapse to a count — they are on one of this
+    session's artifacts by construction.
+
+    v3: a tagged design that IS one of the leg's documents is marked with its number
+    (``(artifact 2)``), which is the address the judge answers in — so "the tagged one"
+    and "artifact 2" are visibly the same thing. A tagged design that is not on the leg
+    carries no number, which is itself the signal (spec §3.7: it is a reference).
     """
 
     from clue_api.chat.composer_context import context_ref_presentations
@@ -326,7 +342,11 @@ async def _exit_judge_tag_lines(
     refs = tuple(focus_refs)
     if not refs:
         return ()
-    current_id = str(pinned_document.get("id")) if pinned_document else None
+    positions = {
+        str(document["document_id"]): int(document["position"])
+        for document in leg_documents
+        if document.get("document_id")
+    }
     presentations = await context_ref_presentations(conn, workspace_id=workspace_id, refs=refs)
     lines: list[str] = []
     selected = sum(1 for ref in refs if ref.object_type == "design_node")
@@ -340,7 +360,8 @@ async def _exit_judge_tag_lines(
             shown = presentations.get(key, {})
             label = shown.get("label") or "Design"
             kind = "web page" if shown.get("kind") == "web" else "scene ad"
-            suffix = " (this artifact)" if str(ref.object_id) == current_id else ""
+            position = positions.get(str(ref.object_id))
+            suffix = "" if position is None else f" (artifact {position + 1})"
             lines.append(f'design "{label}" ({kind}){suffix}')
         elif ref.object_type == "project_document":
             shown = presentations.get(key, {})
@@ -1311,7 +1332,6 @@ class DesignLegTurnRunner:
                 leg=leg,
                 prior_history=prior_history,
                 user_message_ref=user_message_ref,
-                pinned_document=pinned_document,
                 focus_refs=focus_refs,
                 leg_documents=leg_documents,
             )
@@ -1326,9 +1346,38 @@ class DesignLegTurnRunner:
                     reasoning=exit_decision.reasoning,
                 )
 
-            # The addressed set — every document of the leg. (Task 8 narrows it per follow-up;
-            # the first turn of a leg addresses all of them either way, spec §3.5.)
+            # §3.5's ask: the judge could not tell which documents the message is for (or,
+            # on a many-document leg, gave nothing usable and the engine's own fail-safe
+            # question stands in). The turn ends by asking — no run rows, no fleet tasks, no
+            # design spend — and the leg stays open_awaiting_user, so the user's answer is
+            # simply the next message on it.
+            if exit_decision is not None and exit_decision.ask:
+                log.info(
+                    "design_leg.addressing_asked",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    documents=len(leg_documents),
+                    fail_safe=exit_decision.fail_safe,
+                )
+                return await self._finalize_awaiting_input(
+                    submission=submission,
+                    execution_id=execution_id,
+                    assistant_message=exit_decision.ask,
+                    domain_refs=(),
+                    leg_ref=leg_ref,
+                    stream=stream,
+                )
+
+            # The addressed set — every document of the leg unless the judge named a subset
+            # (§3.5). The first turn of a leg addresses all of them either way: its judgment
+            # runs over a set the user has not yet had a chance to narrow.
             addressed: list[dict[str, Any]] = list(leg_documents)
+            if exit_decision is not None and exit_decision.addressed is not None:
+                addressed = [
+                    document
+                    for document in leg_documents
+                    if int(document["position"]) + 1 in exit_decision.addressed
+                ]
             # Each addressed document's row, read ONCE here and handed to the dispatch. The
             # pinned document is the read that already happened above — including its missing
             # case — so a one-document leg issues exactly the queries it issued before.
@@ -1677,26 +1726,30 @@ class DesignLegTurnRunner:
         leg: dict[str, Any],
         prior_history: Sequence[HistoryMessageRef],
         user_message_ref: ArtifactRef,
-        pinned_document: dict[str, Any] | None = None,
         focus_refs: Sequence[DomainObjectRef] = (),
         leg_documents: Sequence[Mapping[str, Any]] = (),
     ) -> ExitDecision | None:
         """Run the exit judgment for this turn, or ``None`` when the bridge is not composed.
 
-        ``leg_documents`` is the leg's document set in position order (spec §3.2). It is
-        threaded here now and read by the follow-up router (§3.5), which is the next task's
-        work: the judgment this method makes today is the shipped one, unchanged by it.
+        ``leg_documents`` is the leg's document set in position order (spec §3.2) — the
+        artifacts this turn may address. v3 (spec §3.5) shows them to the judge NUMBERED and
+        asks a staying verdict which of them the message lands on, so the returned decision
+        carries ``addressed`` (the positions to dispatch, ``None`` for all) or ``ask`` (a
+        question to put to the user, dispatching nothing).
 
         v2 (2026-09-18) shows the judge two things the message text alone cannot carry: the
-        artifact this session is bound to, and what the message tagged, resolved to labels.
-        A tagged account that is not this artifact's, or a tagged design that is not this
-        artifact, is the strongest signal that the work has moved — and the judge is told to
-        read the sentence around it, not to react to the tag itself. Label resolution is
+        artifacts this session holds, and what the message tagged, resolved to labels. A
+        tagged account none of these artifacts is for, or a tagged design that is not one of
+        them, is the strongest signal that the work has moved — and the judge is told to read
+        the sentence around it, not to react to the tag itself. Label resolution is
         best-effort: a failure leaves the judge with the text it always had.
 
         Fail-safe end to end: a judge that raises, returns garbage, or asks for a reasonless
         finish yields CONTINUE (P3.6's ``decide_exit``), and a judge without a finisher to
-        execute its verdicts is treated as absent — loudly, once per turn.
+        execute its verdicts is treated as absent — loudly, once per turn. On a MANY-document
+        leg that continue is an ASK rather than a fan-out (§3.5's inverted fail-safe): the
+        unresolved-context path above lands there too, which is the honest outcome when the
+        artifact list itself could not be read.
         """
 
         if self._exit_judge is None:
@@ -1717,18 +1770,18 @@ class DesignLegTurnRunner:
                 )
             history.append((item.role, (await self._artifacts.read(item.body_ref)).decode()))
         message = (await self._artifacts.read(user_message_ref)).decode()
-        artifact: str | None = None
+        artifacts: tuple[str, ...] = ()
         tags: tuple[str, ...] = ()
         try:
             async with self._conn_factory() as conn:
-                artifact = await _exit_judge_artifact_line(
-                    conn, workspace_id=workspace_id, pinned_document=pinned_document
+                artifacts = await _exit_judge_artifact_lines(
+                    conn, workspace_id=workspace_id, leg_documents=leg_documents
                 )
                 tags = await _exit_judge_tag_lines(
                     conn,
                     workspace_id=workspace_id,
                     focus_refs=focus_refs,
-                    pinned_document=pinned_document,
+                    leg_documents=leg_documents,
                 )
         except Exception:
             log.warning("design_leg.exit_judge_context_unresolved", exc_info=True)
@@ -1737,15 +1790,23 @@ class DesignLegTurnRunner:
                 brief=str(bundle.get("brief") or ""),
                 history=tuple(history),
                 message=message,
-                artifact=artifact,
+                artifacts=artifacts,
                 tags=tags,
             )
         except Exception:
             log.warning("design_leg.exit_judge_raised", exc_info=True)
             judgment = None
-        decision = decide_exit(judgment)
+        # The count the judge was asked to address IS the leg's document count — never the
+        # number of lines that resolved, so a line the reader could not render still holds
+        # its number and an address can never silently shift by one.
+        decision = decide_exit(judgment, artifact_count=max(1, len(leg_documents)))
         if decision.fail_safe:
-            log.info("design_leg.exit_judgment_fail_safe", leg_id=str(leg["id"]))
+            log.info(
+                "design_leg.exit_judgment_fail_safe",
+                leg_id=str(leg["id"]),
+                documents=len(leg_documents),
+                asked=decision.ask is not None,
+            )
         else:
             log.info(
                 "design_leg.exit_judgment",
@@ -1754,6 +1815,10 @@ class DesignLegTurnRunner:
                 reason=decision.reason,
                 reasoning=decision.reasoning,
                 tags=len(tags),
+                documents=len(leg_documents),
+                # ``None`` is the whole set; a tuple is exactly those 1-based positions.
+                addressed=list(decision.addressed) if decision.addressed else None,
+                asked=decision.ask is not None,
             )
         return decision
 
