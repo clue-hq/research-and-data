@@ -111,6 +111,7 @@ from clue_design import history as design_history
 from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
+from clue_design import sessions as design_sessions
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -2062,6 +2063,37 @@ class HybridRepository:
         documents because only half the join had been ported)."""
         return self._bridge._run(
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
+        )
+
+    def latest_agent_written_version(self, document_id: str) -> int | None:
+        """The version the DESIGN AGENT last committed to this document, or ``None``.
+
+        Session continuity (2026-09-18): one document is one design session, and a continued
+        session holds the scene IT wrote. Comparing this against the document's current version
+        is how the executor knows a human (or another leg) moved the document between turns, and
+        therefore what the drift note has to tell the agent. Sync twin of
+        :func:`clue_design.sessions.latest_written_version`, on the same one-transaction bridge
+        every other read here uses.
+        """
+        return self._bridge._run(
+            lambda conn: design_sessions.latest_written_version(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+        """The digest of the newest session-folder manifest this document's session stored, or
+        ``None``.
+
+        Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
+        that lands anywhere else restores it from this manifest before the agent sees its
+        workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
+        the same one-transaction bridge every other read here uses.
+        """
+        return self._bridge._run(
+            lambda conn: design_sessions.latest_session_manifest_sha256(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
         )
 
     def active_design_run_for_document(self, document_id: str) -> Optional[str]:

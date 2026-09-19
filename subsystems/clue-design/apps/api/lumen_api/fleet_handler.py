@@ -587,6 +587,13 @@ def _execute_turn(
         else contextlib.nullcontext(None)
     )
     with checkpointer_cm as checkpointer:
+        # Design session continuity (2026-09-18): the thread is the DOCUMENT's session, so a
+        # thread that already carries state means the agent has been here before — this turn
+        # continues a conversation instead of opening one. The executors gate the brief and the
+        # history blocks on it, because re-sending what the thread already holds says everything
+        # twice. Probed HERE, under the saver the turn will actually run on, and BEFORE the turn
+        # touches it (the first invoke writes state of its own).
+        session_continued = _thread_has_state(checkpointer, envelope.checkpoint_thread_id)
         executor = (
             execute_agent_turn_job
             if envelope.kind == DesignRunKind.AGENT_TURN.value
@@ -606,6 +613,7 @@ def _execute_turn(
             lease_generation=generation,
             spend_drain=spend_drain,
             callbacks=callbacks,
+            session_continued=session_continued,
         )
 
     try:
@@ -627,6 +635,22 @@ def _execute_turn(
         )
         return "fenced"
     return status
+
+
+def _thread_has_state(checkpointer: Any, thread_id: str) -> bool:
+    """Does the session thread already carry earlier turns? Best-effort; ``False`` on doubt.
+
+    ``False`` is the safe answer in both directions: the turn still runs, and the executors
+    simply send the brief and the history they would have sent before session continuity — one
+    duplicated block, never a lost one. So a saver that cannot answer must not fail the turn.
+    """
+    if checkpointer is None:
+        return False
+    try:
+        return checkpointer.get_tuple({"configurable": {"thread_id": thread_id}}) is not None
+    except Exception:  # noqa: BLE001 - a saver that cannot answer must not fail the turn
+        logger.warning("design_job.session_state_unreadable", thread_id=thread_id, exc_info=True)
+        return False
 
 
 # --- the LangGraph Postgres checkpointer (R-D5-B4) --------------------------------------------
@@ -655,9 +679,11 @@ def postgres_design_checkpointer(thread_id: str) -> Any:
     """Open the design turn's LangGraph saver on the platform database.
 
     Opened INSIDE the turn thread (the caller is ``_execute_turn``, itself under ``to_thread``),
-    which is what makes a synchronous saver correct here. The thread id is the design run id, per
-    the D5 ruling — see ``lumen_agent/checkpoint.py`` for what resuming that thread does and does
-    not mean today.
+    which is what makes a synchronous saver correct here. The thread is the DOCUMENT's design
+    session for a leg turn (one document = one session, 2026-09-18) and the design run id for a
+    turn that has no document — the caller decides, so a continued session's messages are here
+    under the id its earlier turns wrote. See ``lumen_agent/checkpoint.py`` for what resuming
+    that thread does and does not mean today.
     """
     from clue_db import database_url
     from langgraph.checkpoint.postgres import PostgresSaver

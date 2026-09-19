@@ -42,6 +42,7 @@ FixtureKind = Literal[
     "ambiguous",
     "lock_in",
     "abandon",
+    "new_artifact",
     "fail_safe",
 ]
 
@@ -64,6 +65,10 @@ class ExitGoldenFixture(BaseModel):
 
     name: str
     kind: FixtureKind
+    #: v2 judge inputs: the artifact this session is bound to and the message's resolved
+    #: tags, as the runner renders them. Absent on fixtures written before v2.
+    artifact: str | None = None
+    tags: tuple[str, ...] = ()
     brief: str
     history: tuple[dict[str, str], ...] = ()
     message: str

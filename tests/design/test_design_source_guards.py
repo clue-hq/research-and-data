@@ -96,9 +96,6 @@ _DESIGN_RUN_EVENT_ALLOWLIST: dict[str, str] = {
     "subsystems/clue-design/apps/api/lumen_api/toolbelt/wiring.py": (
         "explains why the D6 no-op transport became a real writer at D7"
     ),
-    "subsystems/clue-design/apps/agent_runtime/lumen_agent/checkpoint.py": (
-        "records where a restarted turn's prior events live, before and after D7"
-    ),
     "subsystems/clue-design/apps/api/tests/test_write_path_governance.py": (
         "explains the D7 rename of the governed run-lifecycle write"
     ),

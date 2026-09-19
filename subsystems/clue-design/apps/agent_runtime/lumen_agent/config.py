@@ -15,6 +15,17 @@ class AgentRuntimeConfig:
     preview_format: str
     trace_dir: Path
     asset_store_root: Path | None = None
+    # Design session continuity (2026-09-18): when set, the substrate lands this turn inside the
+    # persistent session folder ``<trace_dir>/sessions/<session_id>/turns/<run_id>`` and the
+    # agent's workspace ``<trace_dir>/sessions/<session_id>/workspace`` survives across turns.
+    # None keeps the per-run folder ``<trace_dir>/<run_id>`` (editor preview, CLI, fixtures).
+    session_id: str | None = None
+    # Design session continuity (2026-09-18): a leg turn passes the PLATFORM's design run id here
+    # so a retried run reuses its own ``turns/<run_id>`` folder and stamps the same
+    # ``lumen_run_id`` on its human message — which is what lets `checkpoint.invoke_turn_graph`
+    # recognise the retry and resume the thread instead of re-prompting it. None mints a fresh
+    # runtime id per construction, exactly as before (editor preview, CLI, fixtures).
+    run_id: str | None = None
     # Agent LLM service. OpenRouter is the SOLE gateway for every LLM call — there
     # is no native-provider fallback. `agent_base_url` defaults to the OpenRouter API
     # and `model` must be an "openai:<openrouter-model-id>" value; `agent_api_key`
@@ -370,6 +381,14 @@ class AgentRuntimeConfig:
         `<workspace_root>/run_<id>`.
         """
         return self.trace_dir
+
+    def session_dir(self) -> Path | None:
+        """The persistent folder this document's design session owns, or None.
+
+        None means there is no session (editor preview, CLI, fixtures) and the
+        substrate keeps today's per-run folder.
+        """
+        return None if self.session_id is None else self.trace_dir / "sessions" / self.session_id
 
     @property
     def effective_asset_store_root(self) -> Path:

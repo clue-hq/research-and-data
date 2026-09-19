@@ -340,6 +340,12 @@ def _sanitize_content(content: Any) -> Any:
 def _message_to_dict(message: Any) -> dict:
     out: dict[str, Any] = {"role": getattr(message, "type", "unknown")}
     out["content"] = _sanitize_content(getattr(message, "content", ""))
+    reasoning = (getattr(message, "additional_kwargs", None) or {}).get("reasoning_content")
+    if isinstance(reasoning, str) and reasoning.strip():
+        # Founder ruling 2026-09-18: the model's own reasoning is part of the session RECORD.
+        # It is recorded here (trace.jsonl / run.jsonl); re-sending it as context is a
+        # per-provider decision the gateway owns (clue_gateway.openrouter_chat._retain_reasoning).
+        out["reasoning_content"] = reasoning
     if out["role"] == "system":
         # Ephemeral advice must not become a second memory store through DEBUG
         # model-input logging. Keep ordinary guidance; only omit this data block.

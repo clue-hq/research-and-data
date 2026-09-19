@@ -21,7 +21,9 @@ from clue_api.agent_turn_fleet_wiring import build_design_leg_exit_judge
 from clue_design.exit_judgment import ExitJudgment
 from tests.db.conftest import run_async
 
-_VERDICT = '{"action": "finish", "reason": "locked"}'
+_VERDICT = (
+    '{"close_this_session": true, "current_artifact_accepted": true, "reasoning": "accepted"}'
+)
 
 
 class _FakeModel:
@@ -76,9 +78,20 @@ def _judge_with(completion: Any) -> tuple[Any, _FakeModel]:
     return judge, model
 
 
+_LOCKED = ExitJudgment(
+    close_this_session=True, current_artifact_accepted=True, reasoning="accepted"
+)
+
+
 def _run(judge: Any) -> ExitJudgment | None:
     return run_async(
-        judge(brief="An artboard.", history=(("user", "Bolder."),), message="Lock it in.")
+        judge(
+            brief="An artboard.",
+            history=(("user", "Bolder."),),
+            message="Lock it in.",
+            artifact='design "An artboard" (scene ad)',
+            tags=('account "Apollo Clinics"',),
+        )
     )
 
 
@@ -88,26 +101,34 @@ def test_a_responses_api_block_list_completion_yields_a_verdict() -> None:
     judge, model = _judge_with(
         AIMessage(content=[{"type": "text", "text": _VERDICT, "annotations": []}])
     )
-    assert _run(judge) == ExitJudgment(action="finish", reason="locked")
+    assert _run(judge) == _LOCKED
     assert "prompt_version" in model.prompts[0]  # the P3.6 versioned prompt went out
+    # v2: the judge saw the artifact line and the tags the runner resolved.
+    assert 'design "An artboard" (scene ad)' in model.prompts[0]
+    assert '- account "Apollo Clinics"' in model.prompts[0]
 
 
 def test_a_multi_block_completion_concatenates_its_text_blocks() -> None:
     judge, _ = _judge_with(
         AIMessage(
             content=[
-                {"type": "text", "text": '{"action": "finish",'},
+                {
+                    "type": "text",
+                    "text": '{"close_this_session": true, "hand_message_to_strategy_agent": true,',
+                },
                 {"type": "reasoning", "summary": "thinking..."},
-                {"type": "text", "text": ' "reason": "out_of_scope"}'},
+                {"type": "text", "text": ' "reasoning": "a strategy ask"}'},
             ]
         )
     )
-    assert _run(judge) == ExitJudgment(action="finish", reason="out_of_scope")
+    assert _run(judge) == ExitJudgment(
+        close_this_session=True, hand_message_to_strategy_agent=True, reasoning="a strategy ask"
+    )
 
 
 def test_a_plain_string_completion_still_parses() -> None:
     judge, _ = _judge_with(AIMessage(content=_VERDICT))
-    assert _run(judge) == ExitJudgment(action="finish", reason="locked")
+    assert _run(judge) == _LOCKED
 
 
 def test_garbage_and_provider_errors_stay_fail_safe() -> None:
@@ -134,7 +155,7 @@ def test_with_langfuse_the_judge_is_an_evaluator_holding_its_generation() -> Non
     attrs = dict(evaluator.attributes or {})
     assert attrs["langfuse.observation.type"] == "evaluator"
     assert attrs["langfuse.trace.name"] == "design-leg.exit_judge"
-    assert "finish" in attrs["langfuse.observation.output"]
+    assert "close_this_session" in attrs["langfuse.observation.output"]
     # The handler was attached to the direct model call so its generation nests here.
     assert model.configs and "callbacks" in (model.configs[0].get("config") or {})
 

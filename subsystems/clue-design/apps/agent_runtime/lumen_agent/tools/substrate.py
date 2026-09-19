@@ -339,7 +339,7 @@ class LumenDesignTools:
         # Every scene mutation shares this per-run transaction lock; paid
         # generation/editing and remote logo fetching remain parallel outside it.
         self._scene_mutation_lock = threading.RLock()
-        self.run_id = new_run_id()
+        self.run_id = config.run_id or new_run_id()
         self.iteration = 0
         # Fast-loop v1 §7: per-run summary counters, started at the earliest
         # moment of the run so `wall_time_ms` measures the whole turn. The three
@@ -358,10 +358,28 @@ class LumenDesignTools:
         # in a parallel tool batch, so they cannot own its repair allowance.
         self._solo_construction_round = 0
         self._solo_repair_pending = False
-        self.trace_dir = config.trace_dir / self.run_id
-        self.iterations_dir = self.trace_dir / "iterations"
-        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        # Design session continuity (2026-09-18). Two branches, side by side:
+        #   * no session (editor preview, CLI, fixtures) — the run owns its own
+        #     folder and `turn_dir` IS `trace_dir`, byte-identical to before;
+        #   * a session (a leg turn on a pinned document) — `trace_dir` is the
+        #     PERSISTENT session folder, shared by every turn (the agent-visible
+        #     `workspace/` and the component projection live there), and this
+        #     turn's harness-owned outputs go under `turns/<run_id>`.
+        session_dir = config.session_dir()
+        if session_dir is None:
+            self.trace_dir = config.trace_dir / self.run_id
+            self.turn_dir = self.trace_dir
+            self.workspace_scope_id = self.run_id
+        else:
+            self.trace_dir = session_dir
+            self.turn_dir = session_dir / "turns" / self.run_id
+            self.workspace_scope_id = f"sessions/{config.session_id}"
+        self.iterations_dir = self.turn_dir / "iterations"
+        self.turn_dir.mkdir(parents=True, exist_ok=True)
         self.iterations_dir.mkdir(parents=True, exist_ok=True)
+        # Rounds are numbered across the whole session: a second turn's first round follows the
+        # highest round directory the workspace already holds.
+        self.round_base = self._highest_round_dir()
         # Bind run_id ONCE, at the moment the run dir exists (deliverable 4): from
         # here on every obs event in this run's context carries it via
         # merge_contextvars, so the CLI viewer and run.jsonl can group by run
@@ -456,7 +474,7 @@ class LumenDesignTools:
         self._selected_reference_ids: set[str] = set()
         self._pending_pruned_pages: list[str] = []
         self._write_json(
-            self.trace_dir / "input.json",
+            self.turn_dir / "input.json",
             {
                 "run_id": self.run_id,
                 "prompt": prompt,
@@ -534,7 +552,7 @@ class LumenDesignTools:
                 snippet["path"], self.config.workspace_root
             )
         self.loaded_knowledge = payload["snippets"]
-        self._write_json(self.trace_dir / "knowledge.json", payload)
+        self._write_json(self.turn_dir / "knowledge.json", payload)
         self.record(
             "coordinator",
             "knowledge_loaded",
@@ -572,19 +590,21 @@ class LumenDesignTools:
             next_round = 2
         else:
             return
-        path = self.trace_dir / "workspace" / "rounds" / f"round_{next_round}"
+        # The directory name continues the SESSION's numbering (`round_base` is
+        # the highest round an earlier turn left behind); the counter itself
+        # stays per-turn, so this turn's caps are unchanged.
+        recorded = self.round_base + next_round
+        path = self.trace_dir / "workspace" / "rounds" / f"round_{recorded}"
         path.mkdir(parents=True, exist_ok=True)
         self._solo_construction_round = next_round
         self._solo_repair_pending = False
         self.record(
             "coordinator", "construction_round_started",
-            output_summary=f"round {next_round}", payload={"round": next_round},
+            output_summary=f"round {recorded}", payload={"round": recorded},
         )
 
-    def _fast_loop_round_number(self) -> int:
-        """Runtime round for solo; newest round directory for delegated runs."""
-        if self.solo_rounds_executed is not None:
-            return self.solo_rounds_executed
+    def _highest_round_dir(self) -> int:
+        """The highest ``round_N`` directory the workspace holds, or 0."""
         rounds = self.trace_dir / "workspace" / "rounds"
         highest = 0
         try:
@@ -596,6 +616,12 @@ class LumenDesignTools:
         except OSError:
             return 0
         return highest
+
+    def _fast_loop_round_number(self) -> int:
+        """Runtime round for solo; newest round directory for delegated runs."""
+        if self.solo_rounds_executed is not None:
+            return self.round_base + self.solo_rounds_executed
+        return self._highest_round_dir()
 
     def _inner_iteration_refusal(self) -> Optional[str]:
         """Refuse a compile past the round's inner-iteration cap, or None.
@@ -3178,7 +3204,7 @@ class LumenDesignTools:
                 if not source.exists():
                     continue
                 suffix = artifact.get("format", export_format)
-                destination = self.trace_dir / (
+                destination = self.turn_dir / (
                     f"instance_{binding.get('binding_set_id', 'preview')}"
                     f"_{len(preview_paths)}.{suffix}"
                 )
@@ -3580,7 +3606,7 @@ class LumenDesignTools:
         ]
         self._baseline_diagnostics = diagnostics
         self._write_json(
-            self.trace_dir / "baseline_preflight.json",
+            self.turn_dir / "baseline_preflight.json",
             {"baseline_diagnostics": diagnostics},
         )
         self.record(
@@ -4553,7 +4579,7 @@ class LumenDesignTools:
         )
         payload = gap.model_dump(mode="json")
         self.gaps.append(payload)
-        self._write_json(self.trace_dir / "gaps.json", {"gaps": self.gaps})
+        self._write_json(self.turn_dir / "gaps.json", {"gaps": self.gaps})
         self.record(
             "coordinator",
             "gap_recorded",
@@ -5239,7 +5265,7 @@ class LumenDesignTools:
             "gaps": self.gaps,
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
         }
-        self._write_json(self.trace_dir / "final.json", payload)
+        self._write_json(self.turn_dir / "final.json", payload)
         self.record(
             "coordinator",
             "clarification_requested",
@@ -5467,13 +5493,13 @@ class LumenDesignTools:
             "accommodation": accommodation,
             "acceptance_receipt": self._review_receipt if status == "accepted" else None,
         }
-        self._write_json(self.trace_dir / "final.json", payload)
+        self._write_json(self.turn_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the
         # imagery-quality eval runner in particular — can deterministically score the
         # design's use of imagery (node kinds, asset_placement, asset records, page
         # sizes) without re-running the agent or recompiling the DSL.
         if isinstance(self.scene, dict):
-            self._write_json(self.trace_dir / "final_scene.json", self.scene)
+            self._write_json(self.turn_dir / "final_scene.json", self.scene)
         self.record(
             "coordinator",
             "run_finalized",
@@ -5563,7 +5589,7 @@ class LumenDesignTools:
             diagnostics=diagnostics or [],
             payload=payload or {},
         )
-        path = self.trace_dir / "trace.jsonl"
+        path = self.turn_dir / "trace.jsonl"
         # Serialize the whole record body under one lock (L2 thread-safety):
         # batched reads call this from concurrent ToolNode threads, so the jsonl
         # append and the event_sink push must never interleave with another
@@ -5827,7 +5853,7 @@ class LumenDesignTools:
             for operation in operations
         )
         self._write_json(
-            self.trace_dir / "operations_ledger.json",
+            self.turn_dir / "operations_ledger.json",
             {"entries": self.operations_ledger},
         )
 

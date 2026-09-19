@@ -290,3 +290,93 @@ def test_unscoped_relative_alias_cannot_modify_website_projection(tmp_path):
     result = backend.edit("custom_components/component.md", "ORIGINAL", "MUTATED")
     assert result.error
     assert source.read_text() == "ORIGINAL"
+
+
+# --- design session continuity: a session folder is the scope --------------
+# One design document = one persistent design-agent session, so a leg turn is
+# scoped to `sessions/<session_id>` rather than to its own run folder. The
+# deepagents summarization middleware compacts that thread into
+# `/conversation_history/<thread_id>.md` (media under
+# `/conversation_history/media/`) through THIS backend, so the fence has to
+# admit the ACTIVE session's history file — and only that one: a sibling
+# session's history is another tenant's conversation.
+def test_a_session_scope_admits_its_own_history_file_and_nothing_else(tmp_path):
+    root = tmp_path
+    (root / "sessions/dsess_a/workspace").mkdir(parents=True)
+    (root / "conversation_history").mkdir()
+    (root / "conversation_history/dsess_b.md").write_text("PRIVATE_OTHER_SESSION")
+    backend = AgentWorkspaceBackend(
+        root, active_run_id="sessions/dsess_a", history_thread_id="dsess_a"
+    )
+
+    assert backend.write("/conversation_history/dsess_a.md", "mine").error is None
+    assert (root / "conversation_history/dsess_a.md").read_text() == "mine"
+    assert backend.read("/conversation_history/dsess_a.md").file_data["content"] == "mine"
+    assert backend.edit("/conversation_history/dsess_a.md", "mine", "mine and more").error is None
+    assert backend.upload_files([("/conversation_history/media/a.png", b"bytes")])[0].error is None
+    assert (root / "conversation_history/media/a.png").read_bytes() == b"bytes"
+
+    sibling = backend.read("/conversation_history/dsess_b.md")
+    assert sibling.error and not sibling.file_data
+    assert "PRIVATE_OTHER_SESSION" not in str(sibling)
+    assert backend.download_files(["/conversation_history/dsess_b.md"])[0].error
+    assert backend.write("/conversation_history/dsess_b.md", "x").error
+    assert backend.edit("/conversation_history/dsess_b.md", "PRIVATE", "x").error
+    assert backend.upload_files([("/conversation_history/dsess_b.md", b"x")])[0].error
+    assert (root / "conversation_history/dsess_b.md").read_text() == "PRIVATE_OTHER_SESSION"
+
+
+def test_a_session_scope_still_fences_sibling_sessions(tmp_path):
+    root = tmp_path
+    for name in ("dsess_a", "dsess_b"):
+        (root / "sessions" / name / "workspace").mkdir(parents=True)
+    (root / "sessions/dsess_b/workspace/brief.md").write_text("PRIVATE_SIBLING_SESSION")
+    backend = AgentWorkspaceBackend(root, active_run_id="sessions/dsess_a")
+
+    read = backend.read("/sessions/dsess_b/workspace/brief.md")
+    assert read.error and not read.file_data
+    assert "PRIVATE_SIBLING_SESSION" not in str(read)
+    assert backend.write("/sessions/dsess_b/workspace/note.md", "x").error
+    assert not (root / "sessions/dsess_b/workspace/note.md").exists()
+    # `sessions/` itself is a container, never a scope root.
+    assert backend.ls("/sessions").error
+    # Its own session folder stays read-write, and the error names the real path.
+    assert backend.write("/sessions/dsess_a/workspace/note.md", "ok").error is None
+    assert "/sessions/dsess_a/" in str(backend.write("/unrelated.md", "x").error)
+
+
+def test_without_a_thread_id_a_session_reaches_no_conversation_history(tmp_path):
+    root = tmp_path
+    (root / "sessions/dsess_a/workspace").mkdir(parents=True)
+    (root / "conversation_history").mkdir()
+    (root / "conversation_history/dsess_a.md").write_text("PRIVATE_HISTORY")
+    backend = AgentWorkspaceBackend(root, active_run_id="sessions/dsess_a")
+
+    assert backend.read("/conversation_history/dsess_a.md").error
+    assert backend.write("/conversation_history/dsess_a.md", "x").error
+    assert backend.write("/conversation_history/media/a.png", "x").error
+    assert (root / "conversation_history/dsess_a.md").read_text() == "PRIVATE_HISTORY"
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        "sessions",
+        "sessions/",
+        "sessions/../run_other",
+        "sessions/a/b",
+        "/sessions/dsess_a",
+        "other/dsess_a",
+        "dsess_a",
+        "sessions\\dsess_a",
+    ],
+)
+def test_only_a_run_folder_or_a_session_folder_can_scope_the_backend(tmp_path, scope):
+    with pytest.raises(ValueError):
+        AgentWorkspaceBackend(tmp_path, active_run_id=scope)
+
+
+@pytest.mark.parametrize("thread", ["", ".", "..", "../dsess_a", "a/b", "sub\\a"])
+def test_a_history_thread_id_is_one_file_name_segment(tmp_path, thread):
+    with pytest.raises(ValueError):
+        AgentWorkspaceBackend(tmp_path, active_run_id="sessions/dsess_a", history_thread_id=thread)

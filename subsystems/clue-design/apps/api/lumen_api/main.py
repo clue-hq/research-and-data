@@ -239,6 +239,7 @@ from clue_design.enums import DesignIngestionKind
 from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
 from clue_design.leg_context import render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
+from clue_design.sessions import design_session_id, render_document_drift_note
 from clue_design.storage import location_digest
 from clue_storage import StorageBackend, storage_from_settings
 
@@ -9199,6 +9200,60 @@ _REFERENCES_UNRESOLVED = object()
 _BRAND_KIT_UNRESOLVED = object()
 
 
+def _stamp_session_manifest(
+    response: JsonObject,
+    *,
+    session_dir: Path | None,
+    history_file: Path | None,
+    session_id: str | None,
+    blobs: DesignBlobStore,
+    snapshot_session: Any,
+) -> JsonObject:
+    """Give this session's folder durable custody and name the manifest on the turn's result.
+
+    Session continuity (2026-09-18). ``result_json['session_manifest_sha256']`` is the ONLY
+    durable pointer to a session's memory — the next turn reads it back
+    (``latest_session_manifest_sha256``) and restores the folder wherever it happens to run.
+
+    Runs on every SESSION turn the runtime returns from — including one that returns a refusal,
+    because the workspace it left is still this session's memory of what it tried. A turn whose
+    runtime CRASHED snapshots nothing and keeps the previous turn's manifest as the session's
+    last good memory. Non-session turns (``session_dir is None``) are untouched, so every
+    editor/CLI/fixture path stays byte-identical.
+
+    BEST-EFFORT and loud: the work really happened and its result is really returned, so a
+    storage failure must not turn a finished turn into a failed one — but it must not be silent
+    either, because a swallowed snapshot is a session that will wake up with amnesia.
+    """
+    if session_dir is None:
+        return response
+    try:
+        manifest = snapshot_session(
+            session_dir,
+            register=lambda data, media_type, source_key: blobs.register(
+                data, media_type=media_type, source_key=source_key
+            ),
+            history_file=history_file,
+        )
+        manifest_bytes = json.dumps(manifest, sort_keys=True).encode()
+        # ``register`` returns a storage KEY while ``read_blob`` takes a DIGEST, so the digest is
+        # what the result carries — the key would be unreadable to the restore path.
+        blobs.register(
+            manifest_bytes,
+            media_type="application/json",
+            source_key="design-session/manifest",
+        )
+        response["session_manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    except Exception as error:  # noqa: BLE001 - a lost snapshot is never a lost turn
+        api_logger.error(
+            "design_session.snapshot_failed",
+            session_id=session_id,
+            error=str(error),
+            exc_info=True,
+        )
+    return response
+
+
 def run_agent_turn_preview(
     payload: AgentTurnPreviewRequest,
     root: Path,
@@ -9211,6 +9266,9 @@ def run_agent_turn_preview(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    session_manifest: dict | None = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
     scene_checkpoint: Any = None,
     cancel_requested: Any = None,
@@ -9237,7 +9295,8 @@ def run_agent_turn_preview(
     )
     try:
         from lumen_agent.config import AgentRuntimeConfig
-        from lumen_agent.harness import run_deepagent_turn
+        from lumen_agent.harness import effective_runtime_config, run_deepagent_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -9277,6 +9336,15 @@ def run_agent_turn_preview(
 
     try:
         config = AgentRuntimeConfig.from_env(root)
+        if session_id:
+            # Session continuity (2026-09-18): this turn belongs to a DOCUMENT's design session,
+            # so the runtime's per-turn files land under that session's folder and its agent
+            # workspace survives across turns. The run id rides along so a retried run reuses its
+            # own turn folder and stamps the same id on its human message — which is what lets
+            # the checkpoint seam resume it instead of appending a second turn (ruling T5-1).
+            # Absent (the editor preview route, the CLI, fixtures) the runtime keeps its
+            # per-run folder and its own generated id, byte-identical to before.
+            config = replace(config, session_id=session_id, run_id=run_id)
         if payload.max_iterations is not None:
             # v0 harness does not consume max_iterations (no Python-loop cap);
             # kept set for config parity + offline/CLI paths that still read it.
@@ -9397,6 +9465,31 @@ def run_agent_turn_preview(
         clarification_already_requested = (
             payload.previous_turn_outcome == "clarification_requested"
         )
+        # Session continuity (2026-09-18): WHERE this session's memory lives, resolved through the
+        # same rule the harness uses, so the candidate bundle's rebound root can never leave the
+        # two looking in different folders. Computed before the run because the restore below must
+        # happen before `materialize_agent_workspace` and the tools touch the workspace, and reused
+        # after it for the snapshot.
+        effective = effective_runtime_config(config)
+        session_dir = effective.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else effective.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            # A DIFFERENT worker ran this session's last turn (or this one's disk was reclaimed).
+            # Rebuild the folder before anything reads it, or the agent would continue a
+            # conversation about files it cannot open.
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         payload_result, tools = run_deepagent_turn(
             prompt,
             config,
@@ -9430,7 +9523,18 @@ def run_agent_turn_preview(
             str(error),
         )
 
-    return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
+    # ``turn_dir``, not ``trace_dir``: since the session folder landed (2026-09-18) the
+    # operations ledger and the iteration folders live under THIS turn's folder, so a
+    # session turn read from the session root would report zero operations.
+    response = agent_response_from_trace(payload_result, tools.turn_dir, tools.scene)
+    return _stamp_session_manifest(
+        response,
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
 def _web_node_label(
@@ -9749,6 +9853,9 @@ def run_web_agent_turn(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    session_manifest: dict | None = None,
     cancel_requested: Any = None,
     callbacks: Any = None,
 ) -> JsonObject:
@@ -9800,6 +9907,7 @@ def run_web_agent_turn(
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -9860,6 +9968,11 @@ def run_web_agent_turn(
                 read_source=cloned_section_registry.read_source,
             )
         config = AgentRuntimeConfig.from_env(root)
+        if session_id:
+            # Session continuity (2026-09-18): see run_agent_turn_preview. The document's session
+            # owns the runtime's folder; the run id rides along so a retried run resumes rather
+            # than opening a second turn on the thread.
+            config = replace(config, session_id=session_id, run_id=run_id)
         if model:
             config = replace(config, model=model)
         if config.asset_store_root is None:
@@ -9982,6 +10095,25 @@ def run_web_agent_turn(
             base_url=config.agent_base_url,
             api_key=config.agent_api_key,
         )
+        # Session continuity (2026-09-18): the WEB harness has no candidate-bundle rebase, so the
+        # session folder is exactly where this config says it is. Restored before the runtime
+        # touches the workspace; snapshotted on the way out.
+        session_dir = config.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else config.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         result = run_deepagent_web_turn(
             prompt=prompt,
             config=config,
@@ -10004,19 +10136,26 @@ def run_web_agent_turn(
             str(error),
         )
 
-    return {
-        "schema_version": 1,
-        "status": result.get("status"),
-        "outcome": result.get("outcome"),
-        "summary": result.get("summary"),
-        "web_doc": result.get("web_doc"),
-        "operations": result.get("operations", []),
-        "grounding": result.get(
-            "grounding", {"schema_version": 1, "sources": [], "citations": []}
-        ),
-        "preview_paths": result.get("preview_paths", []),
-        "doc_kind": "web",
-    }
+    return _stamp_session_manifest(
+        {
+            "schema_version": 1,
+            "status": result.get("status"),
+            "outcome": result.get("outcome"),
+            "summary": result.get("summary"),
+            "web_doc": result.get("web_doc"),
+            "operations": result.get("operations", []),
+            "grounding": result.get(
+                "grounding", {"schema_version": 1, "sources": [], "citations": []}
+            ),
+            "preview_paths": result.get("preview_paths", []),
+            "doc_kind": "web",
+        },
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
 # --- fleet turn executors (D5 Round B) --------------------------------------------------------
@@ -10338,6 +10477,68 @@ def _with_model_calls(response: JsonObject, collector: Any) -> JsonObject:
     return {**response, "model_calls": [call.as_json() for call in collector.calls]}
 
 
+def _document_drift_note(
+    store: HybridRepository, *, document_id: str, current_version: int
+) -> str | None:
+    """What moved under this document's session since the agent last wrote it, or ``None``.
+
+    Session continuity (2026-09-18): a continued session holds the scene IT wrote, so anything a
+    human (or another leg) committed in between has to be SAID — as data, never as instructions.
+
+    ``None`` means nothing moved, no agent turn has ever written this document, or the read itself
+    failed: the note is advisory context, so an unreadable history costs the agent one paragraph
+    and never a paid turn. Shared by both executors so the two can never disagree on what drift is.
+    """
+    try:
+        last_written = store.latest_agent_written_version(document_id)
+        if last_written is None or last_written >= current_version:
+            return None
+        return render_document_drift_note(
+            previous_version=last_written,
+            current_version=current_version,
+            envelopes=store.list_envelopes(document_id, newest_first=False),
+        )
+    except Exception as error:  # noqa: BLE001 - advisory context never fails a turn
+        api_logger.warning(
+            "design_turn.drift_note_unavailable",
+            document_id=document_id,
+            current_version=current_version,
+            error=str(error),
+        )
+        return None
+
+
+def _session_manifest(
+    store: HybridRepository, blobs: DesignBlobStore, *, document_id: str
+) -> JsonObject | None:
+    """This document's session-folder manifest from its last synced turn, or ``None``.
+
+    Session continuity (2026-09-18): the runtime restores the session folder from this when the
+    turn lands on a worker that has never run this session. Read HERE, at the executor, because
+    this is the frame that has the database; the runtime is handed the manifest BY VALUE, the
+    same rule the brand kit and the asset library follow.
+
+    ``None`` means no turn has synced this session yet, or the read itself failed. A missing
+    manifest is not a failure: the runtime simply starts the session's folder fresh, which is
+    what the very first turn of every session does anyway. Shared by both executors so the two
+    can never disagree on where a session's memory comes from.
+    """
+    try:
+        sha = store.latest_session_manifest_sha256(document_id)
+        if sha is None:
+            return None
+        _, data = blobs.read_blob(sha)
+        manifest = json.loads(data)
+        return manifest if isinstance(manifest, dict) else None
+    except Exception as error:  # noqa: BLE001 - an unreadable manifest costs memory, not the turn
+        api_logger.warning(
+            "design_session.manifest_unavailable",
+            document_id=document_id,
+            error=str(error),
+        )
+        return None
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -10348,6 +10549,7 @@ def execute_agent_turn_job(
     lease_generation: Optional[int] = None,
     spend_drain: Any = None,
     callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn under its own spend scope — see :func:`_execute_agent_turn_job`.
 
@@ -10374,6 +10576,7 @@ def execute_agent_turn_job(
                 checkpointer=checkpointer,
                 lease_generation=lease_generation,
                 callbacks=turn_callbacks,
+                session_continued=session_continued,
             )
             return status, _with_model_calls(response, collector), event_type, event_data
         finally:
@@ -10389,6 +10592,7 @@ def _execute_agent_turn_job(
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
     callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
@@ -10460,6 +10664,44 @@ def _execute_agent_turn_job(
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
 
+    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
+    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
+    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
+    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
+    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
+    document_id = payload.document_id
+    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
+    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
+    workspace_id = envelope.workspace_id
+
+    # --- session continuity (2026-09-18): the DOCUMENT is this turn's scene and its CAS base ---
+    # The envelope froze a scene and a version when the leg dispatched; by the time a worker runs
+    # the turn a human may have edited, and the agent's OWN previous turn certainly did. So the
+    # document is re-read HERE, and what it holds is what the trio designs from and what the
+    # write CAS's against. This REPLACES the pre-run conflict: "the document moved" is the normal
+    # condition of a continued session, not a terminal failure. The write-time CAS (inside the
+    # committer) still refuses the human edit that lands WHILE the turn runs — that window is the
+    # one an early check never could close, and it is the only one worth failing for.
+    doc: JsonObject | None = None
+    drift_note: str | None = None
+    if leg_persist:
+        try:
+            doc = store.require_document(document_id)
+        except Exception as error:  # noqa: BLE001 - mirrors the executor's own outer handler
+            # Same shape the outer handler below mints, minted here because this read happens
+            # before it opens: a turn that cannot read its own document has not begun.
+            failed = failed_agent_turn_response(
+                "agent_runtime.failed",
+                "Agent turn crashed before returning a proposal.",
+                str(error),
+            )
+            return "failed", failed, "error", {"message": str(error)}
+        base_version = int(doc["current_version"])
+        drift_note = _document_drift_note(
+            store, document_id=str(document_id), current_version=base_version
+        )
+        payload = payload.model_copy(update={"scene": doc["scene"]})
+
     pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED
     if pinned_kit_id:
@@ -10505,55 +10747,47 @@ def _execute_agent_turn_job(
     # the prefill-cached prefix those two form (P3.7's block order) is untouched.
     steering_note = _empty_page_steering_note(payload.scene) if leg_block else None
     composed_prompt = f"{steering_note}\n\n{payload.prompt}" if steering_note else payload.prompt
-    if delegation_bundle or leg_history:
+    # Session continuity (2026-09-18): on a CONTINUED thread the agent already holds every earlier
+    # turn of this session, so re-sending the history block says the same thing twice. The
+    # immutable delegation brief still opens each NEW leg — a new leg is a new assignment even on
+    # a thread that has run before — which is what ``first_turn_of_leg`` (frozen by the platform's
+    # leg runner) names. A fresh thread sends both, exactly as it always has.
+    first_turn_of_leg = (
+        bool(leg_block.get("first_turn_of_leg", True)) if isinstance(leg_block, dict) else True
+    )
+    bundle_block = (
+        delegation_bundle
+        if (delegation_bundle and (not session_continued or first_turn_of_leg))
+        else None
+    )
+    history_block = None if session_continued else leg_history
+    if bundle_block or history_block or drift_note:
         composed_prompt = render_leg_turn_prompt(
-            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-            history=leg_history if isinstance(leg_history, list) else None,
+            bundle=bundle_block if isinstance(bundle_block, dict) else None,
+            history=history_block if isinstance(history_block, list) else None,
             prompt=composed_prompt,
+            drift_note=drift_note,
         )
     if composed_prompt != payload.prompt:
         payload = payload.model_copy(update={"prompt": composed_prompt})
 
-    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
-    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
-    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
-    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
-    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
-    document_id = payload.document_id
-    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
-    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
-
     override = host.agent_turn_runner
     root = repo_root()
-    workspace_id = envelope.workspace_id
+    # The session this turn belongs to: one document, one design session (2026-09-18). A SESSION IS
+    # A LEG-TURN CONCEPT (ruling T6-1): it takes both a leg block and a pinned document. A direct
+    # editor turn carries no leg block — the design API's own routes still thread it on its run id
+    # (``main.py`` /agent/turns) — so it keeps today's per-run folder, joins no session, and its
+    # prompt stays byte-identical. Note this is deliberately ONE step looser than ``leg_persist``:
+    # a legacy leg that pins a document but froze no CAS base is still that document's session,
+    # even though it commits nothing (and, reading no document, notices no drift).
+    session_id = (
+        design_session_id(workspace_id, str(document_id))
+        if (leg_block and document_id)
+        else None
+    )
     try:
-        doc: Optional[JsonObject] = None
         committer: Optional[_LegSceneCommitter] = None
         if leg_persist:
-            # The web executor's early-out, verbatim in spirit: a turn that already lost the
-            # race comes back conflicted BEFORE the trio spends a token. The governed write
-            # below still carries ``expected_base_version`` for the race window after this read.
-            doc = store.require_document(document_id)
-            if doc["current_version"] != base_version:
-                # P0.4 replay guard. A moved document is USUALLY a human who edited while we ran
-                # — but it is also what THIS run's own checkpoints look like to a redrive (a
-                # takeover restarts the agent from the frozen envelope, so its fresh operation
-                # history would double-apply onto its own committed work). Ask the run's durable
-                # event stream which of the two happened before blaming a human.
-                if _own_checkpoint_version(
-                    store, run_id=envelope.run_id, document_id=str(document_id)
-                ) == doc["current_version"]:
-                    interrupted = failed_agent_turn_response(
-                        "agent_turn.interrupted_after_checkpoint",
-                        "This design turn was interrupted after part of it was saved.",
-                        f"The design was saved at version {doc['current_version']} before the "
-                        "turn stopped. Ask again to keep going from there — nothing is lost.",
-                    )
-                    return "failed", interrupted, "result", {"status": interrupted["status"]}
-                conflicted = conflicted_agent_turn_response(
-                    base_version, doc["current_version"]
-                )
-                return "failed", conflicted, "result", {"status": conflicted["status"]}
             committer = _LegSceneCommitter(
                 doc=doc,
                 document_id=str(document_id),
@@ -10583,6 +10817,24 @@ def _execute_agent_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, envelope.workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # Session continuity (2026-09-18): the runtime's per-turn substrate lives under
+                # this document's session folder, and the run id rides with it so a RETRIED run
+                # reuses its own turn folder and is recognised as a resume rather than a new
+                # turn on the thread (ruling T5-1).
+                session_id=session_id,
+                run_id=envelope.run_id if session_id else None,
+                # ...and the memory that session left behind, so a turn on a worker that has
+                # never run it rebuilds the folder instead of opening a continued thread over
+                # an empty workspace.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, envelope.workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if session_id
+                    else None
+                ),
                 resolved_brand_kit=resolved_brand_kit,
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
@@ -10650,10 +10902,12 @@ def _execute_agent_turn_job(
         return "failed", failed, "error", {"message": str(error)}
 
 
-#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream. It is BOTH the
-#: frontend's mid-run progress signal (the canvas can pin a real version instead of waiting out
-#: the whole generation on version 0) and the replay guard's evidence: a redrive reads it back to
-#: recognise a document its OWN earlier attempt advanced.
+#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream: the frontend's
+#: mid-run progress signal, so the canvas can pin a real version instead of waiting out the whole
+#: generation on version 0. It used to be a replay guard's evidence too — a redrive read it back
+#: to tell a document its OWN earlier attempt had advanced apart from one a human had edited —
+#: which session continuity (2026-09-18) retired along with the pre-run conflict: the executor
+#: now re-reads the document and designs from where it actually is, so neither mover is a refusal.
 SCENE_CHECKPOINT_EVENT = "scene_checkpoint_committed"
 
 
@@ -10824,33 +11078,6 @@ class _LegSceneCommitter:
         )
 
 
-def _own_checkpoint_version(
-    store: HybridRepository, *, run_id: str, document_id: str
-) -> Optional[int]:
-    """The version this run's OWN last P0.4 checkpoint left the document at, or None.
-
-    Read off the run's durable event stream, which survives a takeover because it is keyed on the
-    run — so a redrive can tell "my earlier attempt already moved this document" apart from "a
-    human edited it while I ran". Best-effort: an unreadable stream returns None and the caller
-    falls back to treating the move as somebody else's, which refuses rather than double-commits.
-    """
-    try:
-        events = store.list_run_events(run_id)
-    except Exception:  # noqa: BLE001 - never fail a turn on a progress-stream read
-        return None
-    version: Optional[int] = None
-    for event in events:
-        if not isinstance(event, dict) or event.get("type") != SCENE_CHECKPOINT_EVENT:
-            continue
-        data = event.get("data")
-        if not isinstance(data, dict) or data.get("document_id") != document_id:
-            continue
-        candidate = data.get("version")
-        if isinstance(candidate, int):
-            version = candidate
-    return version
-
-
 def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
     """The runtime's P0.4 sink for this turn, or None when the turn owns no persist."""
     return None if committer is None else committer.checkpoint
@@ -11014,6 +11241,7 @@ def execute_web_turn_job(
     lease_generation: Optional[int] = None,
     spend_drain: Any = None,
     callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`.
 
@@ -11034,6 +11262,7 @@ def execute_web_turn_job(
                 checkpointer=checkpointer,
                 lease_generation=lease_generation,
                 callbacks=turn_callbacks,
+                session_continued=session_continued,
             )
             return status, _with_model_calls(response, collector), event_type, event_data
         finally:
@@ -11049,6 +11278,7 @@ def _execute_web_turn_job(
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
     callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn, executed from its frozen envelope.
 
@@ -11077,16 +11307,21 @@ def _execute_web_turn_job(
     # and its prompt stays byte-identical.
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
+    leg_block = envelope.config.get("leg") or {}
     user_message = payload.prompt
-    prompt = (
-        render_leg_turn_prompt(
-            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-            history=leg_history if isinstance(leg_history, list) else None,
-            prompt=user_message,
-        )
-        if delegation_bundle or leg_history
-        else user_message
+    # Session continuity (2026-09-18), the scene executor's rule verbatim: a CONTINUED thread
+    # already holds every earlier turn of this session, so the history block would say it all
+    # twice; the immutable brief still opens each NEW leg. The composition itself happens below,
+    # after the document read, because the drift note is part of it.
+    first_turn_of_leg = (
+        bool(leg_block.get("first_turn_of_leg", True)) if isinstance(leg_block, dict) else True
     )
+    bundle_block = (
+        delegation_bundle
+        if (delegation_bundle and (not session_continued or first_turn_of_leg))
+        else None
+    )
+    history_block = None if session_continued else leg_history
 
     model = payload.model
     target_node_ids = payload.target_node_ids
@@ -11098,15 +11333,38 @@ def _execute_web_turn_job(
         if payload.target_notes
         else None
     )
-    base_version = payload.base_version
     override = host.web_turn_runner
     root = repo_root()
     workspace_id = envelope.workspace_id
     try:
+        # Session continuity (2026-09-18): the DOCUMENT decides, not the frozen envelope. The
+        # request's ``base_version`` was pinned when the turn was submitted; the turn designs
+        # against — and CAS's on — the version it actually reads here, and a session that wrote
+        # this document before is TOLD what moved since instead of being refused. The write-time
+        # CAS below still refuses the human edit that lands while the turn runs, which is the
+        # only window an early check never could close.
         doc = store.require_document(document_id)
-        if doc["current_version"] != base_version:
-            response = conflicted_web_turn_response(base_version, doc["current_version"])
-        elif override is not None:
+        base_version = int(doc["current_version"])
+        # Ruling T6-1: drift is something a SESSION is told, and only a leg turn has one. A direct
+        # BFF turn (no leg block) carries the human's words verbatim, exactly as it always has.
+        drift_note = (
+            _document_drift_note(
+                store, document_id=str(document_id), current_version=base_version
+            )
+            if leg_block
+            else None
+        )
+        prompt = (
+            render_leg_turn_prompt(
+                bundle=bundle_block if isinstance(bundle_block, dict) else None,
+                history=history_block if isinstance(history_block, list) else None,
+                prompt=user_message,
+                drift_note=drift_note,
+            )
+            if (bundle_block or history_block or drift_note)
+            else user_message
+        )
+        if override is not None:
             # Backward-compatible seam: existing stubs take four positional args; only pass the
             # scoped-target ids when the request carried them (a five-arg stub), and only pass
             # account_card as a keyword when the turn is personalized (so the un-personalized
@@ -11160,6 +11418,23 @@ def _execute_web_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # Session continuity (2026-09-18), ruling T6-1: a web turn is always OF a
+                # document, but only a LEG turn is of that document's session — a direct BFF turn
+                # keeps its per-run folder and its own generated id, as before.
+                session_id=(
+                    design_session_id(workspace_id, str(document_id)) if leg_block else None
+                ),
+                run_id=envelope.run_id if leg_block else None,
+                # See the scene executor: the session's synced folder, by value.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if leg_block
+                    else None
+                ),
                 # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
                 # route can honestly stop either kind of design run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),

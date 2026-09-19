@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from langchain.agents.structured_output import ToolStrategy
+from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 from py_lumen_obs import get_logger
 from py_lumen_obs.config import run_log
@@ -34,7 +35,7 @@ from .cancellation import (
     TurnCancelled,
     attach_cancellation_callback,
 )
-from .checkpoint import invoke_turn_graph
+from .checkpoint import RUN_ID_KEY, invoke_turn_graph
 from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
 from .models.schemas import SceneVisualCritique, VisualCritique
@@ -365,6 +366,26 @@ def _create_scene_solo_graph(
     })
 
 
+def effective_runtime_config(config: AgentRuntimeConfig) -> AgentRuntimeConfig:
+    """The config the SCENE harness actually runs with — the candidate bundle's rebound root.
+
+    Shared hosts may assemble web/legacy and candidate turns concurrently, so a candidate turn's
+    derived knowledge and backend roots are kept disjoint for the whole run (not merely while the
+    materializer's initialization lock is held) by rooting it at ``<trace_dir>/scene-candidate``.
+
+    It is a FUNCTION, and public, because the rebase decides where the session folder and the
+    conversation history live (design session continuity, 2026-09-18), and the turn-end sync at
+    the API seam has to look in the same place the harness wrote. Inline, the two would disagree
+    the moment the candidate bundle was on, and a candidate session would sync an empty folder.
+    Pure, and a non-candidate config comes back UNCHANGED (the same object), so every other path
+    is byte-identical to before. NOT idempotent — it appends a segment — so apply it once per
+    config: a caller passes the ORIGINAL config on to the harness, which rebases it itself.
+    """
+    if config.scene_skill_bundle != "candidate":
+        return config
+    return replace(config, trace_dir=config.trace_dir / "scene-candidate")
+
+
 def create_design_deepagent(
     prompt: str,
     config: AgentRuntimeConfig | None = None,
@@ -427,13 +448,7 @@ def create_design_deepagent(
             "Scene solo requires the candidate skill bundle and fast_loop=True. "
             "Set LUMEN_AGENT_SCENE_SKILL_BUNDLE=candidate and LUMEN_AGENT_FAST_LOOP=1."
         )
-    if scene_candidate:
-        # Shared hosts may assemble web/legacy and candidate turns concurrently.
-        # Keep their derived knowledge and backend roots disjoint for the entire
-        # run, not merely while the materializer's initialization lock is held.
-        runtime_config = replace(
-            runtime_config, trace_dir=runtime_config.trace_dir / "scene-candidate"
-        )
+    runtime_config = effective_runtime_config(runtime_config)
 
     # W-isolation (D2): sync the repo's skills + knowledge into the isolated
     # workspace BEFORE anything the model can touch. Loud RuntimeError on failure —
@@ -453,8 +468,12 @@ def create_design_deepagent(
     scaffold_workspace(tools, prompt)
     # W-isolation (D4): every path the model sees is workspace-virtual. The run
     # workspace is `<workspace_root>/run_<id>/workspace` on the host, which the
-    # `virtual_mode` backend serves at `/run_<id>/workspace`.
-    workspace_str = f"/{tools.run_id}/workspace"
+    # `virtual_mode` backend serves at `/run_<id>/workspace`. On a session turn
+    # (design session continuity, 2026-09-18) the scope id is
+    # `sessions/<session_id>` instead, so a continued thread's prompt names the
+    # persistent session workspace rather than a per-turn folder that no longer
+    # exists.
+    workspace_str = f"/{tools.workspace_scope_id}/workspace"
 
     # W-isolation (D1): virtual-mode backend rooted at the isolated workspace. The
     # agent's `/` IS the workspace; absolute paths re-anchor under the root (no
@@ -465,7 +484,12 @@ def create_design_deepagent(
     # `write_file`, so this backend is the invariant's only choke point.
     backend = AgentWorkspaceBackend(
         root_dir=str(runtime_config.workspace_root),
-        active_run_id=tools.run_id,
+        active_run_id=tools.workspace_scope_id,
+        # The summarization middleware compacts this thread into
+        # `/conversation_history/<thread_id>.md`; the thread IS the session, so
+        # the scoped backend admits that one file (and its media) or compaction
+        # would be refused mid-turn.
+        history_thread_id=runtime_config.session_id,
         reference_turn=bool(runtime_config.reference_assets),
         critique_observer=tools.observe_written_critique,
     )
@@ -971,9 +995,9 @@ def run_deepagent_turn(
     # Attach only this run's attributed events through finalization and metrics.
     # The shared console keeps its env/default configuration; overlapping runs
     # retain independent file handlers, which close on every exit path.
-    run_log_path = tools.trace_dir / "logs" / "run.jsonl"
+    run_log_path = tools.turn_dir / "logs" / "run.jsonl"
     guard = (
-        runtime_workspace_guard(tools.run_id, tools.trace_dir)
+        runtime_workspace_guard(tools.run_id, tools.turn_dir)
         if runtime_workspace_guard is not None else nullcontext()
     )
     with guard, run_log(
@@ -988,7 +1012,14 @@ def run_deepagent_turn(
             output_summary=f"workspace={workspace_root(tools)}",
         )
 
-        initial_state = {"messages": [{"role": "user", "content": prompt}], **initial_turn_state(tools, prompt)}
+        # Design session continuity: the human message carries the RUN ID that produced it, so a
+        # thread the same run retries is recognisable (resume) and a thread a NEW run lands on is
+        # continued. It survives the checkpoint round trip on `additional_kwargs`; a plain dict
+        # message would not.
+        initial_state = {
+            "messages": [HumanMessage(content=prompt, additional_kwargs={RUN_ID_KEY: tools.run_id})],
+            **initial_turn_state(tools, prompt),
+        }
         # D5: the durable thread is the DESIGN RUN, not the runtime's private run id. When no
         # thread_id is supplied the runtime id keeps its old double duty (thread + trace-dir name);
         # when one is, the runtime id degrades to trace-dir naming only.
@@ -1024,6 +1055,7 @@ def run_deepagent_turn(
                 invoke_config=invoke_config,
                 checkpointer=checkpointer,
                 thread_id=thread_id,
+                run_id=tools.run_id,
             )
         except TurnCancelled as error:
             # A3 (defect R3-D). NOT a failure and NOT a runaway — a human asked. Caught above the
@@ -1074,7 +1106,7 @@ def run_deepagent_turn(
         # path would miss it. `emit_run_metrics` itself never raises.
         payload: Optional[dict] = None
         try:
-            final_path = tools.trace_dir / "final.json"
+            final_path = tools.turn_dir / "final.json"
             if final_path.exists():
                 # The API receives tools.scene, not the older final_scene.json.
                 # A later tool in the same graph batch can change that live draft

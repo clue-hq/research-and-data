@@ -969,7 +969,7 @@ class LumenWebTools:
         # tools call sibling methods internally.
         self.tool_lock = threading.RLock()
         self.prompt = prompt
-        self.run_id = new_run_id()
+        self.run_id = config.run_id or new_run_id()
         self.page_id = HOME_PAGE_ID
         # A deep copy so the caller's stored doc is never mutated in place; every
         # accepted mutation replaces this with the helper's returned doc.
@@ -998,8 +998,21 @@ class LumenWebTools:
         self._grounding_sources: Dict[str, JsonObject] = {}
         self._provenance_citations: List[JsonObject] = []
 
-        self.trace_dir = config.trace_dir / self.run_id
-        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        # Design session continuity (2026-09-18), the scene substrate's split verbatim:
+        # no session (editor preview, CLI, fixtures) → the run owns its folder and
+        # `turn_dir` IS `trace_dir`; a session (a leg turn on a pinned document) →
+        # `trace_dir` is the persistent session folder every turn shares and this
+        # turn's harness-owned outputs go under `turns/<run_id>`.
+        session_dir = config.session_dir()
+        if session_dir is None:
+            self.trace_dir = config.trace_dir / self.run_id
+            self.turn_dir = self.trace_dir
+            self.workspace_scope_id = self.run_id
+        else:
+            self.trace_dir = session_dir
+            self.turn_dir = session_dir / "turns" / self.run_id
+            self.workspace_scope_id = f"sessions/{config.session_id}"
+        self.turn_dir.mkdir(parents=True, exist_ok=True)
         bind_run_id(self.run_id)
         # P6.4: each run gets an account-local, read-only projection at the
         # public virtual path /custom_components. The files are derived from
@@ -1227,7 +1240,7 @@ class LumenWebTools:
             diagnostics=diagnostics or [],
             payload=payload or {},
         )
-        path = self.trace_dir / "trace.jsonl"
+        path = self.turn_dir / "trace.jsonl"
         with self._record_lock:
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(trace.model_dump_json() + "\n")
@@ -8532,7 +8545,7 @@ class LumenWebTools:
             return self._tool_error(
                 refusal.code, str(refusal), diagnostics=diagnostics
             )
-        review_dir = self.trace_dir / f"review_{self._review_iteration}"
+        review_dir = self.turn_dir / f"review_{self._review_iteration}"
         try:
             walk = capture_behavioural_walk(html, plan, output_dir=review_dir)
         except CloneReviewRefused as refusal:
@@ -9302,7 +9315,7 @@ class LumenWebTools:
             )
 
         self.iteration += 1
-        iter_dir = self.trace_dir / f"iter_{self.iteration}"
+        iter_dir = self.turn_dir / f"iter_{self.iteration}"
         iter_dir.mkdir(parents=True, exist_ok=True)
         # Which page these screenshots are OF. A multi-page run captures the same
         # widths under several pages, and an iteration directory that does not say
@@ -10002,13 +10015,13 @@ class LumenWebTools:
             payload["ladder_gaps"] = gaps
         if placeholders:
             payload["custom_component_placeholder_endpoints"] = placeholders
-        self._write_json(self.trace_dir / "final.json", payload)
-        self._write_json(self.trace_dir / "final_web_doc.json", self.web_doc)
+        self._write_json(self.turn_dir / "final.json", payload)
+        self._write_json(self.turn_dir / "final_web_doc.json", self.web_doc)
         self._write_json(
-            self.trace_dir / "final_web_operations.json",
+            self.turn_dir / "final_web_operations.json",
             {"operations": self.operations_ledger},
         )
-        self._write_json(self.trace_dir / "final_grounding.json", grounding)
+        self._write_json(self.turn_dir / "final_grounding.json", grounding)
         self.record(
             "coordinator",
             "web_run_finalized",
