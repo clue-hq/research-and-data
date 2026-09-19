@@ -506,13 +506,25 @@ def test_design_targets_are_validated_snapshotted_and_replay_after_the_scene_adv
                     "hash": "0" * 64,
                 },
             )
-            await design_legs.open_leg(
+            leg = await design_legs.open_leg(
                 conn,
                 workspace_id=project.workspace_id,
                 thread_id=thread_id,
                 parent_execution_id=parent_execution_id,
                 document_id=document["id"],
                 document_version_guard=4,
+            )
+            # Spec §3.2: project containment is derived from the leg's document SET, and the
+            # shipped tool writes the position-0 child row for every leg it opens. The DAL
+            # writes only the column, so the seed adds what production guarantees — without
+            # it the document belongs to no project and the ref is refused.
+            await design_legs.add_leg_documents(
+                conn,
+                workspace_id=project.workspace_id,
+                leg_id=str(leg["id"]),
+                documents=[
+                    design_legs.LegDocumentSpec(document_id=str(document["id"]), position=0)
+                ],
             )
             refs = [
                 {
