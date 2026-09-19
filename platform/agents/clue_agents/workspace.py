@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Final, Literal
 from uuid import uuid4
@@ -60,6 +60,7 @@ from clue_agents.workspace_policy import (
 from clue_core import ExecutionId
 
 __all__ = [
+    "ATTACHMENTS_DIR",
     "LIBRARY_DIR",
     "PROJECTS_DIR",
     "THREADS_DIR",
@@ -79,6 +80,9 @@ __all__ = [
 LIBRARY_DIR: Final = "library"
 PROJECTS_DIR: Final = "projects"
 THREADS_DIR: Final = "threads"
+#: The project's uploaded files, beside its ``library``: every attachment a human sent in a
+#: project chat, byte for byte, read-only to the agent.
+ATTACHMENTS_DIR: Final = "attachments"
 
 #: The manifest name every library generation carries — written by
 #: :class:`~clue_agents.library_tree.LibraryTree`, read back here. The literal is repeated rather
@@ -260,6 +264,11 @@ class MountRequest:
     #: by this writer. Left ``None`` the mount stays read-only, which is the state every caller
     #: that has no documents to offer should be in — a mount is writable only on purpose.
     project_writer: VersionedRootWriter | None = None
+    #: ``<ws>/projects/<project>/attachments`` → the ``attachments`` mount, read-only, when the
+    #: directory exists (spec 2026-09-19 §3.2). The fleet's sync creates it before the acquire,
+    #: so a project nobody has uploaded to simply mounts nothing — asking for it is never an
+    #: error, because "no attachments yet" is the ordinary state of a new project.
+    attachments: bool = False
 
 
 _NO_MOUNTS: Final = MountRequest()
@@ -313,6 +322,24 @@ class AgentWorkspaceLease:
         self._materialized = False
         self._materialization_failed = False
         self._cleanup_authorized = False
+
+    @property
+    def workspace_segment(self) -> str:
+        """The validated directory segment this lease's workspace lives under."""
+
+        return self._workspace_segment
+
+    @property
+    def project_segment(self) -> str:
+        """The validated directory segment this lease's project lives under."""
+
+        return self._project_segment
+
+    @property
+    def thread_segment(self) -> str:
+        """The validated directory segment this lease's thread workspace lives under."""
+
+        return self._thread_segment
 
     @property
     def resources_frozen(self) -> bool:
@@ -1354,11 +1381,42 @@ class AgentWorkspaceFactory:
     ) -> None:
         self._root_fd = os.open(prepared_root.path, _DIR_FLAGS)
         _validate_private_directory(self._root_fd)
+        self._root_path = prepared_root.path
         self._artifact_sink = artifact_sink
         self._lock = threading.RLock()
         self._closed = False
         # One live lease per thread: the key is ``(workspace, project, thread)``.
         self._active: dict[tuple[str, str, str], _ActiveThread] = {}
+
+    @property
+    def root_path(self) -> Path:
+        """The prepared root on the host. Never shown to a model; used to bind-mount a sandbox."""
+
+        return self._root_path
+
+    def project_host_path(self, workspace_id: str, project_id: str) -> Path:
+        """``<root>/<ws>/projects/<project>`` on the host, from validated segments only.
+
+        The descriptor-walking accessors above are the way *this* process reaches the tree. A
+        container runtime cannot be handed a descriptor, so it gets the path — built from the
+        same validated segments, so it names the same directory and can name no other.
+        """
+
+        return (
+            self._root_path
+            / validate_workspace_segment(workspace_id, label="workspace_id")
+            / PROJECTS_DIR
+            / validate_workspace_segment(project_id, label="project_id")
+        )
+
+    def thread_host_path(self, workspace_id: str, project_id: str, thread_id: str) -> Path:
+        """``<root>/<ws>/projects/<project>/threads/<thread>`` on the host."""
+
+        return (
+            self.project_host_path(workspace_id, project_id)
+            / THREADS_DIR
+            / validate_workspace_segment(thread_id, label="thread_id")
+        )
 
     def close(self) -> None:
         with self._lock:
@@ -1793,6 +1851,25 @@ class AgentWorkspaceFactory:
                             writer=request.project_writer,
                             versions=_mounted_versions(directory_fd, mount_name="project"),
                             reopen=self._project_library_reopen(workspace_segment, project_segment),
+                        )
+                    )
+            if request.attachments:
+                # Unlike a library, an absent attachments directory is not a misconfiguration:
+                # it is a project with no uploads. The mount is then simply not there, and the
+                # model's own ``ls`` says so.
+                try:
+                    directory_fd = self._open_library(
+                        (workspace_segment, PROJECTS_DIR, project_segment, ATTACHMENTS_DIR),
+                        name="attachments",
+                    )
+                except WorkspaceConfigurationError:
+                    pass
+                else:
+                    opened.append(
+                        WorkspaceMount(
+                            name="attachments",
+                            directory_fd=directory_fd,
+                            mode="read_only",
                         )
                     )
         except BaseException:
