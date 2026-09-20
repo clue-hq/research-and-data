@@ -128,7 +128,13 @@ from clue_api.project_document_tools import (
     build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
-from clue_api.project_tools import RenameProjectTool
+from clue_api.project_tools import (
+    CreateProjectTool,
+    RenameProjectTool,
+    SetProjectArchivedTool,
+    SetProjectPinnedTool,
+    UpdateProjectDetailsTool,
+)
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
@@ -2956,6 +2962,16 @@ def build_toolbelt(
     # module per the chokepoint protocol.
     register_thread_tools(registry, conn_factory=conn_factory)
     registry.register(RenameProjectTool(conn_factory=conn_factory), make_default=True)
+    # Projects directory (2026-09-19): the four project-row tools the directory and the
+    # project header drive. Registered like every other write path, granted to no role —
+    # filing, pinning and archiving a project are the human's decisions.
+    for tool in (
+        CreateProjectTool(conn_factory=conn_factory),
+        UpdateProjectDetailsTool(conn_factory=conn_factory),
+        SetProjectPinnedTool(conn_factory=conn_factory),
+        SetProjectArchivedTool(conn_factory=conn_factory),
+    ):
+        registry.register(tool, make_default=True)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
     register_agent_gate_tools(

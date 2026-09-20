@@ -152,12 +152,16 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # The code sandbox (2026-09-19) adds `run_python` (136 -> 137), registered UNGRANTED: it
     # is a WRITE over the turn's own workspace, and the grant is the reviewed head-of-abm
     # bump that pins its contract and mints the manual chapter, not an entry added here.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 137
     # It is GRANTED as of `head-of-abm@v58` (2026-09-19), the reviewed bump that pins its two
     # schema digests, opens `attachments` on the readable prefixes and mints the manual and the
     # `code-execution` skill that teach it. No new NAME joins: the count is unmoved.
     assert C6_AGENT_TOOL_AUTHORITY["run_python"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("run_python@1") == (AgentRole.HEAD_OF_ABM,)
+    # Projects directory (2026-09-19) adds the four project-row writes, `create_project`,
+    # `update_project_details`, `set_project_pinned` and `set_project_archived`
+    # (137 -> 141), all UNGRANTED and human-only for the same reason the design library's
+    # curation writes are: filing a project is an act of the person looking at the list.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 141
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
@@ -284,6 +288,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_project"] == ()
+    # Projects directory (2026-09-19): the four project-row tools are human-only too.
+    assert C6_AGENT_TOOL_AUTHORITY["create_project"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["update_project_details"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_pinned"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_archived"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a

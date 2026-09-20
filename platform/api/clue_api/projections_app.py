@@ -136,6 +136,7 @@ from clue_toolbelt import (
 )
 
 if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.frontend_read.project_memory import MemoryWriteFactory
     from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
@@ -859,6 +860,7 @@ def create_projections_app(
     project_library: ProjectLibraryRefresher | None = None,
     project_library_closer: Callable[[], None] | None = None,
     tracing: TracingRuntime | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -883,7 +885,12 @@ def create_projections_app(
     the other shutdown closers rather than left to process exit.
 
     ``tracing`` is the process's tracer runtime; when given and the settings ask for it, the app
-    is instrumented at construction."""
+    is instrumented at construction.
+
+    ``memory_write_factory`` binds the project home's memory panel to the scoped-memory write
+    seam. It is ``None`` on a deployment that composes no model gateway (reconciliation needs a
+    judge), and the memory writes then refuse ``MEMORY_UNAVAILABLE`` while the list still
+    serves."""
     resolved = settings if settings is not None else load_settings()
     if resolved.auth_environment == "production" and auth_service is None:
         raise RuntimeError("production projections require the authenticated principal service")
@@ -945,6 +952,7 @@ def create_projections_app(
         contact_email_lookup=contact_email_lookup,
         secrets=runtime_secrets,
         project_library=project_library,
+        memory_write_factory=memory_write_factory,
     )
     if auth_service is not None:
         from clue_auth.providers.clerk_api import ClerkApi

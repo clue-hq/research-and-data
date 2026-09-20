@@ -280,8 +280,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
     # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
     # the head now sees it AVAILABLE rather than role-unavailable.
-    assert len(by_address) == 157
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    assert len(by_address) == 161
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -392,14 +393,19 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
     # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
     # the head now sees it AVAILABLE rather than role-unavailable.
-    assert len(by_address) == 157
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    assert len(by_address) == 161
     for address in (
         "create_thread@1",
         "rename_thread@1",
         "rename_project@1",
         "set_thread_pinned@1",
         "archive_thread@1",
+        "create_project@1",
+        "update_project_details@1",
+        "set_project_pinned@1",
+        "set_project_archived@1",
     ):
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE

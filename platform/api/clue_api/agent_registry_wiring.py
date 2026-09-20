@@ -271,6 +271,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
+    # Projects directory (2026-09-19): creating, retitling, pinning and archiving a
+    # project are the human's filing decisions. An agent that could archive a project
+    # could hide its own work, so all four stay ungranted.
+    "create_project": (),
+    "update_project_details": (),
+    "set_project_pinned": (),
+    "set_project_archived": (),
     "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,
