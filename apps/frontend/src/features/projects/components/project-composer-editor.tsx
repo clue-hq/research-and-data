@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import {
   forwardRef,
   useCallback,
@@ -52,8 +51,7 @@ import {
 } from "../model/project-composer-editor";
 import type { ProjectEntity } from "../model/project-workspace";
 import { EntityPicker } from "./entity-picker";
-import { ContactAvatar } from "@/features/accounts/components/contact-avatar";
-import { ProjectIcon } from "./project-icon";
+import { ChatMentionVisual } from "./chat-mention";
 import styles from "./project-flow.module.css";
 
 export interface ProjectComposerEditorHandle {
@@ -88,8 +86,6 @@ function withMentions(editor: ProjectComposerEditorInstance) {
   return editor;
 }
 
-const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
-
 const MENTION_TYPE_LABELS: Record<
   ProjectComposerMentionElement["entityType"],
   string
@@ -113,7 +109,7 @@ function ComposerMention({
       {...attributes}
       aria-label={`${MENTION_TYPE_LABELS[element.entityType]} context: ${element.label}`}
       className={[
-        styles.composerMention,
+        styles.chatMention,
         selected && focused ? styles.composerMentionSelected : "",
       ]
         .filter(Boolean)
@@ -124,28 +120,12 @@ function ComposerMention({
     >
       <div className={styles.composerMentionContent} contentEditable={false}>
         {children}
-        <span className={styles.composerMentionVisual}>
-          {element.icon ? (
-            <ProjectIcon name={element.icon} size={14} />
-          ) : element.entityType === "contact" ? (
-            <ContactAvatar
-              className={styles.composerMentionAvatar}
-              name={element.label}
-              size={16}
-              src={element.imagePath}
-            />
-          ) : (
-            <Image
-              alt=""
-              aria-hidden="true"
-              height={16}
-              src={element.imagePath ?? ACCOUNT_GLYPH_PATH}
-              unoptimized={element.imagePath != null}
-              width={16}
-            />
-          )}
-          <span>{element.label}</span>
-        </span>
+        <ChatMentionVisual
+          entityType={element.entityType}
+          icon={element.icon}
+          imagePath={element.imagePath}
+          label={element.label}
+        />
       </div>
     </span>
   );

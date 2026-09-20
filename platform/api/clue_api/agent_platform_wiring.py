@@ -43,6 +43,7 @@ from clue_api.agent_turn_wiring import (
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.deep import ProfileAccountFn
 from clue_api.project_library_refresh import ProjectLibraryRefresher
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig
@@ -435,6 +436,12 @@ class AgentPlatformComponents:
     #: How many of a thread's past images the conversation layer may re-send (0 = no cap). The
     #: default keeps the trial and test builders, which have no Settings, working unchanged.
     history_images_max: int = 20
+    #: Where the code sandbox looks up a turn's host directories and its remaining run budget
+    #: (spec 2026-09-19 §3.4). It is the **same object** the toolbelt's ``run_python@1`` was
+    #: built with, because a second registry would be a second, empty, truth. A process that
+    #: composed none — every HTTP root, and every deployment with the sandbox off — leaves it
+    #: ``None``, the conversation engine registers nothing, and the tool refuses by name.
+    sandbox_workspaces: SandboxWorkspaces | None = None
 
 
 def build_agent_platform_components(
@@ -445,8 +452,14 @@ def build_agent_platform_components(
     storage: StorageBackend,
     tools: ToolRegistry,
     conn_factory: ConnFactory = transaction,
+    sandbox_workspaces: SandboxWorkspaces | None = None,
 ) -> AgentPlatformComponents:
-    """Build every common C6 production adapter at the API root; fail before model spend."""
+    """Build every common C6 production adapter at the API root; fail before model spend.
+
+    ``sandbox_workspaces`` is *passed in*, never built here, and that is deliberate: the toolbelt
+    handed to ``run_python@1`` and the conversation engine that registers the turn must share one
+    registry instance, so the composition root that builds both owns it (the fleet worker does).
+    """
 
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
@@ -482,6 +495,7 @@ def build_agent_platform_components(
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
         history_images_max=settings.chat_attachment_history_images_max,
+        sandbox_workspaces=sandbox_workspaces,
     )
 
 

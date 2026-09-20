@@ -22,7 +22,7 @@ At Irvine `c5092f276`:
   workspace-private. Definition privacy and claim privacy are different.
 - Retired/erased workspace fields are refused; lifecycle errors do not qualify for unknown-key
   registration fallback.
-- Head of ABM profile `v57` pins `manual-*@v4`. Account/person bundles are
+- Head of ABM profile `v58` pins `manual-*@v5`. Account/person bundles are
   `entity-research/arv2-account/v1` and `arv2-person/v1`.
 - The shared manual snapshot comes from global `field_definition`. It includes historical
   automatic proposals, so it cannot be assumed to be exclusively platform-authored vocabulary.

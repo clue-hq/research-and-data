@@ -2,6 +2,21 @@
   container: accounts-table / inline-size;
 }
 
+.textRegular,
+.textMedium {
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  line-height: var(--clue-ds-typography-text-default-line-height);
+}
+
+.textRegular {
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+}
+
+.textMedium {
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+}
+
 .cell {
   align-items: center;
   display: flex;

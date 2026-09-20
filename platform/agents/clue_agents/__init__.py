@@ -168,6 +168,7 @@ from clue_agents.versioned_root import (
     VersionedWriteRefused,
 )
 from clue_agents.workspace import (
+    ATTACHMENTS_DIR,
     LIBRARY_DIR,
     PROJECTS_DIR,
     THREADS_DIR,
@@ -292,6 +293,7 @@ __all__ = [
     "LayerBudget",
     "MemoryLayerSource",
     "ModelPolicy",
+    "ATTACHMENTS_DIR",
     "LIBRARY_DIR",
     "LibraryFile",
     "LibraryTree",

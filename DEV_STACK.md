@@ -39,6 +39,7 @@ ports against **its own** database without copying the script:
 | `DEV_STACK_DESIGN_PORT` | design API port | 8010 |
 | `DEV_STACK_PLATFORM_PORT` | platform API port | 8020 |
 | `DEV_STACK_PLATFORM2_PORT` | platform API twin's port | 8030 |
+| `DEV_STACK_BUILD_SANDBOX_IMAGE` | `1` lets `up` build the agent code-sandbox image when missing (added 2026-09-20) | 0 (refuse, name `make sandbox-image`) |
 
 A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
 **`scripts/dev_stack_san_salvador.sh`** (the ARV2 lane on branch `track-r4`): DB from that
@@ -59,6 +60,36 @@ The knobs only move the processes; the three guards in the port map below still 
 and `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`; `CLUE_API_BASE_URL`, `LUMEN_API_BASE_URL`,
 `CLUE_APP_ORIGIN`). The hangzhou wrapper checks all of those before starting and refuses on a
 mismatch. Every other wrapper keeps the defaults, so it is unchanged.
+
+## The agent code sandbox (added 2026-09-20)
+
+Head-of-ABM's `run_python@1` runs the agent's own Python in a Docker container so it can open a
+PDF, Word, PowerPoint or Excel attachment (spec
+`docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md`).
+The **fleet workers** start those containers, so a worker host needs three things, and `up` /
+`restart-workers` check all three before starting a worker and refuse on a miss:
+
+| Need | How | If missing |
+|---|---|---|
+| Docker Desktop running | it is on this box already | `sandbox: … Docker daemon is not reachable` and nothing starts |
+| the image named by `CLUE_SANDBOX_IMAGE` (`clue-agent-sandbox:latest`) | `make sandbox-image` once per host (~600 MB, ~2 min; `docker/agent-sandbox/`) — or `DEV_STACK_BUILD_SANDBOX_IMAGE=1 ./scripts/dev_stack_<lane>.sh up` to let `up` build it | `sandbox: … image … is not built on this host` and nothing starts |
+| `CLUE_SANDBOX_ENABLED=true` in `.env` | the default since 2026-09-20 (founder ruling); `false` turns the tool off AND skips the check | with `false`, the agent refuses `sandbox_unavailable` and says it cannot open the file — a binary attachment is simply unreadable |
+
+The other knobs (`CLUE_SANDBOX_TIMEOUT_S`, `_CPUS`, `_MEMORY_MB`, `_MAX_RUNS_PER_TURN`,
+`_MAX_OUTPUT_BYTES`) are in `.env.example` with their defaults; workers read them at start, so a
+change needs `restart-workers`. `status` prints a `sandbox:` line. The container itself has no
+network, a read-only root, no capabilities, runs as the worker's non-root UID/GID, and sees only
+the thread's own workspace folders plus the read-only `brand/`, `project/` and `attachments/` mounts — see
+`docker/agent-sandbox/README.md` (and the `cryptography` pin recorded there for this box's Docker VM).
+The runner sets `umask 077` inside the container, so files and directories are private from
+creation and belong to the worker on Linux too. This requires a non-root worker account and
+a local Docker daemon with compatible bind-mount ownership. Restart workers to pick up runner
+changes; this ownership/default-permissions correction does not require rebuilding the image.
+
+Quick proof the sandbox works on a host, without the app:
+```bash
+docker run --rm -i --network none clue-agent-sandbox:latest python -c "import fitz, openpyxl, docx, pptx, pandas, pytesseract; print('sandbox ok')"
+```
 
 ## The port map (memorize the first one)
 
@@ -148,6 +179,8 @@ and `LUMEN_PUBLIC_PAGES_SCHEME=http`, set that workspace's handle to `acme`, and
   whole life of that document version. Locally this is free (the API's origin is its own
   `127.0.0.1:8010`); on any deployment, check it before trusting a thumbnail.
 - `/private/tmp/clue-agent-workspaces` exists with mode 700 (the script creates it).
+- **The agent code-sandbox image** (`make sandbox-image`, once per host) — see the sandbox
+  section above; `up` refuses to start workers without it while `CLUE_SANDBOX_ENABLED=true`.
 
 ## Verifying the stack is actually healthy (30 seconds)
 
@@ -155,6 +188,7 @@ and `LUMEN_PUBLIC_PAGES_SCHEME=http`, set that workspace's handle to `acme`, and
 ./scripts/dev_stack.sh status                          # all five UP
 grep -m1 fs_root /tmp/browser_fleet_worker.log         # must print .../istanbul/.artifacts
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8020/auth/v1/session   # 401 = auth surface alive
+./scripts/dev_stack.sh status | grep sandbox                  # "enabled, image … present" on a stack that reads attachments
 ```
 
 Then in the browser: sign in → workspace loads → open a project → send "ping" in a chat →
@@ -200,6 +234,7 @@ psql -d clue_istanbul_dev -c "UPDATE design_agent_run SET status='failed' WHERE 
 | Design run FINISHED but gallery thumbnails stay grey / editor won't render the page | `LUMEN_API_BASE_URL` missing from `apps/frontend/.env.local` — the design proxy 500s. Check: `grep "LUMEN_API_BASE_URL is required" /tmp/browser_frontend.log`. |
 | Fresh-DB worker won't boot (recipe/schema errors) | Recipe seeding validates all revisions against today's registry — see `_memory/` 2026-08-29 notes (recipe0 v16–18 are replay-only; stale profile digests must be re-pinned). |
 | `up` reports every process UP, but a route/endpoint that exists on this branch 404s from the API (e.g. `/documents/{id}/thumbnail` missing from `/openapi.json`) | **A stale process from an earlier session still owns the port.** `up` does not `down` first, so the new uvicorn dies with `[Errno 48] address already in use` while the OLD one keeps serving — and `status` only checks that *something* listens, so it reports UP. Check: `grep -c "address already in use" /tmp/browser_design_api.log` and `ps -o lstart -p $(pgrep -f "uvicorn lumen_api.main:app")`. Fix: always `down` before `up`, and if a port survives it, `lsof -iTCP:<port> -sTCP:LISTEN -t \| xargs kill -9`. Found live 2026-08-31. |
+| Agent says it "cannot open the file on this deployment" for a PDF/DOCX/PPTX/XLSX attachment | `run_python` refused `sandbox_unavailable`: `CLUE_SANDBOX_ENABLED=false` in the worker's env, no `clue-agent-sandbox` image on this host (`make sandbox-image`), or Docker Desktop not running. `status` prints the `sandbox:` line; the worker log has the refusal reason. Workers read `.env` at start — `restart-workers` after fixing. |
 | Gallery cards are grey/empty for **web** documents only (ads are fine) | No Playwright Chromium, or no vendored Tailwind runtime, on the design-API process — see the prerequisites above. The API log names which: `thumbnail.capture_failed` vs `thumbnail.tailwind_runtime_missing`. Nothing is poisoned — fix the prerequisite and the next gallery read regenerates. |
 | ONE route 404s while its siblings work (e.g. `/projects/…/chats/…` → Next 404, but `/projects/…` 307s to sign-in; page.tsx exists on disk; DB rows exist) | Corrupted Next dev build cache — repeated `down` cycles pkill the dev server mid-write and its route graph can drop a route. Fix: `down` → `rm -rf apps/frontend/.next` → `up`. Found live 2026-08-30. |
 

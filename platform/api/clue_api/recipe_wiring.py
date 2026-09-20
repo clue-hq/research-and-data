@@ -128,6 +128,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
     # already-pinned execution able to resolve the unpaged reads.
     "recipe0-stage0-v28.json",
+    # The code sandbox: `run_python@1` joins the interaction slot, granted for the first time at
+    # `head-of-abm@v58`. Nothing leaves — it is one address ADDED, not a re-pin — so v29 is v28
+    # plus that address and v28 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v29.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

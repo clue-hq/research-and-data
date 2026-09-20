@@ -11,7 +11,7 @@ import type {
   ProjectModelOption,
 } from "../model/project-workspace";
 import { ModelPicker } from "./model-picker";
-import { ProjectComposerAttachment } from "./project-composer-attachment";
+import { ChatAttachment } from "./chat-attachment";
 import {
   ProjectComposerEditor,
   type ProjectComposerEditorHandle,
@@ -159,7 +159,7 @@ export function ProjectComposer({
         {attachments.length && onAttachmentRemove ? (
           <Attachments className={styles.composerAttachments} variant="inline">
             {attachments.map((attachment) => (
-              <ProjectComposerAttachment
+              <ChatAttachment
                 attachment={attachment}
                 key={attachment.id}
                 onRemove={onAttachmentRemove}

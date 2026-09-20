@@ -278,7 +278,15 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   the default transcript projects the fetched durable answer as **Profile
   approved**, **Profile declined**, or **Changes requested**. The normal chat
   never renders the gate id, expected digest, subject id, or transport JSON;
-  those details remain available through the explicit turn inspector.
+  those details remain available through the developer inspector API. As of
+  2026-09-20, chat no longer renders the Inspect action or drawer and does not
+  probe inspector availability.
+- As of 2026-09-20, the shared chat renderer also omits `tool` parts in every
+  state. Per-call activity rows such as **Complete a project step** and **Save
+  your answer** are absent across all conversations, including replayed history
+  and live updates. Tool execution, event persistence and wire payloads are
+  unchanged; reasoning, response text, research tasks, plans and approval cards
+  retain their own presentation.
 - The composer height is content-driven and bounded. The editor scrolls
   internally before it can overlap the mention/model/send footer.
 - Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
@@ -471,8 +479,8 @@ are never accepted from the browser or model.
 - Internal ids, object references, hashes, digests, operation keys, tool schema
   versions and backend refusal details never render in the normal transcript,
   gate card, activity labels, recovery copy, source fallbacks or accessibility
-  labels. The turn inspector retains those diagnostics behind an explicit
-  developer-oriented action.
+  labels. The developer inspector API retains those diagnostics; the chat
+  interface no longer exposes an inspector action or drawer (2026-09-20).
 - Known operations receive stable human labels. Unknown operations fail closed:
   the transcript shows only a generic activity label and completion state; it
   never renders an arbitrary tool name, input or output payload.
@@ -2799,11 +2807,18 @@ Every refusal below reaches the browser as the FI-1 error envelope
   media_type, byte_count, artifact_key, sha256}}`. Workspace-scoped (`X-Workspace-Id`), requires
   `project.write`. Post `FormData` without a hand-set `Content-Type` so the browser writes the
   multipart boundary.
-- Accepted types: `text/markdown`, `text/plain`, `image/png`, `image/jpeg`, `image/webp`,
-  `image/gif`. The declared content type is used only if it is one of those; otherwise the
-  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`).
+- Accepted types, in three families. **Text**: `text/markdown`, `text/plain`. **Image**:
+  `image/png`, `image/jpeg`, `image/webp`, `image/gif`. **Document** (2026-09-19):
+  `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  (docx), `…presentationml.presentation` (pptx), `…spreadsheetml.sheet` (xlsx), `text/csv`,
+  `application/json`. The declared content type is used only if it is one of those; otherwise the
+  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`/`.pdf`/`.docx`/
+  `.pptx`/`.xlsx`/`.csv`/`.json`).
 - Refusals: `413 UPLOAD_TOO_LARGE`, `415 UPLOAD_UNSUPPORTED_TYPE`, `422 UPLOAD_NOT_UTF8` /
-  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_FILENAME_INVALID`, `503 STORAGE_UNAVAILABLE`.
+  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_NOT_A_DOCUMENT` / `UPLOAD_FILENAME_INVALID`,
+  `503 STORAGE_UNAVAILABLE`. `UPLOAD_NOT_A_DOCUMENT` is the document family's content check: a PDF
+  must begin `%PDF-`, a docx/pptx/xlsx must begin `PK\x03\x04`, a `.csv`/`.json` must decode as
+  UTF-8, and a `.json` must parse. Nothing is converted — the bytes are stored as uploaded.
 - `GET /frontend/v1/uploads/{upload_id}/bytes` → the bytes, workspace-scoped, `Cache-Control:
   private`; an upload this workspace never made is `404 UPLOAD_NOT_FOUND` (absent, not "forbidden").
   Browser path: `/api/clue/frontend/v1/uploads/{upload_id}/bytes`.
@@ -2817,12 +2832,13 @@ Every refusal below reaches the browser as the FI-1 error envelope
 - Limits (settings, all in `.env.example`): at most `CLUE_CHAT_ATTACHMENT_MAX_FILES` = 10 per
   message, `CLUE_CHAT_ATTACHMENT_MAX_TOTAL_BYTES` = 150 MB total,
   `CLUE_CHAT_ATTACHMENT_IMAGE_MAX_BYTES` = 10 MB per image,
-  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file.
+  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file,
+  `CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES` = 25 MB per document. The size check runs before the
+  content check, so an oversized PDF refuses `UPLOAD_TOO_LARGE`, not `UPLOAD_NOT_A_DOCUMENT`.
 - Refusals: `404 ATTACHMENT_NOT_FOUND` (a receipt naming an upload this workspace never made),
-  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE` /
-  `ATTACHMENT_DOCUMENT_REFUSED`. `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists
-  only at the validator level — the submission routes are not registered without storage, so it is
-  unreachable over HTTP.
+  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE`.
+  `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists only at the validator level —
+  the submission routes are not registered without storage, so it is unreachable over HTTP.
 - Acceptance is all-or-nothing: a refused attachment takes the whole turn with it.
 - `composer_capabilities.attachments` is true exactly when the deployment has artifact storage.
 
@@ -2835,12 +2851,16 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 ### What the agent receives
 
-- Text attachments become project documents at `attachments/<filename>` (kind `attachment`),
-  written in the submitting turn's own transaction, versioned like every project document, mounted
-  read-only at `project/attachments/<filename>`, and listed in the Gallery under Documents.
-  Re-attaching identical bytes under the same name replays the existing version; an edited file
-  appends a new version to the same chain.
-- Every attachment is named on the turn's L7 context line with where it is readable.
+- Every attached file — text, image or document alike — reaches the agent the one way: as a file
+  in the read-only `attachments/` folder of the agent's workspace (2026-09-19 ruling). No
+  attachment becomes a project document, and none is listed in the Gallery.
+- Every attachment is named on the turn's L7 context line with where it is readable and which tool
+  opens it: `read_file` for the text family, `run_python` for the document family (the skill adds
+  that a small `.csv`/`.json` is plain text and opens with `read_file` too). `run_python@1` is the
+  agent writing Python against the file in a no-network Docker sandbox over the thread's workspace.
+  A deployment that has not built the sandbox image (`make sandbox-image`) or that sets
+  `CLUE_SANDBOX_ENABLED=false` (it defaults to `true`) cannot read binary documents at all — the tool refuses
+  `sandbox_unavailable` and the agent says so.
 - Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
   the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;
   `0` = no cap). Erased or tombstoned history images are skipped.
@@ -2850,5 +2870,5 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 While an ad design leg is open, images attached through `+` or dropped on the chat keep the
 existing design-reference route (design API upload, `design_asset` context refs, at most 4); text
-files take the attachment route above. The two caps apply separately; the design refusal is shown
-first.
+and document files take the attachment route above. The two caps apply separately; the design
+refusal is shown first.

@@ -66,13 +66,11 @@ from clue_api.arv2.icp_confirmation import (
     current_icp_document,
     pin_project_icp,
 )
-from clue_api.arv2.project_documents import ProjectDocumentRefused
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.attachments import (
     AttachmentReferenceError,
     ValidatedAttachment,
-    materialize_text_attachments,
     validated_attachment_refs,
 )
 from clue_api.chat.composer_context import (
@@ -698,51 +696,6 @@ async def _validated_submission_attachments(
         raise _refuse(status_code=status_code, code=exc.code, message=exc.message) from exc
 
 
-async def _wrote_attachment_documents(
-    conn: AsyncConnection,
-    *,
-    attachments: Sequence[ValidatedAttachment],
-    artifacts: DurableAgentArtifactStore | None,
-    storage: StorageBackend | None,
-    workspace_id: str,
-    brand_id: str,
-    project_id: str,
-    turn_id: UUID,
-    user_id: str,
-) -> bool:
-    """Make this turn's text attachments documents of the project, in the turn's own transaction.
-
-    Same transaction as the submission that carried them: a turn the agent will be handed cannot
-    exist without the files it was handed, and a refused write takes the whole turn with it rather
-    than accepting a message whose attachment nobody can read. Returns whether anything was
-    written, which is what tells the caller the project's library needs recompiling after commit.
-    """
-
-    if not any(item.family == "text" for item in attachments):
-        return False
-    # Guaranteed by _validated_submission_attachments: attachments without storage are refused.
-    assert storage is not None and artifacts is not None
-    try:
-        await materialize_text_attachments(
-            conn,
-            storage,
-            artifacts,
-            workspace_id=workspace_id,
-            brand_id=brand_id,
-            project_id=project_id,
-            turn_id=turn_id,
-            user_id=user_id,
-            attachments=attachments,
-        )
-    except ProjectDocumentRefused as refusal:
-        raise _refuse(
-            status_code=422,
-            code="ATTACHMENT_DOCUMENT_REFUSED",
-            message=str(refusal),
-        ) from refusal
-    return True
-
-
 def _composer_capabilities(*, storage_available: bool) -> HomeComposerCapabilitiesWire:
     """Attachments are offered exactly when this deployment can durably hold their bytes."""
 
@@ -1006,9 +959,6 @@ def build_chat_router(
                 idempotency_key=key,
             )
             digest = content_address(body.message.encode())
-            # Set when this first turn's text attachments became documents of the new project. A
-            # replay wrote nothing and refreshes nothing; the first attempt already did both.
-            wrote_attachment_documents = False
 
             async with conn_factory() as conn:
                 # One logical Home act owns one transaction-wide lock. It serializes concurrent
@@ -1162,17 +1112,6 @@ def build_chat_router(
                             code="IDEMPOTENCY_CONFLICT",
                             message=str(exc),
                         ) from exc
-                    wrote_attachment_documents = await _wrote_attachment_documents(
-                        conn,
-                        attachments=attachments,
-                        artifacts=artifacts,
-                        storage=storage,
-                        workspace_id=who.workspace_id,
-                        brand_id=project.brand_id,
-                        project_id=project_id,
-                        turn_id=turn_id,
-                        user_id=who.user_id,
-                    )
                     await emit_turn_event(
                         conn,
                         workspace_id=who.workspace_id,
@@ -1192,11 +1131,6 @@ def build_chat_router(
                         thread_id=thread_id,
                     )
 
-            # After the commit, never inside it: the library's compile takes this project's row
-            # lock. Best-effort by contract — a turn whose attachments are durable must not report
-            # failure because the tree they belong in could not be recompiled yet.
-            if wrote_attachment_documents and project_library is not None:
-                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             href = thread_href(project_id=project_id, thread_id=thread_id)
             if replayed:
                 response.status_code = 200
@@ -2568,9 +2502,6 @@ def build_chat_router(
             # transaction that wrote the pin has committed. A replayed answer pins nothing and
             # returns from inside the transaction, so it refreshes nothing either.
             pinned_project_icp = False
-            # Set when this turn's text attachments became documents of this project below, for
-            # the same reason: a new document changes what the library serves.
-            wrote_attachment_documents = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2788,17 +2719,6 @@ def build_chat_router(
                         code="IDEMPOTENCY_CONFLICT",
                         message=str(exc),
                     ) from exc
-                wrote_attachment_documents = await _wrote_attachment_documents(
-                    conn,
-                    attachments=attachments,
-                    artifacts=artifacts,
-                    storage=storage,
-                    workspace_id=who.workspace_id,
-                    brand_id=project.brand_id,
-                    project_id=project_id,
-                    turn_id=turn_id,
-                    user_id=who.user_id,
-                )
                 if gate is not None:
                     response = _gate_response(body)
                     # The receipt is derived from the turn this request just made durable — the
@@ -3058,7 +2978,7 @@ def build_chat_router(
             # After the commit, never inside it: the library's compile takes this project's row
             # lock. Best-effort by contract — an approval that confirmed and pinned must not
             # report failure because its rendering could not be written.
-            if (pinned_project_icp or wrote_attachment_documents) and project_library is not None:
+            if pinned_project_icp and project_library is not None:
                 await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(

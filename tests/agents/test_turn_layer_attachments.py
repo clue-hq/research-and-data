@@ -1,4 +1,4 @@
-"""L7 names a turn's attachments in plain words (spec 2026-09-18 §3.4)."""
+"""L7 names a turn's attachments in plain words (spec 2026-09-19 §3.2)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from tests.agents.conftest import constitution
 #: workspaces, so the whole fixture is that one workspace.
 WS = "ws-1"
 
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 
 class _Reader:
     def __init__(self, bodies: Mapping[str, bytes]) -> None:
@@ -25,9 +27,10 @@ class _Reader:
 
 
 class _Desc:
-    def __init__(self, filename: str, workspace_path: str | None) -> None:
+    def __init__(self, filename: str, workspace_path: str | None, family: str) -> None:
         self.filename = filename
         self.workspace_path = workspace_path
+        self.family = family
 
 
 class _Describer:
@@ -49,43 +52,69 @@ def _ref(key: str, media: str, size: int) -> ArtifactRef:
     )
 
 
-def test_l7_names_text_and_image_attachments_in_plain_words() -> None:
+def test_l7_names_every_attachment_family_with_its_one_path() -> None:
     message = _ref("a", "text/plain", 5)
-    doc = _ref("b", "text/markdown", 120)
-    shot = _ref("c", "image/png", 4096)
+    brief = _ref("b", "text/markdown", 120)
+    sheet = _ref("c", XLSX, 412010)
+    shot = _ref("d", "image/png", 4096)
     request = AgentTurnRequest(
         turn_id=uuid4(),
         thread_id="thr_l7",
         constitution=constitution(workspace_id=WS),
         user_message_artifact_ref=message,
-        attachment_refs=(doc, shot),
+        attachment_refs=(brief, sheet, shot),
         requested_at=datetime.now(UTC),
     )
     source = TurnLayerSource(
         _Reader(
             {
                 message.artifact_key: b"hello",
-                doc.artifact_key: b"# d",
+                brief.artifact_key: b"# d",
+                sheet.artifact_key: b"xlsx",
                 shot.artifact_key: b"png",
             }
         ),
         attachments=_Describer(
             {
-                doc.artifact_key: _Desc("brief.md", "project/attachments/brief.md"),
-                shot.artifact_key: _Desc("shot.png", None),
+                brief.artifact_key: _Desc("brief.md", "attachments/brief.md", "text"),
+                sheet.artifact_key: _Desc("q3.xlsx", "attachments/q3.xlsx", "document"),
+                shot.artifact_key: _Desc("shot.png", "attachments/shot.png", "image"),
             }
         ),
     )
     candidates = asyncio.run(source.load(request=request, profile=None, history=()))
     bodies = [c.body for c in candidates]
-    assert any(
-        'Attachment "brief.md" (text/markdown, 120 bytes) is readable at '
-        "project/attachments/brief.md" in b
-        for b in bodies
-    )
-    assert any(
-        'Attachment "shot.png" (image/png, 4,096 bytes) is attached to this message as an image'
-        in b
-        for b in bodies
-    )
+    assert (
+        'Attachment "brief.md" (text/markdown, 120 bytes) was attached to this message. '
+        "It is at attachments/brief.md; open it with read_file."
+    ) in bodies
+    assert (
+        f'Attachment "q3.xlsx" ({XLSX}, 412,010 bytes) was attached to this message. '
+        "It is at attachments/q3.xlsx; open it with run_python."
+    ) in bodies
+    assert (
+        'Attachment "shot.png" (image/png, 4,096 bytes) was attached to this message. '
+        "It is at attachments/shot.png; it is also shown to you as an image in this message."
+    ) in bodies
     assert candidates[-1].body == "hello" and candidates[-1].role == "user"
+
+
+def test_an_undescribed_attachment_keeps_the_pointer_line() -> None:
+    """Naming nothing is better than naming it wrong: no describer, no words."""
+
+    message = _ref("a", "text/plain", 5)
+    brief = _ref("b", "text/markdown", 120)
+    request = AgentTurnRequest(
+        turn_id=uuid4(),
+        thread_id="thr_l7_pointer",
+        constitution=constitution(workspace_id=WS),
+        user_message_artifact_ref=message,
+        attachment_refs=(brief,),
+        requested_at=datetime.now(UTC),
+    )
+    source = TurnLayerSource(_Reader({message.artifact_key: b"hello", brief.artifact_key: b"# d"}))
+    candidates = asyncio.run(source.load(request=request, profile=None, history=()))
+    assert (
+        f"Attachment reference only: artifact_key={brief.artifact_key} "
+        f"sha256={brief.sha256} media_type=text/markdown byte_count=120"
+    ) in [c.body for c in candidates]

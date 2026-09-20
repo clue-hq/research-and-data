@@ -7,7 +7,7 @@
 # one sentence what the agent should do about it.
 #
 # Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
-#   - Every tool granted by `head-of-abm@v57` needs an entry. A missing entry fails the build by
+#   - Every tool granted by `head-of-abm@v58` needs an entry. A missing entry fails the build by
 #     name, so a newly granted tool cannot ship with unexplained refusals. An entry the profile no
 #     longer grants is kept rather than deleted — the tools chapter renders the grant, so an
 #     ungranted entry disappears from the manual on its own while its history stays readable here.
@@ -350,6 +350,23 @@ request_persona_synthesis:
     persona_run_settled: That request already failed. Ask again on a new turn, not in this one.
     brand_not_onboarded: Tell the human the brand has no completed onboarding run, so there is no company for personas to be written about.
     enqueue_failed: Nothing is running. Ask again, and if it refuses twice tell the human the queue is not accepting work.
+
+run_python:
+  afterwards: >-
+    One script has run in the sandbox over this turn's workspace and is gone. What it printed is
+    in stdout, or in the file stdout_spilled_to names when it printed more than the inline budget;
+    what it left on disk is in files_written, and anything the workspace policy took back out is
+    in files_removed. Nothing outside your own workspace changed, and runs_remaining says how many
+    runs this turn has left. A file you have not opened is a file you have not read: do not
+    describe an attachment from its name. The script itself is capped at 65,536 characters, which
+    is a validation error rather than a refusal — split the work across runs instead of writing
+    one enormous script.
+  skill_section: code-execution v1 section 1, "When to run code, when not to".
+  see_also: [workspace, limits]
+  refusals:
+    sandbox_unavailable: Tell the human you cannot open the file on this deployment, and name the file; do not describe contents you never read. No run was spent.
+    workspace_unavailable: Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools.
+    run_budget_exhausted: Say what you have read so far and what is left, and do the rest in one script on the next turn.
 
 submit_ingestion:
   afterwards: >-

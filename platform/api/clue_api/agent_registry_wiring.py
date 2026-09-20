@@ -178,7 +178,19 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
     # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
     # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
-    AgentRole.HEAD_OF_ABM: "v57",
+    # v58 (the code sandbox and the project's attachments, 2026-09-19): v57's surface with
+    # `run_python@1` GRANTED — one short Python script per call, in a locked-down container with
+    # no network, over this turn's own workspace and nothing else — and `attachments` added to
+    # the readable prefixes, so every file anyone attached in this project is mounted read-only
+    # at `attachments/<filename>`. The two go together: a file tool that reads UTF-8 text cannot
+    # open a PDF, a deck, a spreadsheet or an image, and a human who attaches one is entitled to
+    # an answer about what is in it rather than a guess from its filename. `allowed_extensions`
+    # is unmoved — the extra formats a script may PRODUCE are enforced by the post-run workspace
+    # sweep, not by `write_file`. Skill pin v33→v34 and prompt pin v10→v11 for the same
+    # paragraph, plus `code-execution@v1` pinned as the sandbox's whole procedure. The manual
+    # re-mints at `manual-*@v5` because the grant moved. The conversation recipe moves 28 → 29:
+    # the interaction slot admits `run_python@1`.
+    AgentRole.HEAD_OF_ABM: "v58",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -247,6 +259,15 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
     # artifact stops being a memory of the turn that made it.
     "read_artifact": (AgentRole.HEAD_OF_ABM,),
+    # The code sandbox (spec 2026-09-19 §3.4): one short script in a locked-down container
+    # over this turn's own workspace, and the only way to open a PDF, a deck, a spreadsheet or
+    # an image the project's `attachments/` holds. It arrived here UNGRANTED, on the same terms
+    # every new write surface arrives on — `build_agent_profile_registry` refuses to compose
+    # when a role's authority and its profile's tool list disagree, so a grant is a reviewed
+    # profile bump and never an edit to this dict. `head-of-abm@v58` is that bump: it pins the
+    # tool's two schema digests, opens `attachments` on the readable prefixes, and mints
+    # `code-execution@v1` and `manual-*@v5` to teach it.
+    "run_python": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

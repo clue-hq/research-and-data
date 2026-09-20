@@ -6,7 +6,8 @@
 .DEFAULT_GOAL := help
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
-	redis-up redis-down manual manual-check manual-link cost-report langfuse-check
+	redis-up redis-down manual manual-check manual-link cost-report langfuse-check \
+	sandbox-image
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -121,3 +122,7 @@ cost-report: ## Print a workspace's cost report from the two ledgers. Usage: mak
 # --- Langfuse (lane 3 slice 3) ----------------------------------------------
 langfuse-check: ## Is Langfuse enabled and does the host accept the keys? Reads .env; sends no trace
 	uv run python -m clue_api.langfuse_check
+
+# --- agent code sandbox (spec 2026-09-19) ------------------------------------
+sandbox-image: ## Build the Head-of-ABM code sandbox image named by CLUE_SANDBOX_IMAGE (default clue-agent-sandbox:latest)
+	docker build -t $${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest} docker/agent-sandbox

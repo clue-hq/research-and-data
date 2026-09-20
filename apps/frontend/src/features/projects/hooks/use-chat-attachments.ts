@@ -21,7 +21,8 @@ export interface ChatAttachmentsController {
   submissionBlocked: boolean;
 }
 
-const UNSUPPORTED = "Use a .md, .txt, PNG, JPEG, WebP or GIF file.";
+const UNSUPPORTED =
+  "Use a .md, .txt, .pdf, .docx, .pptx, .xlsx, .csv or .json file, or a PNG, JPEG, WebP or GIF image.";
 
 export function useChatAttachments({
   enabled,
