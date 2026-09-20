@@ -247,7 +247,7 @@ export function GalleryToolbar({
                         type="button"
                       >
                         {account.logoPath ? (
-                          <Image alt="" height={14} src={account.logoPath} width={14} />
+                          <Image alt="" height={14} src={account.logoPath} unoptimized width={14} />
                         ) : null}
                         <span>{account.name}</span>
                         <ProjectIcon name="close" size={10} />
@@ -281,7 +281,7 @@ export function GalleryToolbar({
                         type="button"
                       >
                         {account.logoPath ? (
-                          <Image alt="" height={16} src={account.logoPath} width={16} />
+                          <Image alt="" height={16} src={account.logoPath} unoptimized width={16} />
                         ) : null}
                         <span>{account.name}</span>
                       </button>
