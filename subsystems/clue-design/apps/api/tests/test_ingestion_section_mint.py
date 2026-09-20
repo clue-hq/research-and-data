@@ -1506,3 +1506,23 @@ def test_the_budget_diagnostics_report_the_limit_they_actually_enforced() -> Non
     ]
     assert page_line["limit"] == 10
     assert "10-byte per-page budget" in page_line["message"]
+
+
+def test_react_comment_boundaries_do_not_shift_detected_slot_targets() -> None:
+    """React suspense markers are comments, not CSS :nth-child elements."""
+    digest = "a" * 64
+    html = (
+        '<section><!--$--><h2>Customer results</h2><!--/$-->'
+        '<div><!--$--><img src="/asset-store/' + digest + '">'
+        '<!--/$--><p>A verified customer story.</p>'
+        '<!--$--><a class="button" href="/customers"><span>Read the story</span></a>'
+        '<!--/$--></div></section>'
+    )
+    sanitized = sanitize_fragment_html(html, rehosted={})
+    detected = detect_slots(sanitized.html)
+    annotated = annotate_fragment_slots(sanitized.html, detected.specs)
+    assert annotated.slot_manifest["headline"]["fallback"] == "Customer results"
+    assert annotated.slot_manifest["image"]["fallback"] == digest
+    assert annotated.slot_manifest["body"]["fallback"] == "A verified customer story."
+    assert annotated.slot_manifest["cta_href"]["fallback"] == "/customers"
+    assert annotated.slot_manifest["cta_label"]["fallback"] == "Read the story"

@@ -334,7 +334,10 @@ def _selector(node: LexborNode) -> str:
 def _element_index(parent: LexborNode, child: LexborNode) -> int:
     index = 0
     for candidate in parent.iter(include_text=False):
-        if not candidate.tag:
+        # Lexbor still returns -comment nodes when include_text=False.
+        # CSS :nth-child counts elements only; React suspense comments must not
+        # shift the selector onto a different child or outside the subtree.
+        if not candidate.tag or candidate.tag.startswith("-"):
             continue
         index += 1
         if candidate.mem_id == child.mem_id:
