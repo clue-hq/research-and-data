@@ -3048,23 +3048,8 @@
  * styles.
  *
  * Styled as a developer tool throughout: monospace addresses, muted notes, a
- * dashed frame. It is never rendered in a production deployment, because the
- * affordance that opens it is not rendered when the capability probe 404s.
+ * dashed frame. The inspector is no longer mounted in the chat interface.
  */
-.turnLensTrigger {
-  margin-left: auto;
-  border: 0.5px dashed var(--clue-ds-color-border-subtle);
-  border-radius: 4px;
-  background: transparent;
-  padding: 1px 6px;
-  color: var(--clue-ds-color-content-subtle);
-  font-size: 10px;
-  line-height: 14px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .turnLensPanel {
   display: flex;
   position: absolute;

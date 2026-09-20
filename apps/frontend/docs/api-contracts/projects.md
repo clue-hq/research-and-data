@@ -278,7 +278,9 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   the default transcript projects the fetched durable answer as **Profile
   approved**, **Profile declined**, or **Changes requested**. The normal chat
   never renders the gate id, expected digest, subject id, or transport JSON;
-  those details remain available through the explicit turn inspector.
+  those details remain available through the developer inspector API. As of
+  2026-09-20, chat no longer renders the Inspect action or drawer and does not
+  probe inspector availability.
 - The composer height is content-driven and bounded. The editor scrolls
   internally before it can overlap the mention/model/send footer.
 - Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
@@ -471,8 +473,8 @@ are never accepted from the browser or model.
 - Internal ids, object references, hashes, digests, operation keys, tool schema
   versions and backend refusal details never render in the normal transcript,
   gate card, activity labels, recovery copy, source fallbacks or accessibility
-  labels. The turn inspector retains those diagnostics behind an explicit
-  developer-oriented action.
+  labels. The developer inspector API retains those diagnostics; the chat
+  interface no longer exposes an inspector action or drawer (2026-09-20).
 - Known operations receive stable human labels. Unknown operations fail closed:
   the transcript shows only a generic activity label and completion state; it
   never renders an arbitrary tool name, input or output payload.

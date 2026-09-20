@@ -27,6 +27,8 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
+  drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.
 - `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:
   worker UID/GID + child-only umask 077, defensive-only mode repair, native Linux volume smoke
   and Docker-to-workspace-finalize regression; 144 focused tests passed.
