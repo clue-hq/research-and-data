@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-20T01:04:00.792308+00:00",
+  "website_source_id": "src_98f3111f126b26d0",
+  "wordmark_elements": [
+    {
+      "src": "/figma/conduit-wordmark.svg?dpl=dpl_5zNSTYuHzmG9DtT6CUng5Pms8gTY",
+      "classes": [],
+      "alt": "Conduit"
+    },
+    {
+      "src": "/figma/conduit-wordmark.svg?dpl=dpl_5zNSTYuHzmG9DtT6CUng5Pms8gTY",
+      "classes": [
+        "invert",
+        "brightness-0"
+      ],
+      "alt": "Conduit"
+    }
+  ],
+  "official_icon_ids": [
+    "asset_1889762a5971823cd61e",
+    "asset_27c64ef3b5f723e09124"
+  ],
+  "stylesheet_source_ids": [
+    "src_6c398213f32eba5f",
+    "src_d0b759265293bc83"
+  ],
+  "note": "Website icons were wrongly excluded by the original generic image filter. Wordmark reverse appearance is CSS on the same original SVG, not a separate downloaded white master."
+}

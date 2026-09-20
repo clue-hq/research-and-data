@@ -1,0 +1,437 @@
+{
+  "folders": [
+    {
+      "id": "company",
+      "title": "Company"
+    },
+    {
+      "id": "product",
+      "title": "Product"
+    },
+    {
+      "id": "brand",
+      "title": "Brand & messaging"
+    },
+    {
+      "id": "audience",
+      "title": "Audience"
+    },
+    {
+      "id": "proof",
+      "title": "Proof"
+    },
+    {
+      "id": "design",
+      "title": "Design"
+    },
+    {
+      "id": "guide",
+      "title": "Library guide"
+    }
+  ],
+  "documents": [
+    {
+      "key": "company-overview",
+      "title": "Company overview",
+      "folder": "company",
+      "phase": 0,
+      "sections": [
+        "Business at a glance",
+        "Origin and evolution",
+        "What Conduit sells",
+        "Who it serves",
+        "Business model",
+        "Market position",
+        "Customer evidence",
+        "Commercial implications"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "commercial-model",
+      "title": "Commercial model & market context",
+      "folder": "company",
+      "phase": 0,
+      "sections": [
+        "How value is created",
+        "How the offer is sold",
+        "Routes to market",
+        "Market and alternatives",
+        "Buying economics",
+        "Questions for the company"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "products-capabilities",
+      "title": "Product catalog & capability map",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Product system",
+        "Product and capability map",
+        "How the products work together",
+        "Availability and boundaries",
+        "Choosing the entry point"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-agents",
+      "title": "AI Agents",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Overview",
+        "Who it is for",
+        "Capabilities and limits",
+        "Workflows and use cases",
+        "Integrations and setup",
+        "Pricing and packaging",
+        "Differentiation",
+        "Customer evidence",
+        "Sales discovery"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-inbox",
+      "title": "Inbox",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Overview",
+        "Who it is for",
+        "Capabilities and limits",
+        "Workflows and use cases",
+        "Integrations and setup",
+        "Pricing and packaging",
+        "Differentiation",
+        "Customer evidence",
+        "Sales discovery"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-portals",
+      "title": "Guest Portals",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Overview",
+        "Who it is for",
+        "Capabilities and limits",
+        "Workflows and use cases",
+        "Integrations and setup",
+        "Pricing and packaging",
+        "Differentiation",
+        "Customer evidence",
+        "Sales discovery"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-workflows",
+      "title": "Workflows",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Overview",
+        "Who it is for",
+        "Capabilities and limits",
+        "Workflows and use cases",
+        "Integrations and setup",
+        "Pricing and packaging",
+        "Differentiation",
+        "Customer evidence",
+        "Sales discovery"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-operator",
+      "title": "Operator & internal AI availability",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "What is established",
+        "Role in the product system",
+        "Use cases and users",
+        "Availability and dependencies",
+        "What sales can say",
+        "Questions to resolve"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "product-developers",
+      "title": "Developer platform & custom workflows",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Purpose and users",
+        "Interfaces and capabilities",
+        "Implementation patterns",
+        "Dependencies and controls",
+        "Packaging and limits",
+        "Sales and technical discovery"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "integrations",
+      "title": "Integrations & implementation readiness",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Integration map",
+        "Direct versus relayed connections",
+        "Data and action boundaries",
+        "Implementation checklist",
+        "Unknowns and discovery questions"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "pricing",
+      "title": "Pricing & packaging",
+      "folder": "product",
+      "phase": 0,
+      "sections": [
+        "Published plans",
+        "Usage and billing units",
+        "What is included",
+        "Choosing a package",
+        "Unpublished terms",
+        "Questions before a quote"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "customer-evidence",
+      "title": "Customer evidence & usable proof",
+      "folder": "proof",
+      "phase": 0,
+      "sections": [
+        "Proof by customer and buying situation",
+        "What the results do and do not establish",
+        "Matching proof to a campaign",
+        "Evidence gaps"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "alternatives",
+      "title": "Alternatives & differentiation",
+      "folder": "proof",
+      "phase": 0,
+      "sections": [
+        "Alternatives buyers consider",
+        "Decision criteria",
+        "Conduit differentiators and evidence",
+        "Objections and honest responses",
+        "Proof to request"
+      ],
+      "depends_on": []
+    },
+    {
+      "key": "brand-messaging",
+      "title": "Positioning & brand promise",
+      "folder": "brand",
+      "phase": 1,
+      "sections": [
+        "Core positioning",
+        "Promise and supporting pillars",
+        "Why this work matters",
+        "Reasons to believe",
+        "Positioning boundaries"
+      ],
+      "depends_on": [
+        "company-overview",
+        "products-capabilities",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "brand-voice",
+      "title": "Brand voice & language",
+      "folder": "brand",
+      "phase": 1,
+      "sections": [
+        "Voice principles",
+        "Vocabulary and sentence patterns",
+        "Tone by situation",
+        "What to avoid",
+        "Editing checklist"
+      ],
+      "depends_on": [
+        "company-overview",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "message-map",
+      "title": "Audience-to-message map",
+      "folder": "brand",
+      "phase": 1,
+      "sections": [
+        "Message hierarchy",
+        "Messages by buying situation",
+        "Role-specific emphasis",
+        "Offer and call to action",
+        "Proof and personalization boundaries"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "writing-examples",
+      "title": "Campaign writing examples & rules",
+      "folder": "brand",
+      "phase": 1,
+      "sections": [
+        "How to use these examples",
+        "Hotel campaign",
+        "Vacation-rental campaign",
+        "Technical evaluator follow-up",
+        "Claims and copy review"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "ideal-customers",
+      "title": "ICP strategy & segment priorities",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "Who is a good-fit account",
+        "Priority buying situations",
+        "Company characteristics",
+        "Buyer roles versus company fit",
+        "Readiness and urgency",
+        "Exclusions and unknowns",
+        "What the company must confirm"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "integrations",
+        "pricing",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "icp-hotels",
+      "title": "ICP · hotel operators",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "Account definition",
+        "Best-fit operating situations",
+        "Company and technology profile",
+        "Buying committee",
+        "Qualification decisions",
+        "Signals and next questions",
+        "Disqualifiers and unresolved assumptions"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "integrations",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "icp-rentals",
+      "title": "ICP · vacation-rental operators",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "Account definition",
+        "Best-fit operating situations",
+        "Company and technology profile",
+        "Buying committee",
+        "Qualification decisions",
+        "Signals and next questions",
+        "Disqualifiers and unresolved assumptions"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "integrations",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "buyer-roles",
+      "title": "Buying committee & professional personas",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "Buying roles and title map",
+        "Priorities and desired results",
+        "Buying attitudes and objections",
+        "Decision process",
+        "Questions by role"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "integrations",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "buying-triggers",
+      "title": "Qualification & account research playbook",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "Fit, readiness and timing",
+        "Qualification matrix",
+        "Signals and sourcing",
+        "Discovery conversation",
+        "Decision and handoff"
+      ],
+      "depends_on": [
+        "ideal-customers",
+        "products-capabilities",
+        "integrations",
+        "pricing",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "customer-jobs",
+      "title": "Buyer problems & desired results",
+      "folder": "audience",
+      "phase": 2,
+      "sections": [
+        "What this document means",
+        "Work buyers need to accomplish",
+        "Before and after workflows",
+        "How improvement would be measured",
+        "Turning problems into campaigns"
+      ],
+      "depends_on": [
+        "products-capabilities",
+        "customer-evidence"
+      ]
+    },
+    {
+      "key": "visual-identity",
+      "title": "Visual identity & logo pack",
+      "folder": "design",
+      "sections": [],
+      "depends_on": []
+    },
+    {
+      "key": "library-guide",
+      "title": "Library organization & research flow",
+      "folder": "guide",
+      "sections": [],
+      "depends_on": []
+    }
+  ]
+}

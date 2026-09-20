@@ -1,0 +1,109 @@
+{
+  "document": {
+    "key": "products-capabilities",
+    "title": "Product catalog & capability map",
+    "summary": "Conduit’s public site currently names four primary products—Agents, Inbox, Portals, and Workflows—with Operations marked coming soon, while commercial packages bundle those surfaces rather than selling them as one-to-one SKUs. Operator, REST/MCP access, integrations, and the affiliate listing are supporting capabilities, not additional catalog products, and several packaging and availability details remain unresolved against the v3 docs.",
+    "markdown": "## Product system\n\nConduit’s current website catalog is a four-product hospitality stack, not a long list of SKUs. The global product nav and footer name **Conduit Agents**, **Conduit Inbox**, **Conduit Portals**, and **Conduit Workflows**. A fifth nav item, **Operations**, is labeled coming soon for AI-coordinated housekeeping, maintenance, and inspections. [Source](https://www.conduit.ai/product/agents)\n\nThose four names are the primary products. Other surfaces should not be treated as extra catalog products unless a source says they are sold that way:\n\n- **Operator** is a workspace assistant for inspecting and editing agent configuration, and it also appears as a line inside the Messaging package, not as its own product page. [Source](https://docs.conduit.ai/) [Source](https://www.conduit.ai/pricing)\n- **REST API and MCP** are a developer platform for workspace data and tools. Docs state both are available only on the **v3 plan** and may need support enablement. [Source](https://www.conduit.ai/developers) [Source](https://docs.conduit.ai/api-reference/introduction)\n- **Integrations** are connections (the public directory lists 43 entries, including some marked coming soon). A logo is not proof of a specific write-back or messaging action. [Source](https://www.conduit.ai/integrations)\n- **Affiliate Program** appears in the site footer; the integrations page also carries reseller-style copy. Neither source defines a standalone product. [Source](https://www.conduit.ai/product/agents)\n\nDocs describe a different internal model: Inbox as the conversation surface; Build surfaces (Agents, Knowledge, Skills, Tools, Operator, Sandbox) as the brain; Workflows as automations; Dashboards as metrics. That is how the system is assembled, not a second product list. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n\nPlan packaging is a third layer. Public rates are **Messaging** ($18 / unit / mo starting, 40 credits), **Guest** ($30, 60 credits), **Guest + Devices** ($36, 80 credits), **Full Suite** ($48, 100 credits), plus a **Startup** bundle for 0–25 units at $899 / mo with 2,000 credits. Starting rates are shown and pricing scales beyond 50 listings. A bundle price is not a standalone Agents or Portals price. [Source](https://www.conduit.ai/pricing)\n\n## Product and capability map\n\nBuyer problems below are the problems each product page claims to address, not an inferred ICP.\n\n| Product | Buyer problem (site language) | Workflow the page describes | Dependency | Linked guide |\n| --- | --- | --- | --- | --- |\n| Agents | Answer guest messages and calls, retrieve context, and take action; escalate when needed | Handle voice, chat, email, WhatsApp, and connected OTA threads; update bookings, collect payments, create tasks; review and backtest replies | Property information, reservation data, and supported connected tools | [AI Agents](#knowledge/product-agents) |\n| Inbox | Messages, calls, and team handoffs in one workspace | Organize by property or team; take over with conversation history; keep stay/booking context beside the thread | Connected channels; PMS/OTA context for booking details | [Inbox](#knowledge/product-inbox) |\n| Portals | One branded stay link for guidebook, upsells, payments, and AI concierge | Pre-arrival details and checks; extras with payment; in-portal questions using stay and property info | Stay/reservation context; Guest packaging on the public price page; optional smart-lock/device connections | [Guest Portals](#knowledge/product-portals) |\n| Workflows | Automate the guest journey from check-in to follow-ups and routine tasks | Visual builder: PMS-dated messages, post-stay campaigns, conditional upgrades; webhooks or MCP to supported tools | Connected email/WhatsApp/OTA channels and booking signals | [Workflows](#knowledge/product-workflows) |\n\nAgents are described as answering with property information and reservation data, acting through connected tools (for example creating a task or updating a booking), and passing requests to the team. [Source](https://www.conduit.ai/product/agents)\n\nInbox is the operating surface: SMS, WhatsApp, email, calls, social, and connected OTA threads in one workspace, with handoffs that keep history. [Source](https://www.conduit.ai/product/inbox)\n\nPortals give guests one branded link (no app) to review stay details, complete pre-arrival and identity checks, sign agreements or waivers, pay fees or deposits, buy upgrades, access the property when requirements are complete, and ask the AI concierge. [Source](https://www.conduit.ai/product/portals)\n\nWorkflows send guest messages, run follow-up campaigns, and offer add-ons such as early check-in, gap nights, and room upgrades; the operator chooses trigger, conditions, and actions. Docs also classify workflows as proactive, routing, and triage automations. [Source](https://www.conduit.ai/product/workflows) [Source](https://docs.conduit.ai/workflows/types-of-workflows)\n\nIndustry and use-case URLs (Airbnb automation, after-hours receptionist, room upgrades, and similar) are marketing entry pages, not extra products. Comparison URLs (Canary, Zendesk, and others) are positioning pages, not capabilities. [Source](https://www.conduit.ai/product/agents)\n\n## How the products work together\n\nThe intended loop is: connect channels and PMS data → teach agents with knowledge, skills, tools, and rules → run conversations in Inbox → use Workflows for scheduled or conditional journeys → use Portals as the guest-facing stay surface → inspect configuration with Operator and measure in dashboards. Docs frame this as a Connect / Teach / Test / Deploy path from copilot toward autopilot. [Source](https://docs.conduit.ai/) [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n\nInbox routing assigns new contacts to an inbox before workflow triggers fire, so automations should target the routed inbox, not Unmapped. [Source](https://docs.conduit.ai/setting-up-conduit/inbox-routing)\n\nPMS connections feed listing and reservation context. Docs say Conduit integrates with over 15 PMS systems, classify some as messaging PMS connections and others as reservation-data-only, and warn that mixing incompatible types can duplicate conversations. Opera Cloud, for example, is described as syncing property, reservation, and profile data without routing guest messaging through that integration. [Source](https://docs.conduit.ai/setting-up-conduit/connect-pms) [Source](https://www.conduit.ai/integrations/opera)\n\nDeveloper access sits beside the four products: typed REST endpoints for workspaces, contacts, conversations, tickets, calls, knowledge, agents, skills, workflows, and devices; MCP exposes overlapping tools to clients such as ChatGPT, Claude, Cursor, and VS Code. Device tools in MCP require the Devices add-on. [Source](https://www.conduit.ai/developers) [Source](https://docs.conduit.ai/mcp/overview)\n\n## Availability and boundaries\n\n**Generally marketed as available:** Agents, Inbox, Portals, Workflows; Messaging-package features listed as unified inbox, voice AI (inbound and outbound), PMS and OTA integrations, Operator, workflows, escalation, analytics. [Source](https://www.conduit.ai/pricing)\n\n**Packaged, not separately priced on the public page:** Portals sit in **Guest** and above (“Everything in Messaging” plus in-portal AI concierge, guidebooks, damage waivers, upsells). Smart-home/device capabilities sit in **Guest + Devices**. Tasks, workforce, agentic operations workflows, scheduling/dispatch, and inventory sit in **Full Suite**. [Source](https://www.conduit.ai/pricing)\n\n**Gated or enablement-required in docs:** API and MCP on the v3 plan, contact support to enable; MCP default 120 requests per minute per workspace, shared with REST. [Source](https://docs.conduit.ai/api-reference/introduction) [Source](https://docs.conduit.ai/mcp/overview)\n\n**Coming soon / incomplete:** Operations in the product nav; Booking.com and VRBO on the integrations directory. [Source](https://www.conduit.ai/product/agents) [Source](https://www.conduit.ai/integrations)\n\n**Contradiction to preserve:** changelog entries already describe Operations tasks, schedules, workforce call reporting, and portal/device controls (for example 3.13–3.15 in September 2026), while the marketing nav still says Operations is coming soon. Treat nav copy as the catalog status and changelog as evidence that some operations surfaces already exist in-product. [Source](https://www.conduit.ai/changelog)\n\n**Do not infer:** that every listed integration supports the same agent actions; that HostAI-labeled Email/WhatsApp blurbs redefine the product name; that “most teams go live within a week” is a verified implementation SLA (docs claim, not customer-proofed here). [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n\nCommercial mapping, credit burn, and contract packaging belong in [Pricing & packaging](#knowledge/pricing). Connection depth belongs in [Integrations & implementation readiness](#knowledge/integrations).\n\n## Choosing the entry point\n\nLead with the **named product** that matches the job, then confirm **package** coverage:\n\n- Omnichannel guest comms and human takeover → Inbox, usually with Agents; Messaging is the public starting package. [Source](https://www.conduit.ai/product/inbox)\n- 24/7 answers plus actions in connected tools → Agents (voice and messaging). VoiceAI numbers, schedules, and warm transfer are documented separately. [Source](https://www.conduit.ai/product/agents) [Source](https://docs.conduit.ai/setting-up-conduit/connect-voiceai-ai-number)\n- Pre-arrival, waivers, deposits, upgrades, guidebook → Portals; public pricing places this at Guest and above. [Source](https://www.conduit.ai/product/portals)\n- Confirmations, check-in, win-back, rule-based upsells → Workflows; they also appear inside Messaging packaging. [Source](https://www.conduit.ai/product/workflows) [Source](https://www.conduit.ai/pricing)\n- Custom systems, MCP clients, or code tools → [Developer platform & custom workflows](#knowledge/product-developers), after confirming v3/API entitlement.\n- Internal configuration help → [Operator & internal AI availability](#knowledge/product-operator), not a fifth website product.\n\nFor 0–25 units, the site offers a Startup full-feature monthly price rather than the per-unit ladder; above that, talk-to-sales language applies to Full Suite and scale beyond 50 listings. [Source](https://www.conduit.ai/pricing)\n",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_3e7552876a098bb0",
+      "src_44ca2b5b2ec94cdf",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_dae2c4b0bd94e5a6",
+      "src_e805a9592ee44f73",
+      "src_ee72b875099c7ac7",
+      "src_f01f1010ac8ddab8"
+    ],
+    "open_questions": [
+      "How do public packages (Messaging, Guest, Guest + Devices, Full Suite, Startup) map contractually onto the four named products versus add-ons?",
+      "What does “v3 plan” mean relative to the website packages, and is API/MCP included or separately enabled?",
+      "Is Operations a fifth upcoming product, or are tasks/workforce in Full Suite and recent changelogs already that surface?",
+      "Which actions (read vs messaging vs write-back) are actually supported on each of the 43 directory listings?",
+      "What is commercially offered as Affiliate Program versus the reseller copy on the integrations page?"
+    ],
+    "evidence_notes": [
+      {
+        "statement": "The public product nav lists four current products plus Operations coming soon.",
+        "source_id": "src_e805a9592ee44f73",
+        "quote": "Agents\nAnswer guest messages and calls, and take action.\n[\n02\n]\nInbox\nMessages, calls and team handoffs in one place.\n[\n03\n]\nPortals\nUpsell offers, guidebook and AI concierge.\n[\n04\n]\nWorkflows\nAutomate the guest journey, from check-in to follow-ups and routine tasks.\n[\n05\n]\nOperations\nComing soon\nAI-coordinated housekeeping, maintenance and inspections."
+      },
+      {
+        "statement": "Messaging package starting rate is $18 per unit per month with 40 credits, and is not a standalone Agents SKU.",
+        "source_id": "src_156a9e102c46da8e",
+        "quote": "Messaging\nAutomate guest conversations across every channel with one unified inbox.\nStarting rate\n$\n18\n/ unit / mo\nGet Started\n40 credits\n/ unit / mo"
+      },
+      {
+        "statement": "Public pricing states starting rates and that pricing scales beyond 50 listings.",
+        "source_id": "src_156a9e102c46da8e",
+        "quote": "Packages\nStarting rates shown. Pricing scales beyond 50 listings."
+      },
+      {
+        "statement": "Docs say the Conduit API is only available on the v3 plan.",
+        "source_id": "src_2d5d23c8d8b6f535",
+        "quote": "The Conduit API is only available on the\nv3 plan"
+      },
+      {
+        "statement": "Docs tell operators to contact support@conduit.ai to enable API access.",
+        "source_id": "src_2d5d23c8d8b6f535",
+        "quote": "Contact\nsupport@conduit.ai\nto enable API access for your workspace."
+      },
+      {
+        "statement": "Docs say Conduit’s MCP server is available on the v3 plan.",
+        "source_id": "src_f01f1010ac8ddab8",
+        "quote": "Conduit’s MCP server is available on the\nv3 plan"
+      },
+      {
+        "statement": "Docs tell operators to contact support@conduit.ai to enable MCP for a workspace.",
+        "source_id": "src_f01f1010ac8ddab8",
+        "quote": "Contact\nsupport@conduit.ai\nto enable it for your workspace."
+      },
+      {
+        "statement": "Portals are described as one branded stay link with no app download.",
+        "source_id": "src_6eff9afc29aa8e32",
+        "quote": "Guests get one branded link for the full stay, with no app to download."
+      },
+      {
+        "statement": "The public integrations directory reports 43 integrations.",
+        "source_id": "src_a2a67d2faa01de13",
+        "quote": "Integrations\n43"
+      },
+      {
+        "statement": "Operator is documented as a workspace assistant for agent configuration, not as a fifth website product.",
+        "source_id": "src_8f9aa404cff029a5",
+        "quote": "Use Conduit’s workspace assistant to help inspect, edit, and reason about agent configuration."
+      }
+    ],
+    "agent_context": {
+      "use_when": [
+        "Mapping Conduit’s current catalog for ABM, demos, or website IA",
+        "Explaining the difference between named products, packages, add-ons, and docs surfaces",
+        "Choosing which product page or package to lead with for a hospitality account"
+      ],
+      "decisions_supported": [
+        "Whether a capability is a primary product, a package feature, or a gated platform API",
+        "Which linked product guide to open next",
+        "What not to promise from an integration logo or a coming-soon nav item"
+      ],
+      "do_not_infer": [
+        "That Messaging/Guest/Full Suite prices are standalone prices for Agents, Inbox, Portals, or Workflows",
+        "That an integration logo means a specific messaging or write-back action is supported",
+        "That Operations is generally available because changelog mentions tasks or workforce",
+        "That API or MCP access is included on every public website package",
+        "Buyer urgency, demographic ranges, or that all customers need all four products"
+      ]
+    },
+    "icp_criteria": []
+  },
+  "errors": []
+}

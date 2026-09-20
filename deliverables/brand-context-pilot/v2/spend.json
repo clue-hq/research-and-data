@@ -1,0 +1,2261 @@
+[
+  {
+    "id": "6cbed5a286a74136a7d0089ba44f85cb",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:34.945057+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/",
+    "source_id": "src_8f9aa404cff029a5",
+    "finished_at": "2026-09-20T00:36:35.355625+00:00"
+  },
+  {
+    "id": "bfc0ed5b4f03434fafa2ba41d81d6f9b",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:34.945759+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/developers",
+    "source_id": "src_3e7552876a098bb0",
+    "finished_at": "2026-09-20T00:36:35.523536+00:00"
+  },
+  {
+    "id": "c92bb5c706894d8393ad026ace3329fb",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:34.946358+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/llms.txt",
+    "source_id": "src_f2f12f8b76002ce4",
+    "finished_at": "2026-09-20T00:36:35.261059+00:00"
+  },
+  {
+    "id": "6928a553568e4246b68f42996a713e45",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:34.946813+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/mcp",
+    "source_id": "src_f01f1010ac8ddab8",
+    "finished_at": "2026-09-20T00:36:35.671132+00:00"
+  },
+  {
+    "id": "de20ce1f39e042d4afce8655a874aecd",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.262978+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/changelog",
+    "source_id": "src_ee72b875099c7ac7",
+    "finished_at": "2026-09-20T00:36:35.539530+00:00"
+  },
+  {
+    "id": "99c1001bf59c46f4802695f3728acfa9",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.358326+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/affiliate",
+    "source_id": "src_69422497b09c2257",
+    "finished_at": "2026-09-20T00:36:35.838716+00:00"
+  },
+  {
+    "id": "1f250f3fa4544740b7a9e39f35e3f35a",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.536789+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/api-reference/introduction",
+    "source_id": "src_2d5d23c8d8b6f535",
+    "finished_at": "2026-09-20T00:36:35.861990+00:00"
+  },
+  {
+    "id": "87a47f59b0414f55ab9e171dd6030343",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.540122+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/setting-up-conduit/connect-pms",
+    "source_id": "src_b27f818d3e0ae613",
+    "finished_at": "2026-09-20T00:36:35.859126+00:00"
+  },
+  {
+    "id": "ba70631c8fe8413c85ac7633525533e3",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.673019+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/customers/canbnb",
+    "source_id": "src_5cb5674a725889a9",
+    "finished_at": "2026-09-20T00:36:35.856600+00:00"
+  },
+  {
+    "id": "efcec3a78f804500881a848516e21ce0",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.857988+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/customers/the-flex",
+    "source_id": "src_765674900bd1f4dd",
+    "finished_at": "2026-09-20T00:36:36.017381+00:00"
+  },
+  {
+    "id": "39ed2fa9b644417baf879f5a027cf3c1",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.863270+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/integrations/opera",
+    "source_id": "src_dae2c4b0bd94e5a6",
+    "finished_at": "2026-09-20T00:36:36.331105+00:00"
+  },
+  {
+    "id": "e14357796a2542eca1d4325cc078dbc2",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.864330+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/integrations/guesty",
+    "source_id": "src_ad64b9e1ad88ae2a",
+    "finished_at": "2026-09-20T00:36:36.332833+00:00"
+  },
+  {
+    "id": "09e4e526308d46e89ec67c401851f659",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:35.864997+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/integrations/mews",
+    "source_id": "src_3eddba4921daba7a",
+    "finished_at": "2026-09-20T00:36:36.331972+00:00"
+  },
+  {
+    "id": "e2880b6905474c25877329340d09a626",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:36:36.018596+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/integrations/airbnb",
+    "source_id": "src_3399afceb260e44f",
+    "finished_at": "2026-09-20T00:36:36.333808+00:00"
+  },
+  {
+    "id": "9719f95c1622498998242c704e18ef96",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.422669+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/llms.txt",
+    "source_id": "src_c8cbc2ec50c61efe",
+    "finished_at": "2026-09-20T00:37:28.007721+00:00"
+  },
+  {
+    "id": "9ae2152fb26e4407a1a8ae2b6b6995d7",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.423686+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/overview/the-5-levels-of-ai-automation",
+    "source_id": "src_9fb1a5550c393b02",
+    "finished_at": "2026-09-20T00:37:27.794813+00:00"
+  },
+  {
+    "id": "fd430b1f6e8e42c3a504cebad905eb86",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.424467+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/overview/how-conduit-agents-work",
+    "source_id": "src_2a445232675660d9",
+    "finished_at": "2026-09-20T00:37:27.798293+00:00"
+  },
+  {
+    "id": "106989867d5e47e0892ddc6abf55cec3",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.425020+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/setting-up-conduit/inbox-routing",
+    "source_id": "src_91caff45e9dfd65f",
+    "finished_at": "2026-09-20T00:37:27.795510+00:00"
+  },
+  {
+    "id": "1b911b8786da425c8fb32456d5220209",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.796217+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/setting-up-conduit/connect-voiceai-ai-number",
+    "source_id": "src_904a981650724bf1",
+    "finished_at": "2026-09-20T00:37:28.008594+00:00"
+  },
+  {
+    "id": "7a4cb492d53b4590bb7054a36213afc1",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.796872+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/workflows/getting-started",
+    "source_id": "src_0f66e375eb2b7089",
+    "finished_at": "2026-09-20T00:37:28.011213+00:00"
+  },
+  {
+    "id": "378fac74e8de4a9cb835010cbed99444",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:27.799105+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/workflows/types-of-workflows",
+    "source_id": "src_44ca2b5b2ec94cdf",
+    "finished_at": "2026-09-20T00:37:28.081215+00:00"
+  },
+  {
+    "id": "1ce7dd2936624ec2af95ffdb567870ea",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.009344+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/workflows/workflow-usage",
+    "source_id": "src_b4b8a8b99c077661",
+    "finished_at": "2026-09-20T00:37:28.161353+00:00"
+  },
+  {
+    "id": "46803360e4d949478046091b4937ca00",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.010442+00:00",
+    "status": "failed",
+    "url": "https://docs.conduit.ai/mcp/overview.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:28.384825+00:00"
+  },
+  {
+    "id": "d6e64ce7d0484b3bbc4caff91e272779",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.011896+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/product/agents.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:28.407365+00:00"
+  },
+  {
+    "id": "a905a152c4374e64b60cd02c747497c6",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.081973+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/product/inbox.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:29.205001+00:00"
+  },
+  {
+    "id": "5ffff59b17d84636b9b070b9e062bf8d",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.162176+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/product/portals.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:28.578034+00:00"
+  },
+  {
+    "id": "56e54ba33dad42fd8013ee06f894213e",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.399792+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/product/workflows.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:28.718685+00:00"
+  },
+  {
+    "id": "75aad528b7f44d68ae2cfbc49e785b54",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.421492+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/pricing.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:29.011946+00:00"
+  },
+  {
+    "id": "2c2db042371443f6ba7ce02db23a5eeb",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.578787+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/about.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:28.765729+00:00"
+  },
+  {
+    "id": "9f55d62d1be74698905e46eb825158e3",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.719825+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/developers.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:29.148985+00:00"
+  },
+  {
+    "id": "33162912d4e1419e9ec082bae11bf540",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:37:28.766894+00:00",
+    "status": "failed",
+    "url": "https://www.conduit.ai/changelog/sitemap.md",
+    "error_type": "ValueError",
+    "finished_at": "2026-09-20T00:37:29.151054+00:00"
+  },
+  {
+    "id": "d02759edc8a0405b8cc70e4572fab5b9",
+    "provider": "model",
+    "reserved_usd": 0.420326,
+    "actual_usd": 0.126832,
+    "started_at": "2026-09-20T00:37:46.489506+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "47af18d73793e248f78b219d6254fab9602a00c55930eca1957b77bcb97e5b6a",
+    "retry_of": null,
+    "duration_s": 109.67,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 41513,
+      "completion_tokens": 7333,
+      "total_tokens": 48846,
+      "cost": 0.126832,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.126832,
+        "upstream_inference_prompt_cost": 0.082834,
+        "upstream_inference_completions_cost": 0.043998
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2739,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864666-ZT2l47z8xybWWkJRIIWz",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:39:36.158220+00:00"
+  },
+  {
+    "id": "9651141c18b34e35850cbf7e25f49098",
+    "provider": "model",
+    "reserved_usd": 0.426382,
+    "actual_usd": 0.127432,
+    "started_at": "2026-09-20T00:37:46.527104+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "42beb880df1e12c7cc77debf305c11eb38e403621441a5ba4b445bb51fba6bf7",
+    "retry_of": null,
+    "duration_s": 94.02,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 44702,
+      "completion_tokens": 6370,
+      "total_tokens": 51072,
+      "cost": 0.127432,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.127432,
+        "upstream_inference_prompt_cost": 0.089212,
+        "upstream_inference_completions_cost": 0.03822
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2580,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864666-pp8Lcsts3duQTCVeZyon",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:39:20.558851+00:00"
+  },
+  {
+    "id": "f0d382b7b1f04b08ac3ec0263db9d201",
+    "provider": "model",
+    "reserved_usd": 0.280544,
+    "actual_usd": 0.085652,
+    "started_at": "2026-09-20T00:37:46.528674+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "e392e6d3bf5cd892e92309dd7fc0f514ad228fda41a84eb385b6ad5b5c1d3fa9",
+    "retry_of": null,
+    "duration_s": 71.85,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 26062,
+      "completion_tokens": 5620,
+      "total_tokens": 31682,
+      "cost": 0.085652,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.085652,
+        "upstream_inference_prompt_cost": 0.051932,
+        "upstream_inference_completions_cost": 0.03372
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2303,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864666-m00de3dCu4msNqJ9xmLz",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:38:58.412120+00:00"
+  },
+  {
+    "id": "c8f74077776f4de2a5fbcbb887c35f97",
+    "provider": "model",
+    "reserved_usd": 1.1150799999999998,
+    "actual_usd": 0.163326,
+    "started_at": "2026-09-20T00:38:58.794212+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "ef95593574af6f138fd376b0fd3f184dc456eb24e1e8bd9d5ce304cb7d057b8a",
+    "retry_of": null,
+    "duration_s": 114.6,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 59376,
+      "completion_tokens": 7461,
+      "total_tokens": 66837,
+      "cost": 0.163326,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.163326,
+        "upstream_inference_prompt_cost": 0.11856,
+        "upstream_inference_completions_cost": 0.044766
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3208,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864738-LID6lZHihlsqRDWJ0uol",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:40:53.997479+00:00"
+  },
+  {
+    "id": "48572f68d876424992ecccb7cac42f0f",
+    "provider": "model",
+    "reserved_usd": 0.458748,
+    "actual_usd": 0.064916,
+    "started_at": "2026-09-20T00:39:20.789972+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "a7788836f9d65def4f2d45b8418475c82c43f2172b48dcddb886f8cc314fcfdd",
+    "retry_of": null,
+    "duration_s": 68.0,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 48565,
+      "completion_tokens": 5799,
+      "total_tokens": 54364,
+      "cost": 0.064916,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 44672,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.064916,
+        "upstream_inference_prompt_cost": 0.030122,
+        "upstream_inference_completions_cost": 0.034794
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1926,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864760-TIH3ZoxUNk8j2j8KAxLO",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:40:28.800228+00:00"
+  },
+  {
+    "id": "03f510f1484d42fda48bcf871dd5d52a",
+    "provider": "model",
+    "reserved_usd": 0.45717199999999997,
+    "actual_usd": 0.064856,
+    "started_at": "2026-09-20T00:39:36.193104+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "e7f770466c810ff8fc51fcc4f739daa7f57f87679a7ee43fdd4a584773b8eb56",
+    "retry_of": null,
+    "duration_s": 64.84,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 46156,
+      "completion_tokens": 5792,
+      "total_tokens": 51948,
+      "cost": 0.064856,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 41472,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.064856,
+        "upstream_inference_prompt_cost": 0.030104,
+        "upstream_inference_completions_cost": 0.034752
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1203,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864776-KbaROpCegCwAR5l5itmq",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:40:41.033215+00:00"
+  },
+  {
+    "id": "7b5d944f33e3445b92bf0024e954644b",
+    "provider": "model",
+    "reserved_usd": 1.114824,
+    "actual_usd": 0.17955,
+    "started_at": "2026-09-20T00:40:28.858771+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "66d34865d16b880ef6662e8390143b2acb5d70b98b205d7a02d176d363d11073",
+    "retry_of": null,
+    "duration_s": 146.01,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 59379,
+      "completion_tokens": 10164,
+      "total_tokens": 69543,
+      "cost": 0.17955,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.17955,
+        "upstream_inference_prompt_cost": 0.118566,
+        "upstream_inference_completions_cost": 0.060984
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 6278,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864828-72KheZNcZ3WVs2CLwO3G",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:42:54.894093+00:00"
+  },
+  {
+    "id": "19af558c1e274ac6821bfd2885236e66",
+    "provider": "model",
+    "reserved_usd": 1.115988,
+    "actual_usd": 0.172928,
+    "started_at": "2026-09-20T00:40:41.128445+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "b9b43df241bc841cccd36766b480c35d64c4382b338f3680457d89102d1c56a6",
+    "retry_of": null,
+    "duration_s": 137.39,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 59455,
+      "completion_tokens": 9035,
+      "total_tokens": 68490,
+      "cost": 0.172928,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.172928,
+        "upstream_inference_prompt_cost": 0.118718,
+        "upstream_inference_completions_cost": 0.05421
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5886,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864841-HnguX8HFmIOEJE40if47",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:42:58.545306+00:00"
+  },
+  {
+    "id": "9a73322ce79e400cbf78417939f90d20",
+    "provider": "model",
+    "reserved_usd": 1.1144919999999998,
+    "actual_usd": 0.161938,
+    "started_at": "2026-09-20T00:40:54.846742+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "b959357f699a19420c09fd5cd91b57e835998ea918907bbf2253a864e1fbc384",
+    "retry_of": null,
+    "duration_s": 109.89,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 59366,
+      "completion_tokens": 7233,
+      "total_tokens": 66599,
+      "cost": 0.161938,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.161938,
+        "upstream_inference_prompt_cost": 0.11854,
+        "upstream_inference_completions_cost": 0.043398
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3131,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864855-uCrM7ThAqjZwTTujyf9Y",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:42:44.754003+00:00"
+  },
+  {
+    "id": "80ce03ee512d46c19d5c21aaf8b166a8",
+    "provider": "model",
+    "reserved_usd": 0.372874,
+    "actual_usd": 0.116692,
+    "started_at": "2026-09-20T00:42:44.793009+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "d657c53fe6e42dd2acaccdd81bc93b3422b2b7cbe2d4a599e437ef177432c49b",
+    "retry_of": null,
+    "duration_s": 103.34,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 37955,
+      "completion_tokens": 6829,
+      "total_tokens": 44784,
+      "cost": 0.116692,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.116692,
+        "upstream_inference_prompt_cost": 0.075718,
+        "upstream_inference_completions_cost": 0.040974
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4270,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864964-673EPMmF2M8OEXib2ZTi",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:44:28.152017+00:00"
+  },
+  {
+    "id": "1e946bc30d9645ea8da99e75edf732a8",
+    "provider": "model",
+    "reserved_usd": 1.179748,
+    "actual_usd": 0.067172,
+    "started_at": "2026-09-20T00:42:54.978856+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "0a6034f6f259669a626066a1fc946d2dcff7390473ad184577a884b6f2f39e50",
+    "retry_of": null,
+    "duration_s": 61.39,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 63307,
+      "completion_tokens": 4909,
+      "total_tokens": 68216,
+      "cost": 0.067172,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 59264,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.067172,
+        "upstream_inference_prompt_cost": 0.037718,
+        "upstream_inference_completions_cost": 0.029454
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1028,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864975-N2n4UCNsSQ2ovMI9zgJI",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:43:56.378744+00:00"
+  },
+  {
+    "id": "7d675c72c30d49c08f0c221128925f83",
+    "provider": "model",
+    "reserved_usd": 0.295392,
+    "actual_usd": 0.088406,
+    "started_at": "2026-09-20T00:42:58.621518+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "8b289851a8477522c9c92ae8c8d565306c6221fabbea5a97b7db76a0936403a8",
+    "retry_of": null,
+    "duration_s": 78.79,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 28708,
+      "completion_tokens": 5197,
+      "total_tokens": 33905,
+      "cost": 0.088406,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.088406,
+        "upstream_inference_prompt_cost": 0.057224,
+        "upstream_inference_completions_cost": 0.031182
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1898,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789864978-sG8JSQG39muERnQFJc0A",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:44:17.418761+00:00"
+  },
+  {
+    "id": "451c5e7907eb4f239c2786c881f45377",
+    "provider": "model",
+    "reserved_usd": 0.36805,
+    "actual_usd": 0.133336,
+    "started_at": "2026-09-20T00:43:56.424524+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "2ede3fc247802583b1fe873aaa2e62627e106bdbde2894d56f4079806cbebd38",
+    "retry_of": null,
+    "duration_s": 140.33,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 37871,
+      "completion_tokens": 9631,
+      "total_tokens": 47502,
+      "cost": 0.133336,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.133336,
+        "upstream_inference_prompt_cost": 0.07555,
+        "upstream_inference_completions_cost": 0.057786
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5748,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865036-w5Q6SF9Ri9eiTRGRZctP",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:46:16.761852+00:00"
+  },
+  {
+    "id": "3531f9eb9bd145b5bad490640340d752",
+    "provider": "model",
+    "reserved_usd": 0.32417,
+    "actual_usd": 0.068386,
+    "started_at": "2026-09-20T00:44:17.440287+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "afee41103400c4cdd79ca369824fbbe978aefe2f363ba4c885940b8d8bd6c05f",
+    "retry_of": null,
+    "duration_s": 101.19,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 32099,
+      "completion_tokens": 7866,
+      "total_tokens": 39965,
+      "cost": 0.068386,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 28672,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.068386,
+        "upstream_inference_prompt_cost": 0.02119,
+        "upstream_inference_completions_cost": 0.047196
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4551,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865057-OVehayPDY6lnsKIM728r",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:45:58.638140+00:00"
+  },
+  {
+    "id": "2abf6c3368114ee4bc922af529a10a2b",
+    "provider": "model",
+    "reserved_usd": 0.395422,
+    "actual_usd": 0.056896,
+    "started_at": "2026-09-20T00:44:28.169864+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "aafc75d2b802f8efb007e15e33770bd47f03ece389ff010d98d3fb6c16978e19",
+    "retry_of": null,
+    "duration_s": 69.17,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 40553,
+      "completion_tokens": 5437,
+      "total_tokens": 45990,
+      "cost": 0.056896,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 37888,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.056896,
+        "upstream_inference_prompt_cost": 0.024274,
+        "upstream_inference_completions_cost": 0.032622
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2860,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865068-XQJtcWuh19J0fdpHzWIW",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:45:37.346578+00:00"
+  },
+  {
+    "id": "4ff6be504b5f4073bd9271ca3c177f4d",
+    "provider": "model",
+    "reserved_usd": 0.13545200000000002,
+    "actual_usd": 0.05319,
+    "started_at": "2026-09-20T00:45:37.398749+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "90409f7dc31478647dbd45ad8b096c601cf60d6d6e8b88db99efaab3f74ef1f1",
+    "retry_of": null,
+    "duration_s": 88.32,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 8976,
+      "completion_tokens": 5905,
+      "total_tokens": 14881,
+      "cost": 0.05319,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.05319,
+        "upstream_inference_prompt_cost": 0.01776,
+        "upstream_inference_completions_cost": 0.03543
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3064,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865137-FTUlrU4jmxhoBleYvl1C",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:47:05.722702+00:00"
+  },
+  {
+    "id": "aa26590ab59e4622bf3aba79d6cc1a47",
+    "provider": "model",
+    "reserved_usd": 0.294344,
+    "actual_usd": 0.119698,
+    "started_at": "2026-09-20T00:45:58.671981+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "c29c0a868ebcd1e9af7561902605aa374ac5de9a623e26301131872948a9b3ab",
+    "retry_of": null,
+    "duration_s": 161.89,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 26489,
+      "completion_tokens": 11120,
+      "total_tokens": 37609,
+      "cost": 0.119698,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.119698,
+        "upstream_inference_prompt_cost": 0.052978,
+        "upstream_inference_completions_cost": 0.06672
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 7628,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865158-2vEcLiDZCqoqWdbYPAxo",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:48:40.563652+00:00"
+  },
+  {
+    "id": "6244ade83fab42ebae0ef592814bafa2",
+    "provider": "model",
+    "reserved_usd": 0.399926,
+    "actual_usd": 0.059464,
+    "started_at": "2026-09-20T00:46:16.781760+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "40f4adc8e3dc834a9089698b5b2ae0b5eb228cb6ecb357a99a340bce26267299",
+    "retry_of": null,
+    "duration_s": 70.0,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 41798,
+      "completion_tokens": 5418,
+      "total_tokens": 47216,
+      "cost": 0.059464,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 37760,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.059464,
+        "upstream_inference_prompt_cost": 0.026956,
+        "upstream_inference_completions_cost": 0.032508
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1529,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865176-bWUtOYfYjtCBRTosJXL6",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:47:26.780432+00:00"
+  },
+  {
+    "id": "c3b4466361c14d67adf6c12fb28d4005",
+    "provider": "model",
+    "reserved_usd": 0.19439,
+    "actual_usd": 0.09185,
+    "started_at": "2026-09-20T00:47:05.844801+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "3a79d59000912c7cabae0f8109e66c7d2e6ba10d85e70bb141ae3c7bfed4222a",
+    "retry_of": null,
+    "duration_s": 149.61,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 15976,
+      "completion_tokens": 9983,
+      "total_tokens": 25959,
+      "cost": 0.09185,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.09185,
+        "upstream_inference_prompt_cost": 0.031952,
+        "upstream_inference_completions_cost": 0.059898
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5751,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865225-8KcTdcf78Hdl2vlxjldE",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:49:35.463641+00:00"
+  },
+  {
+    "id": "156656ba5f1e4bea977893537e987e73",
+    "provider": "model",
+    "reserved_usd": 0.32154,
+    "actual_usd": 0.04938,
+    "started_at": "2026-09-20T00:48:40.599159+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "1475faca779528d30f7a0f99db19e34a7d4f025d7a3d48771d1dabb3773cc854",
+    "retry_of": null,
+    "duration_s": 56.65,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 30030,
+      "completion_tokens": 4812,
+      "total_tokens": 34842,
+      "cost": 0.04938,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 26368,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.04938,
+        "upstream_inference_prompt_cost": 0.020508,
+        "upstream_inference_completions_cost": 0.028872
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1317,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865320-qzfpXk4BBrnYz4dLe6fO",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:49:37.255276+00:00"
+  },
+  {
+    "id": "aede9bd5690c4edf9bdbbda250ce2542",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:58.713402+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/mcp/overview.md",
+    "source_id": "src_2bcf2cc46812fb8c",
+    "finished_at": "2026-09-20T00:50:59.151515+00:00"
+  },
+  {
+    "id": "11a8709126ee4d08a93191e54e10233f",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:58.714981+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/product/inbox.md",
+    "source_id": "src_e6200582a2004292",
+    "finished_at": "2026-09-20T00:50:59.088986+00:00"
+  },
+  {
+    "id": "48e96f5300624531a31647127254852f",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:58.716884+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/product/agents.md",
+    "source_id": "src_5a71a6776ae43f4d",
+    "finished_at": "2026-09-20T00:50:59.046242+00:00"
+  },
+  {
+    "id": "5b525548bd754aa4a402ed1c332eb181",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:58.718664+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/product/portals.md",
+    "source_id": "src_8b30f0226db273ad",
+    "finished_at": "2026-09-20T00:50:59.067095+00:00"
+  },
+  {
+    "id": "a8c1d6f8b2204b82973a57fd9b49405d",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:59.047455+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/product/workflows.md",
+    "source_id": "src_66f6c23da9142b32",
+    "finished_at": "2026-09-20T00:50:59.506770+00:00"
+  },
+  {
+    "id": "f7d23f4e18c049ed93f32c36b4f78a4f",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:59.068722+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/pricing.md",
+    "source_id": "src_f0d546128c30936b",
+    "finished_at": "2026-09-20T00:50:59.700396+00:00"
+  },
+  {
+    "id": "1eadbb270a924d27b245a579ed029b0c",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:59.090160+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/about.md",
+    "source_id": "src_a5773fa8f1cf4f97",
+    "finished_at": "2026-09-20T00:50:59.278244+00:00"
+  },
+  {
+    "id": "57d76fa4c10b42e79726a50343d8409b",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:59.152876+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/developers.md",
+    "source_id": "src_b8de12e5b9f9370c",
+    "finished_at": "2026-09-20T00:50:59.377738+00:00"
+  },
+  {
+    "id": "cf30607689e5499888e8c38ab2ffe3be",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:50:59.280439+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/changelog/sitemap.md",
+    "source_id": "src_277d4d2b1fda3e35",
+    "finished_at": "2026-09-20T00:50:59.805899+00:00"
+  },
+  {
+    "id": "04aba733577140d7a27c5493f74fbd4f",
+    "provider": "model",
+    "reserved_usd": 1.1691759999999998,
+    "actual_usd": 0.157556,
+    "started_at": "2026-09-20T00:51:35.310732+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "e0404621801f39010fc69cf244373ee0dd04aeccfac2dec7cb13cc52afdf56ef",
+    "retry_of": null,
+    "duration_s": 86.16,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 61216,
+      "completion_tokens": 5854,
+      "total_tokens": 67070,
+      "cost": 0.157556,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.157556,
+        "upstream_inference_prompt_cost": 0.122432,
+        "upstream_inference_completions_cost": 0.035124
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3081,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865495-kbSnZORv2mKBaCZlMsv6",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:53:01.474228+00:00"
+  },
+  {
+    "id": "feccb7dd788e4733a5149964fd25f8eb",
+    "provider": "model",
+    "reserved_usd": 0.45624,
+    "actual_usd": 0.144384,
+    "started_at": "2026-09-20T00:51:35.324034+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "3d69732698ad4187187ce38be4527e3dd306d0650eec8d2363833b0320b11349",
+    "retry_of": null,
+    "duration_s": 140.4,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 45954,
+      "completion_tokens": 8746,
+      "total_tokens": 54700,
+      "cost": 0.144384,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.144384,
+        "upstream_inference_prompt_cost": 0.091908,
+        "upstream_inference_completions_cost": 0.052476
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5447,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865495-25A2GwgZb6KL6YM9awsw",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:53:55.729181+00:00"
+  },
+  {
+    "id": "6d29f2a2e5dd404480eeaaba3c2498dc",
+    "provider": "model",
+    "reserved_usd": 0.9665279999999999,
+    "actual_usd": 0.127128,
+    "started_at": "2026-09-20T00:51:35.327667+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "2ca9d15511aa0d7bcf2dfc7472ee19a9b575c1ecee0e8ebfd663bf772e8d465a",
+    "retry_of": null,
+    "duration_s": 62.35,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 50043,
+      "completion_tokens": 4539,
+      "total_tokens": 54582,
+      "cost": 0.127128,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.127128,
+        "upstream_inference_prompt_cost": 0.099894,
+        "upstream_inference_completions_cost": 0.027234
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1259,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865495-aWIT9gmyWRLvblCCuKiN",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:52:37.680676+00:00"
+  },
+  {
+    "id": "f8df25d48a9d4c09a438663ac03ab9dd",
+    "provider": "model",
+    "reserved_usd": 0.9561839999999999,
+    "actual_usd": 0.142962,
+    "started_at": "2026-09-20T00:52:37.714286+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "86957bd2165114429133817f68776258fc3de6ebee7056f551ff1ae5df864912",
+    "retry_of": null,
+    "duration_s": 121.83,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 48420,
+      "completion_tokens": 7719,
+      "total_tokens": 56139,
+      "cost": 0.142962,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.142962,
+        "upstream_inference_prompt_cost": 0.096648,
+        "upstream_inference_completions_cost": 0.046314
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4439,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865557-66S1RjctA5VjqsQerGFQ",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:54:39.543571+00:00"
+  },
+  {
+    "id": "13662ac5545a4677a576cbdb585a3740",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:26.944422+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/agent-hub/operator.md",
+    "source_id": "src_56565f67371994a7",
+    "finished_at": "2026-09-20T00:55:27.590134+00:00"
+  },
+  {
+    "id": "7c50999fc1ae46fb98412f35e30bdf76",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:26.953271+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/setting-up-conduit/billing.md",
+    "source_id": "src_b502f83a4ef37393",
+    "finished_at": "2026-09-20T00:55:27.592753+00:00"
+  },
+  {
+    "id": "6abad994fbfe4673b15bcbde40e67400",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:26.957637+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/agent-hub/internal-agent-use-cases.md",
+    "source_id": "src_8f25c49f10b781f9",
+    "finished_at": "2026-09-20T00:55:27.461218+00:00"
+  },
+  {
+    "id": "e361c433174e48c7907347a9413ed0f9",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:27.466370+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/devices/overview.md",
+    "source_id": "src_dd30ed33c607e76d",
+    "finished_at": "2026-09-20T00:55:28.629037+00:00"
+  },
+  {
+    "id": "cf4174b77e224e5b91eb84df9cd214b0",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:27.596809+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/api-reference/portals/overview.md",
+    "source_id": "src_e6b08f48fc993eb2",
+    "finished_at": "2026-09-20T00:55:28.029125+00:00"
+  },
+  {
+    "id": "09f26c589c274f1ab9abaa32af5d5226",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T00:55:28.645071+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/",
+    "source_id": "src_98f3111f126b26d0",
+    "finished_at": "2026-09-20T00:55:28.944539+00:00"
+  },
+  {
+    "id": "599e8292f78d43fd8932b7f56e47c087",
+    "provider": "model",
+    "reserved_usd": 1.032144,
+    "actual_usd": 0.147476,
+    "started_at": "2026-09-20T00:56:33.894319+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "4b2f191ad33d5076d03d52d73dbb3aa85dc8defa6a2163bb0cda1c9d47c5ea3b",
+    "retry_of": null,
+    "duration_s": 99.89,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 54628,
+      "completion_tokens": 6402,
+      "total_tokens": 61030,
+      "cost": 0.147476,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.147476,
+        "upstream_inference_prompt_cost": 0.109064,
+        "upstream_inference_completions_cost": 0.038412
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3595,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865794-ifdybO9Uzpr8U9Wqzts4",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:58:13.785350+00:00"
+  },
+  {
+    "id": "e25b9b06368541069ca445ec33e8ce8e",
+    "provider": "model",
+    "reserved_usd": 1.083108,
+    "actual_usd": 0.061134,
+    "started_at": "2026-09-20T00:58:13.806226+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "0992d2e63a8ec1be29ef20d2426058e5607cc99e5ac434204fbb0f29a5ddf8f5",
+    "retry_of": null,
+    "duration_s": 59.83,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 57477,
+      "completion_tokens": 4662,
+      "total_tokens": 62139,
+      "cost": 0.061134,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 54528,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.061134,
+        "upstream_inference_prompt_cost": 0.033162,
+        "upstream_inference_completions_cost": 0.027972
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1800,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789865893-nt5qjF3MLQWIco9ckNbf",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T00:59:13.641322+00:00"
+  },
+  {
+    "id": "cd7f798e51a745ba9d89936bb7380552",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T01:04:00.041976+00:00",
+    "status": "completed",
+    "url": "https://www.conduit.ai/",
+    "source_id": "src_98f3111f126b26d0",
+    "finished_at": "2026-09-20T01:04:00.375416+00:00"
+  },
+  {
+    "id": "c8c8020221ee4450a8a909aecb845a8b",
+    "provider": "model",
+    "reserved_usd": 1.024524,
+    "actual_usd": 0.166678,
+    "started_at": "2026-09-20T01:04:35.705287+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "3084cc5722a9103c3ee37899318a705f56a50798f95195d80595d20b8698ae9a",
+    "retry_of": null,
+    "duration_s": 162.01,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 52895,
+      "completion_tokens": 10180,
+      "total_tokens": 63075,
+      "cost": 0.166678,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.166678,
+        "upstream_inference_prompt_cost": 0.105598,
+        "upstream_inference_completions_cost": 0.06108
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5781,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866276-OEVWmHiKYrUUApRlvydu",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:07:17.716991+00:00"
+  },
+  {
+    "id": "c2705f54b5a34bdc912809e5cabe4119",
+    "provider": "model",
+    "reserved_usd": 0.348336,
+    "actual_usd": 0.147262,
+    "started_at": "2026-09-20T01:04:35.709443+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "a4f507994741b31732a456cfd92b929c7a4ca70cd260735f488751cd9ecea0ec",
+    "retry_of": null,
+    "duration_s": 203.85,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 33947,
+      "completion_tokens": 13260,
+      "total_tokens": 47207,
+      "cost": 0.147262,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.147262,
+        "upstream_inference_prompt_cost": 0.067702,
+        "upstream_inference_completions_cost": 0.07956
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 8444,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866275-FknBcY7gPEd8L0lsIKVK",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:07:59.568308+00:00"
+  },
+  {
+    "id": "32174b84a371486da6aad74ed8194504",
+    "provider": "model",
+    "reserved_usd": 0.305048,
+    "actual_usd": 0.112448,
+    "started_at": "2026-09-20T01:04:35.713163+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "998c54bad2fbc4a4070666a53130f4f1e5c72a7712e6d92c316680e05f5a3934",
+    "retry_of": null,
+    "duration_s": 143.42,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 29263,
+      "completion_tokens": 9019,
+      "total_tokens": 38282,
+      "cost": 0.112448,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.112448,
+        "upstream_inference_prompt_cost": 0.058334,
+        "upstream_inference_completions_cost": 0.054114
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5030,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866275-NVlziK0F6UXjo8mQijoa",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:06:59.137735+00:00"
+  },
+  {
+    "id": "0627c0d2bfe345b38f60713e616d0f75",
+    "provider": "model",
+    "reserved_usd": 0.98296,
+    "actual_usd": 0.150956,
+    "started_at": "2026-09-20T01:06:59.204668+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "77bc3fb09ff0805a3d299b43cdc224beb9700e5336c1bee0121ad31294deee38",
+    "retry_of": null,
+    "duration_s": 120.55,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 50344,
+      "completion_tokens": 8410,
+      "total_tokens": 58754,
+      "cost": 0.150956,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.150956,
+        "upstream_inference_prompt_cost": 0.100496,
+        "upstream_inference_completions_cost": 0.05046
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5260,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866419-pxM15e5mEhrvNu5XztI2",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:08:59.753070+00:00"
+  },
+  {
+    "id": "6aa66ff8b30a49a591c071b2bc977578",
+    "provider": "model",
+    "reserved_usd": 0.456374,
+    "actual_usd": 0.141168,
+    "started_at": "2026-09-20T01:07:17.752355+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "ab0cfcccbbc5dc691d5d74026123f5f6c5b3b6639cb66a8c190a89f330202d59",
+    "retry_of": null,
+    "duration_s": 114.34,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 45960,
+      "completion_tokens": 8208,
+      "total_tokens": 54168,
+      "cost": 0.141168,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.141168,
+        "upstream_inference_prompt_cost": 0.09192,
+        "upstream_inference_completions_cost": 0.049248
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4400,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866437-CHAOZUDpYv2JoLf2Md53",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:09:12.100142+00:00"
+  },
+  {
+    "id": "e3eb901d7ee24ee793a1fbacd0fd6afc",
+    "provider": "model",
+    "reserved_usd": 1.169664,
+    "actual_usd": 0.179116,
+    "started_at": "2026-09-20T01:09:12.137304+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "ba50f1dcf55cbd582818ee1845177b58b1d99f886ff894f4323ed9e8faa03a3f",
+    "retry_of": null,
+    "duration_s": 150.12,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 61730,
+      "completion_tokens": 9308,
+      "total_tokens": 71038,
+      "cost": 0.179116,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.179116,
+        "upstream_inference_prompt_cost": 0.123268,
+        "upstream_inference_completions_cost": 0.055848
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 4878,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866552-OFS4EYcqFuwDEFNvcWP5",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:11:42.260649+00:00"
+  },
+  {
+    "id": "53de65f55855437ea21070b65ec4ea37",
+    "provider": "page",
+    "reserved_usd": 0,
+    "actual_usd": 0,
+    "started_at": "2026-09-20T01:12:16.291607+00:00",
+    "status": "completed",
+    "url": "https://docs.conduit.ai/setting-up-conduit/credits",
+    "source_id": "src_f599093e8cf0b47d",
+    "finished_at": "2026-09-20T01:12:17.236004+00:00"
+  },
+  {
+    "id": "5742aa99d4424fb08a25c449f350eae2",
+    "provider": "model",
+    "reserved_usd": 0.184084,
+    "actual_usd": 0.081428,
+    "started_at": "2026-09-20T01:12:56.138571+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "e1f369a1854cc7c7f024168943bb80ee1422444b7d22850dc940ff54a8fb19cc",
+    "retry_of": null,
+    "duration_s": 128.97,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 14920,
+      "completion_tokens": 8630,
+      "total_tokens": 23550,
+      "cost": 0.081428,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.081428,
+        "upstream_inference_prompt_cost": 0.029648,
+        "upstream_inference_completions_cost": 0.05178
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 5594,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866776-u89NuvWfS8Kg4qXE0LKv",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:15:05.106978+00:00"
+  },
+  {
+    "id": "428a5fc57ee945f1b5d8a70587e237e1",
+    "provider": "model",
+    "reserved_usd": 1.3637359999999998,
+    "actual_usd": 0.184218,
+    "started_at": "2026-09-20T01:12:56.141336+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "72c3438657476b4a333a1f64f5cac8b350c9b1adc9c4e136405b5a259ae80120",
+    "retry_of": null,
+    "duration_s": 100.91,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 73116,
+      "completion_tokens": 6363,
+      "total_tokens": 79479,
+      "cost": 0.184218,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.184218,
+        "upstream_inference_prompt_cost": 0.14604,
+        "upstream_inference_completions_cost": 0.038178
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2450,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789866776-ud78qS3BTkD8kJrXHKEW",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:14:37.060186+00:00"
+  },
+  {
+    "id": "e99d56b21001463a9c588dc4d540e09c",
+    "provider": "model",
+    "reserved_usd": 2.270364,
+    "actual_usd": 0.352612,
+    "started_at": "2026-09-20T01:17:10.930253+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "c03770a3a75a8f97b87be2f40fce1577f170bf9dc69ca1c3a53b087341657fc5",
+    "retry_of": null,
+    "duration_s": 263.79,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 128297,
+      "completion_tokens": 16035,
+      "total_tokens": 144332,
+      "cost": 0.352612,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.352612,
+        "upstream_inference_prompt_cost": 0.256402,
+        "upstream_inference_completions_cost": 0.09621
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 13977,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867031-UoQeShW3z2ac8Kr7oPFh",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:21:34.735058+00:00"
+  },
+  {
+    "id": "8b1bdf4ffbf34625a37f4e8e694042fd",
+    "provider": "model",
+    "reserved_usd": 1.176372,
+    "actual_usd": 0.205202,
+    "started_at": "2026-09-20T01:17:10.935943+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "50fd1c203e487c384a21499f585013ed1a7cb9d53fab34cccfa0a160335b0c8d",
+    "retry_of": null,
+    "duration_s": 190.49,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 66298,
+      "completion_tokens": 12133,
+      "total_tokens": 78431,
+      "cost": 0.205202,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.205202,
+        "upstream_inference_prompt_cost": 0.132404,
+        "upstream_inference_completions_cost": 0.072798
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 10451,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867031-LRj3JayYSGkk2QYkZ7nk",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:20:21.425645+00:00"
+  },
+  {
+    "id": "0bbe152e67ac410cb9cfe7eff013782d",
+    "provider": "model",
+    "reserved_usd": 1.403456,
+    "actual_usd": 0.22298,
+    "started_at": "2026-09-20T01:17:10.939312+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "8aabd275c9493dec15393e092f2e11a0e451cb1ad7d27505bfa419565a5ac9a8",
+    "retry_of": null,
+    "duration_s": 174.04,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 77770,
+      "completion_tokens": 11272,
+      "total_tokens": 89042,
+      "cost": 0.22298,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.22298,
+        "upstream_inference_prompt_cost": 0.155348,
+        "upstream_inference_completions_cost": 0.067632
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 9521,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867031-gJrAyMj17PDTCqjflbE1",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:20:04.983360+00:00"
+  },
+  {
+    "id": "25bd2c1518e940f0989f860064455f25",
+    "provider": "model",
+    "reserved_usd": 1.333332,
+    "actual_usd": 0.246098,
+    "started_at": "2026-09-20T01:20:05.003753+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "0e34f4c998348928e2a7857f5f2fc5f9b62a38a299778deaf95b442ef02efa0e",
+    "retry_of": null,
+    "duration_s": 246.4,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 77113,
+      "completion_tokens": 15344,
+      "total_tokens": 92457,
+      "cost": 0.246098,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.246098,
+        "upstream_inference_prompt_cost": 0.154034,
+        "upstream_inference_completions_cost": 0.092064
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 13615,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867205-Kskk7H5fof4UvREEXcyu",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:24:11.408815+00:00"
+  },
+  {
+    "id": "0102c1659ecd490880a0aa2d8399ae5e",
+    "provider": "model",
+    "reserved_usd": 1.152564,
+    "actual_usd": 0.18802,
+    "started_at": "2026-09-20T01:20:21.443701+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "bfe475f691d85bba6c301a06820cdcd3b0f6eb8632ac1756b74e7c2f948eb42f",
+    "retry_of": null,
+    "duration_s": 154.74,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 64976,
+      "completion_tokens": 9710,
+      "total_tokens": 74686,
+      "cost": 0.18802,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.18802,
+        "upstream_inference_prompt_cost": 0.12976,
+        "upstream_inference_completions_cost": 0.05826
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 7642,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867221-BHpoY1zsLIgPVSEPtdl9",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:22:56.185148+00:00"
+  },
+  {
+    "id": "8c414fd4bf0c47909e3fa6a99560b65d",
+    "provider": "model",
+    "reserved_usd": 1.03484,
+    "actual_usd": 0.19521,
+    "started_at": "2026-09-20T01:21:34.750171+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "7bb628fab6b5d1dd35bf416217ec2af7528b8cbeb100467684083412235e9240",
+    "retry_of": null,
+    "duration_s": 208.55,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 56895,
+      "completion_tokens": 13602,
+      "total_tokens": 70497,
+      "cost": 0.19521,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.19521,
+        "upstream_inference_prompt_cost": 0.113598,
+        "upstream_inference_completions_cost": 0.081612
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 11545,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867294-GuP9Z3UqhF6dBJVe0x2i",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:25:03.302835+00:00"
+  },
+  {
+    "id": "4096460b4ad340c1957e18a2a5c17a0f",
+    "provider": "model",
+    "reserved_usd": 1.0292999999999999,
+    "actual_usd": 0.197706,
+    "started_at": "2026-09-20T01:22:56.207481+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "99398ff334d2aca0df0dd8733abdf41dd316b743d3b0911524803dad5e00b525",
+    "retry_of": null,
+    "duration_s": 215.46,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 56913,
+      "completion_tokens": 14012,
+      "total_tokens": 70925,
+      "cost": 0.197706,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.197706,
+        "upstream_inference_prompt_cost": 0.113634,
+        "upstream_inference_completions_cost": 0.084072
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 11918,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867376-fPFMnAQgnmxAiu8p4DMz",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:26:31.675487+00:00"
+  },
+  {
+    "id": "c51d0b0965ad43f283777553a622a3b9",
+    "provider": "model",
+    "reserved_usd": 1.0153159999999999,
+    "actual_usd": 0.168764,
+    "started_at": "2026-09-20T01:24:11.427848+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "54fe12e42dc1a2d839d0f74069edfba75236e5b28b2570aac98fc4ed7de956ab",
+    "retry_of": null,
+    "duration_s": 152.41,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 56161,
+      "completion_tokens": 9439,
+      "total_tokens": 65600,
+      "cost": 0.168764,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.168764,
+        "upstream_inference_prompt_cost": 0.11213,
+        "upstream_inference_completions_cost": 0.056634
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 8202,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867451-kQIkeYGZRkSmC4JjFVDi",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:26:43.844825+00:00"
+  },
+  {
+    "id": "afe5dbefc4d34bafaad1361806f843c1",
+    "provider": "model",
+    "reserved_usd": 0.40154799999999996,
+    "actual_usd": 0.123072,
+    "started_at": "2026-09-20T01:29:40.102029+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "d32e9e3eb8fb2e027f5ecffaf84843bf81a0c5d3eab4d9ffe0f85759ce91af9f",
+    "retry_of": null,
+    "duration_s": 73.05,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 46473,
+      "completion_tokens": 5053,
+      "total_tokens": 51526,
+      "cost": 0.123072,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 128,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.123072,
+        "upstream_inference_prompt_cost": 0.092754,
+        "upstream_inference_completions_cost": 0.030318
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 3286,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789867780-aBv04LjcIdf0p8ugHrMf",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:30:53.159244+00:00"
+  },
+  {
+    "id": "bbbb25a82703462eaa171825bf2bcc75",
+    "provider": "model",
+    "reserved_usd": 0.12053,
+    "actual_usd": null,
+    "started_at": "2026-09-20T01:37:24.417899+00:00",
+    "status": "uncertain",
+    "operation": "chat",
+    "request_hash": "a1922a0e9279a2d5833d92163d80a3880c13a37ab470b62c29aba55a4da6e297",
+    "retry_of": null,
+    "error_type": "ConnectError",
+    "duration_s": 0.0,
+    "http_status": null,
+    "finished_at": "2026-09-20T01:37:24.422453+00:00"
+  },
+  {
+    "id": "2ee66790693d41208f95882fba0d8597",
+    "provider": "model",
+    "reserved_usd": 0.12053,
+    "actual_usd": 0.033648,
+    "started_at": "2026-09-20T01:37:57.459426+00:00",
+    "status": "completed",
+    "operation": "chat",
+    "request_hash": "a1922a0e9279a2d5833d92163d80a3880c13a37ab470b62c29aba55a4da6e297",
+    "retry_of": "bbbb25a82703462eaa171825bf2bcc75",
+    "duration_s": 28.94,
+    "credits": null,
+    "usage": {
+      "prompt_tokens": 10962,
+      "completion_tokens": 1954,
+      "total_tokens": 12916,
+      "cost": 0.033648,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.033648,
+        "upstream_inference_prompt_cost": 0.021924,
+        "upstream_inference_completions_cost": 0.011724
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 1587,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "provider_request_id": "gen-1789868277-aQuJOKhoa5R5BkZjsooH",
+    "dollar_accounting": "reported",
+    "finished_at": "2026-09-20T01:38:26.403401+00:00"
+  }
+]

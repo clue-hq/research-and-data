@@ -1,0 +1,2479 @@
+{
+  "started_at": "2026-09-19T22:14:54.602012+00:00",
+  "identity": {
+    "domain": "conduit.ai",
+    "official_linkedin_url": "https://www.linkedin.com/company/useconduitai/",
+    "website_source_id": "src_98f3111f126b26d0",
+    "linkedin_source_id": "src_7c4526fa84e6106c",
+    "page_id": "96574094",
+    "verification": "reciprocal_official_links_and_linkedin_company_job_filter"
+  },
+  "pages": [
+    {
+      "window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 117,
+      "ads_returned": 24,
+      "has_next": true
+    },
+    {
+      "window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 0,
+      "ads_returned": 24,
+      "has_next": true
+    },
+    {
+      "window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 0,
+      "ads_returned": 24,
+      "has_next": true
+    },
+    {
+      "window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 0,
+      "ads_returned": 24,
+      "has_next": true
+    },
+    {
+      "window": {
+        "startdate": "2026-03-23",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 330,
+      "ads_returned": 24,
+      "has_next": true
+    },
+    {
+      "window": {
+        "startdate": "2026-03-23",
+        "enddate": "2026-09-18"
+      },
+      "page_id": "96574094",
+      "reported_total_ads": 0,
+      "ads_returned": 24,
+      "has_next": true
+    }
+  ],
+  "ads": [
+    {
+      "id": "1538479816",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538479816",
+      "headline": {
+        "title": "AI agents built for hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Elevate the guest experience and automate internal operations across all your systems with Conduit. Learn more at www.co…",
+        "link": "http://www.conduit.ai"
+      },
+      "cta": null,
+      "destination_url": "http://www.conduit.ai",
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.602692+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_20613a17b78be264c8de"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_59aa5fdb3dc2cc17",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nElevate the guest experience and automate internal operations across all your systems with Conduit. Learn more at\nwww.conduit.ai\n…see more\nAI agents built for hospitality | Conduit\nLearn more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1538690886",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538690886",
+      "headline": {
+        "title": "AI Agents Built for Hospitality, Not Generic Chatbots",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Build on-brand AI agents purpose-built for hospitality that respond instantly, convert inquiries into bookings, and driv…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.606494+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_91078736067687705b0a"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_62adc21be4856125",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nBuild on-brand AI agents purpose-built for hospitality that respond instantly, convert inquiries into bookings, and drive upsells across your existing channels. Plug into the systems you already use and see why 1,000+ hospitality brands in 120+ countries trust Conduit.\n…see more\nAI Agents Built for Hospitality, Not Generic Chatbots\nLearn more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1538690896",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538690896",
+      "headline": {
+        "title": "AI Agents Built for Hospitality, Not Generic Chatbots",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Build on-brand AI agents purpose-built for hospitality that respond instantly, convert inquiries into bookings, and driv…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.609943+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_91078736067687705b0a"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538642946",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538642946",
+      "headline": {
+        "title": "AI agents built for hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Elevate the guest experience and automate internal operations across all your systems with Conduit. Learn more at www.co…",
+        "link": "http://www.conduit.ai"
+      },
+      "cta": null,
+      "destination_url": "http://www.conduit.ai",
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.613627+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_20613a17b78be264c8de"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538623406",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538623406",
+      "headline": {
+        "title": "Automate Customer Support Without Losing the Human Touch",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impre…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.616817+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_93a7f00b6fc59e254462"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_7887eadbc3fe7616",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\n“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impress me… but Conduit has blown me away.” - Dennis Goedheid, Founder & CEO, at Casiola\n…see more\nAutomate Customer Support Without Losing the Human Touch\nLearn more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1538642956",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538642956",
+      "headline": {
+        "title": "Automate Your Guest Services Now | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit automates your guest services with AI agents. Learn more today.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.620324+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_c4b5bd2fd68f7413d031"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538623416",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538623416",
+      "headline": {
+        "title": "AI agents built for hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Elevate the guest experience and automate internal operations across all your systems with Conduit. Learn more at www.co…",
+        "link": "http://www.conduit.ai"
+      },
+      "cta": null,
+      "destination_url": "http://www.conduit.ai",
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.623549+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_20613a17b78be264c8de"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538671576",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538671576",
+      "headline": {
+        "title": "Automate Your Guest Services Now | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit automates your guest services with AI agents. Learn more today.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.626500+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_c4b5bd2fd68f7413d031"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538633246",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538633246",
+      "headline": {
+        "title": "AI Agents for Hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Everyone is talking about Conduit. And it's no wonder with the time and money it unlocks for hospitality owners.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.629968+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b772d83f51cd30f38773"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538586536",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538586536",
+      "headline": {
+        "title": "AI Agents for Hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Everyone is talking about Conduit. And it's no wonder with the time and money it unlocks for hospitality owners.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.633319+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b772d83f51cd30f38773"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538529436",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538529436",
+      "headline": {
+        "title": "AI Agents Built for Hospitality, Not Generic Chatbots",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Build on-brand AI agents purpose-built for hospitality that respond instantly, convert inquiries into bookings, and driv…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.636612+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_91078736067687705b0a"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538548916",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538548916",
+      "headline": {
+        "title": "Automate Your Guest Services Now | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit automates your guest services with AI agents. Learn more today.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.639842+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_c4b5bd2fd68f7413d031"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538730036",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538730036",
+      "headline": {
+        "title": "AI Agents for Hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Everyone is talking about Conduit. And it's no wonder with the time and money it unlocks for hospitality owners.",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.642772+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b772d83f51cd30f38773"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538661526",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538661526",
+      "headline": {
+        "title": "Automate Customer Support Without Losing the Human Touch",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impre…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.646262+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_93a7f00b6fc59e254462"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538690926",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538690926",
+      "headline": {
+        "title": "AI Agents Built for Hospitality, Not Generic Chatbots",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Build on-brand AI agents purpose-built for hospitality that respond instantly, convert inquiries into bookings, and driv…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.649743+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_91078736067687705b0a"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538720546",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538720546",
+      "headline": {
+        "title": "AI agents built for hospitality | Conduit",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Elevate the guest experience and automate internal operations across all your systems with Conduit. Learn more at www.co…",
+        "link": "http://www.conduit.ai"
+      },
+      "cta": null,
+      "destination_url": "http://www.conduit.ai",
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.652659+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_20613a17b78be264c8de"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538558736",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538558736",
+      "headline": {
+        "title": "Automate Customer Support Without Losing the Human Touch",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impre…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.655818+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_93a7f00b6fc59e254462"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538700526",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538700526",
+      "headline": {
+        "title": "Automate Customer Support Without Losing the Human Touch",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impre…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.658932+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_93a7f00b6fc59e254462"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538595416",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538595416",
+      "headline": {
+        "title": "Automate Customer Support Without Losing the Human Touch",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "“With 20 years in software development and having built a few successful companies myself, it takes a lot to truly impre…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.662286+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_93a7f00b6fc59e254462"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1514011956",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1514011956",
+      "headline": {
+        "title": "Conduit is now on the App Store",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit is now on the App Store.\n\nSo you can still run operations while away from a desk.\n\nWhen your agents hit a decisi…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "video",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.667121+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_5cf34207b40cb9ea9c5b"
+      ],
+      "media_status": "cover_only"
+    },
+    {
+      "id": "1514021976",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1514021976",
+      "headline": {
+        "title": "Portals is live in Conduit today",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Today we launch Portals, the biggest release in Conduit's history.\n\nPortals are one link for everything your guest needs…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "video",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.670678+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_07fd9b105979dfd5f31f"
+      ],
+      "media_status": "cover_only"
+    },
+    {
+      "id": "1513932476",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1513932476",
+      "headline": {
+        "title": "Conduit | AI agents for hospitality",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your devices just got a brain.\n\nToday we're launching Conduit Devices: the smart locks, thermostats, and noise sensors a…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "video",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.674623+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_336b5f7590972698cfcd"
+      ],
+      "media_status": "cover_only"
+    },
+    {
+      "id": "1513892706",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1513892706",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Wynwood House built its brand on a powerful idea: everyone deserves to feel at home wherever they are.\n\nBut it's hard to…",
+        "link": "https://www.linkedin.com/company/wynwood-house"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.678303+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b9d9d547def466798f0f"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_dd47af2745ba5b91",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nWynwood House\nbuilt its brand on a powerful idea: everyone deserves to feel at home wherever they are.\n\nBut it's hard to feel at home when you have a question and the answer takes 15 minutes.\n\nThat was the reality of guest communication across seven countries on four disconnected tools. The team spent more time switching between systems than taking care of guests.\n\nSince moving to Conduit, guests get an answer in about 3 minutes, in their own language, written the way a good host would write it. And every week the team sits down with the hardest conversations to make the next stay better.\n\nGuests notice. Wynwood House holds a 4.8 Airbnb rating in Colombia.\n\nFull story in the comments.\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1502774056",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502774056",
+      "headline": {
+        "title": "Conduit | AI agents for hospitality",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your devices just got a brain.\n\nToday we're launching Conduit Devices: the smart locks, thermostats, and noise sensors a…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "video",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.682750+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_336b5f7590972698cfcd"
+      ],
+      "media_status": "cover_only"
+    },
+    {
+      "id": "1502619576",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502619576",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've officially connected Conduit to Mews. Your AI agent can now read what's in Mews and act on it, on its own.\n\nFor a …",
+        "link": "https://nl.linkedin.com/company/mewssystems"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.686224+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_ba054f770ecd71bd3edc"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_792004fc0d3ff885",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nWe've officially connected Conduit to\nMews\n. Your AI agent can now read what's in\nMews\nand act on it, on its own.\n\nFor a while, an agent connected to your PMS could answer a question about a booking. Now it can do the work behind it.\n\nWith Mews connected, the agent can:\n\n→ Pull the live reservation: dates, status, balance, access codes\n→ Look up a guest, including VIP or blocklist status, and reply in their language\n→ Move a check-in or check-out when a guest asks\n→ Cancel a reservation, applying the fee per your policy\n→ Open a housekeeping or maintenance task and route it to the right department\n→ Drop an internal note on the reservation for the team\n\nSo when a guest says the AC is out, the agent opens a maintenance task for the right department, notes it on the reservation, and tells the guest it's handled. No one has to touch it.\n\nRuns on Mews? Book a demo in the comments below.\n\nAlready on Conduit? Add Mews in Settings → Connections.\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nRan from Jul 16, 2026 to Aug 23, 2026\nAd Impressions\nEstimated total impressions and impressions by country.\nLearn more\nTotal Impressions\n< 1k\nCountry\nUnited States\n18%\nUnited Arab Emirates\n9%\nPhilippines\n7%\nAustralia\n6%\nSouth Africa\n6%\nCanada\n6%\nIndia\n5%\nIndonesia\n5%\nSaudi Arabia\n4%\nMexico\n4%\nPoland\n3%\nColombia\n2%\nBrazil\n2%\nUnited Kingdom\n2%\nTurkey\n2%\nAlgeria\n2%\nPeru\n2%\nNetherlands\n1%\nSweden\n1%\nLebanon\n1%\nSpain\n1%\nChile\n1%\nItaly\n1%\nNew Zealand\n1%\nEgypt\n1%\nPakistan\n1%\nQatar\n1%\nThailand\n1%\nAlbania\n< 1%\nEstonia\n< 1%\nJapan\n< 1%\nSri Lanka\n< 1%\nArgentina\n< 1%\nFrance\n< 1%\nGhana\n< 1%\nCambodia\n< 1%\nBangladesh\n< 1%\nSwitzerland\n< 1%\nIreland\n< 1%\nRussia\n< 1%\nSingapore\n< 1%\nVenezuela\n< 1%\nBelgium\n< 1%\nPortugal\n< 1%\nShow more\nShow less\nAd Targeting\nTop targeting parameters selected by the advertiser.\nLearn more\nLanguage\nTargeting includes English\nLocation\nTargeting includes APAC, United States and\n4 others\nEMEA, MENA, South America, NAMER\nTargeting parameter\nTargeted\nExcluded\nAudience\nDemographic\nCompany\nEducation\nJob\nMember Interests and Traits\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": "Ran from Jul 16, 2026 to Aug 23, 2026"
+      }
+    },
+    {
+      "id": "1502745076",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502745076",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've officially connected Conduit to Mews. Your AI agent can now read what's in Mews and act on it, on its own.\n\nFor a …",
+        "link": "https://nl.linkedin.com/company/mewssystems"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.689947+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_ba054f770ecd71bd3edc"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502647576",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502647576",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your Conduit agents can do more than answer guests now.\n\nUntil this week, an agent handled the conversation. That's your…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.699281+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_9c1ed1704b180796274f"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_4414ccf76fef9130",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nYour Conduit agents can do more than answer guests now.\n\nUntil this week, an agent handled the conversation. That's your customer agent, and it still does that.\n\nWhat's new: internal agents that run the operation in the background. You trigger one on a schedule, a webhook, or any channel, and it runs on its own. You can also @-mention it in Slack or hand it work from the Operator.\n\nThree to try on the marketplace today:\n\n💰 Upsell Opportunity Analysis: reads every guest conversation and flags the upsells you missed, often a few hundred dollars a reservation.\n\n⭐ Review Analysis: turns your pile of guest reviews into clear themes and the fixes worth making.\n\n📨 Inquiry Win-back: this one's a skill, not its own agent. You add it to your guest agent and set who's worth chasing (a 20-person group, a month-long stay, whatever you decide), and it follows up while you're still in the running. Early users saw inquiry-to-booking climb more than 15%, before touching a setting.\n\nAlready on Conduit? Agents live under Agents, the skill under Skills. Add one and give it a trigger to go live.\n\nNot on Conduit? Try it now with the link below.\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1502647566",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502647566",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your Conduit agents can do more than answer guests now.\n\nUntil this week, an agent handled the conversation. That's your…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.702974+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_9c1ed1704b180796274f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502745066",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502745066",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit now connects to OPERA Cloud by Oracle Hospitality, the property management system that runs a huge share of the …",
+        "link": "https://www.linkedin.com/company/oracle"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.706338+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_1130db6116ebcbe22c30"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_f5685d8d0f1d23a5",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nConduit now connects to OPERA Cloud by\nOracle\nHospitality, the property management system that runs a huge share of the world's hotels.\n\nFor a hotel, an AI agent is only as good as what it knows and what it can do. Connecting OPERA gives Conduit both.\n\nWhat it knows:\nReservations, guest contact details, bookings, and listings sync into Conduit, along with live availability across every room type, including group blocks. The agent knows who's arriving, what they booked, which property's rules apply, and what's open to sell right now.\n\nWhat it can do:\nThrough Conduit's MCP adapter for PMSes, the agent gets the full Oracle API, effectively a direct line into OPERA. It can create and modify reservations and handle the work a front desk does, on its own.\n\nOn the revenue side:\nBecause the agent sees live availability and can connect to your CRM, it works group sales too, running outreach to fill open blocks before they hit cutoff.\n\nThis isn't a chat assistant sitting inside your PMS. It's an agent that sees your live inventory and your guests, and can act on both.\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1502619566",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502619566",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We just partnered with Track Hospitality, our exclusive STR PMS launch partner, to build something STR operators have ne…",
+        "link": "https://www.linkedin.com/company/trackhospitality"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.710145+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_5dfc0a74e9e25c4199d4"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_227f5a990b435e78",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nWe just partnered with\nTrack Hospitality\n, our exclusive STR PMS launch partner, to build something STR operators have needed for a while.\n\nMost property managers send owners a monthly statement and call it relationship management. But a statement tells you what happened, it doesn't tell you could be at risk of leaving \n\nSo we built an owner health scoring skill inside\nConduit\n, native to Track, that runs across your entire portfolio in one pass.\n\nEvery owner gets scored 0-100 across eight signals: revenue trend, booking velocity, ADR stability, maintenance backlog, payout timing, guest messaging sentiment, tenure, and whether they're approaching contract renewal.\n\nWhat comes out the other side:\n\n→ Your 10 owners who need attention this week, ranked by priority, each with the single signal to focus on\n→ Your 10 healthiest owners, so you know who deserves a proactive call this week\n\nLink in the comments to claim it free.\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1502725396",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502725396",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your Conduit agents can do more than answer guests now.\n\nUntil this week, an agent handled the conversation. That's your…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.713894+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_9c1ed1704b180796274f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502755166",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502755166",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've had voice agents for a while. Now they've gotten a lot better.\n\nFor a long time, voice AI was good at conversation…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.717701+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_6da0273b115f49c09117"
+      ],
+      "media_status": "saved",
+      "detail_evidence": {
+        "ad_details_source_id": "src_6ff3f68dff3a2c52",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Ad Details | LinkedIn\nAd Library\nLinkedIn Ad Library\nAd Details\nConduit\nPromoted\nWe've had voice agents for a while. Now they've gotten a lot better.\n\nFor a long time, voice AI was good at conversation and not much else. It could answer questions and take a message, but anything that touched a real system ended with \"let me have someone follow up.\"\n\nWhat changed is real-time tool calling. The models have been smart enough to pick the right tool and use it in the middle of a live call, fast enough that the guest never feels a long pause. \n\nAnd with our hospitality MCPs, our voice agent can take a booking in your PMS, change a reservation, or reset a door code, on the call, without a handoff.\n\nFor our initial group of users, voice resolution went from 56% to 92%. That is the share of calls the agent finishes on its own, no callback, no human handoff.\n\nAI agents that elevate the guest experience requires the work to be done while the guest is still on the line.\n\nSee below to learn more!\n…see more\nPlease note that this ad may have multiple versions. Some versions may appear different on mobile or desktop screens with different sizes.\nAbout the ad\nSingle Image Ad\nAdvertiser\nConduit\nPaid for by HostAI Labs, Inc.\nAbout\nCookie Policy\nPrivacy Policy\nYour California Privacy Choices\nUser Agreement\nAccessibility\nLinkedIn Corporation 2026",
+        "run_dates_label": null
+      }
+    },
+    {
+      "id": "1502725406",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502725406",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit now connects to OPERA Cloud by Oracle Hospitality, the property management system that runs a huge share of the …",
+        "link": "https://www.linkedin.com/company/oracle"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.721545+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_1130db6116ebcbe22c30"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502705596",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502705596",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit is now natively integrated with Expedia.\n\nWe built a direct connection into Expedia's messaging API, so replies …",
+        "link": "https://www.linkedin.com/showcase/expedia/"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.725133+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_de31afdc643306e1782d"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502783946",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502783946",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Wynwood House built its brand on a powerful idea: everyone deserves to feel at home wherever they are.\n\nBut it's hard to…",
+        "link": "https://www.linkedin.com/company/wynwood-house"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.728812+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b9d9d547def466798f0f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502793536",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502793536",
+      "headline": {
+        "title": "Conduit | AI agents for hospitality",
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your devices just got a brain.\n\nToday we're launching Conduit Devices: the smart locks, thermostats, and noise sensors a…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "video",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.732282+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_336b5f7590972698cfcd"
+      ],
+      "media_status": "cover_only"
+    },
+    {
+      "id": "1502822666",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502822666",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Wynwood House built its brand on a powerful idea: everyone deserves to feel at home wherever they are.\n\nBut it's hard to…",
+        "link": "https://www.linkedin.com/company/wynwood-house"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.735891+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b9d9d547def466798f0f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502638646",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502638646",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've had voice agents for a while. Now they've gotten a lot better.\n\nFor a long time, voice AI was good at conversation…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.739351+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_6da0273b115f49c09117"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502685756",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502685756",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit now connects to OPERA Cloud by Oracle Hospitality, the property management system that runs a huge share of the …",
+        "link": "https://www.linkedin.com/company/oracle"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.743003+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_1130db6116ebcbe22c30"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502735056",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502735056",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit is now natively integrated with Expedia.\n\nWe built a direct connection into Expedia's messaging API, so replies …",
+        "link": "https://www.linkedin.com/showcase/expedia/"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.746979+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_de31afdc643306e1782d"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502666826",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502666826",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've had voice agents for a while. Now they've gotten a lot better.\n\nFor a long time, voice AI was good at conversation…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.750679+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_6da0273b115f49c09117"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502841886",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502841886",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We just partnered with Track Hospitality, our exclusive STR PMS launch partner, to build something STR operators have ne…",
+        "link": "https://www.linkedin.com/company/trackhospitality"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.754750+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_5dfc0a74e9e25c4199d4"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502676396",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502676396",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've officially connected Conduit to Mews. Your AI agent can now read what's in Mews and act on it, on its own.\n\nFor a …",
+        "link": "https://nl.linkedin.com/company/mewssystems"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.758529+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_ba054f770ecd71bd3edc"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502715216",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502715216",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We just partnered with Track Hospitality, our exclusive STR PMS launch partner, to build something STR operators have ne…",
+        "link": "https://www.linkedin.com/company/trackhospitality"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:54.762094+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_5dfc0a74e9e25c4199d4"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502695546",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502695546",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Your Conduit agents can do more than answer guests now.\n\nUntil this week, an agent handled the conversation. That's your…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.423952+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_9c1ed1704b180796274f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502695556",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502695556",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've had voice agents for a while. Now they've gotten a lot better.\n\nFor a long time, voice AI was good at conversation…",
+        "link": null
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.433952+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_6da0273b115f49c09117"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502705576",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502705576",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit is now natively integrated with Expedia.\n\nWe built a direct connection into Expedia's messaging API, so replies …",
+        "link": "https://www.linkedin.com/showcase/expedia/"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.441668+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_de31afdc643306e1782d"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502764836",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502764836",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit is now natively integrated with Expedia.\n\nWe built a direct connection into Expedia's messaging API, so replies …",
+        "link": "https://www.linkedin.com/showcase/expedia/"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.448973+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_de31afdc643306e1782d"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502783936",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502783936",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We've officially connected Conduit to Mews. Your AI agent can now read what's in Mews and act on it, on its own.\n\nFor a …",
+        "link": "https://nl.linkedin.com/company/mewssystems"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.455783+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_ba054f770ecd71bd3edc"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502657016",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502657016",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Conduit now connects to OPERA Cloud by Oracle Hospitality, the property management system that runs a huge share of the …",
+        "link": "https://www.linkedin.com/company/oracle"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.462678+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_1130db6116ebcbe22c30"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502657026",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502657026",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "Wynwood House built its brand on a powerful idea: everyone deserves to feel at home wherever they are.\n\nBut it's hard to…",
+        "link": "https://www.linkedin.com/company/wynwood-house"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.469440+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_b9d9d547def466798f0f"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1502773856",
+      "advertiser": {
+        "name": "Conduit",
+        "logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_100_100/B4EZ7xhey.HoAI-/0/1782168546744/useconduitai_logo?e=1791417600&v=beta&t=XETlIWlt97XsOWWL4S4Gp5F9_CiYSjwOSJ_IcjMGzAQ",
+        "promoted": true
+      },
+      "source_url": "https://www.linkedin.com/ad-library/detail/1502773856",
+      "headline": {
+        "title": null,
+        "description": "Promoted"
+      },
+      "commentary": {
+        "text": "We just partnered with Track Hospitality, our exclusive STR PMS launch partner, to build something STR operators have ne…",
+        "link": "https://www.linkedin.com/company/trackhospitality"
+      },
+      "cta": null,
+      "destination_url": null,
+      "format": "image",
+      "retrieval_window": {
+        "startdate": "2026-06-21",
+        "enddate": "2026-09-18"
+      },
+      "retrieved_at": "2026-09-19T22:14:58.474805+00:00",
+      "run_dates": {
+        "startDate": null,
+        "endDate": null,
+        "adDuration": null,
+        "totalImpressions": null,
+        "impressionsByCountry": [],
+        "targeting": {}
+      },
+      "asset_ids": [
+        "asset_5dfc0a74e9e25c4199d4"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538381626",
+      "advertiser": {
+        "name": "Conduit",
+        "promoted": true
+      },
+      "post_author": "Punn Kam",
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538381626",
+      "headline": {
+        "title": null,
+        "description": "Co-founder at Conduit | Ex-Google | YC Alum"
+      },
+      "commentary": {
+        "text": "Guests in LatAm send 2x more messages than in North America.\n\nWe looked at millions of guest messages on Conduit and ave…",
+        "link": null
+      },
+      "format": "image",
+      "retrieved_at": "2026-09-19T22:28:33.982238+00:00",
+      "detail_evidence": {
+        "ad_details_source_id": "src_74beb96da6e34c56",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Punn Kam\n\nPromoted by Conduit\n\nGuests in LatAm send 2x more messages than in North America.\n\nWe looked at millions of guest messages on Conduit and averaged them by property. The spread was not what I expected.\n\nMessages per property per month:\n\n- Latin America: 23.7\n- Middle East and Africa: 21.5\n- Europe: 19.0\n- Asia-Pacific: 15.4\n- North America: 10.3\n\nLatin America runs more than double North America. Inside the regions it gets wider still, with Argentina at 52.5 and Brazil at 43.1 against Australia at 10.4 and the United States at 9.6.\n\nI don't think there's a single cause. North America may be more established with self-check-ins, which reduce message volume. The density of Latin America might make navigation more confusing. \n\nWhatever the reason, operators must staff up for the demand across both the average and on seasonal peaks. AI agents must play a major role in that staffing plan.\n\nFull analysis in the comments.\n\nAbout the ad\n\nSingle Image Ad\n\nAdvertiser Conduit\n\nPaid for by HostAI Labs, Inc.\n\nRan from Aug 7, 2026 to Sep 10, 2026",
+        "run_dates_label": "Ran from Aug 7, 2026 to Sep 10, 2026"
+      },
+      "asset_ids": [
+        "asset_0cd2c9d5953cb4608b56"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1514101346",
+      "advertiser": {
+        "name": "Conduit",
+        "promoted": true
+      },
+      "post_author": "Cole Rubin",
+      "source_url": "https://www.linkedin.com/ad-library/detail/1514101346",
+      "headline": {
+        "title": null,
+        "description": "Co-Founder @ Conduit | YC W24"
+      },
+      "commentary": {
+        "text": "Today we're launching Portals, the biggest release in Conduit's history.\n\nPortals is one link for everything a guest nee…",
+        "link": "https://www.linkedin.com/company/useconduitai"
+      },
+      "format": "image",
+      "retrieved_at": "2026-09-19T22:28:34.322750+00:00",
+      "detail_evidence": {
+        "ad_details_source_id": "src_ef60961ec6013f90",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Cole Rubin\n\nPromoted by Conduit\n\nToday we're launching Portals, the biggest release in Conduit's history.\n\nPortals is one link for everything a guest needs. Check-in, upsells, payments, and a chat agent built in that answers their questions and books the upsells itself.\n\nHere's the flow:\n\n1. A guest books a stay and gets texted their portal link\n2. They verify with a selfie against their ID\n3. They sign the check-in waiver\n4. Their room key drops into their wallet, and they land in their portal: custom upsell offers and every detail of the stay in one place\n\nThen it's check-in day. They show up, walk to the room, and swipe to open. If the room is already cleaned, an early check-in offer pops up: get in now for $40. \n\nLand somewhere before 1pm and you're buying that every time. And it's easy money the hotel used to leave on the table.\n\nIf you're already on Conduit, it's live in your sidebar right now.\n\nIf you're not yet, change that by clicking the link in the comments to talk to our team. \n\nBtw, if these don't pay for themselves, you don't pay for it!\n\nAbout the ad\n\nSingle Image Ad\n\nAdvertiser Conduit\n\nPaid for by HostAI Labs, Inc.\n\n",
+        "run_dates_label": null
+      },
+      "asset_ids": [
+        "asset_5b9932acfac9d2c0562e"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538267846",
+      "advertiser": {
+        "name": "Conduit",
+        "promoted": true
+      },
+      "post_author": "Cole Rubin",
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538267846",
+      "headline": {
+        "title": null,
+        "description": "Co-Founder @ Conduit | YC W24"
+      },
+      "commentary": {
+        "text": "Francesco Taiano runs short-term rentals across Italy and Dubai. In one year, upsells alone reached 5% of his Dubai reve…",
+        "link": "https://ae.linkedin.com/in/francesco-taiano-3b5bb0188"
+      },
+      "format": "image",
+      "retrieved_at": "2026-09-19T22:28:34.410539+00:00",
+      "detail_evidence": {
+        "ad_details_source_id": "src_4e5d95d01223650d",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Cole Rubin\n\nPromoted by Conduit\n\nFrancesco Taiano runs short-term rentals across Italy and Dubai. In one year, upsells alone reached 5% of his Dubai revenue. Here's how he did it:\n\nInitially, his team was spending most of the day answering the same guest questions over and over, then re-answering them in a different language. \n\nOn top of that, 50 to 70% of the maintenance issues guests reported were things they could've fixed themselves in two minutes, if someone had just walked them through it. \n\nTo keep up with the volume, he was running virtual assistant teams out of the Philippines and Pakistan just to cover the messages, a workaround that kept things running but didn't let the business grow.\n\nSo he moved the whole operation onto Conduit and built custom tooling on top of it: \n\n- A smart-lock integration for guest check-in\n- Automated payment links\n- A knowledge base he manages himself\n\nAs a result:\n\n→ Guests now get instant answers in their own language, and the agent walks them through minor maintenance fixes on the spot\n→ Positive reviews went up over the year, because guests get help the moment they need it instead of waiting on a VA at 2am\n→ The same internal team now covers both Italy and Dubai, freed up for sales and new business, with no new hires\n\nInstead of shrinking his team, Francesco used AI to let them do more, and stopped needing outside help just to keep the lights on.\n\n--\n\nWe wrote a breakdown of how Francesco built this out, including the custom tooling behind it and exactly how the upsell automation escalates offers straight to the provider. \n\nLink in comments.\n\nAbout the ad\n\nSingle Image Ad\n\nAdvertiser Conduit\n\nPaid for by HostAI Labs, Inc.\n\nRan from Aug 7, 2026 to Sep 10, 2026",
+        "run_dates_label": "Ran from Aug 7, 2026 to Sep 10, 2026"
+      },
+      "asset_ids": [
+        "asset_fd093c6390c95386e29a"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1519521556",
+      "advertiser": {
+        "name": "Conduit",
+        "promoted": true
+      },
+      "post_author": "Punn Kam",
+      "source_url": "https://www.linkedin.com/ad-library/detail/1519521556",
+      "headline": {
+        "title": null,
+        "description": "Co-founder at Conduit | Ex-Google | YC Alum"
+      },
+      "commentary": {
+        "text": "A boutique hotel upsold me before I ever set foot in the building.\n\n24 hours before check-in, instead of the usual \"Dear…",
+        "link": null
+      },
+      "format": "image",
+      "retrieved_at": "2026-09-19T22:28:34.544925+00:00",
+      "detail_evidence": {
+        "ad_details_source_id": "src_3e4cec5df1fc633c",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Punn Kam\n\nPromoted by Conduit\n\nA boutique hotel upsold me before I ever set foot in the building.\n\n24 hours before check-in, instead of the usual \"Dear guest, your check-in instructions are attached\" email, they texted me a link.\n\nI opened it on my phone: directions from the airport, my room details, the wifi password. While I was poking around, an early check-in and a massage showed up on the front page, and I bought them with Apple Pay, all before I left for my flight.\n\nThen, the moment I landed, I received another text: \"Hi Punn, we have a discounted upgrade on the Corner King room you stayed in last time. Let me know if you'd like it. The offer's also in your portal.\" I thought about it for a second and went for the upgrade.\n\nThat hotel made more money off my stay before I walked in, and I had an incredible experience. Because it was so personalized and timely, it never felt like a pitch. It felt like a personal concierge at a hotel who already knew what I liked and exactly when to reach out.\n\nThere's demand buried in millions of guest conversations every day. Almost none of it gets captured, because until now it hasn't been practical to.\n\nThat's why we built Portals.\n\nIt's a single link for the entire stay: instructions, directions, wifi details, digital room keys, in-room controls, an agent that answers anything, and upsell offers personalized to every guest.\n\nYour agents personalize each portal in the conversation and place the most relevant offers at the top. Guests pay in a double-tap with Apple Pay, Google Pay, Link, and more.\n\nPortals is live in Conduit today. Really proud of the team for building a best-in-class product yet again.\n\nAbout the ad\n\nSingle Image Ad\n\nAdvertiser Conduit\n\nPaid for by HostAI Labs, Inc.\n\n",
+        "run_dates_label": null
+      },
+      "asset_ids": [
+        "asset_5b9932acfac9d2c0562e"
+      ],
+      "media_status": "saved"
+    },
+    {
+      "id": "1538238086",
+      "advertiser": {
+        "name": "Conduit",
+        "promoted": true
+      },
+      "post_author": "Cole Rubin",
+      "source_url": "https://www.linkedin.com/ad-library/detail/1538238086",
+      "headline": {
+        "title": null,
+        "description": "Co-Founder @ Conduit | YC W24"
+      },
+      "commentary": {
+        "text": "Every guidebook, welcome book and QR code on the fridge fixes the half of the problem that was never broken.\n\nThe pitch …",
+        "link": null
+      },
+      "format": "image",
+      "retrieved_at": "2026-09-19T22:28:34.649532+00:00",
+      "detail_evidence": {
+        "ad_details_source_id": "src_c46058d8e942af9e",
+        "verified_sponsor": "Conduit",
+        "payer": "HostAI Labs, Inc.",
+        "sponsor_page_id": "96574094",
+        "source_text": "Cole Rubin\n\nPromoted by Conduit\n\nEvery guidebook, welcome book and QR code on the fridge fixes the half of the problem that was never broken.\n\nThe pitch makes sense. Guests have questions, so give them a well-organized place to find the answers. Nicer layout, better categories, a link in the pre-arrival message.\n\nWe measured whether any of it lands. In threads where the operator had already sent the door code unprompted, before the guest asked anything, 27.4% of guests asked for it regardless. Check-in time ran 20.8%, wifi 18.4%.\n\nThat is information sitting on their phone, in a thread they already have open. If it gets missed there, a PDF will not rescue it.\n\nMost guidebooks are organized fine. The timing is what fails. The information arrives days before anyone wants it, and when they finally do want it, finding it becomes the guest's job.\n\nSo we built the other half. Portals is our guest portal, and the AI chat lives in it. The guest asks the question the way they would say it out loud and gets an answer that knows which property they are standing in.\n\n\"What's a good dinner spot for us tonight around here.\"\n\nKeep the guidebook. Just stop expecting it to answer anything.\n\nLink in the comments.\n\nAbout the ad\n\nSingle Image Ad\n\nAdvertiser Conduit\n\nPaid for by HostAI Labs, Inc.\n\n",
+        "run_dates_label": null
+      },
+      "asset_ids": [
+        "asset_92a6dbd1d1c90d7c41a7"
+      ],
+      "media_status": "saved"
+    }
+  ],
+  "dropped": [
+    {
+      "ad_id": "1601237006",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601326066",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601326076",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601296236",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1527370596",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538257976",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538306946",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1513912446",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538238096",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519521546",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538381466",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538334106",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538334116",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538189126",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519442736",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538297056",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1514091486",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538169796",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1527470276",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519482126",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1514081556",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1514011946",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1513882926",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495602956",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495514786",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495495986",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495602976",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495621876",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495602996",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495583156",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495437276",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495505106",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1483636166",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495409256",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495409246",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495612056",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495409236",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495447436",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1495639926",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601237006",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601326066",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601326076",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1601296236",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1527370596",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538257976",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538306946",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1513912446",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538238096",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519521546",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538381466",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538334106",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538334116",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538189126",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519442736",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538297056",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1514091486",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1538169796",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1527470276",
+      "reason": "advertiser_mismatch"
+    },
+    {
+      "ad_id": "1519482126",
+      "reason": "advertiser_mismatch"
+    }
+  ],
+  "failures": [],
+  "terminal": true,
+  "finished_at": "2026-09-19T22:15:06.243519+00:00",
+  "unique_media_count": 19,
+  "distinct_creative_count": 16,
+  "status": "completed",
+  "coverage_note": "Dates represent requested search windows unless per-ad dates are returned. No performance claim is inferred from inclusion. Video/document covers are not complete media.",
+  "verified_founder_posts": [
+    "1538381626",
+    "1514101346",
+    "1538267846",
+    "1519521556",
+    "1538238086"
+  ],
+  "identity_note": "Provider advertiser field sometimes contains post author. Five selected founder posts were reconsidered only after individual original ad pages confirmed Conduit as advertiser and HostAI Labs as payer. Other unverified author-labelled entries remain excluded."
+}

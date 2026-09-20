@@ -1,0 +1,8 @@
+# V2 saved-output delivery
+
+- User asked to push all ABM branch work, then clarified: no new V1 project; push V2 only. Earlier V1/V2 code and Exa handoff already existed on origin through `1a6d3a82`; ignored run outputs were the missing deliverable.
+- Added `deliverables/brand-context-pilot/` with only the frozen V2 project: 25 documents, 56 original assets and 103 source records, plus public viewer, originals/previews, structured output, history, reviews, source evidence, sales exercises and reports. Historical directory `experiments/brand-context-agent-v1/` remains the V2 code location.
+- Removed only the newly created uncommitted V1 delivery copy after the clarification. Did not delete or edit the original V1/V2 runs, change earlier commits, restart 3046, change environment/database settings or run research.
+- V2 manifest covers 405 exported files. Excludes 205 local raw/provider caches, baseline DB export and operational/catalog files with explicit reasons. Credential-pattern and configured-secret scans returned zero selected-file matches. Destination repository confirmed private.
+- Verified all exported bytes and viewer references, V2-only scope and all 1,140 protected experiment hashes. JS syntax passed. Ephemeral HTTP smoke passed for viewer/data/manifest/original asset; environment, receipts and traversal attempts returned 404. Test server always stopped. Initial sandbox socket bind was denied; authorized local-only escalation succeeded.
+- Delivery can be viewed from a fresh checkout with Python 3 using `tools/serve.py --version v2 --port 3056`. No paid provider calls or integration required. Local commit/push is explicitly authorized for this delivery.

@@ -1,0 +1,106 @@
+{
+  "id": "asset_4da0c092f8267c5adb40",
+  "sha256": "4da0c092f8267c5adb40ed184e29ffe0aaf7794a2fd9fb361e225d5ce989e6f3",
+  "path": "originals/asset_4da0c092f8267c5adb40.png",
+  "mime": "image/png",
+  "byte_length": 909,
+  "retrieved_at": "2026-09-19T21:52:41.022272+00:00",
+  "origins": [
+    {
+      "collection": "brand-provider",
+      "source_page": "https://conduit.ai/",
+      "provider": "brandfetch",
+      "logo_type": "logo",
+      "theme": "light",
+      "alt": "Conduit",
+      "url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/180/h/180/theme/light/logo.png?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf",
+      "resolved_url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/180/h/180/theme/light/logo.png?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+    }
+  ],
+  "analysis_status": "completed",
+  "dimensions": {
+    "width": 180,
+    "height": 180,
+    "frames": 1,
+    "has_alpha_channel": false
+  },
+  "analysis": {
+    "id": "asset_4da0c092f8267c5adb40",
+    "name": "Provider-attributed Conduit chevron · pale variant",
+    "category": "logo",
+    "description": "Chevron symbol returned by Brandfetch for conduit.ai. Current usage alongside the website wordmark has not been confirmed.",
+    "observed": {
+      "composition": "Single geometric mark centered in a square. The chevron is thick, uniformly filled, with rounded corners, pointing right. No photography, UI chrome, or secondary symbols.",
+      "colors": "Muted teal-green background; cream / off-white mark. No gradients or outlines visible.",
+      "text": "None.",
+      "logo_placement": "The chevron is the Conduit logo mark and fills most of the tile. Not a customer logo or compliance seal."
+    },
+    "guidance": {
+      "use_when": "Reference inspection only until the brand owner confirms this variant.",
+      "how_to_use": "Prefer the current website wordmark for draft concepts. Keep this provider original unchanged and pending approval.",
+      "avoid_when": "Do not use as the approved primary logo, recolor it, or assume it replaces the website wordmark.",
+      "crop_and_placement": "Do not crop the chevron or trim the square. Keep original aspect ratio and internal padding. Give the whole tile clear space rather than cutting into the mark.",
+      "background_suitability": "Inspect the original on suitable contrast; brand owner must approve actual placement and variant usage."
+    },
+    "product_or_use_case": "Conduit brand mark / product icon",
+    "inferred_audience": "Brand and product designers applying the Conduit symbol",
+    "uncertainties": [
+      "Official color names and whether a wordmark lockup exists are not visible.",
+      "Light-theme origin metadata is untrusted; the tile itself is teal with a light mark.",
+      "Provider domain attribution is verified; currency and approved use of this chevron variant are unresolved."
+    ],
+    "tags": [
+      "logo",
+      "mark",
+      "chevron",
+      "teal",
+      "square-tile"
+    ]
+  },
+  "analysis_model": "x-ai/grok-4.6",
+  "analysis_at": "2026-09-19T22:02:34.534330+00:00",
+  "brand_authority": "provider_attributed_current_usage_unconfirmed",
+  "analysis_revision": 2,
+  "human_approved": false,
+  "agent_context": {
+    "schema_version": 2,
+    "asset_id": "asset_4da0c092f8267c5adb40",
+    "approved_for_campaign": false,
+    "observed": {
+      "composition": "Single geometric mark centered in a square. The chevron is thick, uniformly filled, with rounded corners, pointing right. No photography, UI chrome, or secondary symbols.",
+      "colors": "Muted teal-green background; cream / off-white mark. No gradients or outlines visible.",
+      "text": "None.",
+      "logo_placement": "The chevron is the Conduit logo mark and fills most of the tile. Not a customer logo or compliance seal."
+    },
+    "guidance_interpretation": {
+      "use_when": "Reference inspection only until the brand owner confirms this variant.",
+      "how_to_use": "Prefer the current website wordmark for draft concepts. Keep this provider original unchanged and pending approval.",
+      "avoid_when": "Do not use as the approved primary logo, recolor it, or assume it replaces the website wordmark.",
+      "crop_and_placement": "Do not crop the chevron or trim the square. Keep original aspect ratio and internal padding. Give the whole tile clear space rather than cutting into the mark.",
+      "background_suitability": "Inspect the original on suitable contrast; brand owner must approve actual placement and variant usage."
+    },
+    "product_or_use_case": "Conduit brand mark / product icon",
+    "audience_hypothesis": "Brand and product designers applying the Conduit symbol",
+    "related_document_keys": [],
+    "relationship_basis": "Keyword suggestions from visual analysis; verify against the linked product guide before campaign use.",
+    "uncertainties": [
+      "Official color names and whether a wordmark lockup exists are not visible.",
+      "Light-theme origin metadata is untrusted; the tile itself is teal with a light mark.",
+      "Provider domain attribution is verified; currency and approved use of this chevron variant are unresolved."
+    ],
+    "original_sha256": "4da0c092f8267c5adb40ed184e29ffe0aaf7794a2fd9fb361e225d5ce989e6f3",
+    "source_origins": [
+      {
+        "collection": "brand-provider",
+        "source_page": "https://conduit.ai/",
+        "provider": "brandfetch",
+        "logo_type": "logo",
+        "theme": "light",
+        "alt": "Conduit",
+        "url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/180/h/180/theme/light/logo.png?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf",
+        "resolved_url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/180/h/180/theme/light/logo.png?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+      }
+    ],
+    "reuse_boundary": "Original published creative is a reference. Do not treat customer logos or result claims as permission, partnership or new-account proof."
+  }
+}

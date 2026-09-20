@@ -1,0 +1,107 @@
+{
+  "issues": [
+    {
+      "document_key": "pricing",
+      "severity": "material",
+      "excerpt": "Unified inbox, Voice AI inbound and outbound, PMS and OTA integrations, Operator, workflows, escalation, analytics",
+      "problem": "Messaging package copy names Operator while Full Suite and site nav talk about operations/Operations. The draft never states that Operator is the in-app workspace assistant, not the Operations product marked Coming soon. A seller can withhold Messaging because Operations is coming soon, or promise housekeeping/dispatch because Operator is included.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b",
+        "src_8f9aa404cff029a5"
+      ],
+      "suggested_correction": "Add an explicit split: Operator on the Messaging list is the workspace assistant (inspect/edit/reason about agent configuration). Operations in nav is “Coming soon” (housekeeping, maintenance, inspections). Full Suite tasks/workforce/scheduling bullets are package marketing, not confirmed GA modules—route those buyers to sales."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "material",
+      "excerpt": "“AI-powered support platform and 24/7 staffed support team” replacing a call center",
+      "problem": "Lauderdale’s $4,000→$600 and ≥$3,400 NOI figures are presented as named results without warning that the write-up credits a staffed support team as well as software. Public packages do not list a staffed-support SKU. Copy can treat $600/mo as Messaging/Agents pricing or as an automation-only saving.",
+      "source_ids": [
+        "src_37286663c1a57667",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Keep the quote, then caveat in the same cell: P&L compares a call center to Conduit’s platform plus the page’s 24/7 staffed support team. Do not use $600/mo as a software list price or claim the NOI/cap-rate math is Agents/Inbox-only."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "material",
+      "excerpt": "index headline 150% growth",
+      "problem": "Canbnb’s 150% is only an unexplained header, not a defined metric or Conduit-attributed result in the body (unlike 1,500 messages/week and 60% AI-handled). Placing it in Reported result invites copy that Conduit produced 150% growth.",
+      "source_ids": [
+        "src_5cb5674a725889a9"
+      ],
+      "suggested_correction": "Drop 150% from usable results. Cite only ~1,500 messages/week with 60% handled by AI, and note HostAI remains on the page as an unresolved product name."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "material",
+      "excerpt": "Track card also mentions routing Airbnb/Booking.com messages",
+      "problem": "Track is documented as non-messaging PMS data sync, while the Booking.com catalog card is “Coming soon.” Leaving the Track blurb in Other claim without that collision lets a seller treat Track accounts as having live Booking.com messaging.",
+      "source_ids": [
+        "src_a2a67d2faa01de13",
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "Qualify Track as property/reservation sync only. Treat Airbnb/Booking.com routing on the Track card as unconfirmed listing copy; do not pursue Booking.com messaging as live while that connector is “Coming soon.” Ask how OTA threads actually arrive today."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "minor",
+      "excerpt": "Confirm v3 entitlement before API/MCP; confirm Devices or Portals add-ons before those tool groups.",
+      "problem": "V3 in the same checklist is both the agent UI generation (Configure V3 agents) and the API/MCP “v3 plan.” Public packages never map to that plan, so sellers may assume any current workspace or Full Suite includes API/MCP.",
+      "source_ids": [
+        "src_2d5d23c8d8b6f535",
+        "src_f01f1010ac8ddab8",
+        "src_8f9aa404cff029a5"
+      ],
+      "suggested_correction": "Split the terms: V3 agents/Knowledge/Skills are the current product UI. REST/MCP require the docs’ v3 plan plus support enablement. Do not equate v3 plan with Messaging–Full Suite or Startup until sales confirms."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "minor",
+      "excerpt": "Opera public page: read context only through that connector",
+      "problem": "Opera copy says the connector does not route messaging and that Conduit reads property/reservation/profile data. It does not say all writes are impossible. “Read context only” over-closes listing vs action support.",
+      "source_ids": [
+        "src_dae2c4b0bd94e5a6",
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "Say: public Opera page documents property, room type, reservation, and profile sync and no messaging through this connector. Do not infer reservation edits, payments, or other writes; confirm writes separately."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "minor",
+      "excerpt": "### Hotel and hotel-like proof",
+      "problem": "Wynwood is a multi-country hospitality/real-estate platform using Guesty, not a hotel or hotel group. Filing it under hotel-like proof steers hotel-group conversations to the wrong entity.",
+      "source_ids": [
+        "src_e067203ca4528d4b",
+        "src_7554566ca6745e69"
+      ],
+      "suggested_correction": "Move Wynwood to multi-market CX / STR-style operators. Keep Lauderdale as the only named hotel P&L story; continue to treat hotel-group proof as absent from this pack."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "minor",
+      "excerpt": "Email, SMS, OTA, voice AI 1–7 AM, SuiteOP workflows",
+      "problem": "SuiteOP is HomeHop’s operations tool, not a Conduit product. Listing it under Named use implies a Conduit workflow/PMS capability a seller could promise.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Named use: unified email/SMS/OTA plus voice AI 1–7 AM. Mention SuiteOP only as the customer’s adjacent system they wired, not as a Conduit SKU or supported-action proof."
+    }
+  ],
+  "strengths": [
+    "Integrations separates marketplace cards, PMS setup docs, agent-action claims, and API/MCP, and records messaging vs non-messaging workspace rules instead of treating logos as write-back.",
+    "Mews, StayNTouch, Expedia, Booking.com/VRBO, and Opera conflicts are surfaced as listing-vs-setup problems with discovery questions rather than silently resolved.",
+    "Pricing keeps $18–$48 as package starting rates, refuses unit=listing, publishes credit category rules (inbox AI replies free; AI voice 8/min), and does not invent overage, taxes, or Portals add-on dollars.",
+    "Customer evidence uses named pages only, blocks 300+/logo-wall proof, refuses to average automation rates, and already caveats Flex 70/90/goal language, Haven 230 vs 270 and 59% vs 55%, Bocobay’s undated 80%, and Lauderdale’s 8% cap-rate model.",
+    "Open questions are usable next questions (writes per PMS, Portals vs Guest bundle, unit definition) rather than invented ICP headcount or procurement gates."
+  ],
+  "decision_usefulness": "Usable research draft for package talk-track, PMS/OTA qualification, and one-story proof selection, if sellers follow the caveats. Not yet safe for copy without fixing Operator vs Operations, Lauderdale staffed-support mixing, Canbnb’s 150% headline, and Track/Booking.com live-vs-coming-soon. Still cannot honestly confirm per-vendor writes, overage dollars, which priced SKU is the v3 API plan, or hotel-group fit.",
+  "reviewed_at": "2026-09-20T01:24:11.412796+00:00",
+  "document_keys": [
+    "integrations",
+    "pricing",
+    "customer-evidence"
+  ],
+  "human_approval": false
+}

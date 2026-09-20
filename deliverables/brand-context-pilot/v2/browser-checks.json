@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-20T01:45:56.261275+00:00",
+  "tested": [
+    "desktop folders and product reader",
+    "source drawer",
+    "table citation visibility",
+    "asset source filter and search empty state",
+    "Agent context original-wordmark treatment",
+    "four logo slots loaded",
+    "report with first-pass and retest results"
+  ],
+  "console_errors": 0,
+  "horizontal_overflow": false,
+  "mobile_tested": false
+}

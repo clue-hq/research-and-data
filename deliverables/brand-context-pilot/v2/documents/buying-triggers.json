@@ -1,0 +1,243 @@
+{
+  "key": "buying-triggers",
+  "title": "Qualification & account research playbook",
+  "summary": "Qualify Conduit accounts by lodging model, property-specific guest work, and a connectable channel/PMS path—not by job title, unit count, or automation-rate targets. Treat growth, overnight coverage, stack misfit, acquisition, and support-cost pressure as timing hypotheses to confirm in discovery, then proceed, research, or hold with explicit dependencies.",
+  "markdown": "This playbook is a test sequence for humans and ABM agents, not a scored lead model. Fit is whether the company operates hotel, serviced-apartment, or short-term rental stays. [Source](https://www.conduit.ai/pricing) Readiness is whether agents can use property information, reservation data, connected tools, and escalation rules. [Source](https://www.conduit.ai/product/agents.md) Timing is a present operating situation—not later automation rates or modeled asset value, which stay attributed in [Customer evidence & usable proof](#knowledge/customer-evidence).\n\nRun [ICP strategy & segment priorities](#knowledge/ideal-customers) first, then [ICP · hotel operators](#knowledge/icp-hotels) or [ICP · vacation-rental operators](#knowledge/icp-rentals). Map capabilities in [Product catalog & capability map](#knowledge/products-capabilities) and stack in [Integrations & implementation readiness](#knowledge/integrations). [Pricing & packaging](#knowledge/pricing) is commercial mapping after fit, not a fit gate.\n\n## Fit, readiness and timing\n\n**Fit.** The pricing FAQ states Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers; agents answer guest messages and calls, handle routine requests, and coordinate work with the team. [Source](https://www.conduit.ai/pricing) Site industries are short-term rentals, independent hotels, and hotel groups. [Source](https://www.conduit.ai/product/agents) Positive observation: the account sells or manages stays and already talks to guests on channels the inbox unifies. [Source](https://www.conduit.ai/product/inbox.md) Hotels and STR operators are both in-category and different tests (after-hours desk, Opera/Mews/Cloudbeds, spa/dining extras versus per-listing knowledge, Airbnb threads, check-in and booking-change requests). [Source](https://www.conduit.ai/industry/independent-hotels) [Source](https://www.conduit.ai/industry/short-term-rentals) Unknown: keep serviced apartments and hotel groups in-category until disproven—named stories in this pack cluster in STR/PM companies, with one boutique-hotel write-up. Disqualify only when the company does not operate those stays. A motivated champion does not create fit; titles belong in [Buying committee & professional personas](#knowledge/buyer-roles).\n\n**Readiness.** Agents retrieve context and take action in connected tools, then escalate. How much they resolve “depends on your guest requests, knowledge base, integrations, and escalation rules.” [Source](https://www.conduit.ai/product/agents.md) Haven already had Conduit installed at about 40 percent automation with listings uploaded, no workflows, and minimal knowledge-base work—so a live install is not readiness. [Source](https://www.conduit.ai/customers/haven-2026) Confirm whether a PMS path actually supplies live reservation context and whether messaging rides that connector. Opera Cloud is described as reservation and profile sync; it does not route guest messaging through that integration. [Source](https://www.conduit.ai/integrations/opera) Booking.com and VRBO were marked coming soon on the captured directory. [Source](https://www.conduit.ai/integrations) A logo is not a supported action.\n\n**Timing versus later outcomes.** Named situations to investigate, not needs every customer has: guest volume versus support seats (Haven, HomeHop, Canbnb); overnight voice (HomeHop 1–7 AM; independent-hotel after-hours copy); split inboxes or generic helpdesk misfit (Bocobay leaving Intercom); acquisition or multi-market expansion (Cascadia, Cosmica, Wynwood); owner support-cost / NOI (Lauderdale). [Source](https://www.conduit.ai/customers/haven-2026) [Source](https://www.conduit.ai/customers/lauderdale-hotel) “We cannot cover the next peak, night shift, or acquired portfolio” is buying timing. “We want 90% automation” or cap-rate math is a later adoption or outcome claim—do not use it as a qualification bar.\n\n## Qualification matrix\n\nNo weights. Unknown means investigate.\n\n| Criterion | Dimension | Positive observation | Source / method | Unknown or hold |\n| --- | --- | --- | --- | --- |\n| Stay operator in FAQ industries | Fit | Hotel, serviced-apartment, or STR guest stays | Site, OTA, PMS, discovery | Hybrid RE+hospitality still in-category if stays are operated; exclude only non-stay businesses |\n| Property-specific answers | Fit | Policies and booking context differ by property or listing | Product claims + discovery | Ask how answers differ by stay; generic ticket-only ops is a research flag |\n| Channels Conduit unifies | Readiness | SMS, WhatsApp, email, calls, social, connected OTA threads | Inbox FAQ vs their stack | [Source](https://www.conduit.ai/product/inbox.md) List required OTAs; hold if Booking.com/VRBO is mandatory until live status is confirmed |\n| Reservation context path | Readiness | Connected PMS/OTA shows stay/booking beside the thread | Integration page + demo | Opera: messaging stays on existing hotel channels; confirm write-back separately |\n| Knowledge + escalation owner | Readiness | Named person will standardize answers and review handoffs | Ops interview (Haven pattern) | Hold close until an owner exists; refusal to document policies is disqualifying for implementation |\n| Present operating pressure | Urgency | Headcount lag, overnight gap, acquisition, call-center cost, two inboxes | Jobs, news, discovery | Hypothesis only—do not invent a timeline |\n\nStartup (0–25 units, $899/mo, no implementation fee) and per-unit starting rates ($18–$48) that “scale beyond 50 listings” are commercial bands, not ICP cutoffs. [Source](https://www.conduit.ai/pricing)\n\n## Signals and sourcing\n\nSearch for operators and stacks, not buzzwords.\n\n| Signal | Where to source | What it tests | Do not infer |\n| --- | --- | --- | --- |\n| Listings + PMS names (Guesty, Hostaway, Opera, Mews, Cloudbeds, Airbnb) | Website, OTA, careers, [integrations](#knowledge/integrations) | Fit and connector research | Any write action; Airbnb card claims two-way messages and reservation modifications—verify for this account [Source](https://www.conduit.ai/integrations/airbnb) |\n| Multi-channel guest lines | Support pages, WhatsApp, phone | Inbox / Agents path | Full Suite operations jobs; nav still marks Operations coming soon |\n| Guest-support or night hiring | Job boards | Timing hypothesis | Headcount as a fit score |\n| Acquisition, new market, OM/exit language | Press | Cascadia / Lauderdale / Bali-type situations | Those customers’ dollar or automation results |\n| Intercom / VoIP / prior AI failure | Stack tools, reviews | Bocobay / HomeHop / Flex-type misfit | A guaranteed migration outcome |\n\nCompany “300+ hospitality brands in 120+ countries” is reach copy, not named-account proof. [Source](https://www.conduit.ai/industry/independent-hotels)\n\n## Discovery conversation\n\nCollect observations that fill the matrix. Do not quote attributed rates as typical.\n\nDraft questions:\n\n1. Who operates the stays, and is the contract with the owner, manager, or brand?\n2. Which channels must sit in one workspace on day one?\n3. Which system is source of truth for reservations, and should guest messaging stay on the PMS or move?\n4. Who owns property policies, and who reviews agent handoffs?\n5. What breaks if you add listings, an overnight window, or an acquired portfolio without new support seats? Haven reported adding 14 listings in January without adding support staff—ask whether that pressure exists; do not promise the result. [Source](https://www.conduit.ai/customers/haven-2026)\n6. Is the job unified inbox and voice (Messaging starting $18/unit/mo), portals/waivers/payments (Guest starting $30), devices, or Full Suite operational features? Operator is the workspace assistant; Operations is a separate coming-soon product label. Confirm the exact operational feature before quoting a delivery commitment. [Source](https://www.conduit.ai/pricing)\n\nSeparate current pain (unread backlog, hour-long replies, two inboxes, Slack as the night desk) from later desired state (automation share, NOI, 24/7 autopilot).\n\n## Decision and handoff\n\n| Decision | When observed | Dependencies | Handoff |\n| --- | --- | --- | --- |\n| Proceed | In-category stays + connectable path + named knowledge/escalation owner. Timing evidence prioritizes the conversation; it is not a required fit gate | Package choice after fit; write actions confirmed for this PMS | Solution design with one named analog from [customer-evidence](#knowledge/customer-evidence), never an averaged rate |\n| Research | Lodging-adjacent; hotel group or serviced apartment without a story analog; OTA/PMS path unclear; Booking.com/VRBO required; unit vs listing undefined | Integration owner + sales mapping | Do not reject; log unknowns |\n| Hold | No guest-stay operation; no one will document policies; asked job is a physical check-in kiosk | Hotel-groups copy: communication support, not a kiosk [Source](https://www.conduit.ai/industry/hotel-groups) | Polite close or recast the job |\n\nPacket: segment, stack versus live connectors, observed timing (not inferred attitude), open unknowns, and the entry product (Inbox/Agents versus Portals versus Workflows).",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_3399afceb260e44f",
+    "src_37286663c1a57667",
+    "src_5a71a6776ae43f4d",
+    "src_5eb74e069d5f7cb9",
+    "src_75269914aa6b6dfd",
+    "src_a2a67d2faa01de13",
+    "src_a649d4d3ab5f59f5",
+    "src_c1dd8d452a784c57",
+    "src_d30d1770ff08e6a4",
+    "src_dae2c4b0bd94e5a6",
+    "src_e6200582a2004292",
+    "src_e805a9592ee44f73",
+    "src_f09009069a2d197f",
+    "src_f0d546128c30936b"
+  ],
+  "open_questions": [
+    "What Conduit bills as a unit versus a listing, room, or key, and whether that changes hotel versus STR quotes.",
+    "Which PMS/OTA connectors actually modify reservations, take payment, or create tasks for a given stack—not merely appear as logos.",
+    "Whether Booking.com and VRBO messaging are live after the 19 Sep 2026 directory capture that marked both coming soon.",
+    "Named, in-body proof for hotel groups and serviced-apartment operators comparable to the STR stories.",
+    "Whether Full Suite operations lines can be scoped while product nav still labels Operations coming soon."
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Public ICP language names hotel teams, serviced-apartment operators, and short-term rental managers.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers. Its AI agents answer guest messages and calls, handle routine requests, and coordinate work with your team."
+    },
+    {
+      "statement": "Published per-unit starting rates are packaged prices that scale beyond 50 listings, not fit cutoffs.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+    },
+    {
+      "statement": "Startup is a 0–25 unit monthly price with no implementation fee, not an ICP size gate.",
+      "source_id": "src_f0d546128c30936b",
+      "quote": "The full feature set, designed to help scale your operations with no implementation fee."
+    },
+    {
+      "statement": "Agent resolution is conditional on requests, knowledge, integrations, and escalation rules.",
+      "source_id": "src_5a71a6776ae43f4d",
+      "quote": "The share depends on your guest requests, knowledge base, integrations, and escalation rules."
+    },
+    {
+      "statement": "Inbox unifies SMS, WhatsApp, email, calls, social, and connected OTA threads.",
+      "source_id": "src_e6200582a2004292",
+      "quote": "Conduit brings SMS, WhatsApp, email, calls, social messages, and connected OTA threads into one workspace."
+    },
+    {
+      "statement": "Opera Cloud integration is described as not routing guest messaging.",
+      "source_id": "src_dae2c4b0bd94e5a6",
+      "quote": "Because Opera Cloud does not route guest messaging through this integration, your hotel's existing communication channels handle outbound contact."
+    },
+    {
+      "statement": "Haven was already installed at about 40% automation before the operating push—install is not readiness.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Listings were uploaded, general information was filled in, and the system ran at about 40 percent automation with no workflows and minimal knowledge base work."
+    },
+    {
+      "statement": "Lauderdale story reports support cost falling from $4,000 to $600 per month as an attributed owner outcome, not a qualification target.",
+      "source_id": "src_37286663c1a57667",
+      "quote": "Reduced support costs from $4,000 to $600/month"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "qualifying inbound or outbound hospitality accounts",
+      "building an account brief before demo or pricing talk",
+      "deciding proceed versus research versus hold",
+      "sourcing signals for ABM without inventing buyer psychology"
+    ],
+    "decisions_supported": [
+      "in-category fit versus out-of-category hold",
+      "readiness to implement versus curiosity install",
+      "whether a timing situation is present versus a later outcome goal",
+      "which segment playbook and proof analog to attach"
+    ],
+    "do_not_infer": [
+      "job title as ICP",
+      "unit or employee cutoffs as fit gates",
+      "automation percentages or NOI/cap-rate math as qualification bars",
+      "that an integration logo supports reservation writes, payments, or lock control",
+      "buying attitude, budget, or close date not stated by the account",
+      "hotel-group or serviced-apartment proof equal to named STR stories"
+    ],
+    "document_key": "buying-triggers",
+    "depends_on": [
+      "ideal-customers",
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_3399afceb260e44f",
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d30d1770ff08e6a4",
+      "src_dae2c4b0bd94e5a6",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f",
+      "src_f0d546128c30936b"
+    ]
+  },
+  "icp_criteria": [
+    {
+      "criterion": "Company operates hotel, serviced-apartment, or short-term rental guest stays",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "Public FAQ defines Conduit’s buyers as those three operator types, not a job-title list.",
+      "assessment_method": "Confirm lodging model from website, OTA listings, PMS, and discovery; use hotel vs STR industry pages as separate tests.",
+      "unknown_handling": "Investigate hybrids that still run guest stays; do not reject for a missing named story.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f09009069a2d197f",
+        "src_5eb74e069d5f7cb9"
+      ]
+    },
+    {
+      "criterion": "Guest work is property- or listing-specific and uses reservation context",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "Agents are described as answering with property information and reservation data and acting in connected tools.",
+      "assessment_method": "Ask how policies, access instructions, and booking changes differ by stay; look for multi-property or per-listing operations.",
+      "unknown_handling": "Research; a generic contact-center with no stay context is a flag, not an automatic reject until confirmed.",
+      "source_ids": [
+        "src_e805a9592ee44f73",
+        "src_5a71a6776ae43f4d"
+      ]
+    },
+    {
+      "criterion": "Guest conversations run on channels the inbox can unify",
+      "dimension": "readiness",
+      "strength": "necessary",
+      "rationale": "Inbox coverage is specified as SMS, WhatsApp, email, calls, social messages, and connected OTA threads.",
+      "assessment_method": "Inventory live channels against the inbox FAQ and the integrations directory.",
+      "unknown_handling": "If Booking.com or VRBO is required, research live status (captured as coming soon) before promising that path.",
+      "source_ids": [
+        "src_e6200582a2004292",
+        "src_a2a67d2faa01de13"
+      ]
+    },
+    {
+      "criterion": "A PMS or OTA path can supply live booking context; messaging path is explicit",
+      "dimension": "readiness",
+      "strength": "necessary",
+      "rationale": "Inbox places booking details beside the thread; Opera Cloud is documented as context sync without messaging through that connector.",
+      "assessment_method": "Name the PMS/OTA, read the matching integration card, and confirm in discovery whether messaging stays on existing hotel channels or a two-way OTA path (e.g. Airbnb card).",
+      "unknown_handling": "Do not infer write-back from a logo; hold solution design until the message path is stated.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_dae2c4b0bd94e5a6",
+        "src_3399afceb260e44f"
+      ]
+    },
+    {
+      "criterion": "Named owner will maintain knowledge, procedures, and escalation rules",
+      "dimension": "readiness",
+      "strength": "necessary",
+      "rationale": "Public agent FAQ ties autonomous resolution to knowledge base, integrations, and escalation rules; Haven’s underuse at ~40% shows install without that work.",
+      "assessment_method": "Identify who standardizes answers and reviews handoffs before close.",
+      "unknown_handling": "Proceed to research, not commercial close, until an owner is named; explicit refusal to document policies is implementation-disqualifying.",
+      "source_ids": [
+        "src_5a71a6776ae43f4d",
+        "src_c1dd8d452a784c57"
+      ]
+    },
+    {
+      "criterion": "A present operating pressure exists (volume vs staff, overnight coverage, acquisition, support-cost model, or split inbox)",
+      "dimension": "urgency",
+      "strength": "hypothesis",
+      "rationale": "Named stories describe those situations; they are research prompts, not universal needs or a scoring model.",
+      "assessment_method": "Jobs, press, and discovery questions that separate current breakage from later automation or valuation goals.",
+      "unknown_handling": "Leave urgency unknown; do not invent timeline or buying attitude.",
+      "source_ids": [
+        "src_c1dd8d452a784c57",
+        "src_37286663c1a57667",
+        "src_f09009069a2d197f"
+      ]
+    },
+    {
+      "criterion": "Account does not operate hotel, serviced-apartment, or short-term rental stays",
+      "dimension": "exclusion",
+      "strength": "necessary",
+      "rationale": "Out-of-category follows the published who-it-is-for sentence; sources do not publish a broader negative ICP.",
+      "assessment_method": "If the core business is not guest stays, hold even if a champion is enthusiastic.",
+      "unknown_handling": "Missing unit count, thinner hotel-group proof, or an unverified connector is not exclusion.",
+      "source_ids": [
+        "src_156a9e102c46da8e"
+      ]
+    },
+    {
+      "criterion": "Hotel-group or serviced-apartment motion with shared brand standards and per-property policies",
+      "dimension": "fit",
+      "strength": "hypothesis",
+      "rationale": "Hotel groups are a marketed industry; serviced apartments appear in the FAQ; named case bodies in this pack do not establish group-level proof.",
+      "assessment_method": "Confirm multi-property org, shared vs local knowledge, and PMS mix; keep in-category while logging proof gap.",
+      "unknown_handling": "Investigate rather than reject; do not treat STR story metrics as group evidence.",
+      "source_ids": [
+        "src_d30d1770ff08e6a4",
+        "src_156a9e102c46da8e"
+      ]
+    }
+  ],
+  "folder": "audience",
+  "revision": 2,
+  "created_at": "2026-09-20T01:11:42.267765+00:00",
+  "status": "research_draft",
+  "input_hash": "7866b550c1e86aa8310169c226b7403f38ec3930dddbc7498fbc60bbee97a25b",
+  "depends_on": [
+    "ideal-customers",
+    "products-capabilities",
+    "integrations",
+    "pricing",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:28:36.656252+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:28:36.656256+00:00",
+      "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+      "human_approved": false
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "key": "pricing",
+  "title": "Pricing & packaging",
+  "summary": "Conduit’s public pricing page (captured 19 Sep 2026) lists four nested packages as starting rates of $18, $30, $36, and $48 per unit per month with 40–100 credits per unit per month, plus a 0–25 unit Startup price of $899 per month with 2,000 credits and no implementation fee. Those figures are company-published starting rates for bundled packages, not standalone product licenses, and the captured HTML does not define credits, overages, annual terms, or what a unit is.",
+  "markdown": "# Pricing & packaging\n\nPublic commercial packaging lives on Conduit’s pricing page. Captured HTML (19 Sep 2026) shows dollar starting rates billed per unit per month, bundled monthly credits, and a separate Startup monthly price for 0–25 units. Product pages for [AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), [Workflows](#knowledge/product-workflows), and the [developer platform](#knowledge/product-developers) do not publish standalone license prices. Treat every number below as a company-published starting rate, not an invoice, contracted rate, or per-SKU unbundle.\n\n## Published plans\n\nThe pricing page frames packaging for “independent teams to enterprise,” says pricing scales with portfolio, and asks readers to talk to an AI expert to map plans to a use case. It also states that starting rates are shown and that pricing scales beyond 50 listings. No monthly/annual toggle with conflicting numbers appears in the captured HTML. [Source](https://www.conduit.ai/pricing)\n\n| Package | Starting rate (as shown) | Credits (as shown) | Public CTA | Positioning line |\n| --- | --- | --- | --- | --- |\n| Messaging | $18 / unit / mo | 40 credits / unit / mo | Get Started | Automate guest conversations across every channel with one unified inbox |\n| Guest | $30 / unit / mo | 60 credits / unit / mo | Get Started | Add portals, waivers, upsells, and payments to every guest stay |\n| Guest + Devices | $36 / unit / mo | 80 credits / unit / mo | Get Started | Connect communications with locks, thermostats, and sensors |\n| Full Suite | $48 / unit / mo | 100 credits / unit / mo | Talk to Sales | Run guest experience, devices, and operations in one system |\n| Startup (0–25 units) | $899 / mo | 2,000 credits / mo | Get Started | Full feature set; no implementation fee |\n\nCurrency is shown only as `$`. Cadence on the four named packages is `/ unit / mo`. Startup is a monthly workspace-style price for a 0–25 unit band, not a per-unit rate. Full Suite is the only named package whose button is “Talk to Sales”; the others say “Get Started.” [Source](https://www.conduit.ai/pricing)\n\nDo not read a Messaging, Guest, or Devices line as a price for a single product in the [product catalog](#knowledge/products-capabilities). Each row is a nested bundle. A bundle price is not a standalone Agents, Inbox, Portals, Workflows, or Operations license.\n\n## Usage and billing units\n\nObserved billable language is **unit** (four packages) and **credits**, plus a flat **monthly** Startup charge. The same page says pricing scales beyond **50 listings**, so “unit” and “listing” both appear without a definition that they are the same thing.\n\nCredits published with the packages:\n\n- Messaging: 40 credits / unit / mo\n- Guest: 60 credits / unit / mo\n- Guest + Devices: 80 credits / unit / mo\n- Full Suite: 100 credits / unit / mo\n- Startup: 2,000 credits / mo (not expressed per unit)\n\nThe captured page does not say what one credit buys, whether voice minutes, SMS, WhatsApp, or model tokens consume credits at different rates, or what happens when credits run out. Voice is not a separate public SKU: Messaging lists “Voice AI, inbound and outbound” among included features, so there is no published voice-versus-text price split. [Source](https://www.conduit.ai/pricing)\n\n## What is included\n\nInclusions are nested. Guest includes everything in Messaging; Guest + Devices includes everything in Guest; Full Suite includes everything in Guest + Devices. [Source](https://www.conduit.ai/pricing)\n\n**Messaging (starting $18 / unit / mo):** unified inbox, every channel; Voice AI, inbound and outbound; PMS and OTA integrations; Operator, workflows, escalation; analytics and reporting.\n\n**Guest (starting $30 / unit / mo):** Messaging plus in-portal AI concierge; rich-media guidebooks; damage waivers, no SKU fee; upsells with one-click payment.\n\n**Guest + Devices (starting $36 / unit / mo):** Guest plus smart home integration; portal-integrated smart devices; access codes for guests and team; device management workflows.\n\n**Full Suite (starting $48 / unit / mo):** Guest + Devices plus tasks and workforce; agentic operations workflows; scheduling and dispatch; inventory management.\n\n**Startup ($899 / mo, 0–25 units):** described as “the full feature set” with no implementation fee. The page does not itemize Startup against Full Suite line by line.\n\nSite navigation still labels Operations as “Coming soon” on product pages, while Full Suite copy already lists operations-style capabilities. That is an unresolved public contradiction, not something to smooth over in a quote. Developer API / MCP pages in this source set carry no price. The Portals page asks “How much does Conduit Portals cost?” in FAQ headings but the captured HTML has no answer—consistent with Portals being sold inside Guest rather than as a published à-la-carte SKU. [Source](https://www.conduit.ai/pricing)\n\n## Choosing a package\n\nUse published nesting, not invented buyer personas.\n\n- Start from **Messaging** when the public need is unified channels, voice AI, PMS/OTA connections, operator/workflows/escalation, and reporting.\n- Move to **Guest** when the stay layer (portal concierge, guidebooks, waivers without a SKU fee, one-click upsell payments) is in scope.\n- Move to **Guest + Devices** when locks, thermostats, sensors, access codes, or device workflows are in scope.\n- Treat **Full Suite** as the operations-inclusive bundle and the only named package that already routes to sales on the page.\n- Treat **Startup** as the only published small-portfolio path (0–25 units, $899 / mo, 2,000 credits / mo, no implementation fee).\n\nAbove 50 listings, the page itself says pricing scales; do not extrapolate $18–$48 linearly. Map any package to a live use case with an expert, as the page instructs. Adjacent context: [commercial model](#knowledge/commercial-model).\n\n## Unpublished terms\n\nNot in the captured public HTML: credit burn rules; overage or unused-credit policy; annual vs monthly discounts; contract length; definition of unit vs listing vs room vs reservation; implementation or onboarding fees except Startup’s “no implementation fee”; carrier/SMS/WhatsApp pass-through; voice-minute rates; hotel vs rental price books; enterprise custom schedules; a free plan (the pricing FAQ lists “Is Conduit free?” with no answer in this capture); unbundled Agents/Inbox/Portals/Workflows/API prices.\n\n## Questions before a quote\n\n1. Count of units (and whether Conduit will bill listings, keys, or rooms the same way).\n2. Whether the account is 0–25 units (Startup) or will scale past 50 listings.\n3. Channels in scope, including inbound/outbound voice vs messaging, given voice is listed inside Messaging with no separate rate.\n4. Whether portals, waivers, upsells, and payments are required (Guest) or devices/access codes (Guest + Devices).\n5. Whether tasks, workforce, scheduling, dispatch, or inventory are in year-one scope (Full Suite / sales path), and how that sits next to Operations “coming soon.”\n6. Expected credit use and what happens at 40/60/80/100 credits per unit (or 2,000 / mo on Startup).\n7. Implementation fees (Startup claims none; other packages are silent).\n8. Currency, billing entity, term, and whether “starting rate” will be the contracted rate.\n9. Any need to unbundle a single product—there is no public standalone price to quote.\n10. CTA path: Get Started vs Talk to Sales for Full Suite.\n",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_3e7552876a098bb0",
+    "src_6eff9afc29aa8e32",
+    "src_e805a9592ee44f73"
+  ],
+  "open_questions": [
+    "What does one credit consume (voice minute, SMS, WhatsApp, model token, or something else), and what is the overage or unused-credit policy?",
+    "Is a billed “unit” the same as a “listing,” room, or property, and how does the rate change past 50 listings?",
+    "Is Startup’s “full feature set” identical to Full Suite, and how do Full Suite operations features relate to Operations labeled Coming soon?",
+    "Are there unpublished annual, enterprise, implementation (non-Startup), carrier, or à-la-carte product/API prices, and is any plan free?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Messaging package starting rate is shown as $18 per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n18\n/ unit / mo"
+    },
+    {
+      "statement": "Guest package starting rate is shown as $30 per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n30\n/ unit / mo"
+    },
+    {
+      "statement": "Guest + Devices starting rate is shown as $36 per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n36\n/ unit / mo"
+    },
+    {
+      "statement": "Full Suite starting rate is shown as $48 per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n48\n/ unit / mo"
+    },
+    {
+      "statement": "Public copy states starting rates are shown and that pricing scales beyond 50 listings.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+    },
+    {
+      "statement": "Startup for 0–25 units is shown at $899 per month with 2,000 credits per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "2,000 credits\n/ mo\n$\n899\n/ mo"
+    },
+    {
+      "statement": "Startup is described as the full feature set with no implementation fee.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "The full feature set, designed to help scale your operations with no implementation fee."
+    },
+    {
+      "statement": "Voice AI inbound and outbound is listed as a Messaging package inclusion, not a separate published price.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Voice AI, inbound and outbound"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Answering public-plan price, credit, or packaging questions from the Conduit pricing page",
+      "Preparing a sales quote checklist or mapping a prospect to Messaging, Guest, Guest + Devices, Full Suite, or Startup",
+      "Explaining that Agents, Inbox, Portals, Workflows, voice, and Operations are not published as standalone SKUs"
+    ],
+    "decisions_supported": [
+      "Which published package is the honest starting point given nested inclusions",
+      "When to route to sales because Full Suite is Talk to Sales or because volume is beyond published starting rates",
+      "What must be confirmed live before treating $18–$48 / unit or $899 / mo as a contracted number"
+    ],
+    "do_not_infer": [
+      "Standalone license prices for Agents, Inbox, Portals, Workflows, Operator, Operations, or the developer API/MCP",
+      "Credit burn, overage, annual discount, currency beyond the shown $, or unit=listing equivalence",
+      "That Operations capabilities in Full Suite are generally available despite other pages saying Coming soon",
+      "A free plan or a voice-versus-text rate card"
+    ],
+    "document_key": "pricing",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_3e7552876a098bb0",
+      "src_6eff9afc29aa8e32",
+      "src_e805a9592ee44f73"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 1,
+  "created_at": "2026-09-20T00:47:05.730919+00:00",
+  "status": "research_draft",
+  "input_hash": "986fb99aaaf9dc685e90991c0729600250907c9a1f33327a13912bacf9a8365b",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

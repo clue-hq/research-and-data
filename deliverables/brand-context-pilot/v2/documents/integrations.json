@@ -1,0 +1,135 @@
+{
+  "key": "integrations",
+  "title": "Integrations & implementation readiness",
+  "summary": "Conduit publishes a 43-item integrations catalog plus setup docs that split PMS connectors into messaging and non-messaging paths, with separate channel, CRM, task, Devices, API, and MCP surfaces. Listings and marketing cards are not a per-vendor action matrix; implementation hinges on workspace type, duplicate-thread rules, and which writes are actually enabled.",
+  "markdown": "Conduit’s site lists 43 integrations across CRM, channel managers, collaboration, messaging, PMS, and task managers ([Source](https://www.conduit.ai/integrations)). Docs treat connections as workspace work: channels first, then PMS and other sources that feed Knowledge and tools for [AI Agents](#knowledge/product-agents) ([Source](https://docs.conduit.ai/)). A logo is not proof that every account needs, or receives, every connector or write action.\n\n## Integration map\n\nQualify four evidence types separately: marketplace cards, official setup docs, product claims about agent actions, and [developer](#knowledge/product-developers) API/MCP surfaces.\n\n**PMS and related systems**\n\n| System | Public list | Messaging via this connector (docs) | Other claim |\n| --- | --- | --- | --- |\n| Guesty, Beds24/Bed24, Hostaway, Hostfully, Hostify, Lodgify, OwnerRez, Resly, Smily | Marketplace + PMS docs | Messaging PMS: keep OTA messaging on the PMS or threads can duplicate | Guesty card: sync reservations and centralize Guesty messaging ([Source](https://www.conduit.ai/integrations/guesty)) |\n| Hospitable, PassTheKeys | PMS docs only | Messaging PMS | Absent from the 43-card scrape ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)) |\n| Apaleo, Cloudbeds, Escapia, HomHero/Homhero, Mews, Opera Cloud, RMS/RMS Cloud, Streamline, Track | Mix | Non-messaging: property/reservation data; message via auxiliary OTAs | Track’s card mentions Airbnb/Booking.com routing, but setup docs classify Track as non-messaging PMS sync. Confirm the actual separate OTA messaging path; neither the card nor a coming-soon directory label settles current availability ([Source](https://www.conduit.ai/integrations)) |\n| CiiRUS, Kross Booking | PMS docs only | Non-messaging | Not on the marketplace scrape ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)) |\n| StayNTouch | Marketplace only | Not in the docs table | Card claims two-way write-back ([Source](https://www.conduit.ai/integrations)) |\n| Airbnb as PMS | Docs + Airbnb card | Separate Airbnb rules | Card: messages, support, reservation modifications ([Source](https://www.conduit.ai/integrations/airbnb)) |\n\nDocs say Conduit integrates with over 15 PMS systems to populate listing information, create contacts from reservations, and show listings in Knowledge after sync ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)). Opera Cloud’s page matches the non-messaging class: property, room type, reservation, and profile sync; messaging stays on existing hotel channels ([Source](https://www.conduit.ai/integrations/opera)). Wheelhouse is listed as dynamic pricing, not a PMS path ([Source](https://www.conduit.ai/integrations)).\n\n**Messaging channels**\n\n| Channel | Evidence | Role |\n| --- | --- | --- |\n| Email, WhatsApp, phone/SMS, widget | Start guide + connect docs | [Inbox](#knowledge/product-inbox) unifies email, calls, WhatsApp, social, and connected OTA threads ([Source](https://www.conduit.ai/product/inbox)) |\n| Airbnb | Marketplace (Messaging + Channel Manager) + connect docs | Two-way send/receive claimed on the Airbnb card ([Source](https://www.conduit.ai/integrations/airbnb)) |\n| Twilio | Marketplace | Unified calls and SMS ([Source](https://www.conduit.ai/integrations)) |\n| LINE, iMessage, VoiceAI numbers | Docs index / VoiceAI guide | Not on the 43-card list ([Source](https://docs.conduit.ai/llms.txt)) |\n| Booking.com, VRBO | Marketplace | Both “Coming soon” ([Source](https://www.conduit.ai/integrations)) |\n| Expedia | Marketplace + PMS docs | Card: push availability, rates, reservations. Docs: support-managed Expedia *messaging* for non-messaging PMS such as Cloudbeds; inventory can stay on the PMS ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)) |\n\n[Workflows](#knowledge/product-workflows) send through connected email, WhatsApp, and OTA channels ([Source](https://www.conduit.ai/product/workflows)).\n\n**Ops, knowledge, API**\n\nMarketplace names Slack, Asana, ClickUp, Airtable, HubSpot, Salesforce, Google Drive/Docs/Sheets/Calendar, Notion, Firecrawl, Cal.com, Calendly, GitHub, and Apollo.io ([Source](https://www.conduit.ai/integrations)). Docs add Microsoft Teams notifications, a V3 Marketplace for apps/templates, and Devices (locks, thermostats, sensors, cameras) as an add-on for agents, workflows, [Operator](#knowledge/product-operator), or MCP ([Source](https://docs.conduit.ai/llms.txt)). [Guest Portals](#knowledge/product-portals) mention compatible smart locks without naming vendors ([Source](https://www.conduit.ai/product/portals)). REST (`https://api.conduit.ai/v1`) and MCP (`https://api.conduit.ai/v1/mcp`) are v3-plan surfaces enabled via support; default limit 120 requests/minute/workspace, shared across REST and MCP ([Source](https://docs.conduit.ai/mcp/overview)).\n\n## Direct versus relayed connections\n\nDocs classify PMS connectors by whether *this* integration delivers guest messages—not by every feature the vendor sells. Messaging PMS (Beds24, Guesty, Hospitable, Hostaway, Hostfully, Hostify, Lodgify, OwnerRez, PassTheKeys, Resly, Smily): keep OTA messaging on the PMS. Non-messaging (Apaleo, CiiRUS, Cloudbeds, Escapia, Homhero, Kross Booking, Mews, Opera Cloud, RMS, Streamline, Track): connect each OTA messaging channel directly ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)).\n\nWorkspace rules: multiple PMS accounts only when they share the same messaging setup; messaging and non-messaging PMS cannot share a workspace; Airbnb as primary PMS blocks another PMS; Airbnb can sit beside a PMS, with messages either remaining on the PMS or matching to reservations when the PMS is non-messaging ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)). Cloudbeds + Expedia is the worked example: Cloudbeds can keep inventory, rates, availability, and reservation sync while Conduit support connects Expedia messaging; do not leave messaging on both paths ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)).\n\nMarketing can disagree. The Mews card says teams can centralize guest messaging from Mews properties, while the PMS guide lists Mews as non-messaging ([Source](https://www.conduit.ai/integrations/mews)). The Expedia marketplace line about pushing availability is not the support-managed messaging path in docs. Treat cards as listings until setup docs confirm the path.\n\n## Data and action boundaries\n\nProduct copy says agents handle voice, chat, email, WhatsApp, and connected OTA messages, and can “check bookings, make reservation changes, and create tasks through supported integrations,” with live PMS, knowledge, payments, and tasks as clusters—not a per-vendor matrix ([Source](https://www.conduit.ai/product/agents)). Inbox copy places stay history, booking details, and availability from connected PMS/OTA accounts beside the thread and names Mews, Opera, Booking, and Airbnb as examples ([Source](https://www.conduit.ai/product/inbox)).\n\nTighter documentation:\n\n- PMS connect: listing/Knowledge sync, contacts from reservations, scheduled Knowledge refresh (daily–monthly), and “Check for new listings.” Auth differs (Lodgify API key; Beds24 invite code plus per-property webhooks; Opera Cloud via OHIP) ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)).\n- Opera’s public page documents property/reservation/profile sync and no messaging through that connector. Other write actions are unestablished, not proven impossible ([Source](https://www.conduit.ai/integrations/opera)). StayNTouch marketplace copy is the supplied source that states two-way write-back for that PMS ([Source](https://www.conduit.ai/integrations)).\n- Workflows may use webhooks or MCP ([Source](https://www.conduit.ai/product/workflows)). Workflow credit docs price Slack, Teams, HubSpot, Salesforce, Airtable, webhooks, and channel sends—evidence those builder actions exist, not prices for this page ([Source](https://docs.conduit.ai/workflows/workflow-usage)).\n- MCP: pin `workspace_id`; keep approvals on write tools (`send_`, `patch_`, `create_`, `update_`, `delete_`); pass idempotency keys; use least-privilege tokens. The ChatGPT/Codex plugin is five read-only tools, not the full catalog ([Source](https://docs.conduit.ai/mcp/overview)).\n- Bring-your-own Twilio VoiceAI needs webhook `https://api.conduit.ai/twilio/messaging`, A2P 10DLC, and SMS enabled, or inbound SMS fails ([Source](https://docs.conduit.ai/setting-up-conduit/connect-voiceai-ai-number)).\n\nDo not infer that every logo supports reservation edits, payments, tasks, or lock control.\n\n## Implementation checklist\n\nPublic start-guide order ([Source](https://docs.conduit.ai/)):\n\n1. Create the workspace (PMS UI may require Short Term Rental, Long Term Rental, or Hotel settings) ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)).\n2. Invite members; decide who can manage agent settings.\n3. Connect channels that apply; then PMS/data sources.\n4. Import listings; enable PMS Knowledge auto-sync; use Sync history and Check for new listings.\n5. Configure V3 agents, Knowledge, Skills, and Tools (connection tools, custom code, MCP, per-agent overrides).\n6. Set inbox routing so new channel contacts do not sit in Unmapped; routing runs before workflow triggers ([Source](https://docs.conduit.ai/setting-up-conduit/inbox-routing)).\n7. Sandbox-test with listing and reservation context; expand writes via Connect → Teach → Test → Deploy.\n8. Confirm support-enabled REST/MCP access; the documentation’s “v3 plan” wording is not mapped to public package names. Do not equate a V3 interface or Full Suite with automatic API access. Confirm Devices or Portals entitlements before those tool groups.\n\nOwnership issues the sources actually raise: duplicate OTA threads if messaging is dual-routed; mixed PMS types blocked in one workspace; Expedia messaging provisioned with Conduit support rather than workspace credentials; MCP send misfires if clients allow-list write tools; Twilio SMS dropped without A2P; Lodgify API access may be gated on Lodgify’s plan ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)). Sources do not document SLAs, RACI, or security-review checklists.\n\n## Unknowns and discovery questions\n\nThere is no published matrix of per-PMS writes (modify reservation, take payment, create a task). StayNTouch, Hospitable, PassTheKeys, CiiRUS, Kross Booking, LINE, and iMessage appear on different lists. Booking.com and VRBO were “Coming soon” on the scraped catalog. The Portals FAQ “How does Portals work with my PMS and booking channels?” is unanswered in the supplied HTML. Marketplace Email/WhatsApp blurbs still say HostAI. Confirm live connector status, message path, and allowed writes against the operator’s actual PMS and OTAs.",
+  "source_ids": [
+    "src_2d5d23c8d8b6f535",
+    "src_3399afceb260e44f",
+    "src_3eddba4921daba7a",
+    "src_6eff9afc29aa8e32",
+    "src_75269914aa6b6dfd",
+    "src_8f9aa404cff029a5",
+    "src_904a981650724bf1",
+    "src_9078cb1971869041",
+    "src_91caff45e9dfd65f",
+    "src_a2a67d2faa01de13",
+    "src_a649d4d3ab5f59f5",
+    "src_ad64b9e1ad88ae2a",
+    "src_b27f818d3e0ae613",
+    "src_b4b8a8b99c077661",
+    "src_c8cbc2ec50c61efe",
+    "src_dae2c4b0bd94e5a6",
+    "src_e805a9592ee44f73",
+    "src_f01f1010ac8ddab8"
+  ],
+  "open_questions": [
+    "Which write actions (reservation change, payment, task creation, lock codes) are enabled for each named PMS versus only described generically for “supported integrations”?",
+    "Is StayNTouch a messaging or non-messaging PMS in the product, and is two-way write-back implemented beyond the marketplace card?",
+    "Current status of Booking.com and VRBO (still coming soon?) and of Hospitable, PassTheKeys, CiiRUS, Kross Booking, LINE, and iMessage relative to the 43-card catalog.",
+    "How Guest Portals bind to PMS/OTA data and which smart-lock vendors are compatible.",
+    "How to reconcile Mews marketplace “centralize guest messaging” copy with the docs classification of Mews as non-messaging."
+  ],
+  "evidence_notes": [
+    {
+      "statement": "The public integrations catalog is numbered at 43 items.",
+      "source_id": "src_a2a67d2faa01de13",
+      "quote": "Integrations\n43"
+    },
+    {
+      "statement": "Docs classify named PMS connectors into messaging versus non-messaging groups for how guest messages reach Conduit.",
+      "source_id": "src_b27f818d3e0ae613",
+      "quote": "Messaging\nBeds24, Guesty, Hospitable, Hostaway, Hostfully, Hostify, Lodgify, OwnerRez, PassTheKeys, Resly, Smily\nThe PMS sends guest messages to Conduit."
+    },
+    {
+      "statement": "Messaging and non-messaging PMS providers cannot share one workspace.",
+      "source_id": "src_b27f818d3e0ae613",
+      "quote": "PMS providers that deliver guest messages cannot share a workspace with providers that only supply property and reservation data."
+    },
+    {
+      "statement": "Opera Cloud’s integration page states that connector does not route guest messaging.",
+      "source_id": "src_dae2c4b0bd94e5a6",
+      "quote": "Because Opera Cloud does not route guest messaging through this integration, your hotel's existing communication channels handle outbound contact."
+    },
+    {
+      "statement": "StayNTouch marketplace copy claims two-way write-back, which is not in the PMS messaging table.",
+      "source_id": "src_a2a67d2faa01de13",
+      "quote": "live reservation context, two-way write-back, voice, and internal ops coordination."
+    },
+    {
+      "statement": "Agent product copy claims booking checks, reservation changes, and task creation only through supported integrations, not a named vendor matrix.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Check bookings, make reservation changes, and create tasks through supported integrations."
+    },
+    {
+      "statement": "REST API access is gated to the v3 plan and enabled via support.",
+      "source_id": "src_2d5d23c8d8b6f535",
+      "quote": "The Conduit API is only available on the\nv3 plan\n. Contact\nsupport@conduit.ai\nto enable API access for your workspace."
+    },
+    {
+      "statement": "MCP tool calls share a default 120 requests per minute per workspace budget with the REST API.",
+      "source_id": "src_f01f1010ac8ddab8",
+      "quote": "By default, MCP tool calls are limited to 120 requests per minute per workspace and share the same workspace-level budget as REST API requests."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "qualifying whether an account’s PMS, OTAs, and channels can be connected without a duplicate-inbox design",
+      "scoping implementation: what must be true before agents can see reservations or send on a channel",
+      "answering stack questions without treating a marketplace logo as write-back or messaging proof",
+      "briefing developers on API/MCP entitlement, rate limits, and write-tool risk"
+    ],
+    "decisions_supported": [
+      "pursue / hold an account based on documented connector class (messaging vs non-messaging vs coming soon)",
+      "choose one workspace versus split workspaces when mixing PMS types or Airbnb-as-PMS",
+      "which discovery questions to ask in demo about writes, Expedia support setup, and Devices/Portals add-ons"
+    ],
+    "do_not_infer": [
+      "that every listed integration supports the same reads, writes, or messaging path",
+      "that Mews, Cloudbeds, or Opera Cloud deliver OTA threads through the PMS connector",
+      "standalone prices from workflow credit rows",
+      "that Booking.com or VRBO are live",
+      "vendor-level smart-lock or payment processor support from unspecified “compatible” language"
+    ],
+    "document_key": "integrations",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_2d5d23c8d8b6f535",
+      "src_3399afceb260e44f",
+      "src_3eddba4921daba7a",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_ad64b9e1ad88ae2a",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c8cbc2ec50c61efe",
+      "src_dae2c4b0bd94e5a6",
+      "src_e805a9592ee44f73",
+      "src_f01f1010ac8ddab8"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 2,
+  "created_at": "2026-09-20T00:47:26.785103+00:00",
+  "status": "research_draft",
+  "input_hash": "8e8b25f2dbccad6d64446dfe5fe6cd865efb29809652e633e0d161d0255c773a",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:27:07.883043+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:27:07.883048+00:00",
+      "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+      "human_approved": false
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "issues": [
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "Higher bundles (Guest from $30, Guest + Devices from $36, Full Suite from $48 per unit per month) nest Messaging and add portals/devices/operations features—including “Device management workflows” and “Agentic operations workflows” on those SKUs",
+      "problem": "Packaging is conflated across three SKUs. Guest ($30) is Messaging plus portals/waivers/upsells only. “Device management workflows” is listed on Guest + Devices; “Agentic operations workflows” is listed on Full Suite. A seller could promise device or operations workflow lines on Guest.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b"
+      ],
+      "suggested_correction": "Say Guest ($30, 60 credits) = Messaging + portals/waivers/upsells. Guest + Devices ($36, 80 credits) adds devices and “Device management workflows.” Full Suite ($48, 100 credits) adds tasks/workforce, “Agentic operations workflows,” scheduling/dispatch, and inventory. Do not attach the two workflow line-items to every higher bundle."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "Conduit Workflows is the product for automating the guest journey after a booking exists—not the live reply engine itself.",
+      "problem": "Over-narrows scope. The hospitality page is stay-journey-led, but docs start workflows from events such as a new contact, a conversation tag, or an AI tool call, and include routing/triage that are not booking-gated. Sellers may disqualify pre-stay, inbox, or tag-driven automations.",
+      "source_ids": [
+        "src_9078cb1971869041",
+        "src_0f66e375eb2b7089",
+        "src_44ca2b5b2ec94cdf",
+        "src_2a445232675660d9"
+      ],
+      "suggested_correction": "Keep Agents as the live reply engine, but describe Workflows as visual automations (proactive, routing, triage) that hospitality marketing illustrates with booking confirmations, stay-date messages, follow-ups, and upgrades—not as a post-booking-only product."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "| SMS or WhatsApp (non-AI / AI-generated) | 2 / 5 |",
+      "problem": "Credit table used for discovery omits the documented “Other channels” row (0 non-AI / 3 AI-generated) and that inbound messages use 0 credits. Product copy says sequences send on connected OTA channels, so Airbnb/other OTA burn will be mis-modeled if sellers only use Email/SMS/WhatsApp rates.",
+      "source_ids": [
+        "src_b4b8a8b99c077661",
+        "src_9078cb1971869041"
+      ],
+      "suggested_correction": "Add Other channels 0 / 3, note inbound is free, and tell sellers to map each connected send path (email, WhatsApp/SMS, OTA/other) before estimating 40 credits/unit."
+    },
+    {
+      "document_key": "product-developers",
+      "severity": "material",
+      "excerpt": "Only (2)–(4) require a developer and v3 API/MCP enablement.",
+      "problem": "Conflates V3 in-product Tools with the commercial “v3 plan” API/MCP gate. Custom Python/JavaScript tools are documented on the V3 Tools surface in the app; only REST/MCP access is explicitly “v3 plan” via support. This can over-qualify a hospitality team as needing engineering and API enablement just to grant an agent a custom tool.",
+      "source_ids": [
+        "src_8f9aa404cff029a5",
+        "src_2d5d23c8d8b6f535",
+        "src_f01f1010ac8ddab8"
+      ],
+      "suggested_correction": "Split paths: in-app custom tools/visual workflows vs REST/MCP, which require contacting support to enable the v3 plan. Do not treat “agent should call a custom tool” as automatically a developer-plus-API deal."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Buyers are typically founders, revenue/guest-services leads, or ops owners",
+      "problem": "Ungrounded ICP gate. Public pages name hospitality firm types and a few customer titles; they do not support a typical-buyer pattern or a credit-volume buying criterion.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_c1dd8d452a784c57"
+      ],
+      "suggested_correction": "Cite the published audience (hotel teams, serviced-apartment operators, STR managers) and treat founder/GS/ops titles as examples from named stories, not a qualification rule."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Dan Mitchen called using AI in workflows with SuiteOP “an absolute game changer.”",
+      "problem": "Source quote is forward-looking (“is going to be an absolute game changer”), i.e. expectation, not a measured SuiteOP/workflow outcome.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Keep the future tense and the already-correct caveat that this is HomeHop’s stack, not a Conduit integration or KPI."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Workspace with hospitality type so PMS connections appear",
+      "problem": "PMS visibility is documented as Short Term Rental or Long Term Rental (Lodgify notes STR or Hotel), not a generic “hospitality type.”",
+      "source_ids": [
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "If PMS is missing: workspace industry must be Short Term Rental, Long Term Rental, or Hotel per the connect-PMS steps."
+    },
+    {
+      "document_key": "product-operator",
+      "severity": "minor",
+      "excerpt": "Credit consumption for Operator sessions ... remain unspecified in these captures.",
+      "problem": "Conflicts with the same draft’s credit-guide section, which already establishes Operator Sidebar as a metered category (model/tokens; roughly 7,000–71,000 billable tokens per credit). Leaving it “unspecified” sends sellers back to a resolved question.",
+      "source_ids": [
+        "src_f599093e8cf0b47d"
+      ],
+      "suggested_correction": "Close the credit question: Operator turns are billed from the Operator Sidebar pool by model/tokens, with no flat per-turn price; keep default tools and guest-write permissions as open."
+    }
+  ],
+  "strengths": [
+    "Operator vs Operations vs internal agents vs API “operator replies” (`is_sent_by_autopilot`) is consistently separated and safe for copy.",
+    "Haven 90% automation and staffing cuts are explicitly not assigned to the Workflows SKU; 40% “with no workflows” is quoted in context.",
+    "Workflow runs vs paid actions, routing-before-triggers, Messaging inclusion without a standalone Workflows SKU, and logo ≠ first-class action are all decision-ready.",
+    "Developer doc does not treat Messaging/Guest unit prices as API fees, does not invent a public event-subscription webhook product, and distinguishes catalog/MCP tools from token, add-on, and per-agent grants.",
+    "Open questions generally flag mapping gaps (v3 plan vs pricing rows, credit sizing) instead of inventing procurement or demographic numbers."
+  ],
+  "decision_usefulness": "A seller can usually choose Workflows vs Agents vs Operator vs API/MCP, stay off Operations-as-Operator, and avoid borrowing Haven’s platform KPIs. They can also ask useful next questions on PMS messaging vs reservation-only, channels, builder ownership, and credit burn. They cannot yet rely on the Guest-bundle workflow lines, post-booking-only Workflows framing, or “custom tool ⇒ v3 API + developer” gate without mis-scoping package, product, or plan. Credit math for OTA/other-channel sends is incomplete relative to the table the Workflows doc tells them to use.",
+  "reviewed_at": "2026-09-20T01:20:04.987418+00:00",
+  "document_keys": [
+    "product-workflows",
+    "product-operator",
+    "product-developers"
+  ],
+  "human_approval": false
+}

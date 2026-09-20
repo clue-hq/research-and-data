@@ -1,0 +1,112 @@
+{
+  "key": "product-portals",
+  "title": "Guest Portals",
+  "summary": "Guest Portals give each stay a branded, no-app link for check-in steps, waivers, payments, upgrades, and a stay-aware AI concierge. Packaging is split in public materials between a Guest bundle that includes portals and a Portals add-on priced by listing count, with lock, payment, and PMS write-back behavior confirmed per stack.",
+  "markdown": "## Overview\n\nGuest Portals are Conduit’s stay-level guest experience surface: one branded link for arrival prep, access instructions, upgrades, payments, and in-portal questions. The product page frames it as “the full stay, upsells, and guest support in one link,” with no guest app to download. ([Source](https://www.conduit.ai/product/portals.md))\n\nPortals sit beside [AI Agents](#knowledge/product-agents) and [Inbox](#knowledge/product-inbox). Messaging answers guests in channels; Portals is the page a guest opens before and during a stay. Capabilities below are only those Conduit attributes to Portals, the Guest package, or the Portals API—not generic inbox automation.\n\n## Who it is for\n\nPublic pages position Portals for hotels and vacation rentals. Company FAQ copy also lists hotel teams, serviced-apartment operators, and short-term rental managers as Conduit’s audience; that is a company-level statement, not a Portals-only ICP. ([Source](https://www.conduit.ai/product/portals))\n\n**Buyers** are commercial owners of guest experience and ancillary revenue: operators who want a branded guide, damage waivers without a SKU fee (Guest package language), in-stay extras, and fewer “where is the code?” threads. **Users** split three ways: guests who complete the link; ops or CX leads who own templates, offers, verification rules, and brand kit; and implementation or engineering staff who use Portals API/MCP tools when the add-on is enabled.\n\nDo not invent urgency scores or “typical” portfolio sizes from this page. Fit is an account that already has reservation/listing context in Conduit and a reason to replace a PDF guide, third-party guidebook, or manual waiver/payment chase. See [ICP strategy](#knowledge/ideal-customers) for segment work elsewhere.\n\n## Capabilities and limits\n\n| Capability | What Conduit publishes | Stated limit or condition |\n| --- | --- | --- |\n| One stay link | Property details, dates, check-in steps, access instructions | No app required ([Source](https://www.conduit.ai/product/portals.md)) |\n| Pre-arrival | Stay details, identity checks, questions, agreements/waivers, fees/deposits | Access after required steps are complete ([Source](https://www.conduit.ai/product/portals.md)) |\n| Payments | Stripe: card, Apple Pay, Google Pay, or Link | Guest enters a method in-portal; not the original booking card ([Source](https://www.conduit.ai/product/portals.md)) |\n| Upsells | Browse extras and pay at checkout | Offers show only after a template layout references them ([Source](https://docs.conduit.ai/api-reference/portals/overview.md)) |\n| AI concierge | Property-aware answers from stay + property info | 24/7 / local recommendations claimed on the product page, not independently measured ([Source](https://www.conduit.ai/product/portals.md)) |\n| Smart access | Instructions, door codes, or lock controls after pre-arrival steps | Compatible integrations only; lock behavior varies; confirmed in implementation ([Source](https://www.conduit.ai/product/portals.md)) |\n| Branding | Layout, colors, theme, hero, guides, offers | Team can migrate an existing guide and build a sample before portfolio rollout ([Source](https://www.conduit.ai/product/portals.md)) |\n\nAPI configuration is modular: verification rules (deposits, agreements, arrival details, questions), offers (examples: late checkout, mid-stay clean, airport pickup), templates, guides, brand kit, and read-only sessions (progress, submitted fields, orders, tickets, assets). You can use verification rules without a template. Portal API methods require the **Portals add-on**; otherwise they return `403 Forbidden`. Reads need `Access Portals`; writes need `Manage Portals`. ([Source](https://docs.conduit.ai/api-reference/portals/overview.md))\n\nUnknown from these sources: which PMS fields write back, conversion rates, and whether every Guest-bundle customer also has the API add-on entitlement.\n\n## Workflows and use cases\n\n**Before.** A guest books on an OTA. The team emails a PDF guidebook, a waiver link, a separate payment request, and later a door code. Identity checks live in another tool. After-hours questions bounce to [Inbox](#knowledge/product-inbox) or a phone tree. Upsells are ad hoc messages. Access is sent even if the waiver is unsigned.\n\n**After (as published).** Conduit uses reservation, guest, listing, and booking-channel context so each portal is stay-specific. The guest opens one branded link, completes questions and identity checks, signs the rental agreement or damage waiver, pays required fees or deposits, buys upgrades, and only then receives access when requirements are complete. The in-portal concierge answers from stay details and property information. Email or SMS can still run alongside the portal. ([Source](https://www.conduit.ai/product/portals.md))\n\n**Limits of that workflow.** Payment and verification rules can be tailored by booking channel, including excluding flows where an OTA’s policies require it. Guests do not reuse the booking card. Exact fields, write-back, smart-lock support, and payment rules vary by integration and are confirmed before launch. Lock compatibility is not a logo-level guarantee. ([Source](https://www.conduit.ai/product/portals.md))\n\nDevices (separate add-on) can automatically generate a door code per reservation and publish it to the guest portal; that is a Devices capability that *lands in* Portals, not a Portals-only lock catalog. ([Source](https://docs.conduit.ai/devices/overview.md))\n\n## Integrations and setup\n\nDo not treat a PMS logo as proof the portal can collect deposits or issue codes. The published route is: connect PMS/OTA so reservation and listing context exist → connect Stripe for in-portal pay → confirm lock provider and property setup if access is in-portal → configure verification rules, offers, templates/guides, brand kit → optionally activate a template. Implementation can include moving content from a current guest guide and a sample portal before rollout. ([Source](https://www.conduit.ai/product/portals.md))\n\nPMS connection itself is workspace-level (Settings → Connections → PMS, then Knowledge sync). Messaging vs non-messaging PMS rules affect inbox routing, not portal page composition; see [Integrations](#knowledge/integrations). Guest + Devices packaging adds portal-integrated smart devices and access codes; commercial access (cards, mobile keys, Instant Keys) is documented under Devices, not on the Portals FAQ. ([Source](https://docs.conduit.ai/setting-up-conduit/connect-pms))\n\nDevelopers: MCP portal tools need the add-on plus the same Access/Manage Portals permissions; v3 API/MCP enablement is a support request, not a self-serve claim on the pricing page. ([Source](https://docs.conduit.ai/mcp/overview))\n\n## Pricing and packaging\n\nPublic materials describe **two overlapping commercial shapes**. Preserve both; do not collapse them into one SKU.\n\n| Shape | What is published | Units |\n| --- | --- | --- |\n| Guest bundle | Starting **$30 / unit / month**, **60 credits / unit / month**; everything in Messaging plus in-portal AI concierge, rich-media guidebooks, damage waivers with no SKU fee, one-click upsell payments ([Source](https://www.conduit.ai/pricing.md)) | Per unit / month; starting rates; scales beyond 50 listings ([Source](https://www.conduit.ai/pricing)) |\n| Portals add-on | Paid add-on by **contracted listing count**, graduated volume pricing; bundles and **guest-transaction terms** can change the final rate; sales quotes monthly or annual ([Source](https://www.conduit.ai/product/portals.md)) | Listings; exact rate unpublished |\n| Guest + Devices | Starting **$36 / unit / month**, **80 credits**; portal-integrated smart devices and access codes ([Source](https://www.conduit.ai/pricing.md)) | Per unit / month |\n| Startup | **0–25 units**, **$899 / month**, **2,000 credits / month**, full feature set, no implementation fee ([Source](https://www.conduit.ai/pricing.md)) | Workspace month |\n\nMessaging starts at **$18 / unit / month** and **40 credits** and does **not** list portals. Full Suite starts at **$48 / unit / month** and **100 credits**. Starting rates; talk to sales to map a package. ([Source](https://www.conduit.ai/pricing.md))\n\n**Credits (workspace usage, not a Portals meter).** Included credits reset each monthly billing cycle. Conduit tracks four categories: workflow paid actions, Operator sidebar turns, internal agent activity, and Voice AI. **Inbox AI agent replies do not consume credits.** Regular voice is **1 credit per minute**; AI voice is **8 credits per minute**. Operator cost varies by model and tokens (roughly 7,000–71,000 billable tokens per credit depending on model). Internal agents have a dynamic cost. Workflow *runs* are free; credits apply when a successful run finishes a paid action. Low-credit path: notification, then upgrade or continue into **overage billed on the next invoice**. View usage under Settings → Billing. ([Source](https://docs.conduit.ai/setting-up-conduit/credits))\n\nA bundle price is not a standalone Portals price. Guest-transaction fees are acknowledged but not quantified here.\n\n## Differentiation\n\nAttributed product claims, not third-party proof: stay-scoped branded link instead of a generic guidebook app; AI concierge that uses *this stay’s* details; Stripe checkout in the same page as waivers and extras; optional lock controls after verification; Conduit-led content migration and a sample portal. Guest package copy highlights “Damage waivers, no SKU fee” and “Upsells with One-click Payment.” ([Source](https://www.conduit.ai/pricing.md))\n\nCompetitive pages list Duve, Enso Connect, Canary, and others as “Conduit vs.” destinations; those pages are not evidence that Portals matches a named rival feature-for-feature. For broader positioning see [Alternatives](#knowledge/alternatives).\n\n## Customer evidence\n\nPublished customer stories in this source set (Haven, Cascadia, Lauderdale, Cosmica, Bali Luxury Stays, and others) report inbox/agent automation, staffing, and messaging upsells. **None of those stories isolate Guest Portals**—no portal conversion, waiver completion, or in-portal GMV figures. Do not reuse 90% automation, $500k asset value, or Dubai “up to 5%” upsell as Portals outcomes. ([Source](https://www.conduit.ai/customers/haven-2026))\n\nUntil a Portals-scoped case exists, proof for this product is the documented guest path, packaging, and API—not portfolio ROI. Track named portal customers as an open investigation: [Customer evidence](#knowledge/customer-evidence).\n\n## Sales discovery\n\nAsk only what decides Guest vs Messaging vs add-on and whether implementation can land:\n\n1. What is the current guest guide (PDF, app, PMS message, third-party portal), and who owns content?\n2. Which pre-arrival steps are mandatory before access: ID, waiver, deposit, house rules?\n3. Stripe (or equivalent) already in use? Any OTA channels that must **exclude** in-portal pay?\n4. Lock/access vendor and whether codes must appear only after verification?\n5. PMS/channel: which reservation fields must appear, and is write-back required?\n6. Ancillary catalog: SKU-fee pain on waivers, one-click extras, channel-specific offers?\n7. Buyer of guest experience vs ops user who will maintain templates and offers?\n8. Listing count for contracted Portals add-on vs Guest per-unit bundle, plus expected credit use (voice/Operator/workflows—not inbox replies)?\n\n**Next practical step:** book a stack review that confirms PMS fields, Stripe, lock compatibility, and a sample portal—then quote either Guest ($30/unit starting) or the listing-count add-on, stating which contradiction applies to this account. Do not promise a rate Conduit has not priced. Map credits and overage using [Pricing & packaging](#knowledge/pricing) and the credit guide, not Portals page rhetoric.",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_6eff9afc29aa8e32",
+    "src_8b30f0226db273ad",
+    "src_b27f818d3e0ae613",
+    "src_b4b8a8b99c077661",
+    "src_c1dd8d452a784c57",
+    "src_dd30ed33c607e76d",
+    "src_e6b08f48fc993eb2",
+    "src_f01f1010ac8ddab8",
+    "src_f0d546128c30936b",
+    "src_f599093e8cf0b47d"
+  ],
+  "open_questions": [
+    "For a given account, is Portals sold as the Guest per-unit bundle, a listing-count add-on, or both stacked, and what guest-transaction terms apply?",
+    "Which PMS/OTA integrations support which portal fields, payment rules, and write-back, and which lock models can show codes or controls after verification?",
+    "Are there customer stories that isolate portal completion, waiver, payment, or upsell outcomes rather than inbox/agent automation?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Guest package starting price and included credits.",
+      "source_id": "src_f0d546128c30936b",
+      "quote": "Starts at **$30 per unit per month** and includes **60 credits per unit per month**."
+    },
+    {
+      "statement": "Guest bundle includes portals, waivers, upsells, and payments.",
+      "source_id": "src_f0d546128c30936b",
+      "quote": "Add portals, waivers, upsells, and payments to every guest stay."
+    },
+    {
+      "statement": "Portals also described as a listing-count add-on, not only the Guest bundle.",
+      "source_id": "src_8b30f0226db273ad",
+      "quote": "Portals is a paid add-on priced by contracted listing count with graduated volume pricing for larger portfolios."
+    },
+    {
+      "statement": "Guest actions available in a Conduit Portal without an app.",
+      "source_id": "src_8b30f0226db273ad",
+      "quote": "Guests get one branded link for the full stay, with no app to download. They can review stay details, complete pre-arrival questions and identity checks, sign rental agreements or damage waivers, pay required fees or deposits, purchase upgrades, access the property when requirements are complete, and ask the AI concierge for property-aware answers."
+    },
+    {
+      "statement": "In-portal payment methods and that guests do not reuse the original booking card.",
+      "source_id": "src_8b30f0226db273ad",
+      "quote": "Connect your Stripe account so guests can pay in the portal with a card, Apple Pay, Google Pay, or Link. Guests enter their payment method in the portal rather than reusing the card from the original booking."
+    },
+    {
+      "statement": "Inbox AI replies are excluded from credit consumption.",
+      "source_id": "src_f599093e8cf0b47d",
+      "quote": "Replies sent by your AI agents in the inbox do not consume credits. Credits are only used by the four categories above."
+    },
+    {
+      "statement": "Published voice credit rates.",
+      "source_id": "src_f599093e8cf0b47d",
+      "quote": "Regular voice minute\n1 per minute\nAI voice minute\n8 per minute"
+    },
+    {
+      "statement": "Portal API requires the Portals add-on or returns 403.",
+      "source_id": "src_e6b08f48fc993eb2",
+      "quote": "Portal API methods require the **Portals** add-on. Without it, each method returns `403 Forbidden`."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Answering what Guest Portals do versus Inbox or Agents",
+      "Mapping Guest bundle vs Portals add-on vs Guest + Devices",
+      "Scoping implementation: Stripe, locks, PMS context, templates and verification rules",
+      "Explaining credits, inbox replies, voice, Operator, and overage alongside Portals packaging"
+    ],
+    "decisions_supported": [
+      "Whether Messaging is insufficient and Guest/Portals is required",
+      "Whether to quote per-unit Guest pricing or listing-count add-on pricing",
+      "Whether lock/payment/OTA-exclusion constraints block a portal rollout",
+      "Whether customer proof can be used (it cannot unless Portals-scoped)"
+    ],
+    "do_not_infer": [
+      "Portals ROI or automation rates from agent/inbox customer stories",
+      "That a PMS or lock logo means portal write-back, codes, or payments work",
+      "A standalone Portals list price equal to the Guest bundle",
+      "Unpublished credit rules or FAQ answers beyond the credit guide and Portals markdown FAQ"
+    ],
+    "document_key": "product-portals",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_6eff9afc29aa8e32",
+      "src_8b30f0226db273ad",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_dd30ed33c607e76d",
+      "src_e6b08f48fc993eb2",
+      "src_f01f1010ac8ddab8",
+      "src_f0d546128c30936b",
+      "src_f599093e8cf0b47d"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 2,
+  "created_at": "2026-09-20T01:14:37.068344+00:00",
+  "status": "research_draft",
+  "input_hash": "6e736f360b52f61c8bda45a9fa2ee021904510a6bc03ac7cfa000d89ed2a2579",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

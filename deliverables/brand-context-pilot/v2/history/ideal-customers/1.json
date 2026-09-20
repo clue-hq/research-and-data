@@ -1,0 +1,232 @@
+{
+  "key": "ideal-customers",
+  "title": "ICP strategy & segment priorities",
+  "summary": "Conduit’s published ICP is hospitality stay operators—hotel teams, serviced-apartment operators, and short-term rental managers—not a job-title list. Named proof is strongest for vacation-rental managers, thinner for independent hotels, and still a marketing claim for hotel groups; unit, employee, and revenue cutoffs are not fit gates.",
+  "markdown": "Conduit’s public ICP is a hospitality **account**, not a jobs list. The pricing FAQ says Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers, with AI agents that answer guest messages and calls, handle routine requests, and coordinate work with the team. [Source](https://www.conduit.ai/pricing) Global navigation names three industries in this order: short-term rentals, independent hotels, hotel groups. [Source](https://www.conduit.ai/product/agents)\n\n**Fit** means the company operates guest stays, can supply property-specific policies and reservation context, and runs conversations on channels Conduit unifies, with humans for handoffs. A motivated buyer outside that operating model does not create fit. Investigation priority follows evidence strength in [Customer evidence & usable proof](#knowledge/customer-evidence), not invented market size: named stories cluster in vacation-rental / property-management companies; independent hotels have one boutique P&L write-up plus an industry page; hotel groups have product copy without a named group case body in this pack; serviced apartments are named in the FAQ only.\n\n## Who is a good-fit account\n\nA good-fit account is an operator of stays whose guest work is communication-heavy and **property-specific**. Agents use the operator’s property information and policies, act through supported connected tools, and follow rules for what the team should handle. [Source](https://www.conduit.ai/product/agents) Inbox assumes conversations can be organized by property or team, with stay and booking context from connected PMS and OTA accounts beside the thread. [Source](https://www.conduit.ai/product/inbox)\n\nHotels and vacation-rental operators are both in-category and **not the same test**. Independent-hotel pages stress after-hours calls, front-desk load, Opera / Mews / Cloudbeds, and extras such as room upgrades, spa, and dining. [Source](https://www.conduit.ai/industry/independent-hotels) Short-term rental pages stress per-listing knowledge, Airbnb / Vrbo / Booking.com / Expedia threads, check-in instructions, and booking-change requests. [Source](https://www.conduit.ai/industry/short-term-rentals) Hotel-group pages add shared brand standards with per-property policies and reservation details. [Source](https://www.conduit.ai/industry/hotel-groups) Run [ICP · hotel operators](#knowledge/icp-hotels) and [ICP · vacation-rental operators](#knowledge/icp-rentals) as separate account tests. Serviced-apartment operators belong in the same FAQ sentence; investigate them as in-category until disproven—do not reject for a missing named story.\n\nCompany reach copy (“300+ hospitality brands in 120+ countries”) is a Conduit claim, not named-account proof. [Source](https://www.conduit.ai/industry/independent-hotels)\n\n## Priority buying situations\n\nThese are situations that appear in named stories or industry pages. They are research prompts, not needs every customer has.\n\n| Situation observed | Where it shows up | Why it is investigable | Evidence strength |\n| --- | --- | --- | --- |\n| Guest volume growing faster than support headcount | STR / PM companies | Haven, HomeHop, and Canbnb describe scale without proportional guest-support hiring | Strong named STR stories |\n| Overnight / after-hours coverage | Hotels and STR | Independent-hotel after-hours receptionist; HomeHop voice coverage 1–7 AM | Industry page + named STR story |\n| Split inboxes or generic helpdesk misfit | Luxury PM | Bocobay left Intercom to unify WhatsApp, email, phone, and live chat | One named migration |\n| Acquisition or multi-market expansion without a new comms team | STR / multi-country | Cascadia’s first PM acquisition; Cosmica Italy/Dubai; Wynwood seven countries | Strong STR / CX stories |\n| Owner wants leaner or more passive operations | Boutique hotel | Lauderdale replaced a call-center model and reports support-cost and NOI changes | One hotel story |\n\nDo not treat 90% automation, modeled asset value, or any single automation rate as a qualification bar. Those figures stay attributed in [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n## Company characteristics\n\nNo public source sets employee, revenue, or unit-count **fit gates**. Pricing publishes commercial bands only: Startup for 0–25 units, per-unit packages “from independent teams to enterprise,” and starting rates that scale beyond 50 listings. [Source](https://www.conduit.ai/pricing) A small portfolio can be commercially eligible; a ~270-property manager can be a named customer. Neither is a necessary ICP cutoff.\n\n| Characteristic | What sources show | Fit implication | Still unknown |\n| --- | --- | --- | --- |\n| Industry | Hotel teams, serviced-apartment operators, STR managers | Primary in-category test | Resorts, villas, aparthotels appear as marketing links, not a defined ICP |\n| Ownership vs management | Owner-operator hotel (Lauderdale); PM brands managing listings (Haven, Cascadia, HomeHop, Canbnb, Bocobay) | Contracting party may be owner or manager | Franchise vs brand vs asset manager not specified |\n| Geography / language | Company claim of 120+ countries; named stories in the US, Australia, Italy, Dubai, Caribbean, Latin America/Europe, Bali, London/SF | Geography is not a published exclusion | Product language limits are not specified beyond Wynwood’s multilingual CX story |\n| Portfolio complexity | Inbox views by property or team; hotel-group shared KB; STR per-listing KB | Multi-property / multi-listing is how the product is demonstrated | No required property count |\n| Systems | Hotel examples Opera, Mews, Cloudbeds; STR examples Guesty, Hostaway, Lodgify, Airbnb | Check live connectors in [Integrations & implementation readiness](#knowledge/integrations) | A logo is not proof of a supported agent action |\n\n## Buyer roles versus company fit\n\nCompany fit is the lodging model and guest-operations stack. Buyer roles are how that account buys and runs the product. Founders, CEOs, guest-services leads, and CX heads appear in stories; those titles are not the ICP. Map influence in [Buying committee & professional personas](#knowledge/buyer-roles). If the company does not operate hotel, serviced-apartment, or short-term rental stays, a strong champion does not create fit. If the company is in-category, a missing named persona is a research gap, not a reject.\n\n## Readiness and urgency\n\nReadiness the sources actually describe: connected channels and PMS/OTA context; a knowledge base of property policies; escalation rules; people who review handoffs. Haven’s story says Conduit was already installed at about 40% automation with listings uploaded, no workflows, and minimal knowledge-base work until the team standardized answers. [Source](https://www.conduit.ai/customers/haven-2026) Docs-style product FAQ copy says how much agents resolve depends on guest requests, knowledge base, integrations, and escalation rules. [Source](https://www.conduit.ai/product/agents.md)\n\nUrgency is not a published score. Named stories involve growth, staffing, acquisitions, overnight coverage, and owner valuation. Test whether those situations exist with [Qualification & account research playbook](#knowledge/buying-triggers). Do not invent a buying attitude or timeline. Package choice (Messaging vs Guest vs devices vs Full Suite) is commercial mapping in [Pricing & packaging](#knowledge/pricing) after the account is in-category. Capabilities live in [Product catalog & capability map](#knowledge/products-capabilities).\n\n## Exclusions and unknowns\n\nSources do not publish a negative ICP. Do not reject for unknown unit count, missing hotel-group proof, or an integration that is only a logo—investigate.\n\nThe practical out-of-category signal is an account that does not operate hotel, serviced-apartment, or short-term rental guest stays. That follows the FAQ; it is not a legal exclusion list. Hybrid real-estate-plus-hospitality operators that still run guest stays (Wynwood) remain in-category.\n\nMaterial gaps: named proof for hotel groups and serviced apartments; whether “unit” equals listing, room, or key; franchise buying units; language product limits; whether Operations (nav: coming soon) is required for group ops use cases. Preserve the contradiction that Full Suite already lists workforce/operations lines while the product nav still says Operations is coming soon. [Source](https://www.conduit.ai/pricing)\n\n## What the company must confirm\n\nBefore treating segments as equally proven, confirm: hotel-group and serviced-apartment referenceability; billable unit vs listing vs room; which PMS/OTA paths actually write bookings, tasks, or payments for this stack; whether multilingual operation is a product capability or only a Wynwood outcome; and whether the contracting party is owner, management company, or brand. Until then, prioritize STR/PM investigation, keep independent hotels in-category with thinner proof, and treat hotel groups as marketed but under-evidenced.",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_37286663c1a57667",
+    "src_5a71a6776ae43f4d",
+    "src_5eb74e069d5f7cb9",
+    "src_75269914aa6b6dfd",
+    "src_a649d4d3ab5f59f5",
+    "src_c1dd8d452a784c57",
+    "src_d30d1770ff08e6a4",
+    "src_e805a9592ee44f73",
+    "src_f09009069a2d197f"
+  ],
+  "open_questions": [
+    "Is there named, body-complete proof for hotel groups comparable to STR stories?",
+    "Which serviced-apartment operators are referenceable, and how do they differ from hotels and STRs in buying unit?",
+    "Does Conduit bill a unit as a listing, room, key, or something else—and is that ever a fit rule or only packaging?",
+    "Who contracts—owner, management company, franchisee, or brand—and does that change qualification?",
+    "Which languages and locales are product-supported versus outcomes reported only in the Wynwood story?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Conduit publicly names hotel teams, serviced-apartment operators, and short-term rental managers as who the product is for.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers."
+    },
+    {
+      "statement": "Public industry navigation lists short-term rentals, independent hotels, and hotel groups as the three hospitality segments.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Short-term rentals\n[\n02\n]\nIndependent Hotels\n[\n03\n]\nHotel Groups"
+    },
+    {
+      "statement": "Published packaging uses a 0–25 unit Startup band and states starting rates scale beyond 50 listings; these are commercial facts, not stated ICP cutoffs.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+    },
+    {
+      "statement": "Company-attributed reach copy claims 300+ hospitality brands in 120+ countries on industry pages.",
+      "source_id": "src_f09009069a2d197f",
+      "quote": "Trusted by 300+ hospitality brands in 120+ countries"
+    },
+    {
+      "statement": "Hotel-group marketing describes multi-property operation with shared brand standards and per-property policies.",
+      "source_id": "src_d30d1770ff08e6a4",
+      "quote": "Handle guest messages and calls across your hotel group. Share brand standards while giving agents the policies and reservation details for each property."
+    },
+    {
+      "statement": "Haven is described as managing roughly 270 short-term rental properties, a named STR-scale customer.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Haven Vacation Rentals manages roughly 270 short-term rental properties across Tennessee's Smoky Mountains."
+    },
+    {
+      "statement": "The Lauderdale write-up is a named boutique-hotel customer that replaced a traditional call center with Conduit’s AI-powered support platform and 24/7 staffed support team.",
+      "source_id": "src_37286663c1a57667",
+      "quote": "By replacing a traditional call center with Conduit’s AI-powered support platform and 24/7 staffed support team"
+    },
+    {
+      "statement": "Agents are specified to answer using the operator’s property information and policies.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Agents use your property information and policies to answer guest questions."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "qualifying whether an account is in-category before persona or campaign work",
+      "ranking STR vs independent-hotel vs hotel-group investigation",
+      "routing research to hotel vs vacation-rental ICP docs",
+      "deciding that missing unit/employee data is a packaging question, not an automatic reject"
+    ],
+    "decisions_supported": [
+      "account fit vs not-yet-known vs out-of-category",
+      "which segment proof set to use in outreach",
+      "whether to treat hotel groups as marketed-but-under-evidenced",
+      "when to escalate stack questions to integrations rather than ICP"
+    ],
+    "do_not_infer": [
+      "employee, revenue, or minimum unit gates as necessary fit criteria",
+      "that hotel groups have the same proof density as STR case studies",
+      "that 90% automation or any single customer metric is typical or required",
+      "that an integration logo equals supported guest actions or fit",
+      "that 300+ brands in 120+ countries verifies any one vertical",
+      "buying urgency, attitudes, or timelines not stated in sources"
+    ],
+    "document_key": "ideal-customers",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d30d1770ff08e6a4",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f"
+    ]
+  },
+  "icp_criteria": [
+    {
+      "criterion": "Account operates hotel, serviced-apartment, or short-term rental guest stays",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "The pricing FAQ names these three operator types as who Conduit is for.",
+      "assessment_method": "Confirm lodging model from the company site, OTA/PMS presence, and match to independent-hotel, hotel-group, or short-term rental industry pages.",
+      "unknown_handling": "If the noun is adjacent (resort, villa, aparthotel, hybrid real-estate hospitality), investigate against industry pages; do not reject solely because the FAQ used a different label.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ]
+    },
+    {
+      "criterion": "Guest communication that can be organized by property or team across connected channels",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "Inbox and agents are built around omnichannel guest messages/calls with property or team views and booking context.",
+      "assessment_method": "Identify live guest channels (email, WhatsApp, SMS, voice, OTA threads) and whether conversations are already split by property or team.",
+      "unknown_handling": "Unknown channel mix is a discovery item, not a reject.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_e805a9592ee44f73"
+      ]
+    },
+    {
+      "criterion": "Vacation-rental or short-term rental management company",
+      "dimension": "fit",
+      "strength": "preference",
+      "rationale": "Named customer stories with operating detail cluster in STR/PM companies; industry page exists for this segment.",
+      "assessment_method": "Confirm STR listings, channel mix, and management vs owner-operator model; use the vacation-rental ICP doc for the deeper test.",
+      "unknown_handling": "If hybrid hotel-plus-rental, score both hotel and rental tests separately.",
+      "source_ids": [
+        "src_5eb74e069d5f7cb9",
+        "src_c1dd8d452a784c57"
+      ]
+    },
+    {
+      "criterion": "Independent or boutique hotel operator",
+      "dimension": "fit",
+      "strength": "preference",
+      "rationale": "Independent hotels are a named industry; Lauderdale is the named hotel P&L story in this pack.",
+      "assessment_method": "Confirm hotel (not only STR) operations, front-desk/after-hours load, and hotel-oriented PMS names such as Opera, Mews, or Cloudbeds.",
+      "unknown_handling": "Thin named proof is a proof gap, not a reason to mark the account out-of-category.",
+      "source_ids": [
+        "src_f09009069a2d197f",
+        "src_37286663c1a57667"
+      ]
+    },
+    {
+      "criterion": "Hotel group with shared brand standards and per-property policies",
+      "dimension": "fit",
+      "strength": "hypothesis",
+      "rationale": "Hotel-group pages market multi-property brand standards, but this source pack has no named hotel-group case body.",
+      "assessment_method": "Confirm multiple hotels, shared vs local procedures, and group vs property buying unit.",
+      "unknown_handling": "Treat as marketed in-category; do not assume conversion or outcomes equal STR stories until references exist.",
+      "source_ids": [
+        "src_d30d1770ff08e6a4"
+      ]
+    },
+    {
+      "criterion": "Connected PMS or OTA that can supply reservation/listing context",
+      "dimension": "readiness",
+      "strength": "preference",
+      "rationale": "Agents and inbox claims depend on property information, reservation data, and connected tools; connector depth varies.",
+      "assessment_method": "Name the PMS/OTA and check it against the integrations guide; confirm messaging vs reservation-data-only path.",
+      "unknown_handling": "Unknown stack is investigate, not reject. A logo is not evidence of write-back.",
+      "source_ids": [
+        "src_e805a9592ee44f73",
+        "src_a649d4d3ab5f59f5"
+      ]
+    },
+    {
+      "criterion": "Capacity to document property policies and set escalation rules",
+      "dimension": "readiness",
+      "strength": "preference",
+      "rationale": "Haven was installed at ~40% automation until knowledge-base and workflow work; agent resolution is described as depending on knowledge, integrations, and rules.",
+      "assessment_method": "Ask whether listings/policies are documented, who owns the knowledge base, and what must stay human.",
+      "unknown_handling": "Low current documentation is a readiness gap, not automatic unfit.",
+      "source_ids": [
+        "src_c1dd8d452a784c57",
+        "src_5a71a6776ae43f4d"
+      ]
+    },
+    {
+      "criterion": "Guest-support volume, after-hours coverage, or call-center cost creating a live operating pressure",
+      "dimension": "urgency",
+      "strength": "hypothesis",
+      "rationale": "Named stories involve headcount, overnight coverage, acquisitions, and call-center replacement; none of these is stated as a required trigger.",
+      "assessment_method": "Ask how nights, peaks, and current support vendors are staffed; record dates and vendors.",
+      "unknown_handling": "Missing urgency does not fail fit; log it for sequencing only.",
+      "source_ids": [
+        "src_c1dd8d452a784c57",
+        "src_37286663c1a57667"
+      ]
+    },
+    {
+      "criterion": "Business that does not operate hotel, serviced-apartment, or short-term rental guest stays",
+      "dimension": "exclusion",
+      "strength": "hypothesis",
+      "rationale": "Published industries and the who-is-for FAQ are hospitality stay operators; no source targets other verticals.",
+      "assessment_method": "If the company has no guest-stay inventory or guest-communication operation, mark out-of-category.",
+      "unknown_handling": "Hybrids that still run guest stays remain in-category pending investigation.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ]
+    }
+  ],
+  "folder": "audience",
+  "revision": 1,
+  "created_at": "2026-09-20T01:07:17.721497+00:00",
+  "status": "research_draft",
+  "input_hash": "4954ae5840a96673b9fee3431ff3fa232d3aff872cc00a3d21d87d142b7f1fac",
+  "depends_on": [
+    "products-capabilities",
+    "integrations",
+    "pricing",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

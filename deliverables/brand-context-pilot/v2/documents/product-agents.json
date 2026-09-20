@@ -1,0 +1,137 @@
+{
+  "key": "product-agents",
+  "title": "AI Agents",
+  "summary": "Conduit AI Agents answer guest messages and calls with property and reservation context, then take supported actions in connected tools and escalate when rules require a human. They are packaged inside hospitality plans rather than as a published standalone SKU, and reported automation outcomes depend on knowledge work, channel/PMS setup, and operator review.",
+  "markdown": "## Overview\n\nConduit positions **Agents** as the product that answers guest messages and calls, retrieves property and reservation context, takes action in connected tools, and escalates to people when needed. The public product line treats Agents as distinct from [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), and [Workflows](#knowledge/product-workflows): Agents “answer guest messages and calls, and take action,” while Inbox is the handoff surface and Workflows automate journey and routine-task sequences. [Source](https://www.conduit.ai/product/agents)\n\nThe company-defined agent is not a draft-only chatbot. Conduit’s FAQ states that an AI agent “answers guest messages and calls using your property information and reservation data,” can create a task or update a booking through connected tools, and can pass requests to the team. [Source](https://www.conduit.ai/product/agents)\n\nDocs describe the same product as configurable workers: external (guest-facing), internal, and voice agents with persona, tool access, skills, behavior, triggers, and publish state, plus Knowledge, Skills, Tools, sandbox testing, and Operator for inspecting configuration. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n\n## Who it is for\n\nConduit says the company is for hotel teams, serviced-apartment operators, and short-term rental managers, and that its AI agents answer messages and calls, handle routine requests, and coordinate work with the team. Industry pages on the same site group short-term rentals, independent hotels, and hotel groups. [Source](https://www.conduit.ai/pricing)\n\n**Buyers** in published stories are operators and founders who need 24/7 coverage without linear headcount (portfolio growth, after-hours phones, acquisition integration). **Users** are guest-services staff who teach the agent, standardize answers, review gaps, and take escalations—Haven describes team members becoming “conversational engineers.” [Source](https://www.conduit.ai/customers/haven-2026)\n\nThis is a fit conversation when guest volume already hits phones, OTA inboxes, WhatsApp, and email, and when property policies and live reservation data exist (or can be documented). It is a weaker first product if the account only wants a shared inbox with no agent autonomy; start from [Inbox](#knowledge/product-inbox) instead.\n\n## Capabilities and limits\n\n| Capability | What Conduit publishes | Bound to watch |\n| --- | --- | --- |\n| Omnichannel answer | Voice, chat, email, WhatsApp, and connected OTA messages with conversation history | Only connected channels; Booking.com and VRBO listed as coming soon on the integrations directory | [Source](https://www.conduit.ai/product/agents) |\n| Property-specific answers | Uses property information and policies | Quality tracks what is in Knowledge / PMS-synced listings | [Source](https://www.conduit.ai/product/agents) |\n| Actions | Check bookings, change reservations, collect payments, create tasks via supported integrations | Not every PMS connection is two-way messaging or write-back | [Source](https://www.conduit.ai/product/agents) |\n| Rules and escalation | Procedures the agent follows; requests the team should handle | Humans remain in the loop by design | [Source](https://www.conduit.ai/product/agents) |\n| Improve loop | Find gaps, review proposed fixes, test before guests see them | Changes are not live until reviewed/tested | [Source](https://www.conduit.ai/product/agents) |\n| Voice | Voice agents for calls; VoiceAI numbers can run 24/7 or on a schedule, with static/dynamic/warm-transfer escalation | Bring-your-own Twilio SMS needs webhook, A2P 10DLC, and SMS enabled | [Source](https://docs.conduit.ai/setting-up-conduit/connect-voiceai-ai-number) |\n\nThe complete product FAQ says resolution depends on the guest requests, knowledge base, integrations and escalation rules; track resolved conversations and human handoffs. It does not prescribe a universal automation percentage. Do not treat marketing “end to end” as a guaranteed resolution rate. Operations (“AI-coordinated housekeeping, maintenance and inspections”) is listed as coming soon and is not this product. [Source](https://www.conduit.ai/product/agents)\n\n## Workflows and use cases\n\n**Before.** A night or weekend guest texts for a door code, then calls about parking. Staff hunt Drive/PMS tabs, copy-paste the same policy, and miss the phone. Volume rises with each listing. Haven described ~25 support people at peak across shifts before the automation push. [Source](https://www.conduit.ai/customers/haven-2026)\n\n**After (Agents).** The same thread lands with history. The agent retrieves listing policy and reservation context, answers the code/parking question, and—if the integration supports it—updates a booking, collects a payment, or opens a task. If the request is out of policy, it escalates. Operators inspect reasoning/sources in the conversation, teach the miss, and sandbox a fix before guests see it. HomeHop used voice AI for overnight coverage 1 AM–7 AM rather than staffing that window. [Source](https://www.conduit.ai/customers/homehop)\n\n**Limits of that loop.** The Flex’s CEO said that if the information was not there, the AI would not reply—and that misunderstanding delayed turning it on. Haven’s jump from ~40% to 90% automation required knowledge standardization, Slack “AI Avengers” review, and months of teaching, not a switch-flip. Workflows that notify cleaners or inject follow-ups are a related but separate product; see [Workflows](#knowledge/product-workflows). [Source](https://www.conduit.ai/customers/the-flex)\n\nDocs map a crawl: Level 0 copilot drafts, Level 1 the team teaches simple end-to-end conversations, Level 2 the agent takes actions. “Road to Autopilot” is Connect → Teach → Test → Deploy, not an implied day-one autopilot. [Source](https://docs.conduit.ai/overview/the-5-levels-of-ai-automation)\n\n## Integrations and setup\n\nAgents do not magically “have Guesty.” Setup is: workspace → connect channels → connect PMS/data → configure the V3 agent (knowledge, skills, tools, triggers) → sandbox → publish. [Source](https://docs.conduit.ai/)\n\n**PMS route.** `Settings > Connections > PMS` → pick provider → authenticate → import listings; PMS-backed content appears under `Build > Knowledge`; auto-sync is scheduled from the Knowledge source menu. Conduit says it integrates with over 15 PMS systems to populate listing information. [Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)\n\nMessaging path is the critical split: some PMS connections (e.g. Guesty, Hostaway, Lodgify, Beds24) send guest messages into Conduit; others (e.g. Opera Cloud, Mews, Cloudbeds, Apaleo) supply property/reservation data only—OTA messaging must be connected as auxiliary channels. Connecting the same OTA both through a messaging PMS and directly can duplicate conversations. If Airbnb is the primary PMS, another PMS cannot be added in that workspace. [Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)\n\nOpera Cloud example: OHIP credentials sync property, reservation, and profile data so agents can ground answers; Conduit states Opera “does not route guest messaging through this integration.” [Source](https://www.conduit.ai/integrations/opera)\n\nAirbnb is documented as two-way send/receive in Conduit plus reservation modifications—verify write actions per account, not from the logo wall. [Source](https://www.conduit.ai/integrations/airbnb)\n\nVoice: `Settings > Channels > Phone` → claim or route a VoiceAI number → configure agent voice, greeting, and escalation. [Source](https://docs.conduit.ai/setting-up-conduit/connect-voiceai-ai-number)\n\nFull catalog and implementation caveats live in [Integrations & implementation readiness](#knowledge/integrations).\n\n## Pricing and packaging\n\nThere is **no published standalone Agents price**. Voice AI (inbound and outbound) is listed inside the **Messaging** package, starting at **$18 / unit / month** with **40 credits / unit / month**, alongside unified inbox, PMS/OTA integrations, Operator, workflows, and escalation. Starting rates are shown; pricing “scales beyond 50 listings.” Guest ($30/unit/month) adds the stay/portal layer; Guest + Devices ($36) adds devices; Full Suite ($48) lists workforce and operational features. Operations remains marked coming soon in navigation, so confirm the specific operational feature before promising availability. These are package rates, not a separate Agents license. A 0–25 unit Startup plan is **$899 / month** with **2,000 credits / month** and “no implementation fee.” [Source](https://www.conduit.ai/pricing)\n\nThe credit guide says inbox AI replies use no credits, regular voice costs 1 credit/minute and AI voice costs 8 credits/minute. The workflow action guide separately lists Voice Agent Call at 6 credits/minute. Confirm the applicable call path and how these meters relate before quoting; do not silently substitute or add the rates. Dollar overage pricing remains unestablished. [Credit guide](https://docs.conduit.ai/setting-up-conduit/credits) [Workflow usage](https://docs.conduit.ai/workflows/workflow-usage) Map the account on [Pricing & packaging](#knowledge/pricing).\n\n## Differentiation\n\nAttributed product claims, not guarantees:\n\n- **Answer plus act**, not draft-only: property context, reservation data, and tool actions, with team escalation. Renjoy’s CTO, quoted on the pricing page: “We don’t want to just draft messages—we want real automation.” [Source](https://www.conduit.ai/pricing)\n- **Inspectable worker model** (docs): reasoning and sources in-thread; users approve, edit, or teach inline; sandbox before deploy. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n- **Hospitality channel + PMS split** rather than a generic helpdesk bot, including scheduled or 24/7 voice. The Flex’s CEO contrasted Conduit with Front, Zendesk, and Trengo as “flow bots” on AI—his opinion, not a bake-off. [Source](https://www.conduit.ai/customers/the-flex)\n\nSee [Alternatives & differentiation](#knowledge/alternatives) before using competitor names in outbound copy.\n\n## Customer evidence\n\nCompany-published stories; not independently verified. Do not copy a portal, inbox, or whole-platform metric onto Agents unless the story is about AI answering/acting.\n\n| Account | Agent-relevant report | Scope / date notes |\n| --- | --- | --- |\n| Haven Vacation Rentals | 90% automation across ~270 properties, from ~40%; support staffing need described as 25 people to two per shift; quality scores held ~4.8–4.9 | Using Conduit since February 2024; required teaching, workflows, and knowledge work—not Agents in isolation. Header “59%” Guest Favorite vs body “55%” | [Source](https://www.conduit.ai/customers/haven-2026) |\n| Cascadia Getaways | 60% automation and 4.9 communication score across ~100 properties; AI on lockbox, parking, local recs; humans on empathy/escalation | Start date unresolved: header says December 2024; body describes a March deployment | [Source](https://www.conduit.ai/customers/cascadia-getaways) |\n| HomeHop | 70% automation; voice AI 1 AM–7 AM; portfolio 40→108 listings without added guest-support hires (company claim) | Using since June 2025 in the story header; body also says “approximately two years”—leave unresolved | [Source](https://www.conduit.ai/customers/homehop) |\n| Canbnb | ~1,500 messages/week, 60% handled by AI | Mix of inbox structure and AI; since March 2024 | [Source](https://www.conduit.ai/customers/canbnb) |\n| The Flex | CEO describes 70% automation as “very realistic”; the hero also claims 90% | The hero and body differ, and 80–90% also appears as a future ambition. Do not use 90% as a verified outcome; using-since header says December 2023 | [Source](https://www.conduit.ai/customers/the-flex) |\n\nLauderdale Boutique Hotel reports faster replies and lower support cost after replacing a call center with “Conduit’s AI-powered support platform **and** 24/7 staffed support team”—do not cite $500k asset value as an Agents-only outcome. Wynwood House’s “cannot tell the difference between an AI agent and a human agent” is a CX quote on reply quality inside a unified-inbox rollout. More proof: [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n## Sales discovery\n\n1. Which channels must the agent own on week one (Airbnb/Hostaway messaging vs Opera/Mews data-only plus direct OTA/voice)?\n2. Which requests may the agent execute (booking change, payment, task) versus escalate—named policies, not “most FAQs”?\n3. Who will teach Knowledge/Skills weekly, and what is today’s after-hours phone path?\n4. What automation rate and quality floor would you accept in the first 60 days (Haven held scores while climbing; Cascadia locked 4.9)?\n5. Unit count and whether Messaging ($18/unit starting) vs Startup ($899/month) is the commercial path—credits included vs unknown overage?\n\n**Next step:** book a demo that uses one live listing, one PMS connection type (messaging vs data-only), and a VoiceAI schedule, then sandbox the top three intents before any autopilot discussion.",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_2a445232675660d9",
+    "src_3399afceb260e44f",
+    "src_37286663c1a57667",
+    "src_5cb5674a725889a9",
+    "src_75269914aa6b6dfd",
+    "src_765674900bd1f4dd",
+    "src_8f9aa404cff029a5",
+    "src_904a981650724bf1",
+    "src_9fb1a5550c393b02",
+    "src_a2a67d2faa01de13",
+    "src_b27f818d3e0ae613",
+    "src_b2ab716efd97c239",
+    "src_b4b8a8b99c077661",
+    "src_c1dd8d452a784c57",
+    "src_d097938bd9b8b088",
+    "src_dae2c4b0bd94e5a6",
+    "src_e067203ca4528d4b",
+    "src_e805a9592ee44f73",
+    "src_f599093e8cf0b47d"
+  ],
+  "open_questions": [
+    "The Agents product FAQ asks how much agents resolve on their own but the captured page does not publish an answer.",
+    "No standalone Agents SKU or per-reply credit rate is published; only bundle starting rates and workflow credit tables.",
+    "Write-back (reservation change, payment, task) is claimed for “supported integrations,” but per-PMS action matrices are incomplete in these passages.",
+    "HomeHop’s story header says using Conduit since June 2025 while the footer says approximately two years.",
+    "The Flex page reports both ~70% customer-service automation and 90% of guest communication automated."
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Agents answer messages and calls, use connected tools, and escalate to humans when needed.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Answer messages and calls, retrieve context, and take action in your connected tools. Agents escalate to your team when they’re needed."
+    },
+    {
+      "statement": "Published agent definition includes property/reservation context plus actions such as creating a task or updating a booking.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "An AI agent answers guest messages and calls using your property information and reservation data. It can also take actions through connected tools, such as creating a task or updating a booking, and pass requests to your team."
+    },
+    {
+      "statement": "Agent channels include voice, chat, email, WhatsApp, and connected OTA messages with history.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Handle voice, chat, email, WhatsApp, and connected OTA messages with the guest’s conversation history."
+    },
+    {
+      "statement": "Messaging package starting price is $18 per unit per month and lists Voice AI inbound and outbound among inclusions.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n18\n/ unit / mo\nGet Started\n40 credits\n/ unit / mo\nUnified inbox, every channel\nVoice AI, inbound and outbound"
+    },
+    {
+      "statement": "Haven is reported to have reached 90 percent automation across 270 properties, up from 40 percent.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Reached\n90 percent automation\nacross 270 properties, up from 40 percent in a few months"
+    },
+    {
+      "statement": "Some PMS connections supply reservation data but do not natively send guest messages into Conduit.",
+      "source_id": "src_b27f818d3e0ae613",
+      "quote": "The PMS supplies property and reservation data but does not send guest messages to Conduit natively."
+    },
+    {
+      "statement": "Opera Cloud integration is described as not routing guest messaging.",
+      "source_id": "src_dae2c4b0bd94e5a6",
+      "quote": "Because Opera Cloud does not route guest messaging through this integration, your hotel's existing communication channels handle outbound contact."
+    },
+    {
+      "statement": "V3 agents are configured with persona, tools, skills, behavior, triggers, and publish state.",
+      "source_id": "src_2a445232675660d9",
+      "quote": "Agents define the worker, its persona, tool access, skills, behavior, triggers, and publish state"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Explaining what Conduit AI Agents do versus Inbox, Portals, or Workflows",
+      "Scoping a demo around channels, PMS messaging vs data-only, voice coverage, and escalation rules",
+      "Attaching customer proof to guest-message/call automation without borrowing portal or asset-value metrics"
+    ],
+    "decisions_supported": [
+      "Whether Agents is the lead product or should follow Inbox/PMS connection work",
+      "Which package conversation to open (Messaging starting rate vs Startup vs sales-led Full Suite)",
+      "Which published customer stories are in-scope for agent automation claims"
+    ],
+    "do_not_infer": [
+      "A standalone Agents price or guaranteed resolution percentage",
+      "That every PMS logo implies message routing or reservation write-back",
+      "That Lauderdale NOI/asset-value or Wynwood resolution-time figures are Agents-only outcomes",
+      "That Operations (housekeeping/maintenance/inspections) is generally available"
+    ],
+    "document_key": "product-agents",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_3399afceb260e44f",
+      "src_37286663c1a57667",
+      "src_5cb5674a725889a9",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9fb1a5550c393b02",
+      "src_a2a67d2faa01de13",
+      "src_b27f818d3e0ae613",
+      "src_b2ab716efd97c239",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_dae2c4b0bd94e5a6",
+      "src_e067203ca4528d4b",
+      "src_e805a9592ee44f73",
+      "src_f599093e8cf0b47d"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 2,
+  "created_at": "2026-09-20T00:40:54.429612+00:00",
+  "status": "research_draft",
+  "input_hash": "710ed21903ecfb20114067c25361e0b3e768bd6dbf245daab6c236955f5bd595",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:22:14.844839+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:22:14.844918+00:00",
+      "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+      "human_approved": false
+    }
+  ]
+}

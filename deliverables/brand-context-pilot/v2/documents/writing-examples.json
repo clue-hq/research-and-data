@@ -1,0 +1,134 @@
+{
+  "key": "writing-examples",
+  "title": "Campaign writing examples & rules",
+  "summary": "Proposed, labeled drafts for a hotel motion, a vacation-rental motion, and a technical-evaluator follow-up, each limited to published product actions and optional single-account proof. Copy rules forbid invented prospect pain, averaged automation rates, fabricated trials, and stretching named results beyond the story that printed them.",
+  "markdown": "These blocks are **proposed drafts** for humans and ABM agents. They are not live campaigns, not customer-approved quotes, and not evidence that a named prospect has a problem. Pair every claim with [Customer evidence & usable proof](#knowledge/customer-evidence) and the product that actually performs the job in [Product catalog & capability map](#knowledge/products-capabilities). Do not invent an offer, trial, SLA, or typical automation rate. Site CTAs are to book a demo. [Source](https://www.conduit.ai/product/agents)\n\n## How to use these examples\n\nRun one buying situation per motion. Keep headline, support, opener, and invitation inside the same product family ([AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), [Workflows](#knowledge/product-workflows)). Name a customer only when the published story matches the motion, and keep the account, time window, and caveat in the same sentence as any number. Voice and promise: [Brand voice & language](#knowledge/brand-voice), [Positioning & brand promise](#knowledge/brand-messaging). Segment notes: [ICP · hotel operators](#knowledge/icp-hotels), [ICP · vacation-rental operators](#knowledge/icp-rentals).\n\n| Piece | Job | Allowed sources | Stop if missing |\n| --- | --- | --- | --- |\n| Headline | Name the product action | Product or industry page | Invented pain (“your night desk is drowning”) |\n| Support | One capability + optional named proof | Product FAQ + one case page | Averaged % across accounts |\n| Email opener | Why this account, from research | Public stack, channels, segment | Assumed refunds, hiring freeze, or scores |\n| Discovery invitation | Ask for a demo conversation | “Book a demo” on product pages | Fabricated trial, credits, or discount |\n\nTarget evidence before send: property type (independent hotel, group, or short-term rental), channels in use, PMS/OTA names if public, and whether voice or stay-link portals are in scope. If those are unknown, investigate—do not invent persona fiction.\n\n## Hotel campaign\n\nSituation: independent or boutique hotel evaluating guest calls and messages, not a hotel-group operations RFP. Published language: agents answer guest calls and messages using the hotel’s policies and booking details, including after hours, and pass requests when a person is needed. [Source](https://www.conduit.ai/industry/independent-hotels)\n\n**Proposed headline (draft):** After-hours guest calls and messages, answered with your hotel’s policies.\n\n**Proposed support (draft):** Conduit agents handle voice, chat, email, WhatsApp, and connected OTA threads, use reservation data to act in connected tools, and escalate with history in Inbox. Independent-hotel pages also describe extras such as room upgrades, spa, and dining. [Source](https://www.conduit.ai/product/agents) [Source](https://www.conduit.ai/industry/independent-hotels)\n\n**Proposed email opener (draft):** Writing because you operate an independent hotel with guest contact on phone and messaging. Conduit is built for hotel teams to answer those channels with property information and booking details, then hand off when the desk should take over.\n\n**Proposed discovery invitation (draft):** If useful, we can demo agents plus inbox against your channels and PMS. This note does not attach a trial. The public next step is to book a demo. [Source](https://www.conduit.ai/product/agents)\n\nWhy it works: it restates published capabilities instead of diagnosing the prospect. The Lauderdale Boutique Hotel write-up may be cited only as a named, Conduit-attributed story (the cost path includes $4,000, an intermediate $1,200 provider, and $600/month with the described AI platform and 24/7 staffed support team; not an Agents-only result; average reply 57 minutes to 2 minutes; owner-modeled ≥$3,400 monthly NOI and more than $500,000 asset value at an 8% cap rate)—not as this hotel’s outcome. [Source](https://www.conduit.ai/customers/lauderdale-hotel)\n\nTarget evidence: hotel vs rental, whether Opera, Mews, Cloudbeds, or another PMS is actually in use, whether voice is in scope, and whether extras offers matter. Do not attribute Lauderdale’s figures to Portals; that page describes an AI support platform and 24/7 staffed support team.\n\n## Vacation-rental campaign\n\nSituation: short-term rental or property manager on OTAs plus direct channels. Published language: answer guest messages, send check-in instructions, and handle booking-change requests using details for each property; the team takes over when needed. [Source](https://www.conduit.ai/industry/short-term-rentals)\n\n**Proposed headline (draft):** Guest messages, check-in instructions, and booking changes—per listing.\n\n**Proposed support (draft):** Bring Airbnb, Vrbo, Booking.com, Expedia, email, SMS, and calls into one workspace; combine PMS reservation data with a property knowledge base. Workflows can schedule confirmations, check-in instructions, and follow-ups from PMS events and stay dates. [Source](https://www.conduit.ai/industry/short-term-rentals) [Source](https://www.conduit.ai/product/workflows)\n\n**Proposed email opener (draft):** Reaching operators who already run listings across OTAs and direct messages. Conduit puts those threads in one inbox and lets agents use the listing the guest booked.\n\n**Proposed discovery invitation (draft):** Happy to demo agents, inbox, and stay-dated workflows on your connected accounts. No packaged offer in this note.\n\nWhy it works: STR copy stays on channels and per-property knowledge, which the industry page claims. Named proof is optional and single-account: Haven Vacation Rentals (using Conduit since February 2024) is written as reaching 90 percent automation across roughly 270 properties, up from about 40 percent, with support need described as falling from around 25 people to two per shift—company-attributed, not a benchmark. [Source](https://www.conduit.ai/customers/haven-2026) HomeHop’s reported 40-to-108 listing growth and 70 percent automation are a separate story; its June 2025 customer-since header and “approximately two years” narrative conflict, so do not attribute the entire growth window to Conduit; do not blend rates. [Source](https://www.conduit.ai/customers/homehop)\n\nTarget evidence: public PMS/OTA names, whether overnight voice is in scope, and the motion (scale, acquisition, or inbox unification). Bocobay is usable only for leaving Intercom / unifying channels—not as a typical resolution rate. [Source](https://www.conduit.ai/customers/bocobay)\n\n## Technical evaluator follow-up\n\nAudience: someone asking how it works, not a new demand-gen hook.\n\n**Proposed subject (draft):** Channels, PMS context, actions, and the rules you set\n\n**Proposed body (draft):** An AI agent answers guest messages and calls using property information and reservation data, can take actions through connected tools (for example creating a task or updating a booking), and passes requests to the team. Inbox brings SMS, WhatsApp, email, calls, social messages, and connected OTA threads into one workspace and can show booking details from connected PMS and OTA accounts beside the thread. You define procedures and which requests humans handle; gaps in replies can be reviewed, with proposed fixes tested before guests see them. How much agents resolve on their own depends on requests, knowledge base, integrations, and escalation rules. [Source](https://www.conduit.ai/product/agents) [Source](https://www.conduit.ai/product/inbox)\n\n**Proposed closer (draft):** If you share PMS, messaging channels, and whether voice or Portals (one branded stay link; the portals FAQ prices Portals as a paid add-on by contracted listing count) are in scope, we can map supported actions in a demo—not a claim that every integration logo equals write-back. [Source](https://www.conduit.ai/product/portals)\n\nWhy it works: it answers evaluator questions with FAQ language and refuses integration overclaim.\n\n## Claims and copy review\n\n| Claim pattern | Allowed? | Rewrite |\n| --- | --- | --- |\n| “Hotels like yours lose X% of after-hours calls” | No | Name the after-hours capability; drop invented pain |\n| “Customers automate 90%” | No | One named account, denominator, date, attributed |\n| “Unlock $500k” as a promise | No | Lauderdale owner model at 8% cap, not an appraisal |\n| “Book a demo” | Yes | Site CTA; do not add a free trial |\n| G2 4.7 / logo wall | Weak | Not named-customer proof for a campaign |\n| Operations housekeeping AI as generally available | No | Product nav still labels Operations coming soon [Source](https://www.conduit.ai/product/agents) |\n\nManifesto totals (more than 50M conversations, over $3B reservation value, agents resolve 87% of guest communications, 95% CSAT) are company-wide claims on a thought-leadership page—do not paste them into account email as this prospect’s result. [Source](https://www.conduit.ai/manifesto) Before send, re-check contradictions in [Customer evidence & usable proof](#knowledge/customer-evidence) (Haven Guest Favorite 59% vs 55%; Flex 70% vs 90% headers; HomeHop June 2025 vs “two years”).",
+  "source_ids": [
+    "src_37286663c1a57667",
+    "src_3af7171895425b61",
+    "src_5a71a6776ae43f4d",
+    "src_5eb74e069d5f7cb9",
+    "src_6eff9afc29aa8e32",
+    "src_75269914aa6b6dfd",
+    "src_8b30f0226db273ad",
+    "src_9078cb1971869041",
+    "src_a649d4d3ab5f59f5",
+    "src_c1dd8d452a784c57",
+    "src_d097938bd9b8b088",
+    "src_e6200582a2004292",
+    "src_e805a9592ee44f73",
+    "src_ec670ccb114e21b7",
+    "src_f09009069a2d197f"
+  ],
+  "open_questions": [
+    "Which named hotel-group stories, if any, can later campaigns use? This pack has Lauderdale as the only hotel P&L write-up and no hotel-group body.",
+    "Lauderdale describes an AI-powered platform plus a 24/7 staffed support team; campaigns still need a source that separates staffed support from Agents/Inbox.",
+    "No named story isolates Guest Portals, so stay-link copy remains capability-only until a portal-attributed result exists.",
+    "Should manifesto-wide figures (50M conversations, 87% resolve, 95% CSAT) ever be allowed in ABM, or only on thought-leadership pages?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Agents are marketed as answering messages and calls, using context, acting in connected tools, and escalating to the team.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Answer messages and calls, retrieve context, and take action in your connected tools. Agents escalate to your team when they’re needed."
+    },
+    {
+      "statement": "Independent-hotel page states agents use hotel policies and booking details, including after hours.",
+      "source_id": "src_f09009069a2d197f",
+      "quote": "Answer guest calls and messages while your team looks after the people at the desk. Conduit uses your hotel’s policies and booking details, including after hours."
+    },
+    {
+      "statement": "Inbox FAQ lists SMS, WhatsApp, email, calls, social, and connected OTA threads in one workspace.",
+      "source_id": "src_e6200582a2004292",
+      "quote": "Conduit brings SMS, WhatsApp, email, calls, social messages, and connected OTA threads into one workspace. You can organize them by team, property, or group."
+    },
+    {
+      "statement": "Short-term rental page describes per-property messaging, check-in instructions, and booking-change handling with human takeover.",
+      "source_id": "src_5eb74e069d5f7cb9",
+      "quote": "Answer guest messages, send check-in instructions, and handle booking-change requests using the details for each property. Your team takes over when needed."
+    },
+    {
+      "statement": "Haven write-up attributes 90 percent automation across 270 properties, up from 40 percent.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Reached 90 percent automation across 270 properties, up from 40 percent in a few months"
+    },
+    {
+      "statement": "Lauderdale write-up reports support cost falling from $4,000 to $600 per month.",
+      "source_id": "src_37286663c1a57667",
+      "quote": "Reduced support costs from $4,000 to $600/month"
+    },
+    {
+      "statement": "Agent FAQ states self-resolution share depends on requests, knowledge base, integrations, and rules—not a fixed rate.",
+      "source_id": "src_5a71a6776ae43f4d",
+      "quote": "The share depends on your guest requests, knowledge base, integrations, and escalation rules."
+    },
+    {
+      "statement": "Portals FAQ prices Portals as a paid add-on by contracted listing count, not a free default.",
+      "source_id": "src_8b30f0226db273ad",
+      "quote": "Portals is a paid add-on priced by contracted listing count with graduated volume pricing for larger portfolios."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Drafting or reviewing hotel, vacation-rental, or technical-evaluator copy",
+      "Choosing a named proof story for a campaign",
+      "Checking whether a CTA or metric is allowed in outbound"
+    ],
+    "decisions_supported": [
+      "Which example block to use for a motion",
+      "Whether a number can ship in the same sentence as its account and caveat",
+      "Keeping the ask at book-a-demo rather than a fabricated trial"
+    ],
+    "do_not_infer": [
+      "That a target account has a stated pain, staffing crisis, or refund problem",
+      "Typical automation, CSAT, or dollar outcomes across customers",
+      "That an integration logo means a specific write-back or messaging action",
+      "That Operations is generally available",
+      "That Portals or a package price caused a named case-study result"
+    ],
+    "document_key": "writing-examples",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_3af7171895425b61",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "brand",
+  "revision": 2,
+  "created_at": "2026-09-20T00:54:39.548439+00:00",
+  "status": "research_draft",
+  "input_hash": "01ddb57bf9fa50afbf9247130a8ba90351c5a3b03dd16a804a79be2e88825cf4",
+  "depends_on": [
+    "products-capabilities",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:27:07.898278+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:27:07.898288+00:00",
+      "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+      "human_approved": false
+    }
+  ]
+}

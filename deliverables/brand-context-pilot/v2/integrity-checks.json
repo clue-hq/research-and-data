@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Every declared document is available",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Required product, audience, identity and organization deliverables exist",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Document schemas, critical evidence spans and source references resolve",
+    "passed": true,
+    "detail": {}
+  },
+  {
+    "name": "Every internal document link resolves",
+    "passed": true,
+    "detail": []
+  },
+  {
+    "name": "Every document has an organized Markdown export",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Every original asset retains its SHA256",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Every asset has human description, agent context and preview",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Asset analysis does not silently grant campaign approval",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Related asset documents resolve",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Previous run source and original-asset hashes remain unchanged",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Four logo placement slots distinguish source availability",
+    "passed": true,
+    "detail": null
+  },
+  {
+    "name": "Public package contains no raw provider response or environment file",
+    "passed": true,
+    "detail": null
+  }
+]

@@ -1,0 +1,95 @@
+{
+  "key": "product-operator",
+  "title": "Operator & internal AI availability",
+  "summary": "Operator is documented as an in-workspace assistant for inspecting and editing configuration, not as a fifth guest-facing product or a standalone SKU. Internal agents are a separate V3 agent type; public sources do not support selling either as autonomous operations software.",
+  "markdown": "Operator shows up in Conduit’s docs and as a line on the Messaging package, not as a peer of [AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), or [Workflows](#knowledge/product-workflows). Treat it as an internal configuration assistant unless a later source says otherwise. Internal agents are a V3 agent class, not a packaged “internal AI” offering on the marketing site.\n\n## What is established\n\nThe public product nav lists Agents, Inbox, Portals, Workflows, and a fifth item labeled **Operations · Coming soon** (housekeeping, maintenance, inspections). The site footer names Conduit Agents, Inbox, Portals, and Workflows. Operator is not in that product set. [Source](https://www.conduit.ai/product/agents)\n\nDocs describe Operator as **Conduit’s workspace assistant** used to inspect, edit, and reason about agent configuration, listed under Test And Deploy next to sandbox testing. [Source](https://docs.conduit.ai/) The agents overview puts Operator on the Build surfaces (with Knowledge, Skills, Tools, and Sandbox) and says it helps teams inspect and update workspace configuration. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work) The docs index repeats the same job: inspect, edit, and reason about the workspace. [Source](https://docs.conduit.ai/llms.txt)\n\nV3 setup includes **external, internal, and voice** agents. [Source](https://docs.conduit.ai/) That is an agent type, not a SKU. The index also lists an Internal Agent Use Cases gallery; that page was not in the supplied passages, so no gallery examples are claimed. [Source](https://docs.conduit.ai/llms.txt)\n\nThe REST API uses “operator replies” for **human** sends. `is_sent_by_autopilot` is true only when Conduit’s AI agent generated and sent the message, and false for operator replies, workflow sends, and messages ingested from a connected channel. Do not read that flag as the Operator assistant. [Source](https://docs.conduit.ai/api-reference/introduction)\n\n## Role in the product system\n\n| Name in sources | What it is on the page | Relation to guests |\n| --- | --- | --- |\n| Operator / AI operator | Workspace assistant; Build surface | Not described as guest-facing |\n| Internal agents | V3 agent type with customer and voice | Staff-oriented by name only |\n| Operations (nav) | Coming soon: housekeeping, maintenance, inspections | Unreleased on marketing pages |\n| Guest agents | Answer messages and calls; act in connected tools | Guest-facing |\n\nMCP treats Operator skills as their own object (`operatorSettings.skills`), separate from regular agent skills. `operator_*` tools manage the knowledge cards the Operator assistant uses, match the Operator settings screen, need workspace scope and Manage Agents, and are **MCP-only** (no matching REST route). [Source](https://docs.conduit.ai/mcp/overview)\n\nChangelog 3.12 (11 Sep 2026) mentions the AI operator in workflow-builder fixes and timezone display, which fits an in-app assistant rather than a guest channel. [Source](https://www.conduit.ai/changelog)\n\nDo not merge Operator with coming-soon Operations, with guest [AI Agents](#knowledge/product-agents), or with [Workflows](#knowledge/product-workflows).\n\n## Use cases and users\n\nOnly uses named in these passages, without adding autonomy:\n\n- Inspect, edit, and reason about agent configuration while testing and deploying V3 agents. [Source](https://docs.conduit.ai/)\n- Inspect and update workspace configuration as a Build surface. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n- Manage Operator skills (the assistant’s knowledge cards) over MCP, distinct from agent skills. [Source](https://docs.conduit.ai/mcp/overview)\n- Changelog 3.12: update tasks, including custom fields, from the AI operator; Operator timestamps in the workspace timezone. [Source](https://www.conduit.ai/changelog)\n- Docs index: devices can be managed with agents, workflows, Operator, or MCP. The Devices page itself is not in this evidence set, so Operator device actions are not listed. [Source](https://docs.conduit.ai/llms.txt)\n\nLikely users are workspace admins and people who configure agents. Internal agents can be created in V3; their jobs are unknown here.\n\n## Availability and dependencies\n\nThe Messaging package lists **Operator, workflows, escalation** among included items. Starting rate shown is $18 / unit / mo, with 40 credits / unit / mo; pricing scales beyond 50 listings. That is a **bundle line**, not a standalone Operator price. [Source](https://www.conduit.ai/pricing)\n\nREST API and MCP are described as available on the v3 plan, enabled via support@conduit.ai. Operator-skill tools exist only on MCP. [Source](https://docs.conduit.ai/api-reference/introduction) [Source](https://docs.conduit.ai/mcp/overview)\n\nNot established: whether every workspace gets Operator by default, credit cost for Operator chats, UI role gates beyond Manage Agents for MCP skill writes, or how internal agents are licensed. See [Pricing & packaging](#knowledge/pricing) and [Developer platform & custom workflows](#knowledge/product-developers).\n\n## What sales can say\n\nAccurate: Operator is Conduit’s in-workspace assistant for inspecting and editing configuration; Messaging copy includes Operator with workflows and escalation; it is not one of the four named guest products and is not the coming-soon Operations module.\n\nDo not claim Operator is a standalone product, runs guest operations end to end, acts without a person, replaces staff, or has its own published price. Do not reuse Level 4 “autonomous operator” language from the automation-levels essay as a current feature; that page labels Level 4 as the future. [Source](https://docs.conduit.ai/overview/the-5-levels-of-ai-automation)\n\nGuest automation belongs on [AI Agents](#knowledge/product-agents) and [Workflows](#knowledge/product-workflows). Confirm entitlements on a live quote.\n\n## Questions to resolve\n\nThe Operator docs page and Internal Agent Use Cases gallery were not in the supplied passages, so UI, limits, and staff-agent examples are open. It is also unclear whether Messaging “Operator,” the V3 assistant, and changelog “AI operator” are one surface; which tasks Operator can update; which device actions it can run; and how Operator and internal agents are gated versus MCP `operator_*` tools.",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_2a445232675660d9",
+    "src_2d5d23c8d8b6f535",
+    "src_75269914aa6b6dfd",
+    "src_8f9aa404cff029a5",
+    "src_9fb1a5550c393b02",
+    "src_c8cbc2ec50c61efe",
+    "src_e805a9592ee44f73",
+    "src_ee72b875099c7ac7",
+    "src_f01f1010ac8ddab8"
+  ],
+  "open_questions": [
+    "What does the Operator settings/UI page actually allow (action catalog, limits, who can open it) beyond inspect/edit/reason copy?",
+    "Are Messaging-package “Operator,” the V3 workspace assistant, and changelog “AI operator” the same surface?",
+    "What internal-agent jobs exist on the Internal Agent Use Cases gallery page?",
+    "Which task types, fields, and permissions apply to “update tasks… from the AI operator” in changelog 3.12?",
+    "Which device actions can Operator perform versus agents, workflows, and MCP?",
+    "How are Operator, internal agents, and MCP operator_* tools gated (plan, credits, roles) in production workspaces?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Docs define Operator as Conduit’s workspace assistant for inspecting, editing, and reasoning about agent configuration.",
+      "source_id": "src_8f9aa404cff029a5",
+      "quote": "Use Conduit’s workspace assistant to help inspect, edit, and reason about agent configuration."
+    },
+    {
+      "statement": "The agents overview lists Operator as a Build surface that helps inspect and update workspace configuration.",
+      "source_id": "src_2a445232675660d9",
+      "quote": "Operator helps teams inspect and update workspace configuration"
+    },
+    {
+      "statement": "Messaging package copy includes Operator as a bundled line with workflows and escalation, not as a separate price.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Operator, workflows, escalation"
+    },
+    {
+      "statement": "Messaging starting rate shown is $18 per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n18\n/ unit / mo"
+    },
+    {
+      "statement": "MCP operator_* tools manage Operator skills separately from regular agent skills.",
+      "source_id": "src_f01f1010ac8ddab8",
+      "quote": "The\noperator_*\ntools manage the\nOperator’s\nskills (the knowledge cards the Operator assistant uses), which are separate from the regular agent skills managed by\n*_skill\n."
+    },
+    {
+      "statement": "operator_* MCP tools are MCP-only, scoped like the in-app Operator settings screen, and need Manage Agents.",
+      "source_id": "src_f01f1010ac8ddab8",
+      "quote": "They read and write operatorSettings.skills with the same workspace scoping and Manage Agents permission as the Operator settings screen in the app, and they are MCP-only (there is no matching REST route)."
+    },
+    {
+      "statement": "Changelog 3.12 states tasks including custom fields can be updated from the AI operator.",
+      "source_id": "src_ee72b875099c7ac7",
+      "quote": "You can also update tasks, including custom fields, straight from the AI operator."
+    },
+    {
+      "statement": "V3 agent setup includes internal agents as a type alongside external and voice, not as a marketing product name.",
+      "source_id": "src_8f9aa404cff029a5",
+      "quote": "Configure external, internal, and voice agents from the V3 Agents area."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "A buyer or teammate asks whether Operator is a product, SKU, or guest-facing agent",
+      "Drafting copy that might name Operator, internal AI, Operations, or staff agents",
+      "Qualifying a deal that needs internal configuration help versus guest automation"
+    ],
+    "decisions_supported": [
+      "Whether to sell or demo Operator as a standalone offering",
+      "How to describe internal AI without over-claiming autonomy or guest actions",
+      "When to route the conversation to Agents, Workflows, Operations (coming soon), or MCP instead"
+    ],
+    "do_not_infer": [
+      "Autonomous Operator actions, self-directed operations, or Level 4 “AI Director” behavior as current product",
+      "Guest-facing Operator, housekeeping/maintenance as Operator (that is nav Operations, coming soon)",
+      "A standalone Operator price or credit rate from the Messaging bundle line",
+      "Internal-agent use cases from the unretrieved gallery page",
+      "Device or task capabilities beyond the changelog/index sentences cited"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 1,
+  "created_at": "2026-09-20T00:51:27.343577+00:00",
+  "status": "research_draft",
+  "model": "x-ai/grok-4.6",
+  "depends_on": [],
+  "evidence_validation": "Exact passage checked and formatting around an inline-code period repaired against the original source. Semantic review pending."
+}

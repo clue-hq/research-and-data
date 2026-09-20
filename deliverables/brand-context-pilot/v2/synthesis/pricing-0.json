@@ -1,0 +1,85 @@
+{
+  "document": {
+    "key": "pricing",
+    "title": "Pricing & packaging",
+    "summary": "Conduit publishes USD starting rates per unit per month for Messaging, Guest, Guest + Devices, and Full Suite, plus a flat Startup price for 0–25 units; each package lists included monthly credits. Credit docs define four usage categories, voice minute rates, Operator/internal-agent variability, workflow paid actions, inbox replies that do not consume credits, and overage on the next invoice, while Portals is both bundled in Guest-and-above packages and described as a listing-count add-on without a public standalone fee.",
+    "markdown": "Conduit’s public commercial story is package starting rates plus a credit pool, not a menu of separately priced Inbox, Agents, or Workflows SKUs. Figures below are what Conduit publishes on its pricing page and docs as of the captured pages—not a signed quote, not independently audited, and not a guarantee of what every customer pays.\n\n## Published plans\n\nThe pricing page addresses “independent teams to enterprise,” shows starting rates, and says pricing scales beyond 50 listings. It also tells operators to talk to an AI expert to map a package. HTML and Markdown extracts agree on the dollar and credit numbers; nothing in the supplied pages is a conflicting toggle. [Source](https://www.conduit.ai/pricing)\n\n| Package | Starting price | Included credits | Page CTA | What the package list adds |\n| Messaging | $18 / unit / mo | 40 credits / unit / mo | Get Started | Unified inbox, Voice AI inbound and outbound, PMS and OTA integrations, Operator, workflows, escalation, analytics |\n| Guest | $30 / unit / mo | 60 credits / unit / mo | Get Started | Everything in Messaging, plus in-portal AI concierge, rich-media guidebooks, damage waivers with no SKU fee, one-click payment upsells |\n| Guest + Devices | $36 / unit / mo | 80 credits / unit / mo | Get Started | Everything in Guest, plus smart home, portal-integrated devices, guest/team access codes, device management workflows |\n| Full Suite | $48 / unit / mo | 100 credits / unit / mo | Talk to Sales | Everything in Guest + Devices, plus tasks and workforce, agentic operations workflows, scheduling and dispatch, inventory management |\n| Startup (0–25 units) | $899 / mo | 2,000 credits / mo | Get Started | Described as the full feature set with no implementation fee |\n\n[Source](https://www.conduit.ai/pricing.md)\n\nDo not treat $18–$48 as standalone licenses for [Inbox](#knowledge/product-inbox), [AI Agents](#knowledge/product-agents), or [Workflows](#knowledge/product-workflows). Those capabilities appear inside packages.\n\n## Usage and billing units\n\nStacked packages are billed **per unit per month**; Startup is a **flat month**. The same pricing page talks about **listings** (rates scale beyond 50). The Portals FAQ prices an add-on by **contracted listing count**. These pages never equate unit, listing, and room—confirm the inventory object on the quote. [Source](https://www.conduit.ai/pricing)\n\nA credit is Conduit’s usage unit. Included credits reset at the start of each monthly billing cycle. Usage is tracked in four categories: Workflows, Operator Sidebar, Internal Agents, and Voice AI. Replies sent by AI agents in the inbox do not consume credits. [Source](https://docs.conduit.ai/setting-up-conduit/credits)\n\n| Activity | Published credit rule | Caveat on the same page |\n| Regular voice minute | 1 credit per minute | Voice AI category |\n| AI voice minute | 8 credits per minute | Same category; much heavier than regular voice |\n| Operator sidebar | Variable per turn | ~7,000–71,000 billable tokens per 1 credit depending on model; prior context may be discounted |\n| Internal agents | Dynamic | No single flat rate |\n| Workflows | Paid actions on successful runs | Starting or running a workflow is free; most steps free; charges when a successful run sends a message, calls an integration, runs an AI prompt, searches the web, or makes an agent call |\n\n[Source](https://docs.conduit.ai/setting-up-conduit/credits)\n\nVoice AI can sit in the Messaging feature list and still draw credits when minutes run. Inbox AI replies do not. Illustration only: ten AI voice minutes would use 80 credits at 8 per minute—that is arithmetic on the published rate, not a customer invoice.\n\nSettings > Billing shows cycle usage by category and workflow. When credits run low, Conduit says you can upgrade or continue into overage charged on the next invoice. Invoice PDFs are downloaded there; billing questions go to support@conduit.ai. [Source](https://docs.conduit.ai/setting-up-conduit/billing.md) No dollar overage rate is published.\n\n## What is included\n\n[Messaging](#knowledge/product-inbox) is the communications stack: every-channel inbox, inbound/outbound Voice AI, PMS/OTA integrations, [Operator](#knowledge/product-operator), workflows, escalation, analytics. [Guest](#knowledge/product-portals) adds stay-link merchandising on top of that stack (concierge, guidebooks, waivers without a SKU fee, one-click payment upsells). That is bundle copy, not a public à-la-carte Portals price. [Source](https://www.conduit.ai/pricing.md)\n\nGuest + Devices adds locks, thermostats, sensors, portal-integrated devices, access codes, and device workflows. Full Suite adds workforce/operations bullets. Product navigation still labels Operations “Coming soon,” so do not treat those Full Suite lines as independently confirmed generally available modules. [Source](https://www.conduit.ai/pricing)\n\nStartup is the full feature set for 0–25 units with no implementation fee. [Developer platform](#knowledge/product-developers) API and MCP access is for eligible authenticated workspaces; no developer line item appears on pricing.\n\nThe Portals FAQ (which fills gaps the HTML pricing FAQ does not answer) describes one branded stay link with no app: stay details, pre-arrival and identity checks, agreements or damage waivers, fees or deposits, upgrades, access when requirements are complete, and a stay-aware AI concierge. Portal card payments are described via a connected Stripe account (card, Apple Pay, Google Pay, or Link), not reuse of the original booking card. Smart-lock behavior varies by provider and is confirmed in implementation. [Source](https://www.conduit.ai/product/portals.md)\n\n## Choosing a package\n\nMatch published bullets, not assumed ROI. Messaging if the job is omnichannel inbox, voice, Operator, and workflows without portal merchandising. Guest if waivers, guidebooks, in-portal concierge, and payments matter. Guest + Devices if locks/thermostats/sensors and access codes must live in the portal. Full Suite if the buyer also wants workforce/operations language—and they should talk to sales (the only package with that CTA). Startup if the account is in the 0–25 unit band and wants the full feature set with the published no-implementation-fee claim.\n\nDo not assume Messaging can add Portals at a listed rate. The FAQ says add-on pricing exists; the package table does not print it. Capability detail lives in the [product catalog](#knowledge/products-capabilities), not in a hidden SKU price.\n\n## Unpublished terms\n\nNot in these sources: overage $ per credit; volume steps above 50 listings; whether a unit is a listing; taxes; contract length; seat fees; guest-transaction fee schedule; API/MCP surcharges; currencies other than $. The HTML pricing FAQ lists “Is Conduit free?” without an answer in the extract—do not invent one. Portals FAQ says sales can quote monthly or annual; the main table is monthly starting rates only.\n\nPortals is bundled inside Guest and higher packages **and** described as a paid add-on priced by contracted listing count with graduated volume pricing; bundles and guest-transaction terms can change the final rate. Both statements are Conduit’s; they are not one public number. [Source](https://www.conduit.ai/product/portals.md)\n\n## Questions before a quote\n\n1. Inventory: unit vs listing vs room, 0–25 (Startup) vs above 50 listings.\n2. Portals path: Guest bundle vs listing add-on, and whether Messaging-only is even eligible.\n3. Devices and access codes (Guest + Devices).\n4. Full Suite operations/workforce scope versus Operations “Coming soon.”\n5. Credit mix: AI voice (8/min) vs regular voice (1/min), Operator tokens, internal agents, paid workflow actions—not inbox AI replies.\n6. Low-credit path: upgrade vs overage on the next invoice (rate unpublished).\n7. Implementation fee (Startup says none; others unpublished) and monthly vs annual.\n8. Stripe / guest-transaction terms, PMS/OTA/lock stack (lock and payment rules vary), billing entity, and Settings > Billing access (support@conduit.ai for charge disputes).\n\nStarting rates are a map for the conversation, not the contract.",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_6eff9afc29aa8e32",
+      "src_8b30f0226db273ad",
+      "src_b502f83a4ef37393",
+      "src_f0d546128c30936b",
+      "src_f599093e8cf0b47d"
+    ],
+    "open_questions": [
+      "What dollar rate is charged per credit in overage, and is it the same across packages?",
+      "Does a billed “unit” equal a contracted listing, a room, or another inventory object?",
+      "What are the graduated prices beyond 50 listings and the Portals add-on rates by listing count?",
+      "Can Portals be bought on Messaging without the Guest bundle, and how do guest-transaction terms change the rate?",
+      "What implementation fees, annual multipliers, and taxes apply outside the Startup “no implementation fee” claim?"
+    ],
+    "evidence_notes": [
+      {
+        "statement": "Messaging starting price is $18 per unit per month with 40 included credits per unit per month.",
+        "source_id": "src_f0d546128c30936b",
+        "quote": "Starts at **$18 per unit per month** and includes **40 credits per unit per month**."
+      },
+      {
+        "statement": "Guest starting price is $30 per unit per month with 60 included credits per unit per month.",
+        "source_id": "src_f0d546128c30936b",
+        "quote": "Starts at **$30 per unit per month** and includes **60 credits per unit per month**."
+      },
+      {
+        "statement": "Full Suite starting price is $48 per unit per month with 100 included credits per unit per month.",
+        "source_id": "src_f0d546128c30936b",
+        "quote": "Starts at **$48 per unit per month** and includes **100 credits per unit per month**."
+      },
+      {
+        "statement": "Startup for 0–25 units is $899 per month with 2,000 credits per month and no implementation fee.",
+        "source_id": "src_f0d546128c30936b",
+        "quote": "The full feature set, designed to help scale your operations with no implementation fee.\n\nCosts **$899 per month** and includes **2,000 credits per month**."
+      },
+      {
+        "statement": "Published package prices are starting rates and scale beyond 50 listings.",
+        "source_id": "src_156a9e102c46da8e",
+        "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+      },
+      {
+        "statement": "Inbox AI agent replies do not consume credits; credits apply only to four usage categories.",
+        "source_id": "src_f599093e8cf0b47d",
+        "quote": "Replies sent by your AI agents in the inbox do not consume credits. Credits are only used by the four categories above."
+      },
+      {
+        "statement": "Regular voice is 1 credit per minute; AI voice is 8 credits per minute.",
+        "source_id": "src_f599093e8cf0b47d",
+        "quote": "Regular voice minute\n1 per minute\nAI voice minute\n8 per minute"
+      },
+      {
+        "statement": "Portals is also described as a paid add-on by contracted listing count; bundles and guest-transaction terms can change the rate.",
+        "source_id": "src_8b30f0226db273ad",
+        "quote": "Portals is a paid add-on priced by contracted listing count with graduated volume pricing for larger portfolios. Bundles and guest-transaction terms can change the final rate, so our sales team can show the exact monthly or annual price for your setup."
+      }
+    ],
+    "agent_context": {
+      "use_when": [
+        "Answering public list price, credit, or package-inclusion questions",
+        "Preparing a quote checklist or comparing Messaging vs Guest vs devices vs Full Suite vs Startup",
+        "Explaining why inbox AI replies, voice minutes, Operator, workflows, and Portals are billed differently"
+      ],
+      "decisions_supported": [
+        "Which published package to discuss before sales maps a use case",
+        "Whether credit burn (especially AI voice) may exhaust the included pool",
+        "Whether Portals should be framed as Guest-bundle inclusion or a listing add-on to be quoted"
+      ],
+      "do_not_infer": [
+        "Standalone Inbox, Agents, Workflows, or Portals license prices from bundle starting rates",
+        "A dollar overage rate, annual discount, tax, or unit=listing identity",
+        "That Full Suite operations bullets are generally available despite Operations “Coming soon”",
+        "That inbox AI replies consume credits or that Startup $899 is a per-unit rate"
+      ]
+    },
+    "icp_criteria": []
+  },
+  "errors": []
+}

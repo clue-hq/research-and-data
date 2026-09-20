@@ -1,0 +1,1645 @@
+{
+  "reviews": [
+    {
+      "issues": [
+        {
+          "document_key": "company-overview",
+          "severity": "material",
+          "excerpt": "Qualify on whether the account is actually in the three published industries",
+          "problem": "Turns the three nav buckets into an ICP gate. FAQ already names serviced-apartment operators, and homepage/footer identity also names resorts, aparthotels, and villas. A seller could wrongly DQ those accounts. Housing/leasing remains a discovery topic, not a reason to shrink the published hospitality set.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_98f3111f126b26d0",
+            "src_c8e3a0604ce1e6d6"
+          ],
+          "suggested_correction": "Qualify on published hospitality fit: STR/vacation rentals, independent hotels, hotel groups, plus FAQ serviced apartments and footer resorts/villas/aparthotels. Use a discovery question for YC/PhocusWire housing-leasing language; do not hard-gate to the three nav labels."
+        },
+        {
+          "document_key": "company-overview",
+          "severity": "minor",
+          "excerpt": "CEO: 70% CS automation “very realistic”",
+          "problem": "Placed in an attributed-results table, but the quote is an expectation. The same story also shows a 90% guest-communication stat and a 70%+ key-results line. Sellers can recite 70% as a measured Flex outcome.",
+          "source_ids": [
+            "src_765674900bd1f4dd"
+          ],
+          "suggested_correction": "Cite as CEO assessment only (“70% automation of customer service is very realistic”), not a verified result. If the page is used, separately flag Conduit’s 90% header vs 70%+ key-results copy as unresolved story math."
+        },
+        {
+          "document_key": "company-overview",
+          "severity": "minor",
+          "excerpt": "onboarding copy still says “HostAI”",
+          "problem": "The Canbnb page uses HostAI in Jo’s 2024 setup quote, not as evidence that current onboarding UI still says HostAI.",
+          "source_ids": [
+            "src_5cb5674a725889a9"
+          ],
+          "suggested_correction": "Say the Canbnb story (customer since March 2024) still refers to setup as HostAI in a customer quote. Do not claim live onboarding copy uses that name."
+        },
+        {
+          "document_key": "company-overview",
+          "severity": "minor",
+          "excerpt": "Support $4,000→$600/mo; response 57 min→2 min; story claims ≥$3,400/mo NOI and >$500k asset value at an 8% cap",
+          "problem": "Lauderdale also calls this “AI-powered staffed support” / replacing a call center with a platform and “24/7 staffed support team.” Treating the NOI/cap-rate math as pure unattended software savings overclaims the story.",
+          "source_ids": [
+            "src_37286663c1a57667",
+            "src_98f3111f126b26d0"
+          ],
+          "suggested_correction": "Keep the figures as customer-page claims and note “staffed support” is unresolved (AI-staffed vs human coverage). Do not use Lauderdale as proof of unattended software-only savings."
+        },
+        {
+          "document_key": "commercial-model",
+          "severity": "material",
+          "excerpt": "What a credit consumes, whether unused credits roll, and overage rates are not on the pricing page.",
+          "problem": "Accurate for /pricing, but docs already publish per-action credit costs and changelog notes in-app cost-per-credit. Calling burn unpublished will stop sellers from using the public credit schedule. Unknown rollover/overage still cannot be invented.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_b4b8a8b99c077661",
+            "src_ee72b875099c7ac7"
+          ],
+          "suggested_correction": "Split the card: included allotments are on /pricing; docs price finished workflow actions (e.g. email 1/4 credits, SMS 2/5, WhatsApp 2/5, workflow Voice Agent Call 6/min, non-workflow voice 1/min; many steps free). Leave rollover, overage dollars, and telephony pass-through as unpublished."
+        },
+        {
+          "document_key": "commercial-model",
+          "severity": "material",
+          "excerpt": "sold mainly through demos and self-serve starts",
+          "problem": "Get Started is only a CTA. The corpus shows no checkout or unattended signup, and company-overview correctly says there is no self-serve checkout. “Self-serve starts” invents a buy motion.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_98f3111f126b26d0"
+          ],
+          "suggested_correction": "Describe public CTAs only: Book demo / Get Started on Messaging–Guest+Devices and Startup; Talk to Sales on Full Suite. Do not call Get Started self-serve until signup/checkout is evidenced."
+        },
+        {
+          "document_key": "products-capabilities",
+          "severity": "material",
+          "excerpt": "Coming soon / incomplete: Operations in the product nav; Booking.com and VRBO on the integrations directory.",
+          "problem": "Directory listing is not the same as channel setup. STR pages list Vrbo/Booking.com as inbox channels, LinkedIn says Expedia works “same as Airbnb, Vrbo, and Booking.com,” and changelog 3.9 says Vrbo inquiries are on. A categorical “coming soon” will make sellers deny live OTA paths.",
+          "source_ids": [
+            "src_a2a67d2faa01de13",
+            "src_5eb74e069d5f7cb9",
+            "src_7c4526fa84e6106c",
+            "src_ee72b875099c7ac7"
+          ],
+          "suggested_correction": "Preserve the conflict: integrations directory marks Booking.com and VRBO coming soon; marketing/LinkedIn/changelog claim those OTA threads can already land in Inbox, often via PMS or auxiliary connections. Confirm per account whether messaging is direct, via PMS, or not enabled—never promise or deny from one listing."
+        },
+        {
+          "document_key": "products-capabilities",
+          "severity": "material",
+          "excerpt": "For 0–25 units, the site offers a Startup full-feature monthly price rather than the per-unit ladder; above that, talk-to-sales language applies to Full Suite and scale beyond 50 listings.",
+          "problem": "Merges three rules. Above 25 units, Messaging/Guest/Guest+Devices still show Get Started at per-unit rates. Talk to Sales is Full Suite. “Scales beyond 50 listings” is not a universal sales-assist gate.",
+          "source_ids": [
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "Startup is an alternate $899/mo path for 0–25 units. Per-unit Messaging/Guest/Guest+Devices stay Get Started. Full Suite is Talk to Sales. Past 50 listings, say only that published pricing scales—no curve, no assumption that every 26+ unit deal is sales-only."
+        },
+        {
+          "document_key": "products-capabilities",
+          "severity": "minor",
+          "excerpt": "Docs say Conduit integrates with over 15 PMS systems, classify some as messaging PMS connections and others as reservation-data-only",
+          "problem": "Omits the setup gate: PMS may not appear unless the workspace industry type is set. Docs conflict (STR or Long Term Rental vs STR or Hotel for Lodgify). That is a readiness check, not a marketing-nav ICP.",
+          "source_ids": [
+            "src_b27f818d3e0ae613"
+          ],
+          "suggested_correction": "Add that Connect PMS is workspace-type gated and the docs disagree on allowed types (STR/LTR vs STR/Hotel). Ask which workspace industry is set before promising PMS sync; do not treat Long Term Rental as off-limits solely because it is absent from the three-industry nav."
+        }
+      ],
+      "strengths": [
+        "Unresolved identity facts (300+ vs 1000+ brands, 2023 vs 2024 founding, 15/30/26/51–200 headcount) are kept as source conflicts, not reconciled into fake official numbers.",
+        "Operator is correctly treated as a Messaging/workspace assistant, not the Operations SKU; Full Suite task/workforce copy is separated from nav “Operations coming soon,” and changelog vs nav is preserved.",
+        "Customer metrics are mostly named and attributed, with explicit do-not-promise guidance on Haven 90%, Lauderdale cap-rate math, and logo counts.",
+        "Package names are not sold as standalone Agents/Inbox/Portals SKUs; Startup vs per-unit quoting caution is present in overview and commercial-model.",
+        "API/MCP “v3 plan” plus support enablement is flagged as unresolved against website packages, which prevents treating V3 generation as a price tier.",
+        "Integration logos are explicitly not proof of messaging or write-back; Opera is correctly given as reservation-data-without-native-messaging."
+      ],
+      "decision_usefulness": "A seller can already pick live catalog surfaces (Agents, Inbox, Portals, Workflows) versus Operations-coming-soon, match a first package (Messaging vs Guest vs Devices vs Full Suite/Startup), and cite named stories with attribution. They cannot yet quote credit burn, trust Booking.com/VRBO availability from one page, or treat Get Started as self-serve checkout. The three-industry qualify line is too tight for published serviced-apartment/resort/villa targets. Fix those before this library is safe for pricing talk tracks and OTA-fit calls; it is already usable for demo framing and “do not guarantee these metrics” copy.",
+      "reviewed_at": "2026-09-20T01:21:34.738160+00:00",
+      "document_keys": [
+        "company-overview",
+        "commercial-model",
+        "products-capabilities"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "product-agents",
+          "severity": "material",
+          "excerpt": "The product page FAQ “How much can Conduit's agents resolve on their own?” has no published answer in the captured page.",
+          "problem": "A cited capture of the same Agents URL already publishes a qualitative answer. Telling sellers the FAQ is unanswered is a false categorical negative and will produce incomplete copy.",
+          "source_ids": [
+            "src_75269914aa6b6dfd",
+            "src_e805a9592ee44f73"
+          ],
+          "suggested_correction": "Quote the published answer: resolution share depends on guest requests, knowledge base, integrations, and escalation rules, and should be tracked via resolved conversations vs handoffs. Still forbid any invented resolution percentage."
+        },
+        {
+          "document_key": "product-agents",
+          "severity": "material",
+          "excerpt": "whether voice minutes inside Agents match the workflow Voice Agent Call rate (6 credits/minute) or the non-workflow voice rate (1 credit/minute)",
+          "problem": "Library credit sources already distinguish free inbox AI replies, AI voice at 8 credits/minute, regular voice at 1, and workflow Voice Agent Call at 6. Framing the gap as 6 vs 1 omits the rates a Messaging/Agents quote actually needs.",
+          "source_ids": [
+            "src_f599093e8cf0b47d",
+            "src_b4b8a8b99c077661",
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "State the published meters: inbox AI replies consume 0 credits; regular voice is 1/min; AI voice is 8/min; a workflow Voice Agent Call is 6/min. Treat overage price as unpublished. Do not imply ordinary agent replies use a per-reply Agents SKU."
+        },
+        {
+          "document_key": "product-agents",
+          "severity": "material",
+          "excerpt": "page hero also says 90% of guest communication automated",
+          "problem": "The Flex 90% is a hero stat that conflicts with the 70%+ result and the CEO’s “very realistic” line; 80–90% also appears as a looking-ahead goal. Preserving both without that bound lets outbound treat 90% as a measured Agents outcome.",
+          "source_ids": [
+            "src_765674900bd1f4dd"
+          ],
+          "suggested_correction": "Use The Flex only as 70%+ / “70% automation of customer service is very realistic,” and label the hero 90% as inconsistent with the body and with the 80–90% future-product language. Do not put 90% in Agents proof."
+        },
+        {
+          "document_key": "product-agents",
+          "severity": "material",
+          "excerpt": "Higher bundles (Guest $30, Guest + Devices $36, Full Suite $48 per unit per month) add portals/devices/ops",
+          "problem": "The same library correctly marks Operations (housekeeping, maintenance, inspections) as coming soon. The pricing table still lists Full Suite ops items, so “add … ops” can be sold as GA.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_e805a9592ee44f73"
+          ],
+          "suggested_correction": "Keep Full Suite’s published line items, but bound them: the standalone Operations product is still “Coming soon.” Do not promise AI-coordinated housekeeping/maintenance/inspections from the $48 card."
+        },
+        {
+          "document_key": "product-agents",
+          "severity": "minor",
+          "excerpt": "Deployed March; story dated around December 2024 usage",
+          "problem": "Cascadia’s header is “USING CONDUIT SINCE: December 2024” while the body says they deployed in March. The draft invents a usage/story date instead of flagging the tenure conflict.",
+          "source_ids": [
+            "src_b2ab716efd97c239"
+          ],
+          "suggested_correction": "Mirror the HomeHop handling: leave Cascadia start date unresolved (header December 2024 vs body March deploy). Do not infer “December 2024 usage.”"
+        },
+        {
+          "document_key": "product-agents",
+          "severity": "minor",
+          "excerpt": "customer, internal, and voice agents",
+          "problem": "Docs name external, internal, and voice agents. “Customer agents” is not the product term and can drift into ICP/copy.",
+          "source_ids": [
+            "src_8f9aa404cff029a5",
+            "src_2a445232675660d9"
+          ],
+          "suggested_correction": "Use “external, internal, and voice agents.” If translating for buyers, say external/guest-facing, not a “customer agent” SKU."
+        },
+        {
+          "document_key": "product-portals",
+          "severity": "material",
+          "excerpt": "Regular voice is **1 credit per minute**; AI voice is **8 credits per minute**.",
+          "problem": "This doc’s own sources also publish workflow Voice Agent Call at 6 credits/minute. Quoting only 1 and 8 will mis-estimate overage when voice is a workflow action versus Voice AI minutes.",
+          "source_ids": [
+            "src_f599093e8cf0b47d",
+            "src_b4b8a8b99c077661"
+          ],
+          "suggested_correction": "Publish all three: regular voice 1/min, AI voice minutes 8/min, workflow Voice Agent Call 6/min. Ask which path the account will use before mapping Startup/Guest credits."
+        },
+        {
+          "document_key": "product-portals",
+          "severity": "minor",
+          "excerpt": "Published customer stories in this source set (Haven, Cascadia, Lauderdale, Cosmica, Bali Luxury Stays, and others)",
+          "problem": "Attached sources for this article include Haven and a Cosmica pricing quote, not Cascadia, Lauderdale, or Bali case studies. “This source set” overclaims coverage.",
+          "source_ids": [
+            "src_c1dd8d452a784c57",
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "Limit the Portals-proof negative to stories actually cited here (Haven; Cosmica as a non-portal quote). Keep the rule: no attached story isolates portal conversion, waiver, or in-portal GMV."
+        }
+      ],
+      "strengths": [
+        "Agents, Inbox, and Portals are separated by job-to-be-done, with Workflows and coming-soon Operations called out instead of bundled as one SKU.",
+        "The messaging-PMS vs data-only-PMS split (Guesty/Hostaway vs Opera/Mews/Cloudbeds, Airbnb primary-PMS rule, duplicate-OTA risk) is the right first qualification gate and matches setup docs over logo slogans.",
+        "Proof hygiene is generally strong: Haven 90%, Lauderdale $500k/NOI, Wynwood resolution time, Bocobay 80%, and portal-absent ROI are scoped to the right product or withheld.",
+        "Packaging is usable: no standalone Agents/Inbox/Portals list price; Messaging $18 / Guest $30 / Devices $36 / Full Suite $48 / Startup $899; Portals keeps the Guest bundle vs listing-count add-on contradiction instead of collapsing it.",
+        "Discovery questions are specific enough to pick a demo path (channel class, execute-vs-escalate, Stripe/locks, Unmapped routing, teach owner) without inventing ICP scores or headcount cutoffs.",
+        "Implementation limits are sales-usable: Unmapped routing, humans in the loop, knowledge/teach loop, lock/payment/write-back not implied by logos, inbox AI replies ≠ a resolution guarantee."
+      ],
+      "decision_usefulness": "A seller can choose lead product (Inbox vs Agents vs Guest/Portals), qualify PMS/channel design, and ask a concrete next question, but cannot yet draft safe credit/voice math or Flex 90% copy; Agents also misstates an answered FAQ. Fix those before this library is quote-ready. This is model review of the supplied captures, not independent verification.",
+      "reviewed_at": "2026-09-20T01:20:21.427982+00:00",
+      "document_keys": [
+        "product-agents",
+        "product-inbox",
+        "product-portals"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "product-workflows",
+          "severity": "material",
+          "excerpt": "Higher bundles (Guest from $30, Guest + Devices from $36, Full Suite from $48 per unit per month) nest Messaging and add portals/devices/operations features—including “Device management workflows” and “Agentic operations workflows” on those SKUs",
+          "problem": "Packaging is conflated across three SKUs. Guest ($30) is Messaging plus portals/waivers/upsells only. “Device management workflows” is listed on Guest + Devices; “Agentic operations workflows” is listed on Full Suite. A seller could promise device or operations workflow lines on Guest.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_f0d546128c30936b"
+          ],
+          "suggested_correction": "Say Guest ($30, 60 credits) = Messaging + portals/waivers/upsells. Guest + Devices ($36, 80 credits) adds devices and “Device management workflows.” Full Suite ($48, 100 credits) adds tasks/workforce, “Agentic operations workflows,” scheduling/dispatch, and inventory. Do not attach the two workflow line-items to every higher bundle."
+        },
+        {
+          "document_key": "product-workflows",
+          "severity": "material",
+          "excerpt": "Conduit Workflows is the product for automating the guest journey after a booking exists—not the live reply engine itself.",
+          "problem": "Over-narrows scope. The hospitality page is stay-journey-led, but docs start workflows from events such as a new contact, a conversation tag, or an AI tool call, and include routing/triage that are not booking-gated. Sellers may disqualify pre-stay, inbox, or tag-driven automations.",
+          "source_ids": [
+            "src_9078cb1971869041",
+            "src_0f66e375eb2b7089",
+            "src_44ca2b5b2ec94cdf",
+            "src_2a445232675660d9"
+          ],
+          "suggested_correction": "Keep Agents as the live reply engine, but describe Workflows as visual automations (proactive, routing, triage) that hospitality marketing illustrates with booking confirmations, stay-date messages, follow-ups, and upgrades—not as a post-booking-only product."
+        },
+        {
+          "document_key": "product-workflows",
+          "severity": "material",
+          "excerpt": "| SMS or WhatsApp (non-AI / AI-generated) | 2 / 5 |",
+          "problem": "Credit table used for discovery omits the documented “Other channels” row (0 non-AI / 3 AI-generated) and that inbound messages use 0 credits. Product copy says sequences send on connected OTA channels, so Airbnb/other OTA burn will be mis-modeled if sellers only use Email/SMS/WhatsApp rates.",
+          "source_ids": [
+            "src_b4b8a8b99c077661",
+            "src_9078cb1971869041"
+          ],
+          "suggested_correction": "Add Other channels 0 / 3, note inbound is free, and tell sellers to map each connected send path (email, WhatsApp/SMS, OTA/other) before estimating 40 credits/unit."
+        },
+        {
+          "document_key": "product-developers",
+          "severity": "material",
+          "excerpt": "Only (2)–(4) require a developer and v3 API/MCP enablement.",
+          "problem": "Conflates V3 in-product Tools with the commercial “v3 plan” API/MCP gate. Custom Python/JavaScript tools are documented on the V3 Tools surface in the app; only REST/MCP access is explicitly “v3 plan” via support. This can over-qualify a hospitality team as needing engineering and API enablement just to grant an agent a custom tool.",
+          "source_ids": [
+            "src_8f9aa404cff029a5",
+            "src_2d5d23c8d8b6f535",
+            "src_f01f1010ac8ddab8"
+          ],
+          "suggested_correction": "Split paths: in-app custom tools/visual workflows vs REST/MCP, which require contacting support to enable the v3 plan. Do not treat “agent should call a custom tool” as automatically a developer-plus-API deal."
+        },
+        {
+          "document_key": "product-workflows",
+          "severity": "minor",
+          "excerpt": "Buyers are typically founders, revenue/guest-services leads, or ops owners",
+          "problem": "Ungrounded ICP gate. Public pages name hospitality firm types and a few customer titles; they do not support a typical-buyer pattern or a credit-volume buying criterion.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_c1dd8d452a784c57"
+          ],
+          "suggested_correction": "Cite the published audience (hotel teams, serviced-apartment operators, STR managers) and treat founder/GS/ops titles as examples from named stories, not a qualification rule."
+        },
+        {
+          "document_key": "product-workflows",
+          "severity": "minor",
+          "excerpt": "Dan Mitchen called using AI in workflows with SuiteOP “an absolute game changer.”",
+          "problem": "Source quote is forward-looking (“is going to be an absolute game changer”), i.e. expectation, not a measured SuiteOP/workflow outcome.",
+          "source_ids": [
+            "src_d097938bd9b8b088"
+          ],
+          "suggested_correction": "Keep the future tense and the already-correct caveat that this is HomeHop’s stack, not a Conduit integration or KPI."
+        },
+        {
+          "document_key": "product-workflows",
+          "severity": "minor",
+          "excerpt": "Workspace with hospitality type so PMS connections appear",
+          "problem": "PMS visibility is documented as Short Term Rental or Long Term Rental (Lodgify notes STR or Hotel), not a generic “hospitality type.”",
+          "source_ids": [
+            "src_b27f818d3e0ae613"
+          ],
+          "suggested_correction": "If PMS is missing: workspace industry must be Short Term Rental, Long Term Rental, or Hotel per the connect-PMS steps."
+        },
+        {
+          "document_key": "product-operator",
+          "severity": "minor",
+          "excerpt": "Credit consumption for Operator sessions ... remain unspecified in these captures.",
+          "problem": "Conflicts with the same draft’s credit-guide section, which already establishes Operator Sidebar as a metered category (model/tokens; roughly 7,000–71,000 billable tokens per credit). Leaving it “unspecified” sends sellers back to a resolved question.",
+          "source_ids": [
+            "src_f599093e8cf0b47d"
+          ],
+          "suggested_correction": "Close the credit question: Operator turns are billed from the Operator Sidebar pool by model/tokens, with no flat per-turn price; keep default tools and guest-write permissions as open."
+        }
+      ],
+      "strengths": [
+        "Operator vs Operations vs internal agents vs API “operator replies” (`is_sent_by_autopilot`) is consistently separated and safe for copy.",
+        "Haven 90% automation and staffing cuts are explicitly not assigned to the Workflows SKU; 40% “with no workflows” is quoted in context.",
+        "Workflow runs vs paid actions, routing-before-triggers, Messaging inclusion without a standalone Workflows SKU, and logo ≠ first-class action are all decision-ready.",
+        "Developer doc does not treat Messaging/Guest unit prices as API fees, does not invent a public event-subscription webhook product, and distinguishes catalog/MCP tools from token, add-on, and per-agent grants.",
+        "Open questions generally flag mapping gaps (v3 plan vs pricing rows, credit sizing) instead of inventing procurement or demographic numbers."
+      ],
+      "decision_usefulness": "A seller can usually choose Workflows vs Agents vs Operator vs API/MCP, stay off Operations-as-Operator, and avoid borrowing Haven’s platform KPIs. They can also ask useful next questions on PMS messaging vs reservation-only, channels, builder ownership, and credit burn. They cannot yet rely on the Guest-bundle workflow lines, post-booking-only Workflows framing, or “custom tool ⇒ v3 API + developer” gate without mis-scoping package, product, or plan. Credit math for OTA/other-channel sends is incomplete relative to the table the Workflows doc tells them to use.",
+      "reviewed_at": "2026-09-20T01:20:04.987418+00:00",
+      "document_keys": [
+        "product-workflows",
+        "product-operator",
+        "product-developers"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "pricing",
+          "severity": "material",
+          "excerpt": "Unified inbox, Voice AI inbound and outbound, PMS and OTA integrations, Operator, workflows, escalation, analytics",
+          "problem": "Messaging package copy names Operator while Full Suite and site nav talk about operations/Operations. The draft never states that Operator is the in-app workspace assistant, not the Operations product marked Coming soon. A seller can withhold Messaging because Operations is coming soon, or promise housekeeping/dispatch because Operator is included.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_f0d546128c30936b",
+            "src_8f9aa404cff029a5"
+          ],
+          "suggested_correction": "Add an explicit split: Operator on the Messaging list is the workspace assistant (inspect/edit/reason about agent configuration). Operations in nav is “Coming soon” (housekeeping, maintenance, inspections). Full Suite tasks/workforce/scheduling bullets are package marketing, not confirmed GA modules—route those buyers to sales."
+        },
+        {
+          "document_key": "customer-evidence",
+          "severity": "material",
+          "excerpt": "“AI-powered support platform and 24/7 staffed support team” replacing a call center",
+          "problem": "Lauderdale’s $4,000→$600 and ≥$3,400 NOI figures are presented as named results without warning that the write-up credits a staffed support team as well as software. Public packages do not list a staffed-support SKU. Copy can treat $600/mo as Messaging/Agents pricing or as an automation-only saving.",
+          "source_ids": [
+            "src_37286663c1a57667",
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "Keep the quote, then caveat in the same cell: P&L compares a call center to Conduit’s platform plus the page’s 24/7 staffed support team. Do not use $600/mo as a software list price or claim the NOI/cap-rate math is Agents/Inbox-only."
+        },
+        {
+          "document_key": "customer-evidence",
+          "severity": "material",
+          "excerpt": "index headline 150% growth",
+          "problem": "Canbnb’s 150% is only an unexplained header, not a defined metric or Conduit-attributed result in the body (unlike 1,500 messages/week and 60% AI-handled). Placing it in Reported result invites copy that Conduit produced 150% growth.",
+          "source_ids": [
+            "src_5cb5674a725889a9"
+          ],
+          "suggested_correction": "Drop 150% from usable results. Cite only ~1,500 messages/week with 60% handled by AI, and note HostAI remains on the page as an unresolved product name."
+        },
+        {
+          "document_key": "integrations",
+          "severity": "material",
+          "excerpt": "Track card also mentions routing Airbnb/Booking.com messages",
+          "problem": "Track is documented as non-messaging PMS data sync, while the Booking.com catalog card is “Coming soon.” Leaving the Track blurb in Other claim without that collision lets a seller treat Track accounts as having live Booking.com messaging.",
+          "source_ids": [
+            "src_a2a67d2faa01de13",
+            "src_b27f818d3e0ae613"
+          ],
+          "suggested_correction": "Qualify Track as property/reservation sync only. Treat Airbnb/Booking.com routing on the Track card as unconfirmed listing copy; do not pursue Booking.com messaging as live while that connector is “Coming soon.” Ask how OTA threads actually arrive today."
+        },
+        {
+          "document_key": "integrations",
+          "severity": "minor",
+          "excerpt": "Confirm v3 entitlement before API/MCP; confirm Devices or Portals add-ons before those tool groups.",
+          "problem": "V3 in the same checklist is both the agent UI generation (Configure V3 agents) and the API/MCP “v3 plan.” Public packages never map to that plan, so sellers may assume any current workspace or Full Suite includes API/MCP.",
+          "source_ids": [
+            "src_2d5d23c8d8b6f535",
+            "src_f01f1010ac8ddab8",
+            "src_8f9aa404cff029a5"
+          ],
+          "suggested_correction": "Split the terms: V3 agents/Knowledge/Skills are the current product UI. REST/MCP require the docs’ v3 plan plus support enablement. Do not equate v3 plan with Messaging–Full Suite or Startup until sales confirms."
+        },
+        {
+          "document_key": "integrations",
+          "severity": "minor",
+          "excerpt": "Opera public page: read context only through that connector",
+          "problem": "Opera copy says the connector does not route messaging and that Conduit reads property/reservation/profile data. It does not say all writes are impossible. “Read context only” over-closes listing vs action support.",
+          "source_ids": [
+            "src_dae2c4b0bd94e5a6",
+            "src_b27f818d3e0ae613"
+          ],
+          "suggested_correction": "Say: public Opera page documents property, room type, reservation, and profile sync and no messaging through this connector. Do not infer reservation edits, payments, or other writes; confirm writes separately."
+        },
+        {
+          "document_key": "customer-evidence",
+          "severity": "minor",
+          "excerpt": "### Hotel and hotel-like proof",
+          "problem": "Wynwood is a multi-country hospitality/real-estate platform using Guesty, not a hotel or hotel group. Filing it under hotel-like proof steers hotel-group conversations to the wrong entity.",
+          "source_ids": [
+            "src_e067203ca4528d4b",
+            "src_7554566ca6745e69"
+          ],
+          "suggested_correction": "Move Wynwood to multi-market CX / STR-style operators. Keep Lauderdale as the only named hotel P&L story; continue to treat hotel-group proof as absent from this pack."
+        },
+        {
+          "document_key": "customer-evidence",
+          "severity": "minor",
+          "excerpt": "Email, SMS, OTA, voice AI 1–7 AM, SuiteOP workflows",
+          "problem": "SuiteOP is HomeHop’s operations tool, not a Conduit product. Listing it under Named use implies a Conduit workflow/PMS capability a seller could promise.",
+          "source_ids": [
+            "src_d097938bd9b8b088"
+          ],
+          "suggested_correction": "Named use: unified email/SMS/OTA plus voice AI 1–7 AM. Mention SuiteOP only as the customer’s adjacent system they wired, not as a Conduit SKU or supported-action proof."
+        }
+      ],
+      "strengths": [
+        "Integrations separates marketplace cards, PMS setup docs, agent-action claims, and API/MCP, and records messaging vs non-messaging workspace rules instead of treating logos as write-back.",
+        "Mews, StayNTouch, Expedia, Booking.com/VRBO, and Opera conflicts are surfaced as listing-vs-setup problems with discovery questions rather than silently resolved.",
+        "Pricing keeps $18–$48 as package starting rates, refuses unit=listing, publishes credit category rules (inbox AI replies free; AI voice 8/min), and does not invent overage, taxes, or Portals add-on dollars.",
+        "Customer evidence uses named pages only, blocks 300+/logo-wall proof, refuses to average automation rates, and already caveats Flex 70/90/goal language, Haven 230 vs 270 and 59% vs 55%, Bocobay’s undated 80%, and Lauderdale’s 8% cap-rate model.",
+        "Open questions are usable next questions (writes per PMS, Portals vs Guest bundle, unit definition) rather than invented ICP headcount or procurement gates."
+      ],
+      "decision_usefulness": "Usable research draft for package talk-track, PMS/OTA qualification, and one-story proof selection, if sellers follow the caveats. Not yet safe for copy without fixing Operator vs Operations, Lauderdale staffed-support mixing, Canbnb’s 150% headline, and Track/Booking.com live-vs-coming-soon. Still cannot honestly confirm per-vendor writes, overage dollars, which priced SKU is the v3 API plan, or hotel-group fit.",
+      "reviewed_at": "2026-09-20T01:24:11.412796+00:00",
+      "document_keys": [
+        "integrations",
+        "pricing",
+        "customer-evidence"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "alternatives",
+          "severity": "material",
+          "excerpt": "Haven runs 95 percent automation across 270 properties",
+          "problem": "Repeats the Canary comparison page’s 95% figure without noting Haven’s own customer story states 90% automation across 270 properties. A seller will treat 95% as the named proof point.",
+          "source_ids": [
+            "src_654dffae90142089",
+            "src_c1dd8d452a784c57"
+          ],
+          "suggested_correction": "Quote Haven only from the customer page (90% automation, ~270 properties, Conduit-attributed) and flag the Canary page’s 95% as a conflicting company claim, not usable proof."
+        },
+        {
+          "document_key": "alternatives",
+          "severity": "material",
+          "excerpt": "adds 120+ countries, HIPAA, GDPR, ISO 27001",
+          "problem": "Collapses unlike claims. Homepage says SOC 2 Type II and “supports HIPAA workflows,” not HIPAA/GDPR/ISO certification. Those stronger labels appear only on Conduit’s Canary page.",
+          "source_ids": [
+            "src_98f3111f126b26d0",
+            "src_654dffae90142089"
+          ],
+          "suggested_correction": "Split attestations: homepage SOC 2 Type II and HIPAA-workflow language; treat GDPR/ISO 27001 and “HIPAA certified” as Canary-page-only claims that need current security confirmation before use."
+        },
+        {
+          "document_key": "alternatives",
+          "severity": "minor",
+          "excerpt": "branded guest app",
+          "problem": "Jurny’s public copy describes a branded guest web app with no download, not a native app. Overlay-vs-replacement advice stays valid; the artifact name does not.",
+          "source_ids": [
+            "src_8263cdab2378c09a"
+          ],
+          "suggested_correction": "Say Jurny offers a branded guest web app / portal (no download required), plus channel manager, reservations, and housekeeping in an all-in-one PMS."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "material",
+          "excerpt": "Lauderdale reports support cost falling from $4,000 to $600 per month",
+          "problem": "The story’s narrative has costs already down to $1,200/month on prior call services before Conduit; $4,000→$600 is the page’s marketing rollup, not a clean before/after. Also mixes that cost path with the separate $500k cap-rate valuation math.",
+          "source_ids": [
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "Write: Lauderdale’s page says prior support spend started at $4,000, was later $1,200, then $600/month on Conduit, with 57-minute to 2-minute response; keep the $500k asset-value figure as owner-attributed cap-rate math, not a Conduit result."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "material",
+          "excerpt": "HomeHop reports growing from 40 to 108 listings without extra guest-support hires",
+          "problem": "The same story dates Conduit to June 2025 and also says “customer for approximately two years,” while 40→108 is described as two-year portfolio growth. That cannot be sold as a measured Conduit-period achievement.",
+          "source_ids": [
+            "src_d097938bd9b8b088"
+          ],
+          "suggested_correction": "Use only what is clearly attributed: 70% automation and the operator’s claim they do not expect to hire guest-messaging staff at 100–200 units; do not present 40→108 as a verified Conduit-window result until dates are reconciled."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "material",
+          "excerpt": "Flex’s decision not to rebuild conversational AI are named displacements",
+          "problem": "Bocobay leaving Intercom is sourced. No Flex customer page or quote in this corpus supports a decision not to rebuild conversational AI. A named teaser is not displacement proof.",
+          "source_ids": [
+            "src_98f3111f126b26d0",
+            "src_ec670ccb114e21b7"
+          ],
+          "suggested_correction": "Keep Bocobay/Intercom as the only sourced displacement. Drop Flex (and Cosmica/Canbnb) from the usable-proof list until their stories are in the library with a metric and caveat."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "material",
+          "excerpt": "run internal operations, and surface insights",
+          "problem": "Company/homepage language already sells Internal Agents that “handle routine operations,” and Agents/Mews copy claims live task creation, while product nav still marks Operations (housekeeping/maintenance/inspections) Coming soon. The boundary only warns about the coming-soon SKU, so sellers will conflate Internal Agents, PMS task write-back, and Operations.",
+          "source_ids": [
+            "src_98f3111f126b26d0",
+            "src_0fe82516611ad5df",
+            "src_e805a9592ee44f73",
+            "src_792004fc0d3ff885"
+          ],
+          "suggested_correction": "Separate three things for sales: (1) Internal Agents / inspectable actions in connected tools = marketed now; (2) create tasks / Mews housekeeping task = connector-specific, confirm write list; (3) Operations product = Coming soon, not GA."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "minor",
+          "excerpt": "Stay inside hospitality guest operations (the three published industries, plus FAQ language for serviced-apartment operators)",
+          "problem": "Public site also names resorts, aparthotels, and villas as served segments. Tightening to three nav industries plus serviced apartments understates published fit.",
+          "source_ids": [
+            "src_c8e3a0604ce1e6d6",
+            "src_98f3111f126b26d0",
+            "src_f09009069a2d197f"
+          ],
+          "suggested_correction": "Primary industries: STR, independent hotels, hotel groups. Also in-scope when the buyer matches published pages: serviced-apartment/aparthotel, resort, and villa operators. Still not a PMS, channel manager, or generic helpdesk."
+        },
+        {
+          "document_key": "brand-messaging",
+          "severity": "minor",
+          "excerpt": "Portals are packaged separately on the public site",
+          "problem": "Separate product nav is not evidence of commercial packaging or price. Alternatives already warns a bundle is not a line-item.",
+          "source_ids": [
+            "src_6eff9afc29aa8e32",
+            "src_98f3111f126b26d0"
+          ],
+          "suggested_correction": "Say Portals is a distinct public product surface; packaging/price versus Agents, Inbox, and Workflows is unknown and must be asked."
+        },
+        {
+          "document_key": "brand-voice",
+          "severity": "material",
+          "excerpt": "Bali’s VA-replacement story is a named exit narrative",
+          "problem": "The $22k/month savings and replacement of 11 VAs are Easy BnB’s exit story, published on the Bali Luxury Stays URL. Bali Luxury is the founder’s new AI-first venture. Target-entity error if copy says Bali Luxury Stays fired VAs.",
+          "source_ids": [
+            "src_e84c3306650f8a0e"
+          ],
+          "suggested_correction": "Attribute VA replacement, ~$22k monthly savings, and 75 added units to Easy BnB; treat Bali Luxury Stays as the subsequent build-from-day-zero narrative only."
+        },
+        {
+          "document_key": "brand-voice",
+          "severity": "minor",
+          "excerpt": "Ads retell Wynwood (15 minutes → about 3)",
+          "problem": "The customer page metric is guest resolution time (14–15 minutes to 3), not first-answer time. The draft example then says “faster answers,” which lets sellers recast resolution as response SLA.",
+          "source_ids": [
+            "src_e067203ca4528d4b",
+            "src_dd47af2745ba5b91"
+          ],
+          "suggested_correction": "Say Wynwood House reports guest resolution time from 14–15 minutes to 3 minutes (operator story/ad). Do not call it average response time or a global SLA. Keep the 4.8 Colombia rating as contemporaneous, not caused."
+        }
+      ],
+      "strengths": [
+        "Alternatives consistently labels Conduit vs Canary / build-vs-buy as company positioning, not a third-party bake-off, and refuses footer names as comparisons.",
+        "Write-back vs overlay is handled correctly: Ersona’s no reservation/rate/calendar change is taken from Ersona; Conduit “update bookings” is treated as live only per PMS.",
+        "Operations Coming soon is preserved against the Canary page’s live “Conduit Ops” copy, with an explicit do-not-sell-as-GA rule.",
+        "Discovery tables tell sellers missing evidence means investigate, not reject—no invented ICP numeric gates.",
+        "Brand-voice is explicitly inferred, draft lines are labeled, and conflicting 300+ vs 1,000+ brand counts plus 87%/95% vs named-customer rates are not averaged."
+      ],
+      "decision_usefulness": "A seller can shortlist overlay vs suite vs all-in-one PMS vs DIY and ask the right next questions (channel list, read/write matrix, recorded multi-step resolution, Ops GA vs coming soon). They cannot yet pick a connector-level SKU or quote a safe proof metric: Haven 90 vs 95, Lauderdale cost path, HomeHop date window, Easy BnB vs Bali, and Internal Agents vs Operations remain mix-up risks. Copy guards are stronger than proof guards. Do not treat this set as closed human verification.",
+      "reviewed_at": "2026-09-20T01:22:56.189773+00:00",
+      "document_keys": [
+        "alternatives",
+        "brand-messaging",
+        "brand-voice"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "message-map",
+          "severity": "material",
+          "excerpt": "The Lauderdale Boutique Hotel (using Conduit since Dec 2024): support $4,000→$600/mo; avg reply 57 min→2 min; owner models ≥$3,400/mo NOI and >$500k asset value at 8% cap—not an appraisal or closed sale",
+          "problem": "The proof cell attaches those figures to Agents/Inbox after-hours coverage but omits the story’s explicit mechanism: replacing a call center with Conduit’s AI-powered support platform and a 24/7 staffed support team. A seller could present the cost/NOI math as a pure Agents result.",
+          "source_ids": [
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "Keep the staffed-support clause in the same sentence as the figures, e.g. Lauderdale (since Dec 2024) reports $4,000→$600/mo support cost and 57→2 min replies after replacing a call center with Conduit’s AI support platform and 24/7 staffed support team; owner translates ≥$3,400/mo NOI to >$500k at 8% cap—not an appraisal, closed sale, or Agents-only outcome."
+        },
+        {
+          "document_key": "message-map",
+          "severity": "material",
+          "excerpt": "Bali ~$22k/mo labor, 75 units, 0 extra FTE",
+          "problem": "Target-entity error. The Bali Luxury Stays page brands those results on Bali (founded 2025) while the body attributes replacing 11 VAs, ~$22k/mo, and 75 units with 0 extra FTE to Easy BnB, then says Bali is a new venture copying the playbook. Outbound would mis-name the customer that produced the P&L.",
+          "source_ids": [
+            "src_e84c3306650f8a0e"
+          ],
+          "suggested_correction": "Cite as Easy BnB results on the Bali Luxury Stays page (11 VAs replaced, ~$22k/mo labor, 75 units, 0 extra FTE); do not treat Bali Luxury Stays as the entity that recorded those figures. Keep the founded-2025 vs using-Conduit-since-Dec-2024 contradiction beside any use."
+        },
+        {
+          "document_key": "message-map",
+          "severity": "material",
+          "excerpt": "Audiences Conduit already names: Short-term rentals, Independent Hotels, and Hotel Groups. Do not invent extra segments.",
+          "problem": "Nav industries are not the full published ICP. The pricing FAQ names hotel teams, serviced-apartment operators, and short-term rental managers. Telling sellers not to invent extra segments will drop an in-category operator type the company already names.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_e805a9592ee44f73"
+          ],
+          "suggested_correction": "Treat nav industries (STR, independent hotels, hotel groups) as the three landing-page motions, and separately allow serviced-apartment operators as FAQ-named in-category accounts. Do not invent beyond those four labels; do not reject serviced apartments for lacking an industry page or case body."
+        },
+        {
+          "document_key": "writing-examples",
+          "severity": "material",
+          "excerpt": "The Lauderdale Boutique Hotel write-up may be cited only as a named, Conduit-attributed story (support costs reported from $4,000 to $600/month; average reply 57 minutes to 2 minutes; owner-modeled ≥$3,400 monthly NOI and more than $500,000 asset value at an 8% cap rate)—not as this hotel’s outcome.",
+          "problem": "The allowed-citation recipe still ships the P&L numbers without the printed 24/7 staffed support team. The later Portals warning mentions that team only to block SKU misattribution, so campaign copy can still imply Agents/Inbox alone produced the result.",
+          "source_ids": [
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "If Lauderdale numbers are used, require this clause in the same sentence: Conduit-attributed after replacing a traditional call center with its AI-powered support platform and 24/7 staffed support team; $3,400/mo NOI is the printed ‘at least’ figure (cost plus fewer refunds); $500k is an 8% cap-rate model, not this prospect’s outcome and not a Portals result."
+        },
+        {
+          "document_key": "writing-examples",
+          "severity": "minor",
+          "excerpt": "HomeHop’s path from about 40 to 108 listings without extra guest-support hires and 70 percent automation is a separate story",
+          "problem": "The 40→108 and 70% figures are given without the printed window the doc’s own rules require. The page says using Conduit since June 2025 and also ‘approximately two years,’ while portfolio growth is described as two years—so tenure and 3x growth can be conflated.",
+          "source_ids": [
+            "src_d097938bd9b8b088"
+          ],
+          "suggested_correction": "Write HomeHop (page: using Conduit since June 2025; also ‘approximately two years’) grew ~40→108 listings without extra guest-support hires and reports 70% automation; keep the tenure contradiction in the sentence and do not state that Conduit spanned the entire two-year 3x."
+        },
+        {
+          "document_key": "ideal-customers",
+          "severity": "material",
+          "excerpt": "Guest communication that can be organized by property or team across connected channels",
+          "problem": "Marked necessary fit, but that is a product capability, not an account test. A single-property operator (Lauderdale) is a named hotel customer; unknown channel mix is already ‘investigate, not reject.’ As written, sellers may fail fit for boutique/single-asset hotels.",
+          "source_ids": [
+            "src_a649d4d3ab5f59f5",
+            "src_37286663c1a57667",
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "Move to readiness/preference: guest conversations exist on channels Conduit unifies. Property-or-team inbox views are how the product is demoed, not a minimum property count. Single-property hotels remain in-category; split inboxes are a discovery prompt, not a necessary gate."
+        },
+        {
+          "document_key": "ideal-customers",
+          "severity": "minor",
+          "excerpt": "Haven, HomeHop, and Canbnb describe scale without proportional guest-support hiring",
+          "problem": "Haven and HomeHop support the no-extra-guest-support-hire claim. Canbnb reports 7→170 properties, ~1,500 messages/week with 60% handled by AI, and reps becoming ‘10x more impactful,’ not that headcount stayed flat. Bundling Canbnb into a hiring-ratio proof overreaches.",
+          "source_ids": [
+            "src_5cb5674a725889a9",
+            "src_c1dd8d452a784c57",
+            "src_d097938bd9b8b088"
+          ],
+          "suggested_correction": "Keep Haven and HomeHop as named no-proportional-hire stories. Recast Canbnb as volume/process evidence (~1,500 messages sent/week, 60% handled by AI, guest/owner/vendor inboxes)—not as a documented hiring freeze."
+        },
+        {
+          "document_key": "message-map",
+          "severity": "minor",
+          "excerpt": "Canbnb ~1,500 messages/week with 60% handled by AI",
+          "problem": "Source is that Conduit helps Canbnb send roughly 1,500 messages per week, with 60% handled by AI—not an inbound-volume or resolution denominator. Collapsing ‘send’ invites mixing this 60% with Haven/HomeHop automation rates.",
+          "source_ids": [
+            "src_5cb5674a725889a9"
+          ],
+          "suggested_correction": "Quote as Canbnb: Conduit helps send ~1,500 messages/week, 60% handled by AI (printed send volume, not a cross-customer automation rate)."
+        }
+      ],
+      "strengths": [
+        "Proof rules are operational: one named story, dates/caveats, no blended automation rates, manifesto/G2/Guest Favorite barred as campaign KPIs.",
+        "Product split is usable in the field: Agents vs Inbox vs Workflows vs Portals, with Operations labeled coming soon and logos not treated as write-back.",
+        "Industry motions match public pages (independent-hotel after-hours, group brand+per-property, STR OTA inbox) and hotel-group copy is correctly treated as under-evidenced, not as a negative ICP.",
+        "ideal-customers mostly separates fit vs readiness vs urgency, refuses invented employee/revenue/unit gates, and keeps Full Suite workforce lines vs Operations-coming-soon visible.",
+        "CTAs stay at book-a-demo; proposed campaign blocks are labeled drafts and generally restate published capabilities instead of diagnosing unresearched pain."
+      ],
+      "decision_usefulness": "Usable for picking an STR vs independent-hotel vs hotel-group motion, pairing one attributed story, and asking a demo question on channels/PMS/voice—after fixing Lauderdale staffed-support, Easy BnB vs Bali, serviced-apartment routing, and the over-tight property/team fit gate. A seller still cannot treat hotel-group or serviced-apartment outcomes as proven, cannot quote a typical automation rate, and must open Pricing/Integrations before promising package SKUs or write-back. Longer copy is already sufficient; the gaps are entity, caveat, and gate errors, not missing encyclopedic detail.",
+      "reviewed_at": "2026-09-20T01:25:03.307187+00:00",
+      "document_keys": [
+        "message-map",
+        "writing-examples",
+        "ideal-customers"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "icp-rentals",
+          "severity": "material",
+          "excerpt": "Portfolio growth without extra guest-support hires | HomeHop: roughly 40→108 ... Canbnb: 7→170 properties",
+          "problem": "Canbnb’s 7→170 growth is the pre-Conduit volume crisis (630-message backlog, virtual vs on-site scramble), not a measured outcome of growing without extra guest-support hires. Pairing it with HomeHop’s 40→108 no-hire claim will produce inaccurate outbound copy.",
+          "source_ids": [
+            "src_5cb5674a725889a9",
+            "src_d097938bd9b8b088",
+            "src_5eb74e069d5f7cb9"
+          ],
+          "suggested_correction": "Keep 7→170 as challenge context only. Cite Canbnb outcomes as ~1,500 messages/week with 60% handled by AI after March 2024; reserve “growth without extra guest-support hires” for HomeHop’s attributed 40→108 / 70% messaging automation story."
+        },
+        {
+          "document_key": "icp-hotels",
+          "severity": "material",
+          "excerpt": "do not assume every OTA thread is live (other catalog pages still mark some OTAs coming soon)",
+          "problem": "No supplied source marks OTAs as coming soon. Inbox and industry pages describe connected OTA threads; asserting a coming-soon catalog will cause reps to under-sell or over-qualify channel scope. Unknown coverage is not a categorical negative.",
+          "source_ids": [
+            "src_a649d4d3ab5f59f5",
+            "src_e6200582a2004292",
+            "src_5eb74e069d5f7cb9",
+            "src_d30d1770ff08e6a4"
+          ],
+          "suggested_correction": "Replace with: treat named OTAs as marketed connection targets; confirm for each account whether the thread is live messaging vs reservation/context only. Do not tell hotels that catalog pages mark OTAs coming soon."
+        },
+        {
+          "document_key": "icp-hotels",
+          "severity": "material",
+          "excerpt": "A group whose RFP is enterprise CRM, labor/payroll, or portfolio housekeeping as the must-have. Group use-case pages describe those themes, while the product nav labels Operations coming soon.",
+          "problem": "Enterprise CRM is a Hotel Groups guest-experience use case (conversation-derived profiles), not the Operations SKU. Lumping it with labor/payroll/housekeeping teaches reps to treat CRM RFPs as not-GA Operations.",
+          "source_ids": [
+            "src_d30d1770ff08e6a4",
+            "src_e805a9592ee44f73",
+            "src_156a9e102c46da8e"
+          ],
+          "suggested_correction": "Split gates: (1) physical kiosk = mismatch; (2) housekeeping/labor/workforce-as-GA = confirm against Operations coming soon vs Full Suite copy; (3) enterprise CRM / loyalty / shared inbox = guest-communication motion to investigate, not an Operations-availability reject."
+        },
+        {
+          "document_key": "icp-hotels",
+          "severity": "material",
+          "excerpt": "Portals is a paid add-on by listing count and is not evidenced in the hotel story",
+          "problem": "Unresolved notes only the Portals add-on FAQ, while qualification step 4 sells Guest packaging that already includes portals, waivers, and upsells. Reps cannot choose Messaging vs Guest vs add-on from this conflict.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_f0d546128c30936b",
+            "src_8b30f0226db273ad",
+            "src_6eff9afc29aa8e32"
+          ],
+          "suggested_correction": "State both facts: Guest starts at $30/unit/mo and includes portals/waivers/upsells; Portals is also described as a listing-count add-on. Map the commercial path in pricing discovery; do not default hotels to add-on-only. Still do not cite a hotel Portals result."
+        },
+        {
+          "document_key": "buyer-roles",
+          "severity": "material",
+          "excerpt": "CEOs or partners owning a homegrown PMS, prior AI vendor, or SuiteOP wiring (The Flex, HomeHop, Bali)",
+          "problem": "Conflates three stacks: The Flex’s homegrown PMS, HomeHop’s SuiteOP wiring, Bali/Easy BnB’s abandoned in-house AI. A rep could brief the wrong technical evaluator or name SuiteOP at Flex/Bali.",
+          "source_ids": [
+            "src_765674900bd1f4dd",
+            "src_d097938bd9b8b088",
+            "src_e84c3306650f8a0e"
+          ],
+          "suggested_correction": "Split observed build paths: The Flex = CEO left comms AI out of a homegrown PMS; HomeHop = co-founders plus SuiteOP for verification/door codes; Bali/Easy BnB = founder stopped an in-house messaging AI. Do not imply SuiteOP at Flex or Bali."
+        },
+        {
+          "document_key": "icp-hotels",
+          "severity": "minor",
+          "excerpt": "A single independent hotel whose night team still takes late-arrival calls and WhatsApp, with Opera or Mews already in use",
+          "problem": "Labeled good-fit scenario mixes necessary communication fit with PMS readiness. Opera/Mews are named logos, not a fit gate or write-back proof.",
+          "source_ids": [
+            "src_f09009069a2d197f",
+            "src_e805a9592ee44f73",
+            "src_a649d4d3ab5f59f5"
+          ],
+          "suggested_correction": "Keep good-fit as desk/after-hours guest comms plus a GM who will maintain policies. Move Opera/Mews to readiness: preferred hotel-class examples; confirm actions separately."
+        },
+        {
+          "document_key": "icp-hotels",
+          "severity": "minor",
+          "excerpt": "Extras during the stay | Room upgrades, spa, dining | Loyalty/perks, upgrades, spa and dining | Workflows, Guest Portals",
+          "problem": "The extras row points reps at Guest Portals even though the hotel story has no Portals evidence and unresolved text says not to infer it.",
+          "source_ids": [
+            "src_f09009069a2d197f",
+            "src_d30d1770ff08e6a4",
+            "src_9078cb1971869041",
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "Map extras first to Agents/Workflows offer copy. Note Portals only as an unproven hotel package option to discover, not a default surface."
+        },
+        {
+          "document_key": "buyer-roles",
+          "severity": "minor",
+          "excerpt": "Stop linear hiring ... Haven ~25 people → two per shift",
+          "problem": "Haven’s cited result is an 80% reduction in support staffing needs (≈25 people to two per shift) with a no-layoff pledge, not merely stopping linear hiring. Compressing it under that job invites copy that contradicts the change narrative later in the same doc.",
+          "source_ids": [
+            "src_c1dd8d452a784c57"
+          ],
+          "suggested_correction": "Cite Haven as: support staffing need fell from ~25 to two per shift; CEO pledged no AI layoffs and moved people into workflow/AI training. Do not use it as a generic no-hire slogan."
+        },
+        {
+          "document_key": "icp-rentals",
+          "severity": "minor",
+          "excerpt": "Account is a short-term rental, vacation-rental, or serviced-apartment operator ... not solely a hotel-brand motion",
+          "problem": "FAQ lists serviced-apartment operators as a third audience. Folding them into the STR necessary-fit criterion with zero named serviced-apartment proof will cause reps to reuse PMC automation stories on staffed aparthotels.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_e6200582a2004292"
+          ],
+          "suggested_correction": "Route serviced apartments as mixed hospitality: confirm desk vs unstaffed listing ops before applying hotel or STR proof; do not treat STR case metrics as aparthotel evidence."
+        }
+      ],
+      "strengths": [
+        "Hotel vs STR vs hotel-group narratives are separated; missing group outcomes are investigate-not-reject, not a fake disqualifier.",
+        "Named figures (Lauderdale $4k→$600 / cap-rate math, Bocobay 80% header, STR 60/70/80%) are treated as company-attributed stories, not SLAs or segment averages.",
+        "Logo strips are not treated as reservation write-back; agent resolution is explicitly request/knowledge/integration/rule dependent.",
+        "Operations-as-GA vs use-case copy vs Full Suite is mostly handled as readiness, and the physical kiosk line is a real product mismatch.",
+        "No invented room-count, revenue, headcount, or procurement numbers; buyer-roles keeps observed titles distinct from labeled search hypotheses and refuses age/income/CISO invention.",
+        "Lauderdale’s $600 and 2-minute figures are flagged as mixed AI + 24/7 staffed support, so the human share is not isolated."
+      ],
+      "decision_usefulness": "A salesperson can choose hotel vs STR motion, avoid citing a hotel-group case, and ask useful next questions on desk vs portfolio, channels, PMS source of truth, and whether the job is guest comms vs not-GA Operations. They cannot yet reliably pick Messaging vs Guest vs Portals add-on, brief the right technical stack story, or treat enterprise CRM RFPs. Copy drafted from the Canbnb 7→170 row or the SuiteOP blender would be wrong. Use with the pricing/integrations/customer-evidence dependents; this pack is a strong qualifier, not a complete product-selector.",
+      "reviewed_at": "2026-09-20T01:26:31.679524+00:00",
+      "document_keys": [
+        "icp-hotels",
+        "icp-rentals",
+        "buyer-roles"
+      ],
+      "human_approval": false
+    },
+    {
+      "issues": [
+        {
+          "document_key": "buying-triggers",
+          "severity": "material",
+          "excerpt": "Proceed | In-category stays + connectable path + named knowledge/escalation owner + at least one confirmed timing situation",
+          "problem": "Urgency is correctly labeled a hypothesis elsewhere, then made a proceed requirement. Sources do not say a live volume/overnight/acquisition/cost situation is required to be in-category or implementation-ready; this invents an ICP gate a seller will use to hold otherwise qualified accounts.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_c1dd8d452a784c57",
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "Keep proceed = in-category stays + connectable message/reservation path + named knowledge/escalation owner. Treat timing as optional discovery context that chooses analog and urgency language, not a fourth necessary gate."
+        },
+        {
+          "document_key": "customer-jobs",
+          "severity": "material",
+          "excerpt": "Bali ~$22k/month and 11 VAs replaced",
+          "problem": "Wrong customer entity. The ~$22k/month and eleven-VA replacement are Easy BnB’s attributed P&L story on the Bali Luxury Stays URL; Bali Luxury is the later AI-first venture, not the measured cost-takeout account.",
+          "source_ids": [
+            "src_e84c3306650f8a0e"
+          ],
+          "suggested_correction": "Write “Easy BnB (told on the Bali Luxury Stays page): ~$22k/month labor savings and 11 VAs replaced. Do not attribute those figures to Bali Luxury Stays.”"
+        },
+        {
+          "document_key": "customer-jobs",
+          "severity": "material",
+          "excerpt": "Scenario 2 — Boutique hotel as a hands-off asset.",
+          "problem": "Cascadia is nested under the boutique-hotel scenario. Cascadia Getaways is a vacation-rental PM acquisition story, so a seller can attach STR proof to a hotel motion.",
+          "source_ids": [
+            "src_b2ab716efd97c239",
+            "src_37286663c1a57667"
+          ],
+          "suggested_correction": "Keep Scenario 2 to Lauderdale only. Move Cascadia under STR growth/acquisition, labeled as PM-company integration proof, not hotel-group or boutique-hotel P&L."
+        },
+        {
+          "document_key": "customer-jobs",
+          "severity": "minor",
+          "excerpt": "leadership saying they could add that company’s properties without extra guest-service hires",
+          "problem": "Ryan’s line is confidence during integration week (“feels pretty good”), not a measured post-absorption headcount result. A named expectation quote is being packaged with 60% / 4.9 as if it were achieved staffing math.",
+          "source_ids": [
+            "src_b2ab716efd97c239"
+          ],
+          "suggested_correction": "Cite 60% automation and 4.9 communication score across 100 properties as attributed results. Quote the hire-avoidance line only as leadership expectation, not as a completed staffing outcome."
+        },
+        {
+          "document_key": "buying-triggers",
+          "severity": "minor",
+          "excerpt": "devices, or Full Suite operations lines?",
+          "problem": "Does not disambiguate Messaging’s live “Operator, workflows, escalation” line, the priced Full Suite package (tasks/workforce/operations workflows), and nav “Operations · Coming soon.” A seller cannot tell whether to quote Full Suite, recast to Inbox/Agents/Workflows, or hold.",
+          "source_ids": [
+            "src_156a9e102c46da8e",
+            "src_f0d546128c30936b"
+          ],
+          "suggested_correction": "Add an explicit map: Messaging/Guest/Devices are sellable packages; Operator ≠ Operations; Full Suite may be quoted only for guest/devices/tasks already in that card; housekeeping/maintenance/inspections stay “coming soon” and are research/hold, not a live operations sale."
+        },
+        {
+          "document_key": "customer-jobs",
+          "severity": "minor",
+          "excerpt": "Agents on voice, chat, email, WhatsApp, OTA with reservation context",
+          "problem": "States OTA-plus-reservation action as the job’s capability without the live-connector caveats the qualification playbook already uses (Booking.com/VRBO coming soon; Opera context-only, no messaging through that integration). Copy drafted from this table will over-promise setup as action support.",
+          "source_ids": [
+            "src_a2a67d2faa01de13",
+            "src_dae2c4b0bd94e5a6",
+            "src_e6200582a2004292"
+          ],
+          "suggested_correction": "Say “connected OTA/PMS threads where the connector is live; confirm Booking.com/VRBO status; Opera supplies reservation/profile context, not messaging routing.”"
+        }
+      ],
+      "strengths": [
+        "Fit vs readiness vs timing is explicit, and unit counts / automation % / NOI / cap-rate are refused as qualification bars.",
+        "Logo ≠ write path is enforced (Opera messaging, Airbnb verify, Booking.com/VRBO coming soon).",
+        "Customer figures are mostly named and attributed; Flex 70% vs 90% and Bocobay header stats are correctly blocked as campaign leads.",
+        "Haven install-at-40% is used to separate curiosity install from knowledge/escalation readiness.",
+        "Hotel-group and serviced-apartment proof gaps are logged as research, not turned into exclusions or invented metrics."
+      ],
+      "decision_usefulness": "A seller can usually decide in-category vs hold, pick hotel vs STR analog, and ask channel/PMS/knowledge questions without treating story KPIs as SLAs. Product selection still breaks on Full Suite vs Operations-coming-soon, and proof selection still breaks if Cascadia or Bali/Easy BnB is used as the analog. Fix those before this pack is safe for outbound copy.",
+      "reviewed_at": "2026-09-20T01:26:43.847344+00:00",
+      "document_keys": [
+        "buying-triggers",
+        "customer-jobs"
+      ],
+      "human_approval": false
+    }
+  ],
+  "issues": [
+    {
+      "document_key": "company-overview",
+      "severity": "material",
+      "excerpt": "Qualify on whether the account is actually in the three published industries",
+      "problem": "Turns the three nav buckets into an ICP gate. FAQ already names serviced-apartment operators, and homepage/footer identity also names resorts, aparthotels, and villas. A seller could wrongly DQ those accounts. Housing/leasing remains a discovery topic, not a reason to shrink the published hospitality set.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_98f3111f126b26d0",
+        "src_c8e3a0604ce1e6d6"
+      ],
+      "suggested_correction": "Qualify on published hospitality fit: STR/vacation rentals, independent hotels, hotel groups, plus FAQ serviced apartments and footer resorts/villas/aparthotels. Use a discovery question for YC/PhocusWire housing-leasing language; do not hard-gate to the three nav labels."
+    },
+    {
+      "document_key": "company-overview",
+      "severity": "minor",
+      "excerpt": "CEO: 70% CS automation “very realistic”",
+      "problem": "Placed in an attributed-results table, but the quote is an expectation. The same story also shows a 90% guest-communication stat and a 70%+ key-results line. Sellers can recite 70% as a measured Flex outcome.",
+      "source_ids": [
+        "src_765674900bd1f4dd"
+      ],
+      "suggested_correction": "Cite as CEO assessment only (“70% automation of customer service is very realistic”), not a verified result. If the page is used, separately flag Conduit’s 90% header vs 70%+ key-results copy as unresolved story math."
+    },
+    {
+      "document_key": "company-overview",
+      "severity": "minor",
+      "excerpt": "onboarding copy still says “HostAI”",
+      "problem": "The Canbnb page uses HostAI in Jo’s 2024 setup quote, not as evidence that current onboarding UI still says HostAI.",
+      "source_ids": [
+        "src_5cb5674a725889a9"
+      ],
+      "suggested_correction": "Say the Canbnb story (customer since March 2024) still refers to setup as HostAI in a customer quote. Do not claim live onboarding copy uses that name."
+    },
+    {
+      "document_key": "company-overview",
+      "severity": "minor",
+      "excerpt": "Support $4,000→$600/mo; response 57 min→2 min; story claims ≥$3,400/mo NOI and >$500k asset value at an 8% cap",
+      "problem": "Lauderdale also calls this “AI-powered staffed support” / replacing a call center with a platform and “24/7 staffed support team.” Treating the NOI/cap-rate math as pure unattended software savings overclaims the story.",
+      "source_ids": [
+        "src_37286663c1a57667",
+        "src_98f3111f126b26d0"
+      ],
+      "suggested_correction": "Keep the figures as customer-page claims and note “staffed support” is unresolved (AI-staffed vs human coverage). Do not use Lauderdale as proof of unattended software-only savings."
+    },
+    {
+      "document_key": "commercial-model",
+      "severity": "material",
+      "excerpt": "What a credit consumes, whether unused credits roll, and overage rates are not on the pricing page.",
+      "problem": "Accurate for /pricing, but docs already publish per-action credit costs and changelog notes in-app cost-per-credit. Calling burn unpublished will stop sellers from using the public credit schedule. Unknown rollover/overage still cannot be invented.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_b4b8a8b99c077661",
+        "src_ee72b875099c7ac7"
+      ],
+      "suggested_correction": "Split the card: included allotments are on /pricing; docs price finished workflow actions (e.g. email 1/4 credits, SMS 2/5, WhatsApp 2/5, workflow Voice Agent Call 6/min, non-workflow voice 1/min; many steps free). Leave rollover, overage dollars, and telephony pass-through as unpublished."
+    },
+    {
+      "document_key": "commercial-model",
+      "severity": "material",
+      "excerpt": "sold mainly through demos and self-serve starts",
+      "problem": "Get Started is only a CTA. The corpus shows no checkout or unattended signup, and company-overview correctly says there is no self-serve checkout. “Self-serve starts” invents a buy motion.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_98f3111f126b26d0"
+      ],
+      "suggested_correction": "Describe public CTAs only: Book demo / Get Started on Messaging–Guest+Devices and Startup; Talk to Sales on Full Suite. Do not call Get Started self-serve until signup/checkout is evidenced."
+    },
+    {
+      "document_key": "products-capabilities",
+      "severity": "material",
+      "excerpt": "Coming soon / incomplete: Operations in the product nav; Booking.com and VRBO on the integrations directory.",
+      "problem": "Directory listing is not the same as channel setup. STR pages list Vrbo/Booking.com as inbox channels, LinkedIn says Expedia works “same as Airbnb, Vrbo, and Booking.com,” and changelog 3.9 says Vrbo inquiries are on. A categorical “coming soon” will make sellers deny live OTA paths.",
+      "source_ids": [
+        "src_a2a67d2faa01de13",
+        "src_5eb74e069d5f7cb9",
+        "src_7c4526fa84e6106c",
+        "src_ee72b875099c7ac7"
+      ],
+      "suggested_correction": "Preserve the conflict: integrations directory marks Booking.com and VRBO coming soon; marketing/LinkedIn/changelog claim those OTA threads can already land in Inbox, often via PMS or auxiliary connections. Confirm per account whether messaging is direct, via PMS, or not enabled—never promise or deny from one listing."
+    },
+    {
+      "document_key": "products-capabilities",
+      "severity": "material",
+      "excerpt": "For 0–25 units, the site offers a Startup full-feature monthly price rather than the per-unit ladder; above that, talk-to-sales language applies to Full Suite and scale beyond 50 listings.",
+      "problem": "Merges three rules. Above 25 units, Messaging/Guest/Guest+Devices still show Get Started at per-unit rates. Talk to Sales is Full Suite. “Scales beyond 50 listings” is not a universal sales-assist gate.",
+      "source_ids": [
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Startup is an alternate $899/mo path for 0–25 units. Per-unit Messaging/Guest/Guest+Devices stay Get Started. Full Suite is Talk to Sales. Past 50 listings, say only that published pricing scales—no curve, no assumption that every 26+ unit deal is sales-only."
+    },
+    {
+      "document_key": "products-capabilities",
+      "severity": "minor",
+      "excerpt": "Docs say Conduit integrates with over 15 PMS systems, classify some as messaging PMS connections and others as reservation-data-only",
+      "problem": "Omits the setup gate: PMS may not appear unless the workspace industry type is set. Docs conflict (STR or Long Term Rental vs STR or Hotel for Lodgify). That is a readiness check, not a marketing-nav ICP.",
+      "source_ids": [
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "Add that Connect PMS is workspace-type gated and the docs disagree on allowed types (STR/LTR vs STR/Hotel). Ask which workspace industry is set before promising PMS sync; do not treat Long Term Rental as off-limits solely because it is absent from the three-industry nav."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "The product page FAQ “How much can Conduit's agents resolve on their own?” has no published answer in the captured page.",
+      "problem": "A cited capture of the same Agents URL already publishes a qualitative answer. Telling sellers the FAQ is unanswered is a false categorical negative and will produce incomplete copy.",
+      "source_ids": [
+        "src_75269914aa6b6dfd",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Quote the published answer: resolution share depends on guest requests, knowledge base, integrations, and escalation rules, and should be tracked via resolved conversations vs handoffs. Still forbid any invented resolution percentage."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "whether voice minutes inside Agents match the workflow Voice Agent Call rate (6 credits/minute) or the non-workflow voice rate (1 credit/minute)",
+      "problem": "Library credit sources already distinguish free inbox AI replies, AI voice at 8 credits/minute, regular voice at 1, and workflow Voice Agent Call at 6. Framing the gap as 6 vs 1 omits the rates a Messaging/Agents quote actually needs.",
+      "source_ids": [
+        "src_f599093e8cf0b47d",
+        "src_b4b8a8b99c077661",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "State the published meters: inbox AI replies consume 0 credits; regular voice is 1/min; AI voice is 8/min; a workflow Voice Agent Call is 6/min. Treat overage price as unpublished. Do not imply ordinary agent replies use a per-reply Agents SKU."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "page hero also says 90% of guest communication automated",
+      "problem": "The Flex 90% is a hero stat that conflicts with the 70%+ result and the CEO’s “very realistic” line; 80–90% also appears as a looking-ahead goal. Preserving both without that bound lets outbound treat 90% as a measured Agents outcome.",
+      "source_ids": [
+        "src_765674900bd1f4dd"
+      ],
+      "suggested_correction": "Use The Flex only as 70%+ / “70% automation of customer service is very realistic,” and label the hero 90% as inconsistent with the body and with the 80–90% future-product language. Do not put 90% in Agents proof."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "Higher bundles (Guest $30, Guest + Devices $36, Full Suite $48 per unit per month) add portals/devices/ops",
+      "problem": "The same library correctly marks Operations (housekeeping, maintenance, inspections) as coming soon. The pricing table still lists Full Suite ops items, so “add … ops” can be sold as GA.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Keep Full Suite’s published line items, but bound them: the standalone Operations product is still “Coming soon.” Do not promise AI-coordinated housekeeping/maintenance/inspections from the $48 card."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "minor",
+      "excerpt": "Deployed March; story dated around December 2024 usage",
+      "problem": "Cascadia’s header is “USING CONDUIT SINCE: December 2024” while the body says they deployed in March. The draft invents a usage/story date instead of flagging the tenure conflict.",
+      "source_ids": [
+        "src_b2ab716efd97c239"
+      ],
+      "suggested_correction": "Mirror the HomeHop handling: leave Cascadia start date unresolved (header December 2024 vs body March deploy). Do not infer “December 2024 usage.”"
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "minor",
+      "excerpt": "customer, internal, and voice agents",
+      "problem": "Docs name external, internal, and voice agents. “Customer agents” is not the product term and can drift into ICP/copy.",
+      "source_ids": [
+        "src_8f9aa404cff029a5",
+        "src_2a445232675660d9"
+      ],
+      "suggested_correction": "Use “external, internal, and voice agents.” If translating for buyers, say external/guest-facing, not a “customer agent” SKU."
+    },
+    {
+      "document_key": "product-portals",
+      "severity": "material",
+      "excerpt": "Regular voice is **1 credit per minute**; AI voice is **8 credits per minute**.",
+      "problem": "This doc’s own sources also publish workflow Voice Agent Call at 6 credits/minute. Quoting only 1 and 8 will mis-estimate overage when voice is a workflow action versus Voice AI minutes.",
+      "source_ids": [
+        "src_f599093e8cf0b47d",
+        "src_b4b8a8b99c077661"
+      ],
+      "suggested_correction": "Publish all three: regular voice 1/min, AI voice minutes 8/min, workflow Voice Agent Call 6/min. Ask which path the account will use before mapping Startup/Guest credits."
+    },
+    {
+      "document_key": "product-portals",
+      "severity": "minor",
+      "excerpt": "Published customer stories in this source set (Haven, Cascadia, Lauderdale, Cosmica, Bali Luxury Stays, and others)",
+      "problem": "Attached sources for this article include Haven and a Cosmica pricing quote, not Cascadia, Lauderdale, or Bali case studies. “This source set” overclaims coverage.",
+      "source_ids": [
+        "src_c1dd8d452a784c57",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Limit the Portals-proof negative to stories actually cited here (Haven; Cosmica as a non-portal quote). Keep the rule: no attached story isolates portal conversion, waiver, or in-portal GMV."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "Higher bundles (Guest from $30, Guest + Devices from $36, Full Suite from $48 per unit per month) nest Messaging and add portals/devices/operations features—including “Device management workflows” and “Agentic operations workflows” on those SKUs",
+      "problem": "Packaging is conflated across three SKUs. Guest ($30) is Messaging plus portals/waivers/upsells only. “Device management workflows” is listed on Guest + Devices; “Agentic operations workflows” is listed on Full Suite. A seller could promise device or operations workflow lines on Guest.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b"
+      ],
+      "suggested_correction": "Say Guest ($30, 60 credits) = Messaging + portals/waivers/upsells. Guest + Devices ($36, 80 credits) adds devices and “Device management workflows.” Full Suite ($48, 100 credits) adds tasks/workforce, “Agentic operations workflows,” scheduling/dispatch, and inventory. Do not attach the two workflow line-items to every higher bundle."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "Conduit Workflows is the product for automating the guest journey after a booking exists—not the live reply engine itself.",
+      "problem": "Over-narrows scope. The hospitality page is stay-journey-led, but docs start workflows from events such as a new contact, a conversation tag, or an AI tool call, and include routing/triage that are not booking-gated. Sellers may disqualify pre-stay, inbox, or tag-driven automations.",
+      "source_ids": [
+        "src_9078cb1971869041",
+        "src_0f66e375eb2b7089",
+        "src_44ca2b5b2ec94cdf",
+        "src_2a445232675660d9"
+      ],
+      "suggested_correction": "Keep Agents as the live reply engine, but describe Workflows as visual automations (proactive, routing, triage) that hospitality marketing illustrates with booking confirmations, stay-date messages, follow-ups, and upgrades—not as a post-booking-only product."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "material",
+      "excerpt": "| SMS or WhatsApp (non-AI / AI-generated) | 2 / 5 |",
+      "problem": "Credit table used for discovery omits the documented “Other channels” row (0 non-AI / 3 AI-generated) and that inbound messages use 0 credits. Product copy says sequences send on connected OTA channels, so Airbnb/other OTA burn will be mis-modeled if sellers only use Email/SMS/WhatsApp rates.",
+      "source_ids": [
+        "src_b4b8a8b99c077661",
+        "src_9078cb1971869041"
+      ],
+      "suggested_correction": "Add Other channels 0 / 3, note inbound is free, and tell sellers to map each connected send path (email, WhatsApp/SMS, OTA/other) before estimating 40 credits/unit."
+    },
+    {
+      "document_key": "product-developers",
+      "severity": "material",
+      "excerpt": "Only (2)–(4) require a developer and v3 API/MCP enablement.",
+      "problem": "Conflates V3 in-product Tools with the commercial “v3 plan” API/MCP gate. Custom Python/JavaScript tools are documented on the V3 Tools surface in the app; only REST/MCP access is explicitly “v3 plan” via support. This can over-qualify a hospitality team as needing engineering and API enablement just to grant an agent a custom tool.",
+      "source_ids": [
+        "src_8f9aa404cff029a5",
+        "src_2d5d23c8d8b6f535",
+        "src_f01f1010ac8ddab8"
+      ],
+      "suggested_correction": "Split paths: in-app custom tools/visual workflows vs REST/MCP, which require contacting support to enable the v3 plan. Do not treat “agent should call a custom tool” as automatically a developer-plus-API deal."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Buyers are typically founders, revenue/guest-services leads, or ops owners",
+      "problem": "Ungrounded ICP gate. Public pages name hospitality firm types and a few customer titles; they do not support a typical-buyer pattern or a credit-volume buying criterion.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_c1dd8d452a784c57"
+      ],
+      "suggested_correction": "Cite the published audience (hotel teams, serviced-apartment operators, STR managers) and treat founder/GS/ops titles as examples from named stories, not a qualification rule."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Dan Mitchen called using AI in workflows with SuiteOP “an absolute game changer.”",
+      "problem": "Source quote is forward-looking (“is going to be an absolute game changer”), i.e. expectation, not a measured SuiteOP/workflow outcome.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Keep the future tense and the already-correct caveat that this is HomeHop’s stack, not a Conduit integration or KPI."
+    },
+    {
+      "document_key": "product-workflows",
+      "severity": "minor",
+      "excerpt": "Workspace with hospitality type so PMS connections appear",
+      "problem": "PMS visibility is documented as Short Term Rental or Long Term Rental (Lodgify notes STR or Hotel), not a generic “hospitality type.”",
+      "source_ids": [
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "If PMS is missing: workspace industry must be Short Term Rental, Long Term Rental, or Hotel per the connect-PMS steps."
+    },
+    {
+      "document_key": "product-operator",
+      "severity": "minor",
+      "excerpt": "Credit consumption for Operator sessions ... remain unspecified in these captures.",
+      "problem": "Conflicts with the same draft’s credit-guide section, which already establishes Operator Sidebar as a metered category (model/tokens; roughly 7,000–71,000 billable tokens per credit). Leaving it “unspecified” sends sellers back to a resolved question.",
+      "source_ids": [
+        "src_f599093e8cf0b47d"
+      ],
+      "suggested_correction": "Close the credit question: Operator turns are billed from the Operator Sidebar pool by model/tokens, with no flat per-turn price; keep default tools and guest-write permissions as open."
+    },
+    {
+      "document_key": "pricing",
+      "severity": "material",
+      "excerpt": "Unified inbox, Voice AI inbound and outbound, PMS and OTA integrations, Operator, workflows, escalation, analytics",
+      "problem": "Messaging package copy names Operator while Full Suite and site nav talk about operations/Operations. The draft never states that Operator is the in-app workspace assistant, not the Operations product marked Coming soon. A seller can withhold Messaging because Operations is coming soon, or promise housekeeping/dispatch because Operator is included.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b",
+        "src_8f9aa404cff029a5"
+      ],
+      "suggested_correction": "Add an explicit split: Operator on the Messaging list is the workspace assistant (inspect/edit/reason about agent configuration). Operations in nav is “Coming soon” (housekeeping, maintenance, inspections). Full Suite tasks/workforce/scheduling bullets are package marketing, not confirmed GA modules—route those buyers to sales."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "material",
+      "excerpt": "“AI-powered support platform and 24/7 staffed support team” replacing a call center",
+      "problem": "Lauderdale’s $4,000→$600 and ≥$3,400 NOI figures are presented as named results without warning that the write-up credits a staffed support team as well as software. Public packages do not list a staffed-support SKU. Copy can treat $600/mo as Messaging/Agents pricing or as an automation-only saving.",
+      "source_ids": [
+        "src_37286663c1a57667",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Keep the quote, then caveat in the same cell: P&L compares a call center to Conduit’s platform plus the page’s 24/7 staffed support team. Do not use $600/mo as a software list price or claim the NOI/cap-rate math is Agents/Inbox-only."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "material",
+      "excerpt": "index headline 150% growth",
+      "problem": "Canbnb’s 150% is only an unexplained header, not a defined metric or Conduit-attributed result in the body (unlike 1,500 messages/week and 60% AI-handled). Placing it in Reported result invites copy that Conduit produced 150% growth.",
+      "source_ids": [
+        "src_5cb5674a725889a9"
+      ],
+      "suggested_correction": "Drop 150% from usable results. Cite only ~1,500 messages/week with 60% handled by AI, and note HostAI remains on the page as an unresolved product name."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "material",
+      "excerpt": "Track card also mentions routing Airbnb/Booking.com messages",
+      "problem": "Track is documented as non-messaging PMS data sync, while the Booking.com catalog card is “Coming soon.” Leaving the Track blurb in Other claim without that collision lets a seller treat Track accounts as having live Booking.com messaging.",
+      "source_ids": [
+        "src_a2a67d2faa01de13",
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "Qualify Track as property/reservation sync only. Treat Airbnb/Booking.com routing on the Track card as unconfirmed listing copy; do not pursue Booking.com messaging as live while that connector is “Coming soon.” Ask how OTA threads actually arrive today."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "minor",
+      "excerpt": "Confirm v3 entitlement before API/MCP; confirm Devices or Portals add-ons before those tool groups.",
+      "problem": "V3 in the same checklist is both the agent UI generation (Configure V3 agents) and the API/MCP “v3 plan.” Public packages never map to that plan, so sellers may assume any current workspace or Full Suite includes API/MCP.",
+      "source_ids": [
+        "src_2d5d23c8d8b6f535",
+        "src_f01f1010ac8ddab8",
+        "src_8f9aa404cff029a5"
+      ],
+      "suggested_correction": "Split the terms: V3 agents/Knowledge/Skills are the current product UI. REST/MCP require the docs’ v3 plan plus support enablement. Do not equate v3 plan with Messaging–Full Suite or Startup until sales confirms."
+    },
+    {
+      "document_key": "integrations",
+      "severity": "minor",
+      "excerpt": "Opera public page: read context only through that connector",
+      "problem": "Opera copy says the connector does not route messaging and that Conduit reads property/reservation/profile data. It does not say all writes are impossible. “Read context only” over-closes listing vs action support.",
+      "source_ids": [
+        "src_dae2c4b0bd94e5a6",
+        "src_b27f818d3e0ae613"
+      ],
+      "suggested_correction": "Say: public Opera page documents property, room type, reservation, and profile sync and no messaging through this connector. Do not infer reservation edits, payments, or other writes; confirm writes separately."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "minor",
+      "excerpt": "### Hotel and hotel-like proof",
+      "problem": "Wynwood is a multi-country hospitality/real-estate platform using Guesty, not a hotel or hotel group. Filing it under hotel-like proof steers hotel-group conversations to the wrong entity.",
+      "source_ids": [
+        "src_e067203ca4528d4b",
+        "src_7554566ca6745e69"
+      ],
+      "suggested_correction": "Move Wynwood to multi-market CX / STR-style operators. Keep Lauderdale as the only named hotel P&L story; continue to treat hotel-group proof as absent from this pack."
+    },
+    {
+      "document_key": "customer-evidence",
+      "severity": "minor",
+      "excerpt": "Email, SMS, OTA, voice AI 1–7 AM, SuiteOP workflows",
+      "problem": "SuiteOP is HomeHop’s operations tool, not a Conduit product. Listing it under Named use implies a Conduit workflow/PMS capability a seller could promise.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Named use: unified email/SMS/OTA plus voice AI 1–7 AM. Mention SuiteOP only as the customer’s adjacent system they wired, not as a Conduit SKU or supported-action proof."
+    },
+    {
+      "document_key": "alternatives",
+      "severity": "material",
+      "excerpt": "Haven runs 95 percent automation across 270 properties",
+      "problem": "Repeats the Canary comparison page’s 95% figure without noting Haven’s own customer story states 90% automation across 270 properties. A seller will treat 95% as the named proof point.",
+      "source_ids": [
+        "src_654dffae90142089",
+        "src_c1dd8d452a784c57"
+      ],
+      "suggested_correction": "Quote Haven only from the customer page (90% automation, ~270 properties, Conduit-attributed) and flag the Canary page’s 95% as a conflicting company claim, not usable proof."
+    },
+    {
+      "document_key": "alternatives",
+      "severity": "material",
+      "excerpt": "adds 120+ countries, HIPAA, GDPR, ISO 27001",
+      "problem": "Collapses unlike claims. Homepage says SOC 2 Type II and “supports HIPAA workflows,” not HIPAA/GDPR/ISO certification. Those stronger labels appear only on Conduit’s Canary page.",
+      "source_ids": [
+        "src_98f3111f126b26d0",
+        "src_654dffae90142089"
+      ],
+      "suggested_correction": "Split attestations: homepage SOC 2 Type II and HIPAA-workflow language; treat GDPR/ISO 27001 and “HIPAA certified” as Canary-page-only claims that need current security confirmation before use."
+    },
+    {
+      "document_key": "alternatives",
+      "severity": "minor",
+      "excerpt": "branded guest app",
+      "problem": "Jurny’s public copy describes a branded guest web app with no download, not a native app. Overlay-vs-replacement advice stays valid; the artifact name does not.",
+      "source_ids": [
+        "src_8263cdab2378c09a"
+      ],
+      "suggested_correction": "Say Jurny offers a branded guest web app / portal (no download required), plus channel manager, reservations, and housekeeping in an all-in-one PMS."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "material",
+      "excerpt": "Lauderdale reports support cost falling from $4,000 to $600 per month",
+      "problem": "The story’s narrative has costs already down to $1,200/month on prior call services before Conduit; $4,000→$600 is the page’s marketing rollup, not a clean before/after. Also mixes that cost path with the separate $500k cap-rate valuation math.",
+      "source_ids": [
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Write: Lauderdale’s page says prior support spend started at $4,000, was later $1,200, then $600/month on Conduit, with 57-minute to 2-minute response; keep the $500k asset-value figure as owner-attributed cap-rate math, not a Conduit result."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "material",
+      "excerpt": "HomeHop reports growing from 40 to 108 listings without extra guest-support hires",
+      "problem": "The same story dates Conduit to June 2025 and also says “customer for approximately two years,” while 40→108 is described as two-year portfolio growth. That cannot be sold as a measured Conduit-period achievement.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Use only what is clearly attributed: 70% automation and the operator’s claim they do not expect to hire guest-messaging staff at 100–200 units; do not present 40→108 as a verified Conduit-window result until dates are reconciled."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "material",
+      "excerpt": "Flex’s decision not to rebuild conversational AI are named displacements",
+      "problem": "Bocobay leaving Intercom is sourced. No Flex customer page or quote in this corpus supports a decision not to rebuild conversational AI. A named teaser is not displacement proof.",
+      "source_ids": [
+        "src_98f3111f126b26d0",
+        "src_ec670ccb114e21b7"
+      ],
+      "suggested_correction": "Keep Bocobay/Intercom as the only sourced displacement. Drop Flex (and Cosmica/Canbnb) from the usable-proof list until their stories are in the library with a metric and caveat."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "material",
+      "excerpt": "run internal operations, and surface insights",
+      "problem": "Company/homepage language already sells Internal Agents that “handle routine operations,” and Agents/Mews copy claims live task creation, while product nav still marks Operations (housekeeping/maintenance/inspections) Coming soon. The boundary only warns about the coming-soon SKU, so sellers will conflate Internal Agents, PMS task write-back, and Operations.",
+      "source_ids": [
+        "src_98f3111f126b26d0",
+        "src_0fe82516611ad5df",
+        "src_e805a9592ee44f73",
+        "src_792004fc0d3ff885"
+      ],
+      "suggested_correction": "Separate three things for sales: (1) Internal Agents / inspectable actions in connected tools = marketed now; (2) create tasks / Mews housekeeping task = connector-specific, confirm write list; (3) Operations product = Coming soon, not GA."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "minor",
+      "excerpt": "Stay inside hospitality guest operations (the three published industries, plus FAQ language for serviced-apartment operators)",
+      "problem": "Public site also names resorts, aparthotels, and villas as served segments. Tightening to three nav industries plus serviced apartments understates published fit.",
+      "source_ids": [
+        "src_c8e3a0604ce1e6d6",
+        "src_98f3111f126b26d0",
+        "src_f09009069a2d197f"
+      ],
+      "suggested_correction": "Primary industries: STR, independent hotels, hotel groups. Also in-scope when the buyer matches published pages: serviced-apartment/aparthotel, resort, and villa operators. Still not a PMS, channel manager, or generic helpdesk."
+    },
+    {
+      "document_key": "brand-messaging",
+      "severity": "minor",
+      "excerpt": "Portals are packaged separately on the public site",
+      "problem": "Separate product nav is not evidence of commercial packaging or price. Alternatives already warns a bundle is not a line-item.",
+      "source_ids": [
+        "src_6eff9afc29aa8e32",
+        "src_98f3111f126b26d0"
+      ],
+      "suggested_correction": "Say Portals is a distinct public product surface; packaging/price versus Agents, Inbox, and Workflows is unknown and must be asked."
+    },
+    {
+      "document_key": "brand-voice",
+      "severity": "material",
+      "excerpt": "Bali’s VA-replacement story is a named exit narrative",
+      "problem": "The $22k/month savings and replacement of 11 VAs are Easy BnB’s exit story, published on the Bali Luxury Stays URL. Bali Luxury is the founder’s new AI-first venture. Target-entity error if copy says Bali Luxury Stays fired VAs.",
+      "source_ids": [
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Attribute VA replacement, ~$22k monthly savings, and 75 added units to Easy BnB; treat Bali Luxury Stays as the subsequent build-from-day-zero narrative only."
+    },
+    {
+      "document_key": "brand-voice",
+      "severity": "minor",
+      "excerpt": "Ads retell Wynwood (15 minutes → about 3)",
+      "problem": "The customer page metric is guest resolution time (14–15 minutes to 3), not first-answer time. The draft example then says “faster answers,” which lets sellers recast resolution as response SLA.",
+      "source_ids": [
+        "src_e067203ca4528d4b",
+        "src_dd47af2745ba5b91"
+      ],
+      "suggested_correction": "Say Wynwood House reports guest resolution time from 14–15 minutes to 3 minutes (operator story/ad). Do not call it average response time or a global SLA. Keep the 4.8 Colombia rating as contemporaneous, not caused."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "The Lauderdale Boutique Hotel (using Conduit since Dec 2024): support $4,000→$600/mo; avg reply 57 min→2 min; owner models ≥$3,400/mo NOI and >$500k asset value at 8% cap—not an appraisal or closed sale",
+      "problem": "The proof cell attaches those figures to Agents/Inbox after-hours coverage but omits the story’s explicit mechanism: replacing a call center with Conduit’s AI-powered support platform and a 24/7 staffed support team. A seller could present the cost/NOI math as a pure Agents result.",
+      "source_ids": [
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep the staffed-support clause in the same sentence as the figures, e.g. Lauderdale (since Dec 2024) reports $4,000→$600/mo support cost and 57→2 min replies after replacing a call center with Conduit’s AI support platform and 24/7 staffed support team; owner translates ≥$3,400/mo NOI to >$500k at 8% cap—not an appraisal, closed sale, or Agents-only outcome."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "Bali ~$22k/mo labor, 75 units, 0 extra FTE",
+      "problem": "Target-entity error. The Bali Luxury Stays page brands those results on Bali (founded 2025) while the body attributes replacing 11 VAs, ~$22k/mo, and 75 units with 0 extra FTE to Easy BnB, then says Bali is a new venture copying the playbook. Outbound would mis-name the customer that produced the P&L.",
+      "source_ids": [
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Cite as Easy BnB results on the Bali Luxury Stays page (11 VAs replaced, ~$22k/mo labor, 75 units, 0 extra FTE); do not treat Bali Luxury Stays as the entity that recorded those figures. Keep the founded-2025 vs using-Conduit-since-Dec-2024 contradiction beside any use."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "Audiences Conduit already names: Short-term rentals, Independent Hotels, and Hotel Groups. Do not invent extra segments.",
+      "problem": "Nav industries are not the full published ICP. The pricing FAQ names hotel teams, serviced-apartment operators, and short-term rental managers. Telling sellers not to invent extra segments will drop an in-category operator type the company already names.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Treat nav industries (STR, independent hotels, hotel groups) as the three landing-page motions, and separately allow serviced-apartment operators as FAQ-named in-category accounts. Do not invent beyond those four labels; do not reject serviced apartments for lacking an industry page or case body."
+    },
+    {
+      "document_key": "writing-examples",
+      "severity": "material",
+      "excerpt": "The Lauderdale Boutique Hotel write-up may be cited only as a named, Conduit-attributed story (support costs reported from $4,000 to $600/month; average reply 57 minutes to 2 minutes; owner-modeled ≥$3,400 monthly NOI and more than $500,000 asset value at an 8% cap rate)—not as this hotel’s outcome.",
+      "problem": "The allowed-citation recipe still ships the P&L numbers without the printed 24/7 staffed support team. The later Portals warning mentions that team only to block SKU misattribution, so campaign copy can still imply Agents/Inbox alone produced the result.",
+      "source_ids": [
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "If Lauderdale numbers are used, require this clause in the same sentence: Conduit-attributed after replacing a traditional call center with its AI-powered support platform and 24/7 staffed support team; $3,400/mo NOI is the printed ‘at least’ figure (cost plus fewer refunds); $500k is an 8% cap-rate model, not this prospect’s outcome and not a Portals result."
+    },
+    {
+      "document_key": "writing-examples",
+      "severity": "minor",
+      "excerpt": "HomeHop’s path from about 40 to 108 listings without extra guest-support hires and 70 percent automation is a separate story",
+      "problem": "The 40→108 and 70% figures are given without the printed window the doc’s own rules require. The page says using Conduit since June 2025 and also ‘approximately two years,’ while portfolio growth is described as two years—so tenure and 3x growth can be conflated.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Write HomeHop (page: using Conduit since June 2025; also ‘approximately two years’) grew ~40→108 listings without extra guest-support hires and reports 70% automation; keep the tenure contradiction in the sentence and do not state that Conduit spanned the entire two-year 3x."
+    },
+    {
+      "document_key": "ideal-customers",
+      "severity": "material",
+      "excerpt": "Guest communication that can be organized by property or team across connected channels",
+      "problem": "Marked necessary fit, but that is a product capability, not an account test. A single-property operator (Lauderdale) is a named hotel customer; unknown channel mix is already ‘investigate, not reject.’ As written, sellers may fail fit for boutique/single-asset hotels.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_37286663c1a57667",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Move to readiness/preference: guest conversations exist on channels Conduit unifies. Property-or-team inbox views are how the product is demoed, not a minimum property count. Single-property hotels remain in-category; split inboxes are a discovery prompt, not a necessary gate."
+    },
+    {
+      "document_key": "ideal-customers",
+      "severity": "minor",
+      "excerpt": "Haven, HomeHop, and Canbnb describe scale without proportional guest-support hiring",
+      "problem": "Haven and HomeHop support the no-extra-guest-support-hire claim. Canbnb reports 7→170 properties, ~1,500 messages/week with 60% handled by AI, and reps becoming ‘10x more impactful,’ not that headcount stayed flat. Bundling Canbnb into a hiring-ratio proof overreaches.",
+      "source_ids": [
+        "src_5cb5674a725889a9",
+        "src_c1dd8d452a784c57",
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Keep Haven and HomeHop as named no-proportional-hire stories. Recast Canbnb as volume/process evidence (~1,500 messages sent/week, 60% handled by AI, guest/owner/vendor inboxes)—not as a documented hiring freeze."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "minor",
+      "excerpt": "Canbnb ~1,500 messages/week with 60% handled by AI",
+      "problem": "Source is that Conduit helps Canbnb send roughly 1,500 messages per week, with 60% handled by AI—not an inbound-volume or resolution denominator. Collapsing ‘send’ invites mixing this 60% with Haven/HomeHop automation rates.",
+      "source_ids": [
+        "src_5cb5674a725889a9"
+      ],
+      "suggested_correction": "Quote as Canbnb: Conduit helps send ~1,500 messages/week, 60% handled by AI (printed send volume, not a cross-customer automation rate)."
+    },
+    {
+      "document_key": "icp-rentals",
+      "severity": "material",
+      "excerpt": "Portfolio growth without extra guest-support hires | HomeHop: roughly 40→108 ... Canbnb: 7→170 properties",
+      "problem": "Canbnb’s 7→170 growth is the pre-Conduit volume crisis (630-message backlog, virtual vs on-site scramble), not a measured outcome of growing without extra guest-support hires. Pairing it with HomeHop’s 40→108 no-hire claim will produce inaccurate outbound copy.",
+      "source_ids": [
+        "src_5cb5674a725889a9",
+        "src_d097938bd9b8b088",
+        "src_5eb74e069d5f7cb9"
+      ],
+      "suggested_correction": "Keep 7→170 as challenge context only. Cite Canbnb outcomes as ~1,500 messages/week with 60% handled by AI after March 2024; reserve “growth without extra guest-support hires” for HomeHop’s attributed 40→108 / 70% messaging automation story."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "do not assume every OTA thread is live (other catalog pages still mark some OTAs coming soon)",
+      "problem": "No supplied source marks OTAs as coming soon. Inbox and industry pages describe connected OTA threads; asserting a coming-soon catalog will cause reps to under-sell or over-qualify channel scope. Unknown coverage is not a categorical negative.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_e6200582a2004292",
+        "src_5eb74e069d5f7cb9",
+        "src_d30d1770ff08e6a4"
+      ],
+      "suggested_correction": "Replace with: treat named OTAs as marketed connection targets; confirm for each account whether the thread is live messaging vs reservation/context only. Do not tell hotels that catalog pages mark OTAs coming soon."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "A group whose RFP is enterprise CRM, labor/payroll, or portfolio housekeeping as the must-have. Group use-case pages describe those themes, while the product nav labels Operations coming soon.",
+      "problem": "Enterprise CRM is a Hotel Groups guest-experience use case (conversation-derived profiles), not the Operations SKU. Lumping it with labor/payroll/housekeeping teaches reps to treat CRM RFPs as not-GA Operations.",
+      "source_ids": [
+        "src_d30d1770ff08e6a4",
+        "src_e805a9592ee44f73",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Split gates: (1) physical kiosk = mismatch; (2) housekeeping/labor/workforce-as-GA = confirm against Operations coming soon vs Full Suite copy; (3) enterprise CRM / loyalty / shared inbox = guest-communication motion to investigate, not an Operations-availability reject."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "Portals is a paid add-on by listing count and is not evidenced in the hotel story",
+      "problem": "Unresolved notes only the Portals add-on FAQ, while qualification step 4 sells Guest packaging that already includes portals, waivers, and upsells. Reps cannot choose Messaging vs Guest vs add-on from this conflict.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b",
+        "src_8b30f0226db273ad",
+        "src_6eff9afc29aa8e32"
+      ],
+      "suggested_correction": "State both facts: Guest starts at $30/unit/mo and includes portals/waivers/upsells; Portals is also described as a listing-count add-on. Map the commercial path in pricing discovery; do not default hotels to add-on-only. Still do not cite a hotel Portals result."
+    },
+    {
+      "document_key": "buyer-roles",
+      "severity": "material",
+      "excerpt": "CEOs or partners owning a homegrown PMS, prior AI vendor, or SuiteOP wiring (The Flex, HomeHop, Bali)",
+      "problem": "Conflates three stacks: The Flex’s homegrown PMS, HomeHop’s SuiteOP wiring, Bali/Easy BnB’s abandoned in-house AI. A rep could brief the wrong technical evaluator or name SuiteOP at Flex/Bali.",
+      "source_ids": [
+        "src_765674900bd1f4dd",
+        "src_d097938bd9b8b088",
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Split observed build paths: The Flex = CEO left comms AI out of a homegrown PMS; HomeHop = co-founders plus SuiteOP for verification/door codes; Bali/Easy BnB = founder stopped an in-house messaging AI. Do not imply SuiteOP at Flex or Bali."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "minor",
+      "excerpt": "A single independent hotel whose night team still takes late-arrival calls and WhatsApp, with Opera or Mews already in use",
+      "problem": "Labeled good-fit scenario mixes necessary communication fit with PMS readiness. Opera/Mews are named logos, not a fit gate or write-back proof.",
+      "source_ids": [
+        "src_f09009069a2d197f",
+        "src_e805a9592ee44f73",
+        "src_a649d4d3ab5f59f5"
+      ],
+      "suggested_correction": "Keep good-fit as desk/after-hours guest comms plus a GM who will maintain policies. Move Opera/Mews to readiness: preferred hotel-class examples; confirm actions separately."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "minor",
+      "excerpt": "Extras during the stay | Room upgrades, spa, dining | Loyalty/perks, upgrades, spa and dining | Workflows, Guest Portals",
+      "problem": "The extras row points reps at Guest Portals even though the hotel story has no Portals evidence and unresolved text says not to infer it.",
+      "source_ids": [
+        "src_f09009069a2d197f",
+        "src_d30d1770ff08e6a4",
+        "src_9078cb1971869041",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Map extras first to Agents/Workflows offer copy. Note Portals only as an unproven hotel package option to discover, not a default surface."
+    },
+    {
+      "document_key": "buyer-roles",
+      "severity": "minor",
+      "excerpt": "Stop linear hiring ... Haven ~25 people → two per shift",
+      "problem": "Haven’s cited result is an 80% reduction in support staffing needs (≈25 people to two per shift) with a no-layoff pledge, not merely stopping linear hiring. Compressing it under that job invites copy that contradicts the change narrative later in the same doc.",
+      "source_ids": [
+        "src_c1dd8d452a784c57"
+      ],
+      "suggested_correction": "Cite Haven as: support staffing need fell from ~25 to two per shift; CEO pledged no AI layoffs and moved people into workflow/AI training. Do not use it as a generic no-hire slogan."
+    },
+    {
+      "document_key": "icp-rentals",
+      "severity": "minor",
+      "excerpt": "Account is a short-term rental, vacation-rental, or serviced-apartment operator ... not solely a hotel-brand motion",
+      "problem": "FAQ lists serviced-apartment operators as a third audience. Folding them into the STR necessary-fit criterion with zero named serviced-apartment proof will cause reps to reuse PMC automation stories on staffed aparthotels.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e6200582a2004292"
+      ],
+      "suggested_correction": "Route serviced apartments as mixed hospitality: confirm desk vs unstaffed listing ops before applying hotel or STR proof; do not treat STR case metrics as aparthotel evidence."
+    },
+    {
+      "document_key": "buying-triggers",
+      "severity": "material",
+      "excerpt": "Proceed | In-category stays + connectable path + named knowledge/escalation owner + at least one confirmed timing situation",
+      "problem": "Urgency is correctly labeled a hypothesis elsewhere, then made a proceed requirement. Sources do not say a live volume/overnight/acquisition/cost situation is required to be in-category or implementation-ready; this invents an ICP gate a seller will use to hold otherwise qualified accounts.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_c1dd8d452a784c57",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep proceed = in-category stays + connectable message/reservation path + named knowledge/escalation owner. Treat timing as optional discovery context that chooses analog and urgency language, not a fourth necessary gate."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "material",
+      "excerpt": "Bali ~$22k/month and 11 VAs replaced",
+      "problem": "Wrong customer entity. The ~$22k/month and eleven-VA replacement are Easy BnB’s attributed P&L story on the Bali Luxury Stays URL; Bali Luxury is the later AI-first venture, not the measured cost-takeout account.",
+      "source_ids": [
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Write “Easy BnB (told on the Bali Luxury Stays page): ~$22k/month labor savings and 11 VAs replaced. Do not attribute those figures to Bali Luxury Stays.”"
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "material",
+      "excerpt": "Scenario 2 — Boutique hotel as a hands-off asset.",
+      "problem": "Cascadia is nested under the boutique-hotel scenario. Cascadia Getaways is a vacation-rental PM acquisition story, so a seller can attach STR proof to a hotel motion.",
+      "source_ids": [
+        "src_b2ab716efd97c239",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep Scenario 2 to Lauderdale only. Move Cascadia under STR growth/acquisition, labeled as PM-company integration proof, not hotel-group or boutique-hotel P&L."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "minor",
+      "excerpt": "leadership saying they could add that company’s properties without extra guest-service hires",
+      "problem": "Ryan’s line is confidence during integration week (“feels pretty good”), not a measured post-absorption headcount result. A named expectation quote is being packaged with 60% / 4.9 as if it were achieved staffing math.",
+      "source_ids": [
+        "src_b2ab716efd97c239"
+      ],
+      "suggested_correction": "Cite 60% automation and 4.9 communication score across 100 properties as attributed results. Quote the hire-avoidance line only as leadership expectation, not as a completed staffing outcome."
+    },
+    {
+      "document_key": "buying-triggers",
+      "severity": "minor",
+      "excerpt": "devices, or Full Suite operations lines?",
+      "problem": "Does not disambiguate Messaging’s live “Operator, workflows, escalation” line, the priced Full Suite package (tasks/workforce/operations workflows), and nav “Operations · Coming soon.” A seller cannot tell whether to quote Full Suite, recast to Inbox/Agents/Workflows, or hold.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b"
+      ],
+      "suggested_correction": "Add an explicit map: Messaging/Guest/Devices are sellable packages; Operator ≠ Operations; Full Suite may be quoted only for guest/devices/tasks already in that card; housekeeping/maintenance/inspections stay “coming soon” and are research/hold, not a live operations sale."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "minor",
+      "excerpt": "Agents on voice, chat, email, WhatsApp, OTA with reservation context",
+      "problem": "States OTA-plus-reservation action as the job’s capability without the live-connector caveats the qualification playbook already uses (Booking.com/VRBO coming soon; Opera context-only, no messaging through that integration). Copy drafted from this table will over-promise setup as action support.",
+      "source_ids": [
+        "src_a2a67d2faa01de13",
+        "src_dae2c4b0bd94e5a6",
+        "src_e6200582a2004292"
+      ],
+      "suggested_correction": "Say “connected OTA/PMS threads where the connector is live; confirm Booking.com/VRBO status; Opera supplies reservation/profile context, not messaging routing.”"
+    }
+  ],
+  "reviewer": "Configured OpenRouter model in a separate critic call; not an independent human",
+  "human_approved": false,
+  "completed_at": "2026-09-20T01:26:43.848312+00:00"
+}
