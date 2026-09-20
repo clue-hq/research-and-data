@@ -15,7 +15,7 @@ ENV_EXAMPLE = REPO / ".env.example"
 
 #: Every setting this task introduces and the default it ships with.
 DEFAULTS: dict[str, object] = {
-    "sandbox_enabled": False,
+    "sandbox_enabled": True,
     "sandbox_image": "clue-agent-sandbox:latest",
     "sandbox_timeout_s": 60.0,
     "sandbox_cpus": 1.0,
@@ -26,7 +26,7 @@ DEFAULTS: dict[str, object] = {
 }
 #: The exact ``.env.example`` lines the parity rule requires for those settings.
 ENV_LINES = {
-    "CLUE_SANDBOX_ENABLED=false",
+    "CLUE_SANDBOX_ENABLED=true",
     "CLUE_SANDBOX_IMAGE=clue-agent-sandbox:latest",
     "CLUE_SANDBOX_TIMEOUT_S=60",
     "CLUE_SANDBOX_CPUS=1",
@@ -46,10 +46,10 @@ def test_sandbox_and_document_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CLUE_SANDBOX_ENABLED", "true")
+    monkeypatch.setenv("CLUE_SANDBOX_ENABLED", "false")
     monkeypatch.setenv("CLUE_SANDBOX_MAX_RUNS_PER_TURN", "3")
     settings = Settings(_env_file=None)
-    assert settings.sandbox_enabled is True
+    assert settings.sandbox_enabled is False
     assert settings.sandbox_max_runs_per_turn == 3
 
 

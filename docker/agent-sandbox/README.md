@@ -27,7 +27,7 @@ took about 95 seconds on that host.
 
 ## The switch
 
-`CLUE_SANDBOX_ENABLED=true` turns the tool on (it is `false` in `.env.example`). The other
+`CLUE_SANDBOX_ENABLED` is `true` by default (founder ruling 2026-09-20); set it `false` to turn the tool off. The other
 `CLUE_SANDBOX_*` settings — image tag, timeout, cpus, memory, runs per turn, output cap — are the
 per-run ceilings, and are documented next to their defaults in `.env.example`.
 

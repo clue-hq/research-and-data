@@ -2536,8 +2536,8 @@ Every refusal below reaches the browser as the FI-1 error envelope
   opens it: `read_file` for the text family, `run_python` for the document family (the skill adds
   that a small `.csv`/`.json` is plain text and opens with `read_file` too). `run_python@1` is the
   agent writing Python against the file in a no-network Docker sandbox over the thread's workspace.
-  A deployment that has not built the sandbox image (`make sandbox-image`) or that leaves
-  `CLUE_SANDBOX_ENABLED=false` cannot read binary documents at all — the tool refuses
+  A deployment that has not built the sandbox image (`make sandbox-image`) or that sets
+  `CLUE_SANDBOX_ENABLED=false` (it defaults to `true`) cannot read binary documents at all — the tool refuses
   `sandbox_unavailable` and the agent says so.
 - Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
   the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;

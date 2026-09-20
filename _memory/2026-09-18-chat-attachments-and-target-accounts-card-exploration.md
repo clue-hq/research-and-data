@@ -603,3 +603,12 @@ head `d659c2d2b537`.
    the reason (`UPLOAD_NOT_A_DOCUMENT`).
 
 Record each outcome, and any defect, in this note.
+
+## 2026-09-20 — ruling: the sandbox is ON by default
+
+Founder flipped `.env.example` to `CLUE_SANDBOX_ENABLED=true` (f724a3971) and asked for on-by-default.
+Aligned: `Settings.sandbox_enabled` default → `True`, the settings test, the `.env.example` comment,
+the sandbox README, spec §3.4, the `[chat×sandbox]` CLAUDE.md bullet, the frontend contract note.
+Consequence accepted: a worker host without the image gets `sandbox_unavailable` refusals rather
+than a silently-off feature; `make sandbox-image` is part of bringing up a worker host. Earlier
+lines in this note that say "ships off" describe the draft, not the current default.

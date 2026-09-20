@@ -690,11 +690,13 @@ class Settings(BaseSettings):
     # Document attachments (spec 2026-09-19 §3.1): the per-file cap of the document family
     # (PDF, DOCX, PPTX, XLSX, CSV, JSON). Env: ``CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES``.
     chat_attachment_document_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
-    # The code sandbox (spec 2026-09-19 §3.4): off until an operator builds the image and turns it
-    # on; then one container per run with these bounds. Env: ``CLUE_SANDBOX_ENABLED`` /
+    # The code sandbox (spec 2026-09-19 §3.4): on by default (founder, 2026-09-20) — one container
+    # per run with these bounds. The image must exist on the worker host (`make sandbox-image`);
+    # without it, or with the flag off, run_python refuses ``sandbox_unavailable`` and a binary
+    # attachment is unreadable to the agent. Env: ``CLUE_SANDBOX_ENABLED`` /
     # ``_IMAGE`` / ``_TIMEOUT_S`` / ``_CPUS`` / ``_MEMORY_MB`` / ``_MAX_RUNS_PER_TURN`` /
     # ``_MAX_OUTPUT_BYTES``.
-    sandbox_enabled: bool = False
+    sandbox_enabled: bool = True
     sandbox_image: str = "clue-agent-sandbox:latest"
     sandbox_timeout_s: float = Field(default=60.0, gt=0)
     sandbox_cpus: float = Field(default=1.0, gt=0)

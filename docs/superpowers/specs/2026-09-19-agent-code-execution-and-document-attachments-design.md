@@ -213,7 +213,7 @@ platform OCR switch.
 **Settings** (every one in `.env.example` with its default):
 
 ```
-CLUE_SANDBOX_ENABLED=false
+CLUE_SANDBOX_ENABLED=true
 CLUE_SANDBOX_IMAGE=clue-agent-sandbox:latest
 CLUE_SANDBOX_TIMEOUT_S=60
 CLUE_SANDBOX_CPUS=1
@@ -223,7 +223,8 @@ CLUE_SANDBOX_MAX_OUTPUT_BYTES=1048576
 CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES=26214400
 ```
 
-`CLUE_SANDBOX_ENABLED` ships off. The tool is granted regardless; with the flag off every call
+`CLUE_SANDBOX_ENABLED` ships on (founder ruling 2026-09-20; the draft said off). The tool is
+granted regardless; with the flag off, or with no image on the host, every call
 refuses `sandbox_unavailable`, and the skill tells the agent to say so to the human rather than
 guess at the file's contents.
 
