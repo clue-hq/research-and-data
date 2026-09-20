@@ -53,9 +53,10 @@ from clue_api.design_leg_wiring import (
     load_head_of_abm_history,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
-from clue_design.documents import create_document
+from clue_design.documents import create_document, set_document_account
 from clue_design.exit_judgment import ExitJudgment
 from clue_storage import FsStorage
 from tests._identity import seed_principal
@@ -1315,6 +1316,9 @@ def test_a_clarifying_run_rides_the_turn_as_a_part_and_arms_the_next_turns_guard
             assert part["document_id"] == pinned["id"]
             assert [q["question"] for q in part["questions"]] == [CLARIFYING_QUESTION]
             assert part["questions"][0]["default"] == "The 40% stat"
+            # This document carries no account, so the header has no name to show: the key is
+            # ABSENT from the wire rather than present and null (``exclude_none``).
+            assert "account_name" not in part
             resets = [frame for frame in frames if frame.event_type == "stream.reset"]
             assert resets, "the design hand-back always rehydrates"
             # The card is on the turn BEFORE the client is told to refetch.
@@ -1369,5 +1373,76 @@ def test_a_clarifying_run_rides_the_turn_as_a_part_and_arms_the_next_turns_guard
             # The first turn had nothing behind it to derive from — the guard is armed by the
             # ASKING run, not by every turn on a leg.
             assert lane.envelopes[0].config["request"]["previous_turn_outcome"] is None
+
+    run_async(scenario())
+
+
+def test_a_tagged_scene_ads_clarification_card_names_its_account(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec 2026-09-20 §2.5: the card's header is "<title> · <account>" when the document
+    carries an account.
+
+    The G2 card the runner freezes into the envelope is resolved for WEB documents only, so a
+    SCENE ad tagged to an ABM account would otherwise hand back a nameless card — dropping the
+    one fact that says whose ad is waiting on an answer, on exactly the documents (per-account
+    ads) where a leg holds several at once.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="clarifyacct")
+            pinned = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            account_id = f"acct_p34e_{uuid4().hex[:8]}"
+            await design_accounts.create_web_account(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                account_id=account_id,
+                name="Northwind Logistics",
+                domain="northwind.example",
+                logo_asset_id=None,
+                data={},
+                notes=None,
+            )
+            await set_document_account(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                document_id=pinned["id"],
+                account_id=account_id,
+            )
+            lane = _ClarifyingFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            asked = await _submit_message(
+                conn,
+                seeds,
+                label="clarify-acct",
+                message="Design the launch ad.",
+            )
+            emitter = await TurnStreamEmitter.open(
+                workspace_id=seeds["workspace_id"],
+                project_id=seeds["project"].project_id,
+                thread_id=seeds["thread_id"],
+                turn_id=asked.turn_id,
+                conn_factory=seeds["conn_factory"],
+                policy=TurnStreamPolicy(batch_max_chars=1, batch_interval_s=0.0),
+            )
+            result = await _run_turn(conn, seeds, registry, lane, asked, stream=emitter)
+
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            cards = [
+                frame
+                for frame in await list_turn_events(
+                    conn, workspace_id=seeds["workspace_id"], turn_id=asked.turn_id
+                )
+                if frame.event_type == "part.created" and frame.part_kind == "clarification"
+            ]
+            assert len(cards) == 1
+            assert cards[0].payload["part"]["account_name"] == "Northwind Logistics"
 
     run_async(scenario())

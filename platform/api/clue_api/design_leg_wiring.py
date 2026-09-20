@@ -1629,6 +1629,25 @@ class DesignLegTurnRunner:
                 if str(result.get("status") or "") != "clarification_requested":
                     continue
                 key = str(document.get("document_id") or "")
+                # §2.5: the card's header names the document's account ("<title> · <account>")
+                # whenever it has one. The G2 card above is resolved for WEB documents only, so
+                # a tagged SCENE ad resolves its own name here — one read per ASKING document,
+                # and never more. An unresolvable stamp leaves the name empty rather than
+                # refusing: the design work is already done and durable, so throwing the whole
+                # hand-back away over a header would cost the user their turn.
+                card_name = (account_cards.get(key) or {}).get("name")
+                account_name: str | None = str(card_name) if card_name else None
+                if account_name is None:
+                    account_id = (document_rows.get(key) or {}).get("account_id") or document.get(
+                        "account_id"
+                    )
+                    if account_id:
+                        async with self._conn_factory() as conn:
+                            account = await design_accounts.get_web_account(
+                                conn, workspace_id=workspace_id, account_id=str(account_id)
+                            )
+                        if account is not None:
+                            account_name = str(account["name"])
                 clarifications.append(
                     {
                         "document_id": document["document_id"],
@@ -1636,7 +1655,7 @@ class DesignLegTurnRunner:
                         "doc_kind": str(
                             result.get("doc_kind") or document.get("doc_kind") or "scene"
                         ),
-                        "account_name": (account_cards.get(key) or {}).get("name"),
+                        "account_name": account_name,
                         "run_id": str(run["run_id"]),
                         "questions": (result.get("clarification") or {}).get("questions") or [],
                     }
