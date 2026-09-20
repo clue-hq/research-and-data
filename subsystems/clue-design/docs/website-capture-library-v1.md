@@ -15,7 +15,7 @@ The request retains `url`, `name`, and `brand_kit_id`, and adds:
 
 Automatic discovery follows observed same-origin links: up to two product pages, one customer index, and two customer stories. It can discover stories from the selected customer index. It does not invent routes or follow unrelated links. The entry page plus explicit and discovered pages cannot exceed 20. Category selection is a first bounded heuristic, not a relevance or completeness guarantee. Operator-selected URLs can supplement it.
 
-Per-page byte and candidate limits still apply. `LUMEN_SITE_LIBRARY_FRAGMENT_MINT_CAP=240` bounds each library's visible fragment pool and its separate dormant pool. `LUMEN_SITE_SECTION_MINT_CAP=40` remains the per-page bound and the legacy ingestion-wide pool. Round-robin allocation prevents a dense homepage from consuming all slots before supporting pages.
+Per-page byte and candidate limits still apply. `LUMEN_SITE_LIBRARY_FRAGMENT_MINT_CAP=240` bounds each library's visible fragment pool and its separate dormant pool. `LUMEN_FRAGMENT_MINT_CAP=40` remains the per-page bound and the legacy ingestion-wide pool. Round-robin allocation prevents a dense homepage from consuming all slots before supporting pages.
 
 ## Evidence and outcome
 
