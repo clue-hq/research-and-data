@@ -1320,3 +1320,90 @@ test("a prepended older page retires its own optimistic and streamed stand-ins",
   assert.equal(transcript.filter((message) => message.role === "assistant").length, 1);
   assert.equal(transcript[0].optimistic, false, "the durable user message won");
 });
+
+test("a clarification snapshot parses into the card's camelCase shape", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "clarification:doc-1",
+      part_kind: "clarification",
+      part: {
+        part_id: "clarification:doc-1",
+        kind: "clarification",
+        revision: 1,
+        document_id: "doc-1",
+        document_title: "Acme retargeting ad",
+        doc_kind: "scene",
+        account_name: "Acme",
+        run_id: "run-1",
+        questions: [
+          {
+            id: "q1",
+            question: "Which offer should lead?",
+            why_it_matters: "It sets the headline.",
+            options: ["Free trial", "Demo"],
+            default: "Free trial",
+            allow_freeform: false,
+          },
+          // The runtime may ask an open question: no options, no rationale, and
+          // the emitter's own defaults fill what the wire leaves out.
+          { id: "q2", question: "Anything else?", default: "No" },
+        ],
+      },
+    }),
+  ]);
+
+  const part = state.turns.get(TURN)?.parts[0]?.part;
+  assert.equal(part?.kind, "clarification");
+  assert.deepEqual(part, {
+    kind: "clarification",
+    partId: "clarification:doc-1",
+    revision: 1,
+    documentId: "doc-1",
+    documentTitle: "Acme retargeting ad",
+    docKind: "scene",
+    accountName: "Acme",
+    runId: "run-1",
+    questions: [
+      {
+        id: "q1",
+        question: "Which offer should lead?",
+        whyItMatters: "It sets the headline.",
+        options: ["Free trial", "Demo"],
+        default: "Free trial",
+        allowFreeform: false,
+      },
+      {
+        id: "q2",
+        question: "Anything else?",
+        whyItMatters: "",
+        options: [],
+        default: "No",
+        allowFreeform: true,
+      },
+    ],
+  });
+});
+
+test("an untagged document sends no account_name key at all, and reads as null", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "clarification:doc-2",
+      part_kind: "clarification",
+      part: {
+        part_id: "clarification:doc-2",
+        kind: "clarification",
+        revision: 1,
+        document_id: "doc-2",
+        document_title: "Untitled ad",
+        doc_kind: "scene",
+        run_id: "run-2",
+        questions: [{ id: "q1", question: "Which tone?", default: "Bold" }],
+      },
+    }),
+  ]);
+
+  const part = state.turns.get(TURN)?.parts[0]?.part;
+  assert.equal(part?.kind === "clarification" && part.accountName, null);
+});
