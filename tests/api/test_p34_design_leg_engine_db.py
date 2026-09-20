@@ -853,6 +853,64 @@ def test_a_failed_design_run_fails_the_turn_honestly_and_keeps_the_leg_open(
     run_async(scenario())
 
 
+class _LaneThatCrashes:
+    """Raises out of the drive — the shape of the 2026-09-20 batch crash (a receipt collision
+    after every run had finished), and of any other unexpected raise past ``mark_leg_running``."""
+
+    async def drive(self, *, envelope: Any) -> None:
+        raise RuntimeError("boom: the dispatch crashed after the leg was marked running")
+
+
+def test_a_crashed_dispatch_hands_the_leg_back_instead_of_leaving_it_running(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Crash containment covers the LEG, not only the turn. Until 2026-09-20 a raise between
+    ``mark_leg_running`` and ``_leg_back_to_awaiting`` left the leg ``running`` for good: the
+    turn read failed, but the thread refused every later message until a hand repair."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="crash")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            submission = await _submit_message(
+                conn, seeds, label="crash", message="Render it, then crash."
+            )
+            with pytest.raises(RuntimeError, match="boom"):
+                await _run_turn(conn, seeds, registry, _LaneThatCrashes(), submission)
+            # The crash still surfaces (the fleet task fails loudly) — but the leg is back where
+            # the user can speak to it, with its lifecycle frame on the crashed turn.
+            leg_after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+            )
+            assert leg_after["state"] == "open_awaiting_user"
+            status = (
+                await conn.execute(
+                    text(
+                        "SELECT status, reason_code FROM agent_turn_event "
+                        "WHERE turn_id = :turn ORDER BY seq DESC LIMIT 1"
+                    ),
+                    {"turn": submission.turn_id},
+                )
+            ).one()
+            assert tuple(status) == ("abandoned", "design_leg_turn_crashed")
+            frames = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_turn_event_stream "
+                        "WHERE turn_id = :turn AND event_type = 'leg.awaiting_user'"
+                    ),
+                    {"turn": submission.turn_id},
+                )
+            ).scalar_one()
+            assert int(frames) == 1
+
+    run_async(scenario())
+
+
 def test_leg_history_is_leg_scoped_and_head_of_abm_never_ingests_it(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811

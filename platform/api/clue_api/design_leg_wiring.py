@@ -1584,7 +1584,13 @@ class DesignLegTurnRunner:
             # that owner can publish the actual cancellation.
             raise
         except BaseException:
-            await self._contain_crash(turn_id=turn_id, workspace_id=workspace_id, stream=stream)
+            await self._contain_crash(
+                turn_id=turn_id,
+                workspace_id=workspace_id,
+                stream=stream,
+                leg_id=leg_id,
+                submission=submission,
+            )
             raise
 
     async def _finalize_awaiting_input(
@@ -1711,12 +1717,23 @@ class DesignLegTurnRunner:
         turn_id: UUID,
         workspace_id: str,
         stream: TurnStreamEmitter | None,
+        leg_id: str,
+        submission: AgentTurnSubmissionRow,
     ) -> None:
         """Best-effort terminalization of a crashed turn body (never masks the raise).
 
-        Both writes are suppressed on their own failure: containment must never turn one
+        Every write is suppressed on its own failure: containment must never turn one
         crash into two, and ``mark_unfinalized`` already refuses to touch a turn whose
         finalization committed — so a crash after the commit leaves the committed truth.
+
+        The leg is handed back too. A crash between ``mark_leg_running`` and
+        ``_leg_back_to_awaiting`` (anything out of the dispatch that is not one of the typed
+        refusals) used to leave the leg ``running`` for good: the turn read failed, but the
+        thread refused every later message and only a hand repair could free it (the first
+        live batch, 2026-09-20). The runs that were driven are durable and their ids are
+        derived from the turn, so the next message re-joins whatever finished rather than
+        re-running it. A leg the crash never marked running is left exactly as it was —
+        ``_leg_back_to_awaiting`` only moves a ``running`` leg.
         """
 
         try:
@@ -1728,6 +1745,16 @@ class DesignLegTurnRunner:
             )
         except Exception:
             log.warning("design_leg.containment_mark_failed", turn_id=str(turn_id))
+        try:
+            await self._leg_back_to_awaiting(
+                workspace_id=workspace_id, leg_id=leg_id, submission=submission
+            )
+        except Exception:
+            log.warning(
+                "design_leg.containment_leg_handback_failed",
+                turn_id=str(turn_id),
+                leg_id=leg_id,
+            )
         if stream is not None:
             try:
                 await stream.turn_finished(
