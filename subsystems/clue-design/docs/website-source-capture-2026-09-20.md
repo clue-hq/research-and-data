@@ -68,6 +68,22 @@ inventory found four affected definitions in Conduit and zero in the other three
 The regression matrix passes 357 checks. Detailed immutable before/after evidence is under
 `.local-setup/website-capture/fragment-probe-20260920-root-vars/conduit/`.
 
+## AWS root-unit diagnosis
+
+The offline frozen-source comparison isolates the main scaling problem: source `<html>` is
+10px at both 1440 and 375, while diagnostic fragment documents use the browser's 16px root.
+Extracting `html { font-size: ... }` onto a fragment wrapper does not change what `rem` means.
+At desktop, the source hero is 40px and the fragment is 64px; at mobile, 28px becomes 44.8px.
+Source 16px body copy becomes 25.6px. This explains the 1.6x text/spacing inflation and is an
+unresolved root-unit transport issue, not evidence that a new prompt should shrink each element.
+
+The next repair must preserve the source root-unit context without changing the platform shell's
+global font size or breaking media-query thresholds and responsive source rules. Root computed
+font size is not currently recorded explicitly in the capture geometry. Exact comparison data
+and source/fragment first-viewport screenshots are saved under
+`.local-setup/website-capture/fragment-probe-20260920-recovery/aws/`. This diagnosis does not
+claim the AWS layout or support-widget contamination is fixed.
+
 ## Selected official pages
 
 ### aws
