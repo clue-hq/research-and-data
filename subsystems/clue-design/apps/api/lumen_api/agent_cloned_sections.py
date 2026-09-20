@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from clue_design import site_snapshots as snapshot_dal
+from clue_design.web_fragments import fragment_has_kit_binding
 from py_lumen_config import settings
 
 from .asset_custody import cache_blob_path, ensure_materialized
@@ -567,6 +568,7 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "source_kit_id": row.get("source_kit_id"),
             "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
             "preview_digest": row.get("preview_digest"),
             "slot_keys": [str(key) for key in slot_keys]
             if isinstance(slot_keys, list)
@@ -1408,7 +1410,7 @@ class DurableAgentClonedSectionRegistry:
             for row in self._repository().list_web_fragments()
             if row.get("section_role") == "footer"
             and row.get("status") == "approved"
-            and (kit_id is None or row.get("source_kit_id") == kit_id)
+            and (kit_id is None or fragment_has_kit_binding(row, kit_id))
         ]
         evidence: List[tuple] = []
         for row in rows[: self.LEGAL_EVIDENCE_MAX]:

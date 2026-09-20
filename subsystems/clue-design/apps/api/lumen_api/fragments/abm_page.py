@@ -41,6 +41,8 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Sequence
 
+from clue_design.web_fragments import fragment_has_kit_binding
+
 from .campaign_shell import (
     CAMPAIGN_SHELL_FOOTER,
     CAMPAIGN_SHELL_HEADER,
@@ -112,7 +114,7 @@ def newest_released_shell(
         for row in sections
         if str((row or {}).get("composed") or "") == COMPOSED_CAMPAIGN_SHELL
         and str((row or {}).get("section_role") or "") == role
-        and (wanted_kit is None or str((row or {}).get("source_kit_id") or "") == wanted_kit)
+        and (wanted_kit is None or fragment_has_kit_binding(dict(row or {}), wanted_kit))
     ]
     if not shells:
         return None, []

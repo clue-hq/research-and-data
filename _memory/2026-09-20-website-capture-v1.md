@@ -15,3 +15,11 @@
 - Fresh source-only Conduit homepage probe: 856 downloads (~59 MiB self-contained JSON), all visual dependencies resolve; one 404 favicon plus informational renderer notice. Only scripts/tracker references remain missing from raw HTML; these are stripped from reusable fragments by design. Probe saved privately in isolated worktree; no live workspace write yet.
 - Disposable database `clue_website_capture_test_20260920_1500` created and upgraded to existing head for tests. No live DB changes. Focused capture/snapshot/mint matrix passed (238 pass, one skip before final added image-analysis check).
 - Full-file Ruff has inherited findings; introduced lines are checked separately. New media test file is lint-clean.
+
+## Kit association checkpoint
+
+- Added `design_web_fragment_kit_binding` (migration `d27183d13445`, parent `5cac3234cfb3`) to retain each capture's kit/version association without replacing immutable fragment content/origin. Existing rows backfill from their original kit binding.
+- New associations start unreleased; human kit approval updates only that capture's association. A separate explicit release remains valid if another capture is revoked. Deprecated/dormant fragments and individually governed repairs retain existing lifecycle protections.
+- Registry/agent discovery now returns capture bindings; legal/footer and campaign-shell selection can recognize an associated newer kit. Cross-workspace duplicate insertion fails at composite foreign keys.
+- 152 registry/lifecycle/approval/agent-discovery tests passed; added foreign-kit-on-duplicate regression also passed. Migration up/down/up passed on separate empty `clue_website_capture_migration_20260920_1510`; exactly one head. Live DB has NOT received this migration.
+- Fresh isolated homepage captures complete for all four brands. Google original `MultiPath_2X_V2.webm` now captured (~494 KB). AWS reports ten over-limit font resources; these are visible partial-capture gaps, not a full-fidelity pass. Supporting page capture and skill/fidelity work remain pending.
