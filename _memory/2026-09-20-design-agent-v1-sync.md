@@ -7,3 +7,10 @@
 - Incoming source includes five migration files and has one Alembic head, `5cac3234cfb3`. No live DB upgrade, restart, or end-to-end runtime verification was performed; source synchronization is not runtime rollout.
 - One read-only `git show` using an exclusion pathspec was rejected; inspection succeeded when retried with explicit paths. No mutation resulted from that error.
 - This note is a separate local documentation checkpoint after the two preserved commits.
+
+## Later workspace access recovery
+
+- User reported all four workspaces unavailable again. Their frontend manager was still running; shared APIs and fleet workers were stopped. Logs showed graceful backend shutdown, but did not identify the initiator. Existing Clerk sessions remained valid after the platform APIs were restored as detached processes.
+- The freshly started API exposed the pending schema gap: project sidebar reads failed because `project.pinned` was absent. Backed up the local database to private `.local-setup/recovery/20260920_140702/before-runtime-update.dump`, verified the archive, and passed `make db-smoke` (up/down/up) on a newly created disposable database. Applied the bundled migrations from `d659c2d2b537` to `5cac3234cfb3` on `clue_sept7_dev`; project/design-document/thread/workspace counts remained 105/111/126/6. Removed only the disposable test database; retained backup and validation logs.
+- Restored APIs on 8020/8030 and the design API on 8010. Existing workspace frontends on 3021–3024 returned HTTP 200 for Home and project-sidebar requests, and authenticated browser tabs were reopened. No login bypass, credential changes, environment-file edits, source implementation changes, or remote push.
+- Remaining runtime prerequisite: Docker is not installed. The new launcher requires Docker and `clue-agent-sandbox:latest` before fleet startup. Fleet workers remain stopped; the recovered design API uses process-only `LUMEN_EMBEDDED_FLEET_WORKER=0`. Access and saved-data reads are restored, but new background generation is not ready. Restore the standard worker setup only after the sandbox prerequisite is satisfied; do not silently disable sandbox checks.
