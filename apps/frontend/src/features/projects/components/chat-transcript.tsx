@@ -1,13 +1,10 @@
 "use client";
 
-import Image from "next/image";
+import { Attachments } from "@/components/ai-elements/attachments";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
 import type { GateAnswerDisplay } from "../model/chat-gate";
 import {
-  chatUploadBytesUrl,
-  truncateAttachmentLabel,
-  designReferenceThumbnailUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
 } from "../model/chat-message-presentation";
@@ -19,6 +16,7 @@ import {
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
 import { ChatReasoning } from "./chat-reasoning";
+import { ChatMessageReference } from "./chat-message-reference";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -81,93 +79,23 @@ export function ChatTranscript({
             {message.refs.some(
               (ref) => ref.flavor === "context" || ref.flavor === "attachment",
             ) ? (
-              <div aria-label="Message context" className={styles.messageContextRefs}>
+              <Attachments aria-label="Message context" className={styles.messageContextRefs} variant="inline">
                 {message.refs
                   .filter(
                     (ref) =>
                       ref.flavor === "context" || ref.flavor === "attachment",
                   )
                   .sort((left, right) => left.ordinal - right.ordinal)
-                  .map((ref) => {
-                    if (ref.flavor === "attachment") {
-                      // An attachment chip names the file the human sent. An image
-                      // shows its own bytes; anything else gets a file glyph. No
-                      // artifact key or digest is ever on the screen.
-                      const isImage = ref.mediaType?.startsWith("image/") ?? false;
-                      return (
-                        <span
-                          className={isImage ? styles.messageReferenceImage : undefined}
-                          key={`${ref.ordinal}:attachment:${ref.objectId}`}
-                          title={ref.label ?? "Attachment"}
-                        >
-                          {isImage && ref.uploadId ? (
-                            <Image
-                              alt=""
-                              className={styles.messageReferenceThumbnail}
-                              height={18}
-                              src={chatUploadBytesUrl(ref.uploadId)}
-                              unoptimized
-                              width={18}
-                            />
-                          ) : (
-                            <ProjectIcon name="file-text" size={12} />
-                          )}
-                          <span className={styles.messageReferenceLabel}>
-                            {truncateAttachmentLabel(ref.label ?? "Attachment")}
-                          </span>
-                        </span>
-                      );
-                    }
-                    const entity = contextEntities.find(
-                      (candidate) =>
-                        candidate.id === ref.objectId &&
-                        candidate.type === ref.objectType,
-                    );
-                    const fallbackLabel =
-                      ref.objectType === "contact"
-                        ? "Selected contact"
-                        : ref.objectType === "account"
-                          ? "Selected account"
-                          : ref.objectType === "project_document"
-                            ? "Selected file"
-                            : ref.objectType === "design_node"
-                              ? "Selected design element"
-                              : ref.objectType === "design_document"
-                                ? "Selected design"
-                                : "Reference image";
-                    const label = entity?.label ?? ref.label ?? fallbackLabel;
-                    return (
-                      <span
-                        className={
-                          ref.objectType === "design_asset"
-                            ? styles.messageReferenceImage
-                            : undefined
-                        }
-                        key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}
-                        title={label}
-                      >
-                        {ref.objectType === "design_asset" && ref.thumbnailDigest ? (
-                          <Image
-                            alt=""
-                            className={styles.messageReferenceThumbnail}
-                            height={18}
-                            src={designReferenceThumbnailUrl(ref.thumbnailDigest)}
-                            unoptimized
-                            width={18}
-                          />
-                        ) : null}
-                        <span className={styles.messageReferenceLabel}>
-                          {ref.objectType === "account" ||
-                          ref.objectType === "contact" ||
-                          ref.objectType === "project_document" ||
-                          ref.objectType === "design_document"
-                            ? `@${truncateAttachmentLabel(label)}`
-                            : truncateAttachmentLabel(label)}
-                        </span>
-                      </span>
-                    );
-                  })}
-              </div>
+                  .map((ref) => (
+                    <ChatMessageReference
+                      entity={contextEntities.find(
+                        (candidate) => candidate.id === ref.objectId && candidate.type === ref.objectType,
+                      )}
+                      key={`${ref.ordinal}:${ref.flavor}:${ref.objectType}:${ref.objectId}`}
+                      reference={ref}
+                    />
+                  ))}
+              </Attachments>
             ) : null}
             {gateAnswer !== null ? (
               <div className={styles.gateAnswerReceipt} role="status">

@@ -10,12 +10,12 @@ fixtures only when no API base URL is configured.
 
 ## Chat appearance inconsistency register (2026-09-20)
 
-**Status: documented; CHAT-VIS-01 through CHAT-VIS-03 are open. No appearance
-fixes have been implemented or accepted.** This section is the living record for
+**Status: CHAT-VIS-01 through CHAT-VIS-03 implemented and browser-verified
+on 2026-09-20.** This section is the living record for
 the main platform's composer/transcript appearance review. Update these entries
 when implementing and verifying the fixes rather than creating a competing audit.
 
-### Reference and evidence
+### Reference and original review evidence
 
 The founder identified the current dummy frontend as the visual reference and
 explicitly preferred the composer's text size and `@` mention treatment. Equivalent
@@ -51,9 +51,9 @@ this was not a screenshot overlay comparison at matching viewport sizes.
   agent transcript using 15px / 22px. That proposed target comes from the founder's
   preferred composer appearance.
 
-### Open findings
+### Findings addressed
 
-| ID | Inconsistency and evidence | Proposed correction |
+| ID | Inconsistency and evidence | Implemented correction |
 | --- | --- | --- |
 | **CHAT-VIS-01** | **Body text shrinks after sending.** Composer: 15px font / 22px line height. Both sent user prose and agent responses: 14px / 20px, inherited from `.transcript`. The values are declared independently. | Share the preferred 15px / 22px chat-body definition across the composer and transcript, including rendered paragraphs and lists. Keep secondary labels intentionally separate. |
 | **CHAT-VIS-02** | **`@` mentions change appearance and lose identity cues.** Composer: 15px text, transparent background, no surrounding border, underlined name, 16px account logo/contact avatar (14px typed file/design glyph), 5px icon gap. Transcript source: generic 11px / 18px boxed `@label`, 0.5px border, page-colour fill, 4px radius and 7px horizontal padding. Account/contact/type icons are not rendered by that branch. | Reuse the composer's mention presentation for sent references, retaining identity icons, typography, colour and underline treatment. Preserve read-only transcript behaviour and appropriate missing-image fallbacks. |
@@ -62,15 +62,17 @@ this was not a screenshot overlay comparison at matching viewport sizes.
 Implementation references (relative to `apps/frontend`):
 
 - [Composer and transcript CSS](../../src/features/projects/components/project-flow.module.css):
-  `.composerEditor`, `.composerMention*`, `.transcript`, `.messageContextRefs`,
-  `.messageReferenceThumbnail`.
+  `.composerEditor`, `.messageText`, `.chatMention*`, `.messageContextRefs`.
 - [Composer mention renderer](../../src/features/projects/components/project-composer-editor.tsx):
-  `ComposerMention` owns logos, contact avatars and type glyphs.
+  `ComposerMention` retains Slate editing and selection; the shared
+  [mention visual](../../src/features/projects/components/chat-mention.tsx) owns identity cues.
 - [Transcript reference renderer](../../src/features/projects/components/chat-transcript.tsx):
-  separate `attachment` and `context` branches currently rebuild the visual markup.
-- [Composer attachments](../../src/features/projects/components/project-composer-attachment.tsx)
+  delegates to [message references](../../src/features/projects/components/chat-message-reference.tsx),
+  preserving reference order and identity while reusing the draft presentation.
+- [Chat attachments](../../src/features/projects/components/chat-attachment.tsx)
   and [shared attachment component](../../src/components/ai-elements/attachments.tsx):
-  the established inline upload presentation.
+  one inline presentation for drafts and sent files, with removal and upload status
+  supplied only by drafts.
 - [Generated tokens](../../packages/design-system/generated/tokens.css) and
   [frontend styling rules](../architecture/frontend.md#design-system-rule).
 
@@ -96,13 +98,13 @@ In the dummy checkout, the comparison sources are
 - Entity mentions and uploaded files are different kinds of reference. Each
   should remain consistent across draft/sent states; they need not be forced
   into one identical appearance.
-- Narrow layouts, long-name wrapping, fresh uploads, live streaming and the
-  optimistic-to-persisted transition were not exercised by this review. They
-  remain part of future fix acceptance, not verified parity claims.
+- The original review did not exercise narrow layouts, long labels or state
+  transitions. The implementation pass below adds responsive and component-state
+  checks; fresh server uploads and provider execution remain outside this visual pass.
 - The preceding Inspect removal is complete in `074f038e3`; it is not one of the
-  open appearance findings.
+  appearance findings above.
 
-### Proposed implementation boundary and acceptance
+### Implementation boundary and acceptance
 
 Work belongs to the frontend presentation layer. Share chat typography and the
 mention/attachment presentation primitives instead of introducing another set
@@ -113,27 +115,45 @@ repository/model seam, reference identities, attachment retrieval, message
 ordering and existing chat behaviours. No backend contract or migration change
 has been identified as necessary by this review.
 
-Suggested order: CHAT-VIS-01 typography, CHAT-VIS-02 mentions, CHAT-VIS-03
-attachments, then one combined browser acceptance pass.
+The dedicated [chat token source](../../packages/design-system/source/production/components/chat.json)
+adds 15px body size and 22px line height through the generator. The published global
+14px text token remains intact. `.messageText` covers durable and streaming prose;
+the transcript container keeps its metadata default. Mentions share `ChatMentionVisual`;
+file chips share `ChatAttachment` and the AI Elements inline variant. Long labels truncate
+within the available width and retain the full label in their title/preview. The composer
+keeps its horizontal attachment strip, while sent references wrap. Missing account logos
+fall back to the building icon; contacts keep the existing initials fallback. A historical
+design ref with `kind=web` retains the microsite glyph even without a current catalog entry.
 
-- [ ] Composer, sent-user and agent body text share 15px / 22px typography,
-  including paragraphs and lists, without flattening the metadata hierarchy.
-- [ ] Account, contact, file and design mentions retain their appropriate icon,
-  text size, colour and visual treatment after sending and after a reload.
-- [ ] Image and document upload chips keep the composer's dimensions, weight,
-  gap, padding and corner treatment in the transcript.
-- [ ] Long names truncate/wrap deliberately, icons do not collapse, and missing
-  images use existing fallbacks; no horizontal overflow at narrow/split widths.
-- [ ] Draft editing/removal, keyboard mention selection, attachment upload/error
-  handling and read-only sent references keep their existing behaviour.
-- [ ] Optimistic, streaming and persisted messages remain visually consistent;
-  any provider-backed acceptance run is explicitly recorded as such.
-- [ ] Compare equivalent populated states at matching viewport sizes; record
-  computed styles and before/after evidence, distinguishing dummy examples from
-  newly agreed presentation rules where the dummy has no equivalent state.
-- [ ] Run `npm run design-system:build`, `npm run lint`, `npm run build` and
-  focused checks appropriate to the implementation. Mark each finding closed
-  only after its code change and browser acceptance are recorded here.
+### Implementation verification (2026-09-20)
+
+| Check | Observed result |
+| --- | --- |
+| CHAT-VIS-01: live user/agent paragraphs and lists | 15px / 22px, weight 400, matching the composer. Author stays 13px / 18px; activity stays 14px / 20px. |
+| CHAT-VIS-02: draft and sent mentions | Same 15px label, 5px gap, 1px underline, transparent background and no outer border. Account/contact icon box 16px; document/ad/microsite glyph 14px. |
+| CHAT-VIS-03: draft and sent attachments | Same 32px height, 14px / 20px medium text, 6px gap, 6px horizontal padding, 1px border, 6.4px radius and 20px image preview. |
+| Real main chat at 1056 × 988 | Existing PDF/XLSX/PNG references render correctly; Inspect absent. Empty draft restored and send disabled. |
+| Real main chat with artifact panel open | Transcript width 312px; editable box 311px. Transcript, context rows and composer have no horizontal overflow. Long filenames truncate and sent chips wrap. |
+| Isolated component fixture at 390px and 720px widths | Long account/file labels fit without page or transcript overflow. Shared components render draft, optimistic, persisted and streaming examples consistently; reload preserves presentation. |
+| Reference fallbacks | Deliberately failed account logo uses building icon; missing contact image uses initials; `kind=web` without a catalog entity uses the microsite icon. |
+| Interaction preservation | Live account mention insertion and draft clearing; fixture keyboard mention search/Enter selection; draft attachment removal; no remove buttons on sent refs. Uploading/failed draft states retain their busy/invalid and error styling. |
+| Checks | 81 existing focused tests passed across composer editing, catalog, transcript transitions, attachment validation and message presentation. Token generation, ESLint and production build passed. ESLint reports only the two existing unused-function warnings in `canvasOperations.ts`. |
+
+The temporary fixture used the real composer and transcript components with local data and
+no transport. It was removed after verification. No new chat turn, paid provider call, or
+server upload was submitted. Upload-network failure/retry and a fresh server persistence
+round-trip were not exercised; existing state-machine tests passed. The current dummy has
+no equivalent populated agent transcript, so closure follows the founder-approved composer
+appearance plus the measured before/after evidence above, not a claim of pixel parity with
+an unavailable dummy state.
+
+- [x] Shared body typography, including paragraph/list rendering, with deliberate metadata sizes.
+- [x] Shared account/contact/file/design mention visuals, icons and fallbacks.
+- [x] Shared document/image attachment geometry; sent references are read-only.
+- [x] Long-label truncation and narrow/split layout checks.
+- [x] Draft editing/removal and keyboard selection; upload-state presentation checked with fixtures.
+- [x] Optimistic, streaming and persisted rendering checked with fixtures and existing regression tests.
+- [x] Token generation, lint, production build and focused tests.
 
 ## Isolated sidebar IA exploration (2026-08-05)
 

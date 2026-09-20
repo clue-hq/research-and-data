@@ -28,7 +28,8 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 - `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
-  chat fidelity map: typography, mention identity and attachment geometry; fixes remain open.
+  chat fidelity map: shared 15/22 body tokens, mention identity and attachment geometry now
+  implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
 - `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
   drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.
 - `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:

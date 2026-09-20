@@ -14,3 +14,35 @@
   acceptance criteria. Appearance implementation remains open; no runtime code changed.
 - Documentation links and whitespace checked before the local commit; no runtime tests
   required for this documentation-only update. No remote publication.
+
+## Implementation in progress
+
+- Founder authorized all three appearance fixes. Added product chat body tokens via source;
+  shared ChatMentionVisual and ChatAttachment across composer and transcript. Kept metadata
+  sizes and backend contracts unchanged. Transcript references retain order and identity.
+- First frontend token/lint/build gates passed (two existing canvasOperations unused-function
+  warnings). 81 focused composer/catalog/transcript/attachment/presentation tests passed.
+- Command corrections: token command initially ran from repo root (missing script); reran
+  from apps/frontend. tsx CLI hit sandbox IPC EPERM; node --import tsx --test passed without IPC.
+- Live current-chat body paragraphs/lists now 15/22; file chips 32px, 14px medium, 20px preview.
+  Draft/sent mention, responsive and interaction verification still in progress.
+
+## Closing entry
+
+- CHAT-VIS-01..03 implemented. Dedicated generated chat 15/22 body tokens leave global
+  typography and metadata hierarchy intact. Shared mention visuals preserve logos, initials,
+  typed icons and Slate selection; failed account logos fall back to the building glyph.
+  Shared attachments preserve 32px height and draft-only removal/status controls; long names
+  truncate within available width. Transcript refs retain their original ordering/identity.
+- Live browser: persisted PDF/XLSX/PNG chips and user/agent prose verified; Inspect absent;
+  312px transcript with artifact panel open has no horizontal overflow. Main chat draft cleared
+  and original URL restored. Temporary fixture route rendered the real components at 390px
+  and 720px, covering draft/optimistic/persisted/streaming styles, missing-logo/contact fallbacks,
+  web-kind fallback without catalog, keyboard mention selection, attachment removal and
+  busy/failed status presentation. Fixture route and temporary tab removed; viewport reset.
+- No message submitted, provider called, or server upload made. Fresh persistence/upload retry
+  was not exercised; 81 existing regression tests covered the relevant model transitions.
+- Canonical visual register updated with measured closure evidence and limits; ten file links
+  resolve. No new backend contract or migration. No remote publication.
+- Final post-review token generation, lint and production build passed again; only the two
+  pre-existing canvasOperations warnings remain. Whitespace and documentation links checked.
