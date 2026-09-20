@@ -211,11 +211,8 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  /* A long default must not turn Skip into a second row-wide control: the
-   * button stays compact and the full default rides its title on hover. */
-  max-width: 11rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* The label is just "Skip" (founder, 2026-09-21); the default it applies
+   * rides the button's title on hover. */
   white-space: nowrap;
   transition: background var(--clue-ds-product-motion-duration-fast)
     var(--clue-ds-product-motion-easing-standard);

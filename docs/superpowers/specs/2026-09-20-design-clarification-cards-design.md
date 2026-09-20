@@ -119,8 +119,9 @@ queue in position order with a strip above the card: "2 designs have questions".
 - Numbered options (1…k). Keyboard: ↑↓ move, Enter selects, Esc skips, digits jump.
 - **"Something else…" is always present** (founder ruling), a single-line text input; Enter
   submits it as the answer. `allow_freeform` from the runtime is ignored.
-- **Skip names the default**: "Skip — use <default>" (the runtime requires a default, so Skip is
-  never blank). Skipping records `{skipped: true, default}`.
+- **Skip is labelled "Skip"** (founder, 2026-09-21); the default it applies rides the button's
+  hover title. The runtime requires a default, so Skip is never blank. Skipping records
+  `{skipped: true, default}`.
 - ✕ collapses the card into a chip under the design turn's message: "2 questions from Capital —
   answer". Clicking the chip reopens the card at the first unanswered question.
 - The last answer of the last document sends. Until then answers are held in component state;

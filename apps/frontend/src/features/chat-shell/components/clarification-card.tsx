@@ -306,7 +306,7 @@ export function ClarificationCard({
             title={`Skip — use ${question.default}`}
             type="button"
           >
-            {`Skip — use ${question.default}`}
+            Skip
           </button>
         </div>
       </div>

@@ -19,7 +19,7 @@
 - Part kind value: exactly `clarification`. Part id: `clarification:<document_id>`.
 - Summary sentence: `Asked you {n} question{s} before designing: {q1}; {q2}.` — question texts verbatim, joined by `; `, terminated by `.`; `question`/`questions` by count.
 - Exit judge artifact suffix: ` [asked: "<q1>" | "<q2>"]` (question texts verbatim, `" | "` between). Exit prompt version `v3` → `v4`.
-- Card copy: header `<title> · <account>` (account omitted when null); pager `{i} of {n}`; free-text row placeholder `Something else…`; skip button `Skip — use {default}`; strip `{k} designs have questions`; collapsed chip `{n} question{s} from {title} — answer`; hint line `↑↓ to navigate · Enter to select · Esc to skip`.
+- Card copy: header `<title> · <account>` (account omitted when null); pager `{i} of {n}`; free-text row placeholder `Something else…`; skip button `Skip` (its hover title `Skip — use {default}`; label shortened by founder 2026-09-21); strip `{k} designs have questions`; collapsed chip `{n} question{s} from {title} — answer`; hint line `↑↓ to navigate · Enter to select · Esc to skip`.
 - Reply text format (exact):
   ```
   For "<title>":
