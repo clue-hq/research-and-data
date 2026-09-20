@@ -3,6 +3,30 @@ import assets
 
 
 class AssetTests(unittest.TestCase):
+    def test_palette_png_transparency_is_not_misread_as_an_opaque_matte(self):
+        import io,tempfile
+        from PIL import Image
+        from core import Store
+        im=Image.new('P',(4,4));im.putpalette([0,0,0,255,255,255]+[0]*762)
+        out=io.BytesIO();im.save(out,format='PNG',transparency=0)
+        class P:
+            def download(self,url):return out.getvalue(),'image/png',url
+        with tempfile.TemporaryDirectory() as d:
+            a=assets.AssetPipeline(Store(d),P()).ingest('https://example.com/logo.png',{'collection':'website'})
+            self.assertFalse(a['dimensions']['has_alpha_channel'])
+            self.assertTrue(a['dimensions']['has_transparency'])
+
+    def test_website_identity_icons_survive_generic_navigation_filter(self):
+        import tempfile
+        from unittest.mock import patch
+        from core import Store
+        with tempfile.TemporaryDirectory() as d:
+            s=Store(d);s.write('sources.json',{'s':{'id':'s','url':'https://www.conduit.ai/','images':[{'url':'https://www.conduit.ai/icon.png'},{'url':'https://www.conduit.ai/apple-icon.png'},{'url':'https://www.conduit.ai/social-twitter.svg'}]}})
+            found=[]
+            def ingest(_,url,origin):found.append(url);return {'id':url}
+            with patch.object(assets.AssetPipeline,'ingest',ingest):assets.AssetPipeline(s,object()).website()
+            self.assertEqual(set(found),{'https://www.conduit.ai/icon.png','https://www.conduit.ai/apple-icon.png'})
+
     def test_optimizer_source_decodes_to_original_and_preserves_external_host(self):
         self.assertEqual(assets.original_url('https://www.conduit.ai/_next/image?url=%2Fhero%2Fbg.png&w=3840&q=75'), 'https://www.conduit.ai/hero/bg.png')
         self.assertEqual(assets.original_url('https://www.conduit.ai/_next/image?url=https%3A%2F%2Fcdn.sanity.io%2Fasset.jpg&w=100'), 'https://cdn.sanity.io/asset.jpg')

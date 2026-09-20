@@ -35,17 +35,17 @@ class Providers:
                 return bytes(data), r.headers.get('content-type', '').split(';')[0], str(r.url)
         raise RuntimeError('Too many redirects')
 
-    def fetch_page(self, url):
+    def fetch_page(self, url, *, refresh=False):
         url = public_url(url)
         cached = self.store.read('cache/page-' + digest(url) + '.json')
-        if cached:
+        if cached and not refresh:
             return cached
         with self.store.lock:
             self.budget.enforce_count('page', 50)
             receipt = self.budget.reserve('page', 0, url=url)
         try:
             data, mime, final_url = self.download(url, limit=8 * 1024 * 1024)
-            if mime not in ('text/html', 'application/xhtml+xml', 'text/plain', 'application/xml', 'text/xml'):
+            if mime not in ('text/html', 'application/xhtml+xml', 'text/plain', 'text/markdown', 'text/x-markdown', 'application/xml', 'text/xml'):
                 raise ValueError('Page tool accepts HTML or text; use asset acquisition for binaries')
             soup = BeautifulSoup(data, 'html.parser')
             title = soup.title.get_text(' ', strip=True) if soup.title else final_url

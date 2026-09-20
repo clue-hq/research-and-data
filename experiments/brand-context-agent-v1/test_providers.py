@@ -8,6 +8,15 @@ import providers
 
 
 class ProviderTests(unittest.TestCase):
+    def test_linked_markdown_documentation_is_researchable(self):
+        def serve(request):
+            return httpx.Response(200, headers={'content-type':'text/markdown'}, text='# Inbox\n\nGuest conversations stay in one workspace.')
+        with tempfile.TemporaryDirectory() as d, patch('providers.check_dns', lambda u: u):
+            p=providers.Providers(Store(Path(d)), {}, transport=httpx.MockTransport(serve))
+            source=p.fetch_page('https://conduit.ai/product/inbox.md')
+            self.assertIn('Guest conversations stay',source['text'])
+            self.assertEqual(source['content_type'],'text/markdown')
+
     def test_page_caches_original_without_repeating_transport(self):
         calls = []
         def serve(request):

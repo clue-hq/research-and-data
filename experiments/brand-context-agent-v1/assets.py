@@ -109,7 +109,7 @@ class AssetPipeline:
         asset = self.store.asset(data, mime, {**origin, 'url': url, 'resolved_url': resolved})
         try:
             im = Image.open(io.BytesIO(data))
-            dimensions = {'width': im.width, 'height': im.height, 'frames': getattr(im, 'n_frames', 1), 'has_alpha_channel': 'A' in im.getbands()}
+            dimensions = {'width': im.width, 'height': im.height, 'frames': getattr(im, 'n_frames', 1), 'has_alpha_channel': 'A' in im.getbands(), 'has_transparency': im.convert('RGBA').getextrema()[-1][0] < 255}
         except Exception:
             dimensions = {'vector': mime == 'image/svg+xml'}
         self.patch(asset['id'], dimensions=dimensions)
@@ -129,11 +129,12 @@ class AssetPipeline:
             for i in s.get('images', []):
                 url = original_url(i['url'])
                 # Navigation chrome is not useful creative material. Other omissions are listed below.
-                if any(x in url for x in ['social-', 'product-icon-', '/icon.png', '/apple-icon']): continue
+                if any(x in url for x in ['social-', 'product-icon-']): continue
                 candidates.setdefault(url, {'source_id': s['id'], 'source_page': s['url'], 'alt': i.get('alt', ''), 'collection': 'website'})
         def rank(item):
             url = item[0]
             if 'conduit-wordmark' in url: return 0
+            if any(x in url for x in ['/icon.png', '/apple-icon', '/conduit-icon.png']): return 0
             if any(x in url for x in ['hero', 'product-screenshot', 'agent-card', 'growth-', 'final-cta']): return 1
             if 'logo-trust' in url: return 3
             return 2
@@ -149,7 +150,7 @@ class AssetPipeline:
                 if error: failures.append(error)
         report = {'candidate_count': len(candidates), 'selected': len(selected), 'asset_ids': list(dict.fromkeys(results)),
                   'failures': failures, 'remaining_candidates': [u for u in candidates if u not in dict(selected)],
-                  'selection_note': 'Prioritised brand wordmark, product screenshots, backgrounds and distinct imagery; navigation icons excluded.'}
+                  'selection_note': 'Prioritised original brand wordmarks and site/touch icons, product screenshots, backgrounds and distinct imagery; unrelated social/navigation icons excluded.'}
         self.store.write('website-assets-report.json', report)
         return report
 

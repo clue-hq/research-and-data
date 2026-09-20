@@ -4,6 +4,15 @@ Status: **standalone pilot delivered for human review; not integrated into Clue*
 
 ## Open the result
 
+**Latest revision:** [Conduit rework](http://localhost:3046/#knowledge/company-overview) — see [RESULTS_V2.md](RESULTS_V2.md). The original pilot below is preserved for comparison.
+
+Restart the revised preview from the repository root:
+
+```sh
+.venv/bin/python experiments/brand-context-agent-v1/server.py --run conduit-rework-20260919 --port 3046
+```
+
+
 The review is running at **http://localhost:3045/** with Knowledge, Assets and Run & evaluation views. If the local server stops, run from the repository root:
 
 ```sh
@@ -91,3 +100,14 @@ Each document has a stable internal key, a friendly display title, concise body/
 - Final checkpoint: 9 documents, 63 source records, 53 originals/classifications, 16 complete static LinkedIn creatives and 3 separate video covers. Five verified founder-authored ads contributed four distinct new images. Three invented-ID classifications were rejected and re-requested with exact-ID constraints; 3 white customer-logo interpretations were corrected against original files. No logo or creative was generated.
 - Verification: 32 isolated unit tests, 12 real-run integrity checks, JavaScript syntax check and local browser inspection passed. Knowledge tables, evidence drawer, source filtering, search/empty state, asset details and evaluation rendered. HTTP checks returned 200 for viewer/data/original and 404 for environment, raw spend and cache paths. Tracked Clue files stayed unchanged.
 - Quality decision: useful review candidate, not approved brand governance. Initial independent scores are preserved without claiming a post-fix re-score. Candidate facts remain unapproved; semantic entailment, additional brands, production durability and latency are remaining integration gates. Final provider accounting and elapsed times are in the run report. Await human review; do not integrate or push.
+
+
+## Conduit rework review checkpoint
+
+The founder rejected the first pilot's depth. `REWORK.md` records the revised information architecture and the read-only platform/database audit. Work remains isolated; the first run and its preview are preserved. The new run is `runs/conduit-rework-20260919` and its separate preview uses port 3046.
+
+The new document manifest separates company context, individual products, messaging, ICP/personas, proof and identity. Company/product/proof writing precedes messaging and ICP. Source passages, dependencies, original asset provenance and unresolved commercial decisions remain explicit. Human descriptions and Agent context are distinct viewer surfaces. The new reader preserves citation cells that malformed Markdown tables would otherwise silently drop.
+
+Operational findings: Conduit's linked documentation serves `text/markdown`, which the first adapter rejected; the allowlist now supports it. Website deployment hashes can change while page text remains identical, so logo/style inspection must read the newly retrieved HTML rather than a stale source metadata URL. The original image filter omitted official website icons. Current platform knowledge already has richer per-product reports, while its asset mapper chooses description or usage_note; a richer agent-context record requires a future contract change.
+
+Final rework checkpoint: 25 documents, seven folders, 103 source records and 56 originals. All 42 unit tests and 12 artifact integrity checks pass. Six bounded sales-use cases produced five first-pass successes and one partial logo handoff, followed by a successful focused retest. The library still required supervised editorial correction; it is not approved governance or proven autonomous multi-brand ingestion. See RESULTS_V2.md for exact limitations and accounting. Original provider receipts, review suggestions, dispositions and prior revisions remain in the ignored run directory.
