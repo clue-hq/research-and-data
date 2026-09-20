@@ -486,4 +486,123 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     // carries meaning is that it is not "free".)
     expect(engine.scene.nodes.node_stack.layout?.layout_mode ?? "stack").toBe("stack");
   });
+
+  /* --------------------------------------------------------------------
+   * The three REAL ads, at the wasm seam (Task 5).
+   *
+   * `crates/lumen-core/tests/freeze_real_ads.rs` asks the Rust engine the
+   * same question of the same three fixtures. This asks it of the artifact
+   * the BROWSER actually loads, which is a different claim: the vendored
+   * wasm is a build, and a build can lag the crate. These are the LinkedIn
+   * ads the human froze on the live walk 2026-09-20, recovered pre-freeze
+   * (`computed: null` on every node, no `layout_mode` keys) — the shape the
+   * agent authors, not a hand-written stack.
+   * ----------------------------------------------------------------- */
+
+  function loadFreezeFixture(name: string): Scene {
+    return JSON.parse(
+      readFileSync(new URL(`./__fixtures__/freeze/${name}.json`, import.meta.url), "utf8"),
+    ) as Scene;
+  }
+
+  /**
+   * Every box, to 1e-6 — except the HEIGHT of the named text nodes, to 1.0px.
+   *
+   * The slack is the engine's one documented residual (Task 1): the Stack
+   * solve reports taffy's whole-pixel-ROUNDED geometry while Free natural-
+   * sizes unrounded, so a TEXT node that keeps its `hug` height through the
+   * freeze (the one dimension deliberately left un-baked) re-measures up to
+   * 0.71px different. Everything else is a baked Fixed extent or a baked
+   * transform, where any drift at all is a regression — which is why the
+   * grant is a named list and not a global tolerance.
+   *
+   * Violations are COLLECTED, never short-circuited: a failure has to name
+   * every node that moved, the way the Rust twin does.
+   */
+  function expectZeroMotion(
+    before: Record<string, unknown>,
+    after: Record<string, unknown>,
+    textHeightSlack: string[],
+  ): void {
+    expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort());
+    const violations: string[] = [];
+    for (const [id, wasBox] of Object.entries(before)) {
+      const nowBox = after[id];
+      if (wasBox === null || nowBox === null) {
+        // A node the solve does not place has no box to move; it must simply
+        // be un-placed on BOTH sides.
+        if (wasBox !== nowBox) {
+          violations.push(`${id}: placed on one side only`);
+        }
+        continue;
+      }
+      const was = wasBox as { x: number; y: number; width: number; height: number };
+      const now = nowBox as typeof was;
+      const heightTolerance = textHeightSlack.includes(id) ? 1.0 : 1e-6;
+      for (const [axis, from, to, tolerance] of [
+        ["x", was.x, now.x, 1e-6],
+        ["y", was.y, now.y, 1e-6],
+        ["width", was.width, now.width, 1e-6],
+        ["height", was.height, now.height, heightTolerance],
+      ] as const) {
+        const delta = Math.abs(to - from);
+        if (delta > tolerance) {
+          violations.push(`${id}.${axis}: ${from} -> ${to} (delta ${delta}, tolerance ${tolerance})`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  }
+
+  /** The hug-height text nodes of each ad — the same lists the Rust twin
+   * grants, node for node. */
+  const REAL_AD_FREEZE_CASES: Array<{ name: string; textHeightSlack: string[] }> = [
+    {
+      name: "capital_digestive_care_ad",
+      textHeightSlack: [
+        "eyebrow",
+        "headline",
+        "kicker",
+        "pair_x",
+        "prod_dac",
+        "prod_intake",
+        "prod_magicdocs",
+        "support",
+      ],
+    },
+    {
+      name: "austin_gastroenterology_ad",
+      textHeightSlack: ["cta", "headline", "sep", "support"],
+    },
+    {
+      name: "mngi_digestive_health_ad",
+      textHeightSlack: ["cta", "headline", "logo_sep", "p1", "p2", "p3", "support"],
+    },
+  ];
+
+  for (const { name, textHeightSlack } of REAL_AD_FREEZE_CASES) {
+    it(`freeze_layout moves nothing on the real ad ${name}`, async () => {
+      const module = await loadWasmModuleFromDisk();
+      // The engine relays out on load, so `engine.scene` is the SOLVED ad —
+      // the geometry the gesture machine captures at press time.
+      const engine = new WasmEngine(module, loadFreezeFixture(name));
+      const before = solvedBoxes(engine.scene);
+
+      const outcome = engine.applyStructuredEdit({ kind: "freeze_layout" });
+
+      expect(outcome.accepted).toBe(true);
+      // Non-empty, or the fixture had no managed container left and the case
+      // would be proving nothing.
+      expect(outcome.operations.length).toBeGreaterThan(0);
+      expectZeroMotion(before, solvedBoxes(outcome.scene), textHeightSlack);
+
+      // The slack can never quietly cover a baked extent that drifted: each
+      // granted node really is a text node that kept its hug height.
+      for (const id of textHeightSlack) {
+        const node = outcome.scene.nodes[id];
+        expect(node?.kind.kind, `${name}/${id} kind`).toBe("text");
+        expect(node?.size.height, `${name}/${id} height`).toEqual({ kind: "hug" });
+      }
+    });
+  }
 });

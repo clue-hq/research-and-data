@@ -1,0 +1,1303 @@
+{
+  "assets": {
+    "asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7": {
+      "font": null,
+      "id": "asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7",
+      "kind": "raster_image",
+      "label": "Wide horizontal editorial photograph of three empty floating",
+      "license": {
+        "allow_embedding": true,
+        "allow_export": true,
+        "allow_modification": true,
+        "allow_subsetting": false,
+        "name": "generated_commercial_use",
+        "restrictions": [],
+        "source_url": null
+      },
+      "logo": null,
+      "media": {
+        "byte_length": 926547,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "b42225969739bbbc71ba55986d57b88ee9c40baafae8b56fa8e7a7ff37148ef2"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/b4/b42225969739bbbc71ba55986d57b88ee9c40baafae8b56fa8e7a7ff37148ef2",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/e8/e85d95aa73f0340cc55d5bcdf76cfe9bbbcb7d835edd069dde00fef7ffc82027",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 256,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": null,
+        "created_at": "2026-09-20T09:19:41.052487+00:00",
+        "created_by": "agent",
+        "notes": [
+          "model=openai/gpt-image-2",
+          "provider=image-gen-v1",
+          "request_id=asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7",
+          "image_request={\"cost_usd\":\"0\",\"effective_aspect_ratio\":\"1:1\",\"effective_reference_framing\":\"Generate a NEW image guided by these ordered references:\\nReference 1 (composition): use the layout, spatial hierarchy and framing.\\nReference 2 (treatment): use the palette, texture, mood and rendering treatment.\\nPreserve the OG floating white rounded UI cards on a soft mint-lavender cream wash and the blurry gradient material. Vary the subject to three empty unlabelled GI workflow cards with no logos, metrics, or readable UI copy.\",\"ledger_row_id\":\"c353140a-0152-4644-84c8-12c29b1af489\",\"operation\":\"close_companion\",\"output_dimensions\":{\"height\":1024,\"width\":1024},\"provider_api_style\":\"images\",\"provider_operation\":\"generate\",\"reference_framing\":\"Preserve the OG floating white rounded UI cards on a soft mint-lavender cream wash and the blurry gradient material. Vary the subject to three empty unlabelled GI workflow cards with no logos, metrics, or readable UI copy.\",\"reference_inputs\":[{\"index\":1,\"mime_type\":\"image/png\",\"role\":\"composition\",\"sha256\":\"c87ce63f6cc4b526a33de42997aa5471c92c6cf9d7acd49e712e01fa51f5ceb9\"},{\"index\":2,\"mime_type\":\"image/webp\",\"role\":\"treatment\",\"sha256\":\"0a77561bb366822764949806e31e91424a7f3bfe6abbb2a8ac6f97c8244ec394\"}],\"reference_roles\":[\"composition\",\"treatment\"],\"requested_aspect_ratio\":null,\"requested_canvas\":{\"height\":1024,\"width\":1024}}",
+          "output 1024x1024",
+          "reference-conditioned on 2 attachment(s): c87ce63f6cc4b526a33de42997aa5471c92c6cf9d7acd49e712e01fa51f5ceb9, 0a77561bb366822764949806e31e91424a7f3bfe6abbb2a8ac6f97c8244ec394"
+        ],
+        "source_label": "image generation"
+      },
+      "raster": {
+        "aspect_ratio": 1.0,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_height": 1024,
+        "pixel_width": 1024
+      },
+      "source": {
+        "kind": "generated",
+        "model": "openai/gpt-image-2",
+        "request_id": "asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7"
+      },
+      "status": "ready",
+      "tags": [],
+      "vector": null
+    },
+    "asset_ing_56a8225dcaec8700": {
+      "font": null,
+      "id": "asset_ing_56a8225dcaec8700",
+      "kind": "raster_image",
+      "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 2960,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815"
+        },
+        "filename": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "location": {
+          "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815",
+          "provider": "clue-storage",
+          "url": null
+        },
+        "mime_type": "image/webp",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/57e1104d78104a5a08cd6f9685b10f9cd95df53b4149a00c09c0e73ccbf772df",
+            "provider": "clue-storage",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 38,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.7,
+        "created_at": "2026-09-11T06:22:02.620566+00:00",
+        "created_by": "lumen_ingestion",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": {
+        "aspect_ratio": 6.676056338028169,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_height": 71,
+        "pixel_width": 474
+      },
+      "source": {
+        "kind": "brand_guide",
+        "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "source_asset_id": "asset_ing_56a8225dcaec8700"
+      },
+      "status": "ready",
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "vector": null
+    },
+    "asset_ing_a0e8accfb17e4b78": {
+      "font": null,
+      "id": "asset_ing_a0e8accfb17e4b78",
+      "kind": "raster_image",
+      "label": "MNGI Digestive Health logo (light_lockup)",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 11926,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "a0e8accfb17e4b78aba04d7f2777868181afba253561ce3f5fa2e0163d7114b4"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/a0/a0e8accfb17e4b78aba04d7f2777868181afba253561ce3f5fa2e0163d7114b4",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/71/71724626618b892003ed40bbeeffcc4f643e359a43581336f69a7da984caf768",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 78,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.87,
+        "created_at": null,
+        "created_by": "logo_ladder",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": {
+        "aspect_ratio": 3.298507462686567,
+        "color_profile": null,
+        "dpi_x": 72.009,
+        "dpi_y": 72.009,
+        "has_alpha": true,
+        "pixel_height": 201,
+        "pixel_width": 663
+      },
+      "source": {
+        "captured_at": "2026-09-20T09:11:41Z",
+        "kind": "website",
+        "url": "https://www.mngi.com/sites/default/files/logo_0.png"
+      },
+      "status": "ready",
+      "tags": [
+        "target-account",
+        "logo-ladder"
+      ],
+      "vector": null
+    }
+  },
+  "export_profiles": [],
+  "meta": {
+    "artifact_type": null,
+    "brand_kit": {
+      "id": "brand_kit_ing_6709960c4caa40cdab9b2213f05ed4cb",
+      "version": 1
+    },
+    "id": "doc_48bc3377ff2a5d4aa106e7362b000276",
+    "medium": "ad",
+    "status": {
+      "kind": "draft"
+    },
+    "title": "MNGI Digestive Health LinkedIn ad"
+  },
+  "nodes": {
+    "artboard": {
+      "children": [
+        "identity",
+        "headline",
+        "support",
+        "mid",
+        "cta_btn"
+      ],
+      "clip": true,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_artboard_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "artboard",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 20.0,
+        "gap_token": "space.5",
+        "grow": 0.0,
+        "padding": [
+          48.0,
+          56.0,
+          48.0,
+          56.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "artwork": {
+      "asset_placement": {
+        "alt_text": "Soft mint wash with empty floating UI cards",
+        "fit": "cover",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.45
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "artwork",
+      "kind": {
+        "alt": "Soft mint wash with empty floating UI cards",
+        "asset_id": "asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 260.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 968.0
+        }
+      },
+      "source_asset_id": "asset_img_run_3a9b_00301bac4c8b4b1ca2e55acd2d2121f7",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "chip1": {
+      "children": [
+        "p1"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_chip1_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "chip1",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 8.0,
+        "gap_token": "space.sm",
+        "grow": 0.0,
+        "padding": [
+          18.0,
+          16.0,
+          18.0,
+          16.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 301.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "chip2": {
+      "children": [
+        "p2"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_chip2_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "chip2",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 8.0,
+        "gap_token": "space.sm",
+        "grow": 0.0,
+        "padding": [
+          18.0,
+          16.0,
+          18.0,
+          16.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 301.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "chip3": {
+      "children": [
+        "p3"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_chip3_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "chip3",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 8.0,
+        "gap_token": "space.sm",
+        "grow": 0.0,
+        "padding": [
+          18.0,
+          16.0,
+          18.0,
+          16.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 301.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "chips": {
+      "children": [
+        "chip1",
+        "chip2",
+        "chip3"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "chips",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 16.0,
+        "gap_token": "space.lg",
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 936.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 16.0,
+        "y": 28.0
+      }
+    },
+    "cta": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_cta_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.brand"
+          }
+        }
+      ],
+      "id": "cta",
+      "kind": {
+        "align": "left",
+        "content": "See the GI agents",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 600,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.2,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "hug"
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "cta_btn": {
+      "children": [
+        "cta"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 40.0,
+        "bottom_right": 40.0,
+        "top_left": 40.0,
+        "top_right": 40.0
+      },
+      "fills": [
+        {
+          "id": "paint_cta_btn_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand.subtle"
+          }
+        }
+      ],
+      "id": "cta_btn",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "center",
+        "align_y": "center",
+        "gap": 0.0,
+        "gap_token": "space.0",
+        "grow": 0.0,
+        "padding": [
+          16.0,
+          28.0,
+          16.0,
+          28.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "hug"
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "headline": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_headline_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "headline",
+      "kind": {
+        "align": "left",
+        "content": "Pair online GI scheduling with agents that finish the intake.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 51.5,
+        "font_size_token": "type.size.5xl",
+        "font_weight": 700,
+        "kind": "text",
+        "letter_spacing": -0.02,
+        "line_height": 1.05,
+        "spans": [
+          {
+            "end": 61,
+            "fill": {
+              "color": {
+                "kind": "hex",
+                "value": "#00654B"
+              },
+              "kind": "solid"
+            },
+            "font_weight": 700,
+            "start": 43
+          }
+        ],
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "identity": {
+      "children": [
+        "logo_ih",
+        "logo_sep",
+        "logo_mngi"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "identity",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 14.0,
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 70.0
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "logo_ih": {
+      "asset_placement": {
+        "alt_text": "InsightHealth logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "logo_ih",
+      "kind": {
+        "alt": "InsightHealth logo",
+        "asset_id": "asset_ing_56a8225dcaec8700",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 37.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 248.0
+        }
+      },
+      "source_asset_id": "asset_ing_56a8225dcaec8700",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "logo_mngi": {
+      "asset_placement": {
+        "alt_text": "MNGI Digestive Health logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        },
+        "preserve_transparency": true
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "logo_mngi",
+      "kind": {
+        "alt": "MNGI Digestive Health logo",
+        "asset_id": "asset_ing_a0e8accfb17e4b78",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 68.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 228.0
+        }
+      },
+      "source_asset_id": "asset_ing_a0e8accfb17e4b78",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "logo_sep": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_logo_sep_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "logo_sep",
+      "kind": {
+        "align": "center",
+        "content": "x",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "mid": {
+      "children": [
+        "artwork",
+        "chips"
+      ],
+      "clip": true,
+      "computed": null,
+      "corner": {
+        "bottom_left": 20.0,
+        "bottom_right": 20.0,
+        "top_left": 20.0,
+        "top_right": 20.0
+      },
+      "fills": [],
+      "id": "mid",
+      "kind": {
+        "kind": "frame"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 260.0
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "p1": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_p1_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "p1",
+      "kind": {
+        "align": "left",
+        "content": "MagicDocs structures inbound referrals.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "p2": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_p2_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "p2",
+      "kind": {
+        "align": "left",
+        "content": "Intake AI Agent captures clinic and virtual visit histories.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "p3": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_p3_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "p3",
+      "kind": {
+        "align": "left",
+        "content": "DAC AI intake screens patients toward scheduling.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "support": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_support_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "support",
+      "kind": {
+        "align": "left",
+        "content": "MNGI already opens online scheduling and a Colonoscopy Screening Survey. MagicDocs, Intake AI Agent, and Direct Access Colonoscopy AI intake can take referral, visit, and screening work off the call center.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  },
+  "pages": {
+    "linkedin_sq": {
+      "background": [],
+      "bleed": null,
+      "children": [
+        "artboard"
+      ],
+      "id": "linkedin_sq",
+      "name": "linkedin_sq",
+      "safe_area": null,
+      "size": {
+        "height": 1080.0,
+        "orientation": "landscape",
+        "output": {
+          "raster": {
+            "height_px": 1080,
+            "width_px": 1080
+          }
+        },
+        "preset": "custom",
+        "source": {
+          "height": 1080.0,
+          "unit": "px",
+          "width": 1080.0
+        },
+        "unit": "pt",
+        "width": 1080.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}

@@ -32,6 +32,7 @@ export const ChatPartKindSchema = z.enum([
   "gate",
   "sources",
   "action",
+  "clarification",
 ]);
 
 /** The AI Elements tool lifecycle, spelled exactly as §3.4 requires. */
@@ -448,6 +449,61 @@ export function parseCentAmount(
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// --- clarification -------------------------------------------------------
+
+const ClarificationQuestionWireSchema = z.object({
+  id: z.string().min(1),
+  question: z.string(),
+  why_it_matters: z.string().default(""),
+  options: z.array(z.string()).default([]),
+  default: z.string(),
+  allow_freeform: z.boolean().default(true),
+});
+
+/**
+ * Spec 2026-09-20 (clarification cards) §2.1: a design document's opening-move
+ * questions, one part per document whose run stopped to ask.
+ *
+ * `account_name` is `.nullable().optional()` because the backend's `_Part.wire()`
+ * drops `None` fields — an untagged document sends no `account_name` key at all,
+ * and both spellings mean the same thing here: no account, render no suffix.
+ */
+const ClarificationPartWireSchema = z.object({
+  ...partBase,
+  kind: z.literal("clarification"),
+  document_id: z.string().min(1),
+  document_title: z.string(),
+  doc_kind: z.string(),
+  account_name: z.string().nullable().optional(),
+  run_id: z.string().min(1),
+  // No default: a clarification part without its questions is not a card with
+  // nothing in it, it is an unreadable snapshot — the stream drops it rather
+  // than rendering an empty card.
+  questions: z.array(ClarificationQuestionWireSchema),
+});
+
+export interface ChatClarificationQuestion {
+  id: string;
+  question: string;
+  whyItMatters: string;
+  options: readonly string[];
+  /** What the runtime uses when the question is skipped. */
+  default: string;
+  allowFreeform: boolean;
+}
+
+export interface ChatClarificationPart {
+  kind: "clarification";
+  partId: string;
+  revision: number;
+  documentId: string;
+  documentTitle: string;
+  docKind: string;
+  accountName: string | null;
+  runId: string;
+  questions: readonly ChatClarificationQuestion[];
+}
+
 // --- sources -------------------------------------------------------------
 
 const SourceItemWireSchema = z.object({
@@ -511,7 +567,8 @@ export type ChatPart =
   | ChatTaskPart
   | ChatPlanPart
   | ChatGatePart
-  | ChatSourcesPart;
+  | ChatSourcesPart
+  | ChatClarificationPart;
 
 /**
  * One part snapshot, exactly as `part.created|updated|completed|failed` carries it.
@@ -529,6 +586,7 @@ export const ChatPartSnapshotSchema = z
     PlanPartWireSchema,
     GatePartWireSchema,
     SourcesPartWireSchema,
+    ClarificationPartWireSchema,
   ])
   .transform((wire): ChatPart => {
     switch (wire.kind) {
@@ -612,6 +670,25 @@ export const ChatPartSnapshotSchema = z
           decision: wire.decision ?? null,
           answeredByUserId: wire.answered_by_user_id ?? null,
           answeredAt: wire.answered_at ?? null,
+        };
+      case "clarification":
+        return {
+          kind: "clarification",
+          partId: wire.part_id,
+          revision: wire.revision,
+          documentId: wire.document_id,
+          documentTitle: wire.document_title,
+          docKind: wire.doc_kind,
+          accountName: wire.account_name ?? null,
+          runId: wire.run_id,
+          questions: wire.questions.map((question) => ({
+            id: question.id,
+            question: question.question,
+            whyItMatters: question.why_it_matters,
+            options: question.options,
+            default: question.default,
+            allowFreeform: question.allow_freeform,
+          })),
         };
       case "sources":
         return {

@@ -684,6 +684,25 @@ class DesignArtifactResponse(_Wire):
     data: DesignArtifactWire
 
 
+class DesignArtifactAccountWire(_Wire):
+    """The account a listed artifact was made for — the artifacts page's own shape.
+
+    Spec 2026-09-19 §3.8: the document records the account, so the gallery feed carries it
+    rather than leaving the client to guess. The gallery card's designed component has no
+    account slot yet, so the field rides the wire and stays invisible until one is designed
+    (the dummy-frontend rule: no invented chrome). Absent when the document names no
+    account — a card then states nothing.
+    """
+
+    id: str
+    name: str
+    domain: str | None = None
+    account_entity_id: str | None = None
+    #: Brandfetch's Logo API mark for the account's domain (founder, 2026-09-20 — the
+    #: accounts screens' own rule), or ``None`` without a domain or a configured client id.
+    logo_path: str | None = None
+
+
 class DesignArtifactListItemWire(DesignArtifactWire):
     """One gallery row: the W1.3 item shape plus what a *listed* artifact needs.
 
@@ -692,6 +711,9 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     thread it came from. ``origin_thread_id`` is the thread of the document's latest
     leg — a document worked on from two threads reports the most recent one, not all
     of them; the gallery uses it to link a card back to its conversation.
+
+    Since spec 2026-09-19 §3.2 a leg names a SET of documents, so one leg contributes one
+    item per artboard it opened, each reporting that leg's thread.
     """
 
     created_at: str
@@ -703,6 +725,7 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     artifact_type: str | None = None
     width_px: int | None = None
     height_px: int | None = None
+    account: DesignArtifactAccountWire | None = None
 
 
 class DesignArtifactListResponse(_Wire):

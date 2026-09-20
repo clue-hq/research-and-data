@@ -72,6 +72,11 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: own summary grew with it (v33 -> v34, the attachments sentence). The block measures 4711 bytes
 #: against the 5120 now allowed. Adding a resource is what is supposed to move this number; a
 #: summary that sprawls is what it is here to catch.
+#:
+#: Unmoved at `head-of-abm@v59` and again at `@v60`: neither adds or removes a disclosed resource.
+#: v59 moves one TOOL address (`open_design_leg` @4 -> @5) and v60 changes only the prompt, and
+#: the manual re-mint both of them carry lives in the path this block prints, not in the summary
+#: it measures.
 SKILLS_BLOCK_MAX_BYTES = 5120
 
 #: The hand-written skill that teaches `run_python@1`. It is not a manual chapter — it carries a

@@ -609,9 +609,10 @@ project composer uploads up to four PNG/JPEG/WebP/SVG inspiration images through
 design BFF `POST /assets` seam. These are submitted as ordered `design_asset` `context_refs`,
 never as generic `attachment_refs`.
 
-Before accepting the turn, the platform proves the open leg is scene-backed and every referenced
-asset belongs to the workspace, is `ready`, is one of the four image media types, and still has
-readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
+Before accepting the turn, the platform proves EVERY document of the open leg is scene-backed (a
+leg holds many documents, not one — 2026-09-19 spec `multi-artifact-design-legs-design.md` §3.7),
+and every referenced asset belongs to the workspace, is `ready`, is one of the four image media
+types, and still has readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
 assets or bytes are scoped `404`s. The accepted ids stay on the immutable submission receipt and
 become `request.reference_asset_ids` in the design-leg envelope. Transcript reads batch-join the
 current asset library only for display metadata (`label`, `media_type`, `thumbnail_digest`). A

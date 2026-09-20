@@ -71,6 +71,23 @@ export const DesignArtifactListItemSchema = ChatShellArtifactSchema.extend({
   /** G-H: the document's real page size in px, absent when it has no page. */
   widthPx: z.number().int().positive().optional(),
   heightPx: z.number().int().positive().optional(),
+  /**
+   * The target account this document was made for, absent when it was made for
+   * none. A multi-artifact design leg births one document per account, so the
+   * account is what tells two otherwise identical cards apart. `domain` and
+   * `accountEntityId` are the account's own optionals — an account the backend
+   * knows without them arrives without them, never as an empty string.
+   */
+  account: z
+    .object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      domain: z.string().min(1).optional(),
+      accountEntityId: z.string().min(1).optional(),
+      /** Brandfetch's Logo API mark, when the backend could build one. */
+      logoPath: z.string().min(1).optional(),
+    })
+    .optional(),
 });
 
 export type DesignArtifactListItem = z.infer<typeof DesignArtifactListItemSchema>;
@@ -88,6 +105,18 @@ export const DesignArtifactListWireSchema = z
         artifact_type: z.string().min(1).nullish(),
         width_px: z.number().int().positive().nullish(),
         height_px: z.number().int().positive().nullish(),
+        // The account the document was made for. Null when it was made for
+        // none — the whole object is absent from the item then, the same way
+        // the other unanswerable facts are.
+        account: z
+          .object({
+            id: z.string().min(1),
+            name: z.string().min(1),
+            domain: z.string().min(1).nullish(),
+            account_entity_id: z.string().min(1).nullish(),
+            logo_path: z.string().min(1).nullish(),
+          })
+          .nullish(),
       }),
     ),
   })
@@ -110,6 +139,19 @@ export const DesignArtifactListWireSchema = z
         ...(item.artifact_type ? { artifactType: item.artifact_type } : {}),
         ...(item.width_px ? { widthPx: item.width_px } : {}),
         ...(item.height_px ? { heightPx: item.height_px } : {}),
+        ...(item.account
+          ? {
+              account: {
+                id: item.account.id,
+                name: item.account.name,
+                ...(item.account.domain ? { domain: item.account.domain } : {}),
+                ...(item.account.account_entity_id
+                  ? { accountEntityId: item.account.account_entity_id }
+                  : {}),
+                ...(item.account.logo_path ? { logoPath: item.account.logo_path } : {}),
+              },
+            }
+          : {}),
       }),
     ),
   );

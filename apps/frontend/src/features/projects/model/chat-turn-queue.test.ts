@@ -20,6 +20,7 @@ function turn(turnId: string, state: TurnState, requestedAt: string): ChatTurn {
     lastEventId: null,
     generationAttempts: state === "queued" ? 0 : 1,
     submissionMessage: null,
+    derivation: null,
   };
 }
 

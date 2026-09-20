@@ -1,6 +1,6 @@
 """The governed delegation entry onto the design leg (Part III P3.4, PD-part3 §1-D1/§2.3).
 
-One tool, ``open_design_leg@4``, granted to the Head of ABM. It is the materialization of the
+One tool, ``open_design_leg@5``, granted to the Head of ABM. It is the materialization of the
 master plan's "attach as subagent" wrapper under ruling D1: delegating to Design is not a
 LangGraph edge but a durable act — validate the D5 pins, build the §2.3 delegation bundle as one
 immutable canonical-JSON artifact, and open the ``design_leg`` row whose existence *is* the
@@ -81,6 +81,38 @@ imply (``size(w,h,px|pt|mm|in)`` in its DSL, normalized by the engine), which is
 that knowledge honestly lives. Everything else about the birth is unchanged from @3, which is
 unchanged from the web path: one document per leg, one transaction, brand decided at birth and
 only read back.
+
+**@5 — one message may ask for MANY artifacts, so a leg holds a SET of documents** (spec
+``docs/superpowers/specs/2026-09-19-multi-artifact-design-legs-design.md`` §3.1/§3.2/§3.6,
+founder rulings 2026-09-19). "A 1:1 ad for each of these twenty accounts" is twenty ads and
+"five variants of this ad" is five ads, so the single ``title`` of @2–@4 is retired into a list
+of ``artifacts`` items — each one a ``title`` the user would recognise, a ``note`` carrying that
+item's own words (its account, its emphasis), and an optional ``account_id`` naming the research
+account it is for. A single-artifact ask is a list of one, and every existing single-document
+path is that case. ``brief`` stays the shared brief for the whole batch and ``doc_kind`` stays
+one per leg; ``document_id`` (work on an existing artifact) and ``reopen_leg_id`` are unchanged
+and **exclusive** with ``artifacts``. The @2–@4 disciplines are widened, not replaced:
+
+* **One id per (leg, position).** :func:`derive_leg_document_id` takes a position, and position
+  0 keeps the @4 derivation byte for byte — so a single-item leg mints exactly the id it always
+  did, and a retried batch converges on the same N rows instead of minting twins.
+* **All N births and the leg insert in ONE transaction**, with the brand identity decided by
+  ``create_document``'s creation contract at each birth and read back off the stored row. The
+  leg carries ONE brand pin (read back from position 0 — all documents of a leg are born from
+  one kit).
+* **The set is durable.** Every leg records its documents in ``design_leg_document`` (the leg's
+  own ``document_id``/``document_version_guard`` stay and mean position 0), including the
+  existing-document pin path, which records that one document at position 0 with an empty note.
+  Nothing else establishes that invariant.
+* **A document born for a tagged account carries it** (§3.6). The item's ``account_id`` is
+  validated as a live ``account_entity`` of this workspace that is on this project — the same
+  containment the composer's tag validation applies — resolved to a ``design_account`` and
+  stamped on the document. It is there for the durable link and the gallery ONLY: the design
+  agent still reaches the account by its tools and by the words in the item's note, and nothing
+  in the design runtime reads the stamp.
+* **The bundle records the item list** and its cap grows with it —
+  :func:`delegation_bundle_cap` is ``24,000 + 1,500 × (N − 1)`` bytes, so the shared half of the
+  L3 layer is preserved for a single ad while a large batch is not refused for being large.
 """
 
 from __future__ import annotations
@@ -92,10 +124,19 @@ from dataclasses import dataclass
 from typing import Annotated, Any, ClassVar, Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import Field, JsonValue, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_submission import (
+    DERIVATION_DESIGN_LEG_FIRST_TURN,
+    DERIVATION_DESIGN_LEG_REDELIVERY,
+    dispatch_next_thread_turn,
+    get_submission,
+    insert_submission,
+    submission_context_refs,
+    turn_id_for_submission,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.turn_action import (
@@ -105,11 +146,15 @@ from clue_api.turn_action import (
     parse_turn_action_ref,
 )
 from clue_api.turn_binding import TRUSTED_TURN_FIELD
-from clue_core import ContactHandoffClaimRef
+from clue_core import ContactHandoffClaimRef, EntityId
 from clue_db import ConnFactory, transaction
+from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
 from clue_design.documents import create_document, get_document
 from clue_design.errors import DesignNotFoundError
+from clue_obs import get_logger
+from clue_research.identity import get_account
+from clue_research.membership import projects_for_accounts
 from clue_storage import StorageBackend
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -127,10 +172,13 @@ from clue_toolbelt import (
 )
 
 __all__ = [
+    "DESIGN_ARTIFACT_NOTE_MAX_CHARS",
     "DESIGN_DELEGATION_BUNDLE_MAX_BYTES",
     "DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE",
+    "DESIGN_DELEGATION_BUNDLE_PER_ITEM_BYTES",
     "DESIGN_LEG_REF_PREFIX",
-    "DESIGN_LEG_TITLE_WORD_BUDGET",
+    "DesignArtifactSpec",
+    "delegation_bundle_cap",
     "derive_leg_document_id",
     "FinishDesignLegInput",
     "FinishDesignLegOutput",
@@ -142,23 +190,25 @@ __all__ = [
     "design_leg_ref",
 ]
 
+log = get_logger("clue_api.design_leg_tools")
+
 #: The §2.3 bundle's own media type — one artifact kind, one name.
 DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE = "application/vnd.clue.design-delegation-bundle+json"
 
-#: §2.3's day-one hard size policy. The bundle lands in the 48k-token L3 layer
-#: (``utf8-bytes-v1`` counter: tokens are bytes) that the C8 project card can half-fill,
-#: so the bundle's budget is the other half. An oversized bundle is refused at build.
+#: §2.3's day-one hard size policy, for ONE artifact. The bundle lands in the 48k-token L3
+#: layer (``utf8-bytes-v1`` counter: tokens are bytes) that the C8 project card can half-fill,
+#: so a single-artifact bundle's budget is the other half. An oversized bundle is refused at
+#: build. A batch's cap is this plus per-item room — see :func:`delegation_bundle_cap`.
 DESIGN_DELEGATION_BUNDLE_MAX_BYTES = 24_000
+
+#: @5 (spec §3.1): what each artifact beyond the first adds to the bundle's cap.
+DESIGN_DELEGATION_BUNDLE_PER_ITEM_BYTES = 1_500
+
+#: @5 (spec §3.1): the bound on one artifact's own words.
+DESIGN_ARTIFACT_NOTE_MAX_CHARS = 2_000
 
 #: The opaque reference shape carried in tool results and finalization refs.
 DESIGN_LEG_REF_PREFIX = "design-leg:"
-
-#: F5's fallback title: the brief's first words when the agent supplies no ``title``.
-DESIGN_LEG_TITLE_WORD_BUDGET = 8
-
-#: The title a whitespace-only brief with no supplied title falls back to (``design_document.title``
-#: is NOT NULL, and an empty string is not a title).
-_FALLBACK_DOCUMENT_TITLE = "Untitled page"
 
 _LEG_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg")
 _LEG_DOCUMENT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-document")
@@ -175,25 +225,29 @@ def derive_design_leg_id(*, workspace_id: str, turn_id: UUID) -> str:
     return str(uuid5(_LEG_NAMESPACE, framed))
 
 
-def derive_leg_document_id(*, leg_id: str) -> str:
-    """One leg ⇒ one born document — the A9 replay identity of the birth (§6 trap 3).
+def delegation_bundle_cap(artifact_count: int) -> int:
+    """Spec §3.1: the shared half of L3 is kept for one artifact; each further item adds room."""
+
+    return DESIGN_DELEGATION_BUNDLE_MAX_BYTES + DESIGN_DELEGATION_BUNDLE_PER_ITEM_BYTES * max(
+        0, artifact_count - 1
+    )
+
+
+def derive_leg_document_id(*, leg_id: str, position: int = 0) -> str:
+    """One ``(leg, position)`` ⇒ one born document — the A9 replay identity of the birth.
 
     Derived from the leg id (itself derived from the presenting turn) rather than minted
     randomly like the design API's ``new_id("doc")``, so a retried delegation addresses the
-    SAME document row. It carries the design subsystem's ``doc_<32 hex>`` id shape so nothing
+    SAME document rows. It carries the design subsystem's ``doc_<32 hex>`` id shape so nothing
     downstream can tell a leg-born document from a route-born one.
+
+    Position 0 seeds on the BARE leg id, which is the @4 derivation byte for byte: a
+    single-artifact leg mints exactly the id it always has, and every pre-@5 leg keeps the id
+    it was born with.
     """
 
-    return f"doc_{uuid5(_LEG_DOCUMENT_NAMESPACE, leg_id).hex}"
-
-
-def _document_title(*, title: str | None, brief: str) -> str:
-    """F5: the agent's title when it supplied one, else the brief's first ~8 words."""
-
-    if title is not None and title.strip():
-        return title.strip()
-    words = brief.split()[:DESIGN_LEG_TITLE_WORD_BUDGET]
-    return " ".join(words) or _FALLBACK_DOCUMENT_TITLE
+    seed = leg_id if position == 0 else f"{leg_id}:{position}"
+    return f"doc_{uuid5(_LEG_DOCUMENT_NAMESPACE, seed).hex}"
 
 
 async def _emit_leg_lifecycle(
@@ -226,6 +280,23 @@ async def _emit_leg_lifecycle(
     )
 
 
+class DesignArtifactSpec(BaseModel):
+    """One artifact of the batch (@5, spec §3.1) — what to make, and what makes it distinct."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: The name the user would recognise. Distinct per item; identical titles within one call
+    #: are suffixed ``(2)``, ``(3)`` … so every document of the leg stays addressable by name.
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    #: This item's own words — the account it is for, the variant's emphasis, anything that
+    #: distinguishes it from its siblings.
+    note: str = Field(default="", max_length=DESIGN_ARTIFACT_NOTE_MAX_CHARS)
+    #: The research account (an ``account_entity`` id) this artifact is for — for the durable
+    #: link and the gallery only (spec §3.6); the design agent still reads the account by name
+    #: and by its own tools, and nothing in the design runtime reads the stamp.
+    account_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
 class OpenDesignLegInput(ToolInput):
     """What the agent proposes; every authority value is derived by the engine, not accepted."""
 
@@ -243,9 +314,12 @@ class OpenDesignLegInput(ToolInput):
     #: artboard; the design deepagent owns page geometry now). With a ``document_id`` present
     #: the durable row's own kind is the truth and this field is ignored.
     doc_kind: Literal["web", "scene"] | None = Field(default=None)
-    #: The born document's title (F5). Absent ⇒ the brief's first ~8 words. Ignored when the
-    #: leg pins an existing document — a delegation never renames someone else's artifact.
-    title: str | None = Field(default=None, min_length=1, max_length=200)
+    #: What to make, one item per artifact (@5, spec §3.1 — this replaced @4's single
+    #: ``title``). REQUIRED (at least one item) on a document-less open; refused beside
+    #: ``document_id`` or ``reopen_leg_id``, which name artifacts that already exist. The
+    #: 200-item schema bound is a sanity bound, not a product cap (ruling 5: no confirmation
+    #: before spend, at any batch size).
+    artifacts: tuple[DesignArtifactSpec, ...] = Field(default=(), max_length=200)
     #: The document version the agent believes is current. When present it must match the durable
     #: ``current_version`` exactly (the D5 CAS guard); when absent the current version is pinned.
     expected_document_version: int | None = Field(default=None, ge=0)
@@ -271,6 +345,10 @@ class OpenDesignLegOutput(ToolOutput):
     bundle_artifact_key: str
     bundle_sha256: str
     document_id: str | None
+    #: Every document of the leg, in position order (@5). ``document_ids[0]`` is
+    #: ``document_id`` — the leg's own pin — and the list is served on every path, read back
+    #: off ``design_leg_document`` for a replay or a reopen.
+    document_ids: tuple[str, ...] = ()
     document_version_guard: int | None
     brand_kit_id: str | None
     brand_kit_version: int | None
@@ -292,6 +370,24 @@ class _LegRefused(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class _Birth:
+    """One document this delegation is about to create (@5), fully resolved.
+
+    Everything a birth needs is decided in ``_resolve`` — the derived id, the de-duplicated
+    title, the item's own words, and the validated research account (with the name and domain
+    the design-plane account row is born from) — so ``invoke`` only performs writes.
+    """
+
+    position: int
+    document_id: str
+    title: str
+    note: str
+    account_entity_id: str | None
+    account_name: str | None
+    account_domain: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class _ResolvedDelegation:
     turn: TurnIdentity
     parent_execution_id: UUID
@@ -305,11 +401,12 @@ class _ResolvedDelegation:
     #: The validated CLOSED leg a re-delegation names (§2.2 mis-exit reopen); ``None`` on the
     #: fresh-delegation path.
     reopen_leg: dict[str, Any] | None = None
-    #: @2's document birth: the title to mint under ``document_id`` when this open must create
-    #: its own document. ``None`` on every path that pins (or reopens onto) an existing one.
-    birth_title: str | None = None
-    #: What kind of document that birth mints (``"web"`` | ``"scene"``) — set together with
-    #: ``birth_title``, which stays the single "this open births" flag.
+    #: @5's document births: one per requested artifact, in position order. Empty on every
+    #: path that pins (or reopens onto) an existing document — a non-empty tuple IS the
+    #: "this open births" flag, and ``births[0].document_id`` is the leg's own pin.
+    births: tuple[_Birth, ...] = ()
+    #: What kind of document those births mint (``"web"`` | ``"scene"``) — set together with
+    #: ``births``.
     birth_doc_kind: str | None = None
     #: The §2.3 payload behind ``bundle_bytes``, kept so the birth path can re-freeze the bundle
     #: with the brand pin the DOCUMENT was actually born with (which does not exist until the
@@ -331,14 +428,113 @@ def _canonical_json(value: object) -> bytes:
     ).encode()
 
 
-def _require_bundle_within_cap(bundle_bytes: bytes) -> None:
-    if len(bundle_bytes) > DESIGN_DELEGATION_BUNDLE_MAX_BYTES:
+def _require_bundle_within_cap(bundle_bytes: bytes, *, artifact_count: int) -> None:
+    cap = delegation_bundle_cap(artifact_count)
+    if len(bundle_bytes) > cap:
         raise _LegRefused(
-            f"the delegation bundle is {len(bundle_bytes)} bytes; the hard cap is "
-            f"{DESIGN_DELEGATION_BUNDLE_MAX_BYTES} (PD-part3 §2.3 — refs only, trim the "
-            "brief or the claim set)",
+            f"the delegation bundle is {len(bundle_bytes)} bytes; the hard cap for "
+            f"{artifact_count} artifact(s) is {cap} (PD-part3 §2.3 — refs only, trim the "
+            "brief, the item notes or the claim set)",
             reason_code="design_bundle_too_large",
         )
+
+
+def _distinct_titles(artifacts: Sequence[DesignArtifactSpec]) -> list[str]:
+    """Spec §3.1: identical titles within one call are suffixed ``(2)``, ``(3)`` …
+
+    A document is addressed by name — by the user, by the exit judge and in the gallery — so
+    two items called "Launch ad" would make the leg ambiguous. The FIRST occurrence keeps the
+    agent's title untouched; only the collisions are renamed.
+    """
+
+    seen: dict[str, int] = {}
+    titles: list[str] = []
+    for item in artifacts:
+        count = seen.get(item.title, 0) + 1
+        seen[item.title] = count
+        titles.append(item.title if count == 1 else f"{item.title} ({count})")
+    return titles
+
+
+async def _resolve_births(
+    conn: AsyncConnection,
+    *,
+    artifacts: Sequence[DesignArtifactSpec],
+    workspace_id: str,
+    project_id: str,
+    leg_id: str,
+) -> tuple[_Birth, ...]:
+    """Turn the requested artifacts into fully-resolved births (@5, spec §3.1/§3.6).
+
+    Every id is derived from ``(leg, position)`` and every named account is verified here —
+    live, in this workspace, and ON THIS PROJECT, the same containment the composer's tag
+    validation applies — so ``invoke`` performs writes only and a bad account never reaches a
+    birth. A refusal happens before any document exists, which is why this runs inside
+    ``_resolve`` (the shared precondition/invoke path) rather than in the write loop.
+    """
+
+    entity_ids: list[UUID] = []
+    parsed: list[UUID | None] = []
+    for item in artifacts:
+        if item.account_id is None:
+            parsed.append(None)
+            continue
+        try:
+            entity_id = UUID(item.account_id)
+        except ValueError as exc:
+            raise _LegRefused(
+                f"an artifact names account {item.account_id!r}, which is not an account id; "
+                "pass the account_entity id from the tagged reference, or no account at all",
+                reason_code="design_leg_account_not_found",
+            ) from exc
+        parsed.append(entity_id)
+        entity_ids.append(entity_id)
+
+    memberships: dict[UUID, tuple[str, ...]] = {}
+    if entity_ids:
+        memberships = await projects_for_accounts(
+            conn, workspace_id=workspace_id, account_ids=entity_ids
+        )
+    resolved: dict[UUID, tuple[str, str | None]] = {}
+    for entity_id in entity_ids:
+        if entity_id in resolved:
+            continue
+        account = await get_account(conn, EntityId(entity_id))
+        if (
+            account is None
+            or account.workspace_id != workspace_id
+            or account.merged_into is not None
+        ):
+            raise _LegRefused(
+                f"an artifact names account {entity_id}, which is not a live account of this "
+                "workspace",
+                reason_code="design_leg_account_not_found",
+            )
+        if project_id not in memberships.get(entity_id, ()):
+            raise _LegRefused(
+                f"an artifact names account {entity_id}, which this project does not target; "
+                "add it to the project first, or drop the account from the item",
+                reason_code="design_leg_account_not_on_project",
+            )
+        resolved[entity_id] = (account.canonical_name, account.primary_domain)
+
+    titles = _distinct_titles(artifacts)
+    births: list[_Birth] = []
+    for position, (item, title) in enumerate(zip(artifacts, titles, strict=True)):
+        item_entity_id = parsed[position]
+        name, domain = resolved[item_entity_id] if item_entity_id is not None else (None, None)
+        births.append(
+            _Birth(
+                position=position,
+                document_id=derive_leg_document_id(leg_id=leg_id, position=position),
+                title=title,
+                note=item.note,
+                account_entity_id=None if item_entity_id is None else str(item_entity_id),
+                account_name=name,
+                account_domain=domain,
+            )
+        )
+    return tuple(births)
 
 
 #: The engine round-trip a web-document birth needs: ``(document_id, title, brand_kit_ref)`` in,
@@ -398,21 +594,26 @@ def _default_scene_document_minter(
 
 class OpenDesignLegTool(Tool):
     name = "open_design_leg"
-    version = "4"
+    version = "5"
     model_description = (
         "Hand this conversation to the design deepagent — the only way to get a website (or any "
         "design artifact) made. Use it the moment the user asks for a landing page, microsite, "
         "or page to be built or changed. For a NEW website pass doc_kind='web' and no "
-        "document_id: an empty web document is created and the leg is pinned to it, so the "
-        "artifact appears in the project's gallery immediately. Pass title as the name the user "
-        'would recognise ("Insight Health landing page"); omitted, it is taken from the brief. '
-        "Put the user's actual ask in brief — what the page is for, who it is for, what it must "
-        "say — because Design sees the brief, not this conversation. To keep working on an "
-        "EXISTING artifact pass its document_id instead (doc_kind is then ignored). "
-        "For a NEW ad or any designed page pass doc_kind='scene' and no document_id: an empty "
-        "design document is created (no page yet) and the design agent authors the page itself — "
-        "size, unit (px for digital, mm/in for print) and layout come from the user's own words, "
-        "so put everything the user said about format, dimensions, medium and purpose in brief. "
+        "document_id; for a NEW ad or any designed page pass doc_kind='scene' and no "
+        "document_id. In both cases also pass artifacts, one item per artifact the user wants — "
+        "a title the user would recognise, a note with that item's own words (its account, its "
+        "emphasis), and account_id when the item is for a tagged research account; one item for "
+        "one ad, twenty for twenty accounts, five for five variants with a distinct emphasis "
+        "each; the shared ask stays in brief. Each item becomes its own document, opens in its "
+        "own tab and iterates in its own design session, and they appear in the project's "
+        "gallery immediately. "
+        "Put the user's actual ask in brief — what the artifacts are for, who they are for, "
+        "what they must say — because Design sees the brief, not this conversation. To keep "
+        "working on an EXISTING artifact pass its document_id instead (doc_kind and artifacts "
+        "are then refused). "
+        "On a scene birth the design agent authors the page itself — size, unit (px for "
+        "digital, mm/in for print) and layout come from the user's own words, so put everything "
+        "the user said about format, dimensions, medium and purpose in brief. "
         "Do not infer or restate dimensions yourself; Design owns them. "
         "To resume a design session you closed by "
         "mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is "
@@ -428,7 +629,8 @@ class OpenDesignLegTool(Tool):
         policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
         durable_identity=(
             "one design leg per delegating turn (leg id derived from the turn), and one born "
-            "document per leg (document id derived from the leg) — both in one transaction"
+            "document per (leg, artifact position) — every birth, the leg and its document "
+            "rows in one transaction"
         ),
         external_boundary=ExternalReplayBoundary.NONE,
     )
@@ -528,6 +730,9 @@ class OpenDesignLegTool(Tool):
                     event_type=TurnEventType.LEG_REOPENED,
                     leg_id=resolved.leg_id,
                 )
+                await self._queue_first_turn(
+                    conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"])
+                )
             elif resolved.existing_leg is not None:
                 leg = resolved.existing_leg
                 created = False
@@ -535,26 +740,46 @@ class OpenDesignLegTool(Tool):
                 brand_kit_id = resolved.brand_kit_id
                 brand_kit_version = resolved.brand_kit_version
                 bundle_bytes = resolved.bundle_bytes
-                if resolved.birth_title is not None:
-                    assert resolved.document_id is not None  # set together in _resolve
-                    if resolved.birth_doc_kind == "scene":
-                        brand_kit_id, brand_kit_version = await self._birth_scene_document(
-                            conn,
-                            workspace_id=ctx.workspace_id,
-                            document_id=resolved.document_id,
-                            title=resolved.birth_title,
-                            requested_brand_kit_id=resolved.brand_kit_id,
-                            requested_brand_kit_version=resolved.brand_kit_version,
+                if resolved.births:
+                    # @5: N births, in position order, in THIS transaction — the one that
+                    # inserts the leg, so a failed delegation leaves no orphan document.
+                    for birth in resolved.births:
+                        account_id: str | None = None
+                        if birth.account_entity_id is not None:
+                            # §3.6: the design-plane row the document's stamp references,
+                            # found or born here (the entity itself was validated at resolve).
+                            account_id = await design_accounts.ensure_web_account_for_entity(
+                                conn,
+                                workspace_id=ctx.workspace_id,
+                                account_entity_id=birth.account_entity_id,
+                                name=birth.account_name or birth.title,
+                                domain=birth.account_domain,
+                            )
+                        birth_pin = (
+                            await self._birth_scene_document(
+                                conn,
+                                workspace_id=ctx.workspace_id,
+                                document_id=birth.document_id,
+                                title=birth.title,
+                                account_id=account_id,
+                                requested_brand_kit_id=resolved.brand_kit_id,
+                                requested_brand_kit_version=resolved.brand_kit_version,
+                            )
+                            if resolved.birth_doc_kind == "scene"
+                            else await self._birth_web_document(
+                                conn,
+                                workspace_id=ctx.workspace_id,
+                                document_id=birth.document_id,
+                                title=birth.title,
+                                account_id=account_id,
+                                requested_brand_kit_id=resolved.brand_kit_id,
+                                requested_brand_kit_version=resolved.brand_kit_version,
+                            )
                         )
-                    else:
-                        brand_kit_id, brand_kit_version = await self._birth_web_document(
-                            conn,
-                            workspace_id=ctx.workspace_id,
-                            document_id=resolved.document_id,
-                            title=resolved.birth_title,
-                            requested_brand_kit_id=resolved.brand_kit_id,
-                            requested_brand_kit_version=resolved.brand_kit_version,
-                        )
+                        if birth.position == 0:
+                            # The leg carries ONE brand pin: every document of the batch is
+                            # born from one kit, so position 0's read-back is the leg's.
+                            brand_kit_id, brand_kit_version = birth_pin
                     document_created = True
                     # The bundle records what was actually born, not what was asked for: the
                     # kit is chosen BY the creation contract, so it cannot be known until now.
@@ -565,7 +790,7 @@ class OpenDesignLegTool(Tool):
                             "brand_kit": _brand_kit_ref(brand_kit_id, brand_kit_version),
                         }
                     )
-                    _require_bundle_within_cap(bundle_bytes)
+                    _require_bundle_within_cap(bundle_bytes, artifact_count=len(resolved.births))
                 bundle_ref = await self._artifacts().persist_body(
                     workspace_id=ctx.workspace_id,
                     data=bundle_bytes,
@@ -585,6 +810,27 @@ class OpenDesignLegTool(Tool):
                     brand_kit_version=brand_kit_version,
                     leg_id=resolved.leg_id,
                 )
+                # §3.2: the leg's SET, recorded in the same transaction as the leg. The pin
+                # path records its one document at position 0 with an empty note, so EVERY
+                # leg has its set and the readers that need it never special-case.
+                leg_documents = [
+                    design_legs.LegDocumentSpec(
+                        document_id=birth.document_id, position=birth.position, note=birth.note
+                    )
+                    for birth in resolved.births
+                ]
+                if not leg_documents and resolved.document_id is not None:
+                    leg_documents = [
+                        design_legs.LegDocumentSpec(
+                            document_id=resolved.document_id, position=0, note=""
+                        )
+                    ]
+                await design_legs.add_leg_documents(
+                    conn,
+                    workspace_id=ctx.workspace_id,
+                    leg_id=str(leg["id"]),
+                    documents=leg_documents,
+                )
                 created = True
                 await _emit_leg_lifecycle(
                     conn,
@@ -593,6 +839,15 @@ class OpenDesignLegTool(Tool):
                     event_type=TurnEventType.LEG_OPENED,
                     leg_id=resolved.leg_id,
                 )
+                await self._queue_first_turn(
+                    conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"])
+                )
+            # The set is served from the durable child rows on EVERY path — the fresh one
+            # (written just above, in this transaction), a replay, and a reopen — so the
+            # answer is what the leg actually holds rather than what this call asked for.
+            document_ids = await self._leg_document_ids(
+                conn, workspace_id=ctx.workspace_id, leg=leg
+            )
         bundle_sha = (
             (await self._bundle_sha(leg["bundle_artifact_ref"], ctx.workspace_id))
             if leg.get("bundle_artifact_ref")
@@ -608,6 +863,7 @@ class OpenDesignLegTool(Tool):
                 "bundle_artifact_key": leg.get("bundle_artifact_ref") or "",
                 "bundle_sha256": bundle_sha,
                 "document_id": leg.get("document_id"),
+                "document_ids": document_ids,
                 "document_version_guard": leg.get("document_version_guard"),
                 "brand_kit_id": leg.get("brand_kit_id"),
                 "brand_kit_version": leg.get("brand_kit_version"),
@@ -617,6 +873,81 @@ class OpenDesignLegTool(Tool):
             },
         )
 
+    async def _queue_first_turn(
+        self, conn: AsyncConnection, *, ctx: ToolContext, turn: TurnIdentity, leg_id: str
+    ) -> str | None:
+        """Spec 2026-09-20 §2.3: the leg's first design turn, queued in the transaction that
+        opened (or reopened) the leg, from the opening turn's own submission — so nobody has to
+        say "go". Derived under ONE key per (leg, opening turn): a replayed open converges on
+        the same submission. A turn with no submission of its own (machine-originated) queues
+        nothing and the leg waits for the user exactly as before."""
+
+        submission = await get_submission(conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id)
+        if submission is None:
+            log.info(
+                "design_leg.first_turn_skipped_no_submission",
+                leg_id=leg_id,
+                turn_id=str(turn.turn_id),
+            )
+            return None
+        key = f"design-leg-first-turn:{leg_id}:{turn.turn_id}"
+        first_turn_id = turn_id_for_submission(
+            workspace_id=ctx.workspace_id, thread_id=turn.thread_id, idempotency_key=key
+        )
+        context_refs = await submission_context_refs(
+            conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id
+        )
+        await insert_submission(
+            conn,
+            turn_id=first_turn_id,
+            workspace_id=ctx.workspace_id,
+            project_id=submission.project_id,
+            thread_id=turn.thread_id,
+            submitted_by_user_id=submission.submitted_by_user_id,
+            submitted_via_membership_id=submission.submitted_via_membership_id,
+            onboarding_input_id=submission.onboarding_input_id,
+            message_artifact_key=submission.message_artifact_key,
+            message_sha256=submission.message_sha256,
+            idempotency_key=key,
+            context_refs=context_refs,
+            derivation=DERIVATION_DESIGN_LEG_FIRST_TURN,
+            derived_from_turn_id=turn.turn_id,
+        )
+        # A no-op while the opening turn's own task is in flight; the worker offers the next
+        # turn when that task finishes (the redelivery relies on the same property).
+        await dispatch_next_thread_turn(
+            conn, workspace_id=ctx.workspace_id, thread_id=turn.thread_id
+        )
+        log.info(
+            "design_leg.first_turn_queued",
+            leg_id=leg_id,
+            turn_id=str(turn.turn_id),
+            first_turn_id=str(first_turn_id),
+        )
+        return str(first_turn_id)
+
+    async def _leg_document_ids(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        leg: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """The leg's documents in position order, read off ``design_leg_document`` (@5).
+
+        A leg that predates the child table and was never backfilled — nothing production
+        writes one any more — still answers with its own pin rather than an empty set, so
+        ``document_ids[0] == document_id`` holds for every leg this tool ever opened.
+        """
+
+        rows = await design_legs.list_leg_documents(
+            conn, workspace_id=workspace_id, leg_id=str(leg["id"])
+        )
+        if rows:
+            return tuple(str(row["document_id"]) for row in rows)
+        pinned = leg.get("document_id")
+        return () if pinned is None else (str(pinned),)
+
     async def _birth_web_document(
         self,
         conn: AsyncConnection,
@@ -624,6 +955,7 @@ class OpenDesignLegTool(Tool):
         workspace_id: str,
         document_id: str,
         title: str,
+        account_id: str | None,
         requested_brand_kit_id: str | None,
         requested_brand_kit_version: int | None,
     ) -> tuple[str | None, int | None]:
@@ -641,6 +973,10 @@ class OpenDesignLegTool(Tool):
         move it). An explicit agent-supplied pin is honoured by handing it to the engine as the
         document's own ``theme.brand_kit``, which the creation contract treats as authoritative
         — so even then the pin is a read-back of the durable truth, not a parallel decision.
+
+        ``account_id`` (@5, spec §3.6) is the design-plane account this page was born for, or
+        ``None`` for a generic one. It makes the existing G2 account-card resolution work for
+        chat-born 1:1 pages; nothing in the design runtime reads it.
         """
 
         requested_ref = (
@@ -656,7 +992,7 @@ class OpenDesignLegTool(Tool):
             brand_kit_ref=requested_ref,
         )
         document = await create_document(
-            conn, workspace_id=workspace_id, scene=web_doc, doc_kind="web"
+            conn, workspace_id=workspace_id, scene=web_doc, doc_kind="web", account_id=account_id
         )
         stamped_id = document.get("effective_brand_kit_id")
         stamped_version = document.get("effective_brand_kit_version")
@@ -673,6 +1009,7 @@ class OpenDesignLegTool(Tool):
         workspace_id: str,
         document_id: str,
         title: str,
+        account_id: str | None,
         requested_brand_kit_id: str | None,
         requested_brand_kit_version: int | None,
     ) -> tuple[str | None, int | None]:
@@ -690,6 +1027,11 @@ class OpenDesignLegTool(Tool):
         Nothing here knows a size, a unit, or a format: genad2 ruling 1 put page geometry
         entirely inside the design deepagent's later turns. The returned pin is read off the
         stored row, never re-derived.
+
+        ``account_id`` (@5, spec §3.6) is the design-plane account this ad was born for, or
+        ``None`` for a generic variant — the durable link the artifacts page and the gallery
+        render. The design agent still reaches the account by name and by its own tools;
+        nothing in the design runtime reads this stamp.
         """
 
         requested_ref = (
@@ -705,7 +1047,7 @@ class OpenDesignLegTool(Tool):
             brand_kit_ref=requested_ref,
         )
         document = await create_document(
-            conn, workspace_id=workspace_id, scene=scene, doc_kind="scene"
+            conn, workspace_id=workspace_id, scene=scene, doc_kind="scene", account_id=account_id
         )
         stamped_id = document.get("effective_brand_kit_id")
         stamped_version = document.get("effective_brand_kit_version")
@@ -776,6 +1118,13 @@ class OpenDesignLegTool(Tool):
         parent_execution_id = UUID(str(execution_row[0]))
 
         if inputs.reopen_leg_id is not None:
+            if inputs.artifacts:
+                raise _LegRefused(
+                    "a reopen is a resumption of the leg's own artifacts, so it cannot also "
+                    "ask for new ones; reopen the leg, or open a fresh delegation for the "
+                    "new artifacts",
+                    reason_code="design_leg_artifacts_with_reopen",
+                )
             return await self._resolve_reopen(
                 conn,
                 inputs,
@@ -823,9 +1172,20 @@ class OpenDesignLegTool(Tool):
 
         document_version_guard: int | None = None
         document_id = inputs.document_id
-        birth_title: str | None = None
+        births: tuple[_Birth, ...] = ()
         birth_doc_kind: str | None = None
+        #: The item list the BUNDLE records (§3.1). Identical to ``births`` on the birth path;
+        #: on the existing-document pin path it is the one pinned document, so the bundle's
+        #: shape is uniform for every leg.
+        bundle_items: tuple[_Birth, ...] = ()
         if inputs.document_id is not None:
+            if inputs.artifacts:
+                raise _LegRefused(
+                    "this delegation both pins an existing artifact and asks for new ones; a "
+                    "leg either continues work on document_id or births the artifacts list — "
+                    "send them as two delegations",
+                    reason_code="design_leg_artifacts_with_document",
+                )
             try:
                 document = await get_document(
                     conn, workspace_id=ctx.workspace_id, document_id=inputs.document_id
@@ -846,6 +1206,19 @@ class OpenDesignLegTool(Tool):
                     reason_code="design_document_pin_stale",
                 )
             document_version_guard = current
+            # Every leg records its set (§3.2), the pin path included — nothing else
+            # establishes the position-0 invariant the single-document readers rely on.
+            bundle_items = (
+                _Birth(
+                    position=0,
+                    document_id=str(document["id"]),
+                    title=str(document.get("title") or ""),
+                    note="",
+                    account_entity_id=None,
+                    account_name=None,
+                    account_domain=None,
+                ),
+            )
         elif inputs.expected_document_version is not None:
             raise _LegRefused(
                 "an expected document version without a document id pins nothing",
@@ -862,9 +1235,25 @@ class OpenDesignLegTool(Tool):
                     "ad or designed page, or document_id to work on an existing artifact",
                     reason_code="design_leg_doc_kind_required",
                 )
+            if not inputs.artifacts:
+                raise _LegRefused(
+                    "this delegation names no document, so it must say what to make: pass "
+                    "artifacts, one item per artifact the user asked for, each with a title "
+                    "and a note in the user's own words (the single top-level title of "
+                    "earlier versions is retired — one artifact is a list of one)",
+                    reason_code="design_leg_artifacts_required",
+                )
             birth_doc_kind = inputs.doc_kind
-            document_id = derive_leg_document_id(leg_id=leg_id)
-            birth_title = _document_title(title=inputs.title, brief=inputs.brief)
+            births = await _resolve_births(
+                conn,
+                artifacts=inputs.artifacts,
+                workspace_id=ctx.workspace_id,
+                project_id=turn.project_id,
+                leg_id=leg_id,
+            )
+            bundle_items = births
+            # The leg's own pin is position 0; the rest of the set lives on the child rows.
+            document_id = births[0].document_id
             # A newborn document is at version 0, and that is exactly what the leg guards.
             document_version_guard = 0
 
@@ -902,9 +1291,10 @@ class OpenDesignLegTool(Tool):
             leg_id=leg_id,
             document_id=document_id,
             document_version_guard=document_version_guard,
+            artifacts=bundle_items,
         )
         bundle_bytes = _canonical_json(bundle_payload)
-        _require_bundle_within_cap(bundle_bytes)
+        _require_bundle_within_cap(bundle_bytes, artifact_count=len(bundle_items))
         return _ResolvedDelegation(
             turn=turn,
             parent_execution_id=parent_execution_id,
@@ -915,7 +1305,7 @@ class OpenDesignLegTool(Tool):
             brand_kit_version=inputs.brand_kit_version,
             existing_leg=None,
             bundle_bytes=bundle_bytes,
-            birth_title=birth_title,
+            births=births,
             birth_doc_kind=birth_doc_kind,
             bundle_payload=bundle_payload,
         )
@@ -996,12 +1386,18 @@ def _bundle_payload(
     leg_id: str,
     document_id: str | None,
     document_version_guard: int | None,
+    artifacts: Sequence[_Birth],
 ) -> dict[str, JsonValue]:
     """The §2.3 delegation-bundle schema v1 — refs and stamps, never claim values.
 
     ``document_id`` is the RESOLVED target, which on @2's birth path is the document this
     delegation is about to create (identical to ``inputs.document_id`` on every other path,
-    so the frozen bundle bytes are byte-stable for legs that pin an existing document).
+    so the frozen bundle bytes are byte-stable for legs that pin an existing document); it
+    means position 0 of ``artifacts``.
+
+    ``artifacts`` is @5's item list (spec §3.1) — one entry per document of the leg, births
+    and pinned document alike, so the bundle's shape does not depend on which path opened the
+    leg. ``account_id`` is the RESEARCH account the item named, not the design-plane row.
     """
 
     return {
@@ -1022,6 +1418,16 @@ def _bundle_payload(
                 "version_guard": document_version_guard,
             }
         ),
+        "artifacts": [
+            {
+                "position": item.position,
+                "title": item.title,
+                "note": item.note,
+                "account_id": item.account_entity_id,
+                "document_id": item.document_id,
+            }
+            for item in artifacts
+        ],
         "claim_refs": [ref.model_dump(mode="json") for ref in inputs.claim_refs],
         "binding_set_ref": inputs.binding_set_ref,
         "template_revision_ref": inputs.template_revision_ref,
@@ -1156,12 +1562,6 @@ class FinishDesignLegTool(Tool):
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, FinishDesignLegInput)
         self._require_runtime()
-        from clue_api.agent_turn_submission import (
-            dispatch_next_thread_turn,
-            insert_submission,
-            submission_context_refs,
-            turn_id_for_submission,
-        )
         from clue_api.agent_turn_wiring import DbAgentHistoryStore
         from clue_api.design_leg_wiring import design_leg_run_id
 
@@ -1201,6 +1601,16 @@ class FinishDesignLegTool(Tool):
                     document_version = int(document.get("current_version") or 0)
                 except DesignNotFoundError:
                     document_version = None
+            # Spec §3.2: the close records EVERY document of the leg, not just position 0.
+            # ``document_id``/``document_version`` above stay exactly what they were — the
+            # single-document readers of this journal are untouched — and this is the set.
+            leg_documents = await design_legs.list_leg_documents(
+                conn, workspace_id=ctx.workspace_id, leg_id=leg_id
+            )
+            document_versions: dict[str, JsonValue] = {
+                str(document["document_id"]): int(document["current_version"] or 0)
+                for document in leg_documents
+            }
 
             redelivered_turn_id: str | None = None
             pending_ref: str | None = None
@@ -1231,6 +1641,8 @@ class FinishDesignLegTool(Tool):
                     message_sha256=submission.message_sha256,
                     idempotency_key=redelivery_key,
                     context_refs=context_refs,
+                    derivation=DERIVATION_DESIGN_LEG_REDELIVERY,
+                    derived_from_turn_id=turn.turn_id,
                 )
                 redelivered_turn_id = str(redelivered)
                 pending_ref = submission.message_artifact_key
@@ -1242,6 +1654,7 @@ class FinishDesignLegTool(Tool):
                 "summary_message_id": str(summary_message_id),
                 "document_id": leg.get("document_id"),
                 "document_version": document_version,
+                "document_versions": document_versions,
                 "redelivered_turn_id": redelivered_turn_id,
             }
             journal_id = await design_legs.close_leg(

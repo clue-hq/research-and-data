@@ -382,6 +382,7 @@ def build_chat_stream_router(
                     "requested_at": item.requested_at.isoformat(),
                     "last_event_id": item.last_event_id,
                     "generation_attempts": item.generation_attempts,
+                    "derivation": item.derivation,
                     "stop_request": (
                         {
                             "control_id": str(stop_by_turn[item.turn_id]["control_id"]),

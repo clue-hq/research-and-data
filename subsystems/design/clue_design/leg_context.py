@@ -11,6 +11,12 @@ that does not already hold it. The block order stays deliberate for prefill cach
 immutable brief first, the append-only history second, then the drift note, the new message
 last — so a fresh thread still re-sends a byte-identical prefix that only ever grows.
 
+One leg may hold MANY documents run in parallel, so when the runner puts an ``artifact`` key
+on its own copy of the bundle (never on the frozen bundle artifact) the item's title and note
+render as a ``THIS ARTIFACT (n of m)`` line INSIDE the brief fence — data, not instructions —
+sitting right after the brief text and before the binding/template/claim refs, so the fence's
+byte-stable prefix within one session still only ever grows.
+
 Shared-substrate placement on purpose: ``lumen_api`` (the design app) renders with it and
 the platform's tests pin it, without either importing the other's internals. The blocks are
 data fences, not instructions — the SECURITY stance mirrors the exit-judgment prompt.
@@ -59,6 +65,14 @@ def render_leg_turn_prompt(
             "<<<BRIEF",
             str(bundle.get("brief") or "").strip(),
         ]
+        artifact = bundle.get("artifact")
+        if isinstance(artifact, dict) and artifact.get("title"):
+            position = int(artifact.get("position") or 0) + 1
+            count = int(artifact.get("count") or position)
+            lines.append(f"THIS ARTIFACT ({position} of {count}): {str(artifact['title']).strip()}")
+            note = str(artifact.get("note") or "").strip()
+            if note:
+                lines.append(note)
         for label, key in (
             ("binding_set_ref", "binding_set_ref"),
             ("template_revision_ref", "template_revision_ref"),

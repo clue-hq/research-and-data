@@ -18,8 +18,11 @@ import type { DesignArtifactListItem } from "../model/artifact";
  * frame is the FALLBACK for a thumbnail that is missing or fails to load,
  * not the universal state.
  *
- * Size, account and last-viewed are likewise unanswerable here; the gallery's
- * own `normalizeGalleryArtifact` supplies its defaults for them.
+ * Size and last-viewed are likewise unanswerable here; the gallery's own
+ * `normalizeGalleryArtifact` supplies its defaults for them. The ACCOUNT is
+ * no longer among them: a multi-artifact design leg births one document per
+ * target account, and the feed now says which — so the card states the real
+ * account, and a document made for none still says nothing.
  *
  * AD2.1 made it kind-aware. A `web` document is a `website` artifact whose
  * gallery collateral is a `microsite`; an `ad` (scene) document is a `canvas`
@@ -81,9 +84,21 @@ export function toProjectArtifact(
   const collateralType = ad ? collateralTypeFor(item.artifactType) : "microsite";
   const size = ad ? sizeFor(item.widthPx, item.heightPx) : undefined;
   const version = versionOf(item.currentVersionId);
+  const account = item.account;
   return ProjectArtifactSchema.parse({
     ...(collateralType ? { collateralType } : {}),
     ...(size ? { size } : {}),
+    // The account the document was made for, onto the three fields the
+    // designed card already reads. The logo is Brandfetch's Logo API mark when
+    // the backend could build one (founder, 2026-09-20 — the accounts screens'
+    // own rule), else the favicon proxy the artifact library uses; an account
+    // with no domain names itself and claims no logo.
+    ...(account ? { accountId: account.id, accountName: account.name } : {}),
+    ...(account?.logoPath
+      ? { accountLogoPath: account.logoPath }
+      : account?.domain
+        ? { accountLogoPath: `/api/source-favicon?domain=${encodeURIComponent(account.domain)}` }
+        : {}),
     createdAt: utcInstant(item.createdAt),
     documentId: item.documentId,
     ...(version ? { version } : {}),

@@ -75,7 +75,7 @@ def test_one_and_four_ready_images_are_accepted(
             object(),  # type: ignore[arg-type]
             workspace_id=WORKSPACE_ID,
             refs=refs,
-            design_leg_document_id="doc_scene",
+            design_leg_document_ids=("doc_scene",),
             storage=object(),  # type: ignore[arg-type]
         )
     )
@@ -92,7 +92,7 @@ def test_fifth_image_is_rejected_before_any_design_read() -> None:
                 object(),  # type: ignore[arg-type]
                 workspace_id=WORKSPACE_ID,
                 refs=refs,
-                design_leg_document_id="doc_scene",
+                design_leg_document_ids=("doc_scene",),
                 storage=object(),  # type: ignore[arg-type]
             )
         )
@@ -146,7 +146,7 @@ def test_unknown_non_image_or_missing_byte_assets_fail_loudly(
                 object(),  # type: ignore[arg-type]
                 workspace_id=WORKSPACE_ID,
                 refs=(_ref("asset_one"),),
-                design_leg_document_id="doc_scene",
+                design_leg_document_ids=("doc_scene",),
                 storage=object(),  # type: ignore[arg-type]
             )
         )
@@ -160,7 +160,7 @@ def test_cross_workspace_asset_ref_is_indistinguishable_from_unknown() -> None:
                 object(),  # type: ignore[arg-type]
                 workspace_id=WORKSPACE_ID,
                 refs=(_ref("asset_one", workspace_id="ws-other"),),
-                design_leg_document_id="doc_scene",
+                design_leg_document_ids=("doc_scene",),
                 storage=object(),  # type: ignore[arg-type]
             )
         )
@@ -240,6 +240,7 @@ def test_scene_leg_envelope_snapshots_reference_asset_ids(
                 previous_turn_outcome=None,
                 thread_id="thread-one",
                 turn_id=uuid4(),
+                project_id=None,
             ),
             leg={"document_id": "doc_scene"},
             leg_id="leg-one",
@@ -252,6 +253,7 @@ def test_scene_leg_envelope_snapshots_reference_asset_ids(
                 "current_version": 3,
                 "scene": {"pages": {}, "nodes": {}},
             },
+            document_id="doc_scene",
             account_card=None,
             focus_refs=refs,
             workspace_id=WORKSPACE_ID,

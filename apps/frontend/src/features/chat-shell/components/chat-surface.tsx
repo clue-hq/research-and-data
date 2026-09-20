@@ -17,6 +17,7 @@ import {
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
+import { openClarification } from "@/features/projects/model/clarification";
 import { useResearchProgressController } from "@/features/projects/hooks/use-research-progress-controller";
 import type {
   ProjectArtifact,
@@ -31,7 +32,7 @@ import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
-import { artifactToAutoOpen } from "../model/artifact-auto-open";
+import { artifactsToAutoOpen } from "../model/artifact-auto-open";
 import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
@@ -57,6 +58,7 @@ import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-do
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
+import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
 import { WebInspector } from "./web-inspector";
@@ -468,6 +470,16 @@ export function ChatSurface({
     ? annotationChips(session.annotations.state.items)
     : [];
 
+  // The clarification card (spec 2026-09-20 §2.5): a design document that
+  // stopped to ask before spending. Whether anything is open is derived from
+  // the transcript by a pure function — the last settled assistant turn's
+  // `clarification` parts — so answering (which appends a user message) closes
+  // the card with no server round-trip, and a reload brings it back.
+  const clarification = useMemo(
+    () => openClarification(chat.transcript),
+    [chat.transcript],
+  );
+
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
   const chatTitle = activeThread ? chat.threadLabelFor(activeThread) : "Untitled";
@@ -590,6 +602,8 @@ export function ChatSurface({
   const knownArtifactIds = useRef<Set<string> | null>(null);
   const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
+  const activateArtifact = shell.activateArtifact;
+  const openArtifacts = shell.openArtifacts;
   useEffect(() => {
     const known = knownArtifactIds.current;
     if (known === null) {
@@ -603,20 +617,28 @@ export function ChatSurface({
       );
       return;
     }
-    const opening = artifactToAutoOpen({
+    const opening = artifactsToAutoOpen({
       activeThreadId: chat.activeThreadId,
       artifacts: feedArtifacts,
       knownArtifactIds: known,
       knownUpdates: knownArtifactUpdates.current,
+      // A tab change re-runs this effect too, harmlessly: by then every id
+      // of the current feed is banked below, so nothing is left to open.
+      openArtifactIds: new Set(openArtifacts.map((artifact) => artifact.id)),
     });
     // Bank everything this delivery carried — including the one being opened —
     // before acting on the decision. That is what makes a document open at
     // most once per update: a closed tab stays closed until another write, and a feed
     // refresh (the URL write-back below re-renders the page too) is inert.
     for (const artifact of feedArtifacts) { known.add(artifact.id); knownArtifactUpdates.current.set(artifact.id, artifact.updatedAt); }
-    if (opening === null) return;
-    openArtifact(opening);
-  }, [chat.activeThreadId, feedArtifacts, openArtifact]);
+    if (opening.length === 0) return;
+    // One message can birth many documents on one leg, so EVERY new document
+    // gets its own tab. The strip fills oldest-born first and the first one
+    // born is the tab left in front — the user watches the leg from its start
+    // rather than landing on whichever document happened to finish last.
+    for (const artifact of opening) openArtifact(artifact);
+    activateArtifact(opening[0].id);
+  }, [activateArtifact, chat.activeThreadId, feedArtifacts, openArtifact, openArtifacts]);
 
   // The composer's Files and Microsites come from the same feeds the Gallery draws. The
   // document list is fetched here unconditionally (the tabs hook fetches only while a
@@ -1040,6 +1062,15 @@ export function ChatSurface({
                 <button type="button" disabled={chat.stopPending || chat.resumingQueue}
                   onClick={() => void chat.resumeQueuedTurns()}>Resume</button>
               </div>
+            ) : null}
+            {clarification !== null && chat.runningTurn === null ? (
+              <ClarificationCard
+                key={clarification.turnId}
+                onSubmit={(text, contextRefs) => {
+                  void chat.submitMessage(text, { contextRefs });
+                }}
+                parts={clarification.parts}
+              />
             ) : null}
             <ProjectComposer
               running={chat.runningTurn !== null}

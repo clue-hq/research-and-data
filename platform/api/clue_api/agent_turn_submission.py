@@ -56,6 +56,8 @@ if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so
 
 __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
+    "DERIVATION_DESIGN_LEG_FIRST_TURN",
+    "DERIVATION_DESIGN_LEG_REDELIVERY",
     "AgentTurnSubmissionRow",
     "SubmissionAttachmentRow",
     "SubmissionContextRefRow",
@@ -81,10 +83,17 @@ AGENT_TURN_DEDUP_PREFIX = "agent-turn:"
 _TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-submission")
 _THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
 
+#: A submission the SERVER made from a user's own message bytes says which kind it is (spec
+#: 2026-09-20 §2.1). Readers treat any non-NULL value the same way: no second user row, no
+#: second user bubble.
+DERIVATION_DESIGN_LEG_REDELIVERY = "design_leg_redelivery"
+DERIVATION_DESIGN_LEG_FIRST_TURN = "design_leg_first_turn"
+
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
     "submitted_via_membership_id, onboarding_input_id, message_artifact_key, message_sha256, "
-    "idempotency_key, agent_profile_id, previous_turn_outcome, requested_at"
+    "idempotency_key, agent_profile_id, previous_turn_outcome, requested_at, "
+    "derivation, derived_from_turn_id"
 )
 
 
@@ -152,6 +161,9 @@ class AgentTurnSubmissionRow(BaseModel):
     agent_profile_id: str | None
     previous_turn_outcome: str | None
     requested_at: UtcDatetime
+    #: Spec 2026-09-20 §2.1: set when the server made this submission from a user's own bytes.
+    derivation: str | None = None
+    derived_from_turn_id: UUID | None = None
 
 
 class SubmissionContextRefRow(BaseModel):
@@ -196,6 +208,8 @@ async def insert_submission(
     attachment_refs: Sequence[ValidatedAttachment] = (),
     agent_profile_id: str | None = None,
     previous_turn_outcome: str | None = None,
+    derivation: str | None = None,
+    derived_from_turn_id: UUID | None = None,
 ) -> tuple[AgentTurnSubmissionRow, bool]:
     """Insert one submission, or replay it. Returns ``(row, created)``.
 
@@ -212,6 +226,8 @@ async def insert_submission(
     # names the boundary that was crossed instead of surfacing an opaque IntegrityError.
     if any(item.ref.workspace_id != workspace_id for item in attachment_refs):
         raise ValueError("submission attachment refs cross the workspace boundary")
+    if (derivation is None) != (derived_from_turn_id is None):
+        raise ValueError("a derived submission names both its derivation and its source turn")
 
     await lock_thread_queue(conn, workspace_id=workspace_id, thread_id=thread_id)
     # Acceptance order, not transaction-start time, defines FIFO. This also serializes
@@ -224,13 +240,14 @@ async def insert_submission(
                     "(turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
                     " submitted_via_membership_id, onboarding_input_id, message_artifact_key, "
                     " message_sha256, idempotency_key, agent_profile_id, previous_turn_outcome, "
-                    " requested_at) "
+                    " requested_at, derivation, derived_from_turn_id) "
                     "VALUES (:turn_id, :workspace_id, :project_id, :thread_id, :user_id, "
                     " :membership_id, :onboarding_input_id, :artifact_key, :sha256, :key, "
                     " :agent_profile_id, :previous_turn_outcome, GREATEST(clock_timestamp(), "
                     " (SELECT max(requested_at) + interval '1 microsecond' "
                     " FROM agent_turn_submission WHERE workspace_id=:workspace_id "
-                    " AND thread_id=:thread_id))) "
+                    " AND thread_id=:thread_id)), "
+                    " :derivation, :derived_from_turn_id) "
                     f"ON CONFLICT (turn_id) DO NOTHING RETURNING {_COLUMNS}"
                 ),
                 {
@@ -246,6 +263,8 @@ async def insert_submission(
                     "key": idempotency_key,
                     "agent_profile_id": agent_profile_id,
                     "previous_turn_outcome": previous_turn_outcome,
+                    "derivation": derivation,
+                    "derived_from_turn_id": derived_from_turn_id,
                 },
             )
         )

@@ -190,7 +190,21 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # paragraph, plus `code-execution@v1` pinned as the sandbox's whole procedure. The manual
     # re-mints at `manual-*@v5` because the grant moved. The conversation recipe moves 28 → 29:
     # the interaction slot admits `run_python@1`.
-    AgentRole.HEAD_OF_ABM: "v58",
+    # v59 (one ask, many artifacts, 2026-09-19): v58's surface with ONE address moved and the
+    # prompt that teaches it. `open_design_leg` becomes @5: its input carries an `artifacts` list
+    # of `{title, note, account_id?}` items instead of one top-level `title`, so one message
+    # asking for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births twenty
+    # documents, each stamped with the account its item names. Prompt pin v11→v12 folds the two
+    # design paragraphs into the one that covers every designed page and tells the agent to read
+    # the count out of the message. The conversation recipe moves 29 → 30: @4 leaves the
+    # delegation slot rather than stand beside @5. The manual re-mints at `manual-*@v6`.
+    # v60 (the leg's first turn starts itself, 2026-09-20): v59's surface exactly, with the
+    # prompt that no longer tells the user to speak before generation begins — `open_design_leg@5`
+    # queues the leg's first design turn from the user's own message in the transaction that opens
+    # the leg, so prompt pin v12→v13 changes one sentence. No tool address moves, so the recipe
+    # stays at 30; the manual re-mints at `manual-*@v7` because its generated chapters render this
+    # profile's version into their title.
+    AgentRole.HEAD_OF_ABM: "v60",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

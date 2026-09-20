@@ -1,0 +1,32 @@
+{
+  "name": "addressing-06-out-of-range",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "tighten the spacing on the fourth one",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "addressed_artifacts": [
+      7
+    ],
+    "clarifying_question": null,
+    "reasoning": "The user means one specific ad."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": true,
+    "addressed": null,
+    "ask": "Which of the designs is this for — one of them, a few, or all of them?"
+  },
+  "why": "An address that names no document of this leg is no address at all; the engine asks instead of dropping the number, silently designing everything, or crashing."
+}

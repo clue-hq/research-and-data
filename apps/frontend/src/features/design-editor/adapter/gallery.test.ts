@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeGalleryArtifact } from "@/features/gallery/model/project-gallery";
 import { ProjectArtifactSchema } from "@/features/projects/model/project-workspace";
-import { DesignArtifactListItemSchema } from "../model/artifact";
+import { DesignArtifactListItemSchema, DesignArtifactListWireSchema } from "../model/artifact";
 import { editedLabelFor, toProjectArtifact } from "./gallery";
 
 // Slice 2: the gallery feed's pure mapper — one listed design artifact (the
@@ -312,4 +312,161 @@ test("composes the versioned BFF thumbnail URL for an ad document", () => {
   );
 
   assert.equal(artifact.imagePath, "/api/clue/design/documents/doc_a1/thumbnail?v=3");
+});
+
+// ── The account on the feed card (spec §3.8) ───────────────────────────────
+// A multi-artifact design leg births one document per target account, so the
+// feed row now carries the account it was made for. The mapper writes it onto
+// the three fields the designed gallery card already reads, using the
+// artifact-library's own favicon rule — no new UI, no new vocabulary.
+
+test("an item's account maps onto the card's account fields", () => {
+  const artifact = toProjectArtifact(
+    listItem({
+      account: { id: "acc_1", name: "Apollo Clinics", domain: "apollo.example" },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.accountId, "acc_1");
+  assert.equal(artifact.accountName, "Apollo Clinics");
+  assert.equal(artifact.accountLogoPath, "/api/source-favicon?domain=apollo.example");
+  assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
+});
+
+test("a Brandfetch logo on the item wins over the favicon fallback", () => {
+  const logoPath =
+    "https://cdn.brandfetch.io/domain/apollo.example/w/128/h/128/fallback/lettermark/type/icon?c=cid";
+  const artifact = toProjectArtifact(
+    listItem({
+      account: { id: "acc_1", name: "Apollo Clinics", domain: "apollo.example", logoPath },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.accountLogoPath, logoPath);
+  assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
+});
+
+test("an item with no account keeps the account fields absent", () => {
+  const artifact = toProjectArtifact(listItem(), { now: NOW });
+
+  assert.equal("accountId" in artifact, false);
+  assert.equal("accountName" in artifact, false);
+  assert.equal("accountLogoPath" in artifact, false);
+});
+
+test("an account with no domain names itself but claims no logo", () => {
+  // The favicon is addressed BY domain; an account the backend knows without
+  // one gets no logo path rather than a broken URL.
+  const artifact = toProjectArtifact(
+    listItem({ account: { id: "acc_2", name: "Northwind Health" } }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.accountId, "acc_2");
+  assert.equal(artifact.accountName, "Northwind Health");
+  assert.equal("accountLogoPath" in artifact, false);
+});
+
+test("the wire's nulls and snake_case account survive the seam", () => {
+  const [item] = DesignArtifactListWireSchema.parse({
+    data: [
+      {
+        id: "doc-web-1",
+        project_id: "prj-1",
+        document_id: "doc-web-1",
+        kind: "web",
+        title: "Launch landing page",
+        status: "draft",
+        current_version_id: "4",
+        created_at: "2026-08-14T09:15:00+00:00",
+        updated_at: "2026-08-18T09:15:00+00:00",
+        origin_thread_id: "thread-9",
+        account: {
+          id: "acc_3",
+          name: "Apollo Clinics",
+          domain: "apollo.example",
+          account_entity_id: "ent_7",
+        },
+      },
+    ],
+  });
+
+  assert.deepEqual(item.account, {
+    id: "acc_3",
+    name: "Apollo Clinics",
+    domain: "apollo.example",
+    accountEntityId: "ent_7",
+  });
+  // A domain the backend cannot answer is a null on the wire, and the item
+  // then simply has no domain — never the string "null".
+  const [withoutDomain] = DesignArtifactListWireSchema.parse({
+    data: [
+      {
+        id: "doc-web-2",
+        project_id: "prj-1",
+        document_id: "doc-web-2",
+        kind: "web",
+        title: "Launch landing page",
+        status: "draft",
+        current_version_id: "4",
+        created_at: "2026-08-14T09:15:00+00:00",
+        updated_at: "2026-08-18T09:15:00+00:00",
+        origin_thread_id: "thread-9",
+        account: { id: "acc_4", name: "Northwind Health", domain: null, account_entity_id: null },
+      },
+    ],
+  });
+  assert.deepEqual(withoutDomain.account, { id: "acc_4", name: "Northwind Health" });
+  // A feed row with no account at all stays without the key.
+  const [none] = DesignArtifactListWireSchema.parse({
+    data: [
+      {
+        id: "doc-web-3",
+        project_id: "prj-1",
+        document_id: "doc-web-3",
+        kind: "web",
+        title: "Launch landing page",
+        status: "draft",
+        current_version_id: "4",
+        created_at: "2026-08-14T09:15:00+00:00",
+        updated_at: "2026-08-18T09:15:00+00:00",
+        origin_thread_id: "thread-9",
+        account: null,
+      },
+    ],
+  });
+  assert.equal("account" in none, false);
+});
+
+test("an encodeable domain is escaped in the favicon URL", () => {
+  const artifact = toProjectArtifact(
+    listItem({ account: { id: "acc_5", name: "Acme", domain: "a b&c.example" } }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.accountLogoPath, "/api/source-favicon?domain=a%20b%26c.example");
+});
+
+test("the mapped account reaches the gallery card's own account slot", () => {
+  // `normalizeGalleryArtifact` is what the designed card reads; it composes its
+  // `account` from exactly these three fields, and the gallery's account filter
+  // matches on it. No new UI: the slot was already there.
+  const normalized = normalizeGalleryArtifact(
+    toProjectArtifact(
+      listItem({ account: { id: "acc_1", name: "Apollo Clinics", domain: "apollo.example" } }),
+      { now: NOW },
+    ),
+  );
+
+  assert.deepEqual(normalized.account, {
+    id: "acc_1",
+    logoPath: "/api/source-favicon?domain=apollo.example",
+    name: "Apollo Clinics",
+  });
+  assert.equal(
+    normalizeGalleryArtifact(toProjectArtifact(listItem(), { now: NOW })).account,
+    undefined,
+  );
 });

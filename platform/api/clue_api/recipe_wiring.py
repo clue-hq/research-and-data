@@ -132,6 +132,15 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # `head-of-abm@v58`. Nothing leaves — it is one address ADDED, not a re-pin — so v29 is v28
     # plus that address and v28 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v29.json",
+    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
+    # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
+    # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
+    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
+    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
+    # one version per (kind, key), so @4 and @5 in one slot is a `conflicting_requirement` that
+    # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
+    # stays); v29 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v30.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

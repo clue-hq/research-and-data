@@ -611,9 +611,13 @@ export function composeTranscript({
     const durableTurn = turns.find((turn) => turn.turnId === turnId);
     const pending = optimistic.find((item) => item.turnId === turnId);
 
+    const derived = durableTurn?.derivation != null;
     const durableUser = durable.find((message) => message.role === "user");
     const acceptedUser = durableTurn?.submissionMessage;
-    if (durableUser) {
+    if (derived) {
+      // A derived turn (a design-leg redelivery or first turn) carries the user's own bytes,
+      // which the transcript already shows under the turn they were typed on.
+    } else if (durableUser) {
       composed.push(userMessage(durableUser, false));
     } else if (acceptedUser) {
       composed.push(userMessage(acceptedUser, false));

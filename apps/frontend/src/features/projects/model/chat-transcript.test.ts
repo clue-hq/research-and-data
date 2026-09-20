@@ -479,6 +479,7 @@ test("an accepted submission renders before the worker materializes thread histo
       lastEventId: null,
       generationAttempts: 0,
       submissionMessage: acceptedMessage,
+      derivation: null,
     },
   ];
   const pending = composeTranscript({
@@ -497,6 +498,75 @@ test("an accepted submission renders before the worker materializes thread histo
   });
   assert.equal(materialized.filter((message) => message.role === "user").length, 1);
   assert.equal(materialized[0].id, acceptedMessage.id);
+});
+
+test("a derived turn renders its assistant answer and no user bubble", () => {
+  // The server made this turn from the user's own bytes (a design-leg redelivery), so the
+  // durable user row exists — role-scoped history keeps it — and is hidden by `derivation`,
+  // never by absence.
+  const acceptedMessage = {
+    id: "derived-user-message",
+    turnId: TURN,
+    threadId: "t1",
+    sequence: 0,
+    role: "user" as const,
+    bodyArtifactKey: "derived-key",
+    bodySha256: "derived-sha",
+    body: "Make the hero darker",
+    bodyUnavailableReason: null,
+    createdAt: "2026-09-20T00:00:00Z",
+    refs: [],
+  };
+  const assistantMessage = {
+    ...acceptedMessage,
+    id: "derived-assistant-message",
+    sequence: 2,
+    role: "assistant" as const,
+    bodyArtifactKey: "derived-assistant-key",
+    bodySha256: "derived-assistant-sha",
+    body: "Darkened the hero.",
+  };
+  const turns = [
+    {
+      turnId: TURN,
+      threadId: "t1",
+      projectId: "p1",
+      state: "completed",
+      requestedAt: acceptedMessage.createdAt,
+      lastEventId: null,
+      generationAttempts: 1,
+      submissionMessage: acceptedMessage,
+      derivation: "design_leg_redelivery",
+    },
+  ];
+
+  const withDurableUserRow = composeTranscript({
+    messages: [{ ...acceptedMessage, sequence: 1 }, assistantMessage],
+    turns,
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(withDurableUserRow.filter((message) => message.role === "user").length, 0);
+  const durableAssistant = withDurableUserRow.find((message) => message.role === "assistant");
+  assert.ok(durableAssistant);
+  assert.equal(durableAssistant.body, assistantMessage.body);
+
+  // The same turn before the worker materialized any history: only the accepted submission.
+  const submissionOnly = composeTranscript({
+    messages: [],
+    turns,
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(submissionOnly.filter((message) => message.role === "user").length, 0);
+  assert.ok(submissionOnly.some((message) => message.role === "assistant"));
+
+  // And a human turn with the same shape still shows the accepted user message.
+  const human = composeTranscript({
+    messages: [],
+    turns: [{ ...turns[0], derivation: null }],
+    stream: emptyTranscriptState(),
+  });
+  assert.equal(human.filter((message) => message.role === "user").length, 1);
+  assert.equal(human[0].body, acceptedMessage.body);
 });
 
 test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
@@ -525,6 +595,7 @@ test("a cold cancelled turn keeps a visible terminal assistant receipt", () => {
         lastEventId: null,
         generationAttempts: 1,
         submissionMessage: acceptedMessage,
+        derivation: null,
       },
     ],
     stream: emptyTranscriptState(),
@@ -559,6 +630,7 @@ for (const durableState of ["cancelled", "running"] as const) {
         lastEventId: null,
         generationAttempts: 1,
         submissionMessage: null,
+        derivation: null,
       }],
       stream,
     });
@@ -824,7 +896,7 @@ test("leg lines land on the turn that performed the transition, in order", () =>
     ),
   ]);
   assert.deepEqual(assistantOf(state, "turn-open").legNotices, [
-    "Design session opened — your next message goes to Design.",
+    "Design session opened — generating now.",
   ]);
   assert.deepEqual(assistantOf(state, "turn-design").legNotices, [
     "Design is ready for your next message.",
@@ -892,7 +964,7 @@ test("a reopen names its own delegating turn and reopens the leg", () => {
     openedByTurnId: "turn-reopen",
   });
   assert.deepEqual(assistantOf(state, "turn-reopen").legNotices, [
-    "Design session reopened — your next message goes to Design.",
+    "Design session reopened — generating now.",
   ]);
 });
 
@@ -1247,4 +1319,91 @@ test("a prepended older page retires its own optimistic and streamed stand-ins",
   assert.equal(transcript.filter((message) => message.role === "user").length, 1);
   assert.equal(transcript.filter((message) => message.role === "assistant").length, 1);
   assert.equal(transcript[0].optimistic, false, "the durable user message won");
+});
+
+test("a clarification snapshot parses into the card's camelCase shape", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "clarification:doc-1",
+      part_kind: "clarification",
+      part: {
+        part_id: "clarification:doc-1",
+        kind: "clarification",
+        revision: 1,
+        document_id: "doc-1",
+        document_title: "Acme retargeting ad",
+        doc_kind: "scene",
+        account_name: "Acme",
+        run_id: "run-1",
+        questions: [
+          {
+            id: "q1",
+            question: "Which offer should lead?",
+            why_it_matters: "It sets the headline.",
+            options: ["Free trial", "Demo"],
+            default: "Free trial",
+            allow_freeform: false,
+          },
+          // The runtime may ask an open question: no options, no rationale, and
+          // the emitter's own defaults fill what the wire leaves out.
+          { id: "q2", question: "Anything else?", default: "No" },
+        ],
+      },
+    }),
+  ]);
+
+  const part = state.turns.get(TURN)?.parts[0]?.part;
+  assert.equal(part?.kind, "clarification");
+  assert.deepEqual(part, {
+    kind: "clarification",
+    partId: "clarification:doc-1",
+    revision: 1,
+    documentId: "doc-1",
+    documentTitle: "Acme retargeting ad",
+    docKind: "scene",
+    accountName: "Acme",
+    runId: "run-1",
+    questions: [
+      {
+        id: "q1",
+        question: "Which offer should lead?",
+        whyItMatters: "It sets the headline.",
+        options: ["Free trial", "Demo"],
+        default: "Free trial",
+        allowFreeform: false,
+      },
+      {
+        id: "q2",
+        question: "Anything else?",
+        whyItMatters: "",
+        options: [],
+        default: "No",
+        allowFreeform: true,
+      },
+    ],
+  });
+});
+
+test("an untagged document sends no account_name key at all, and reads as null", () => {
+  const state = apply(emptyTranscriptState(), [
+    frame({
+      type: "part.created",
+      part_id: "clarification:doc-2",
+      part_kind: "clarification",
+      part: {
+        part_id: "clarification:doc-2",
+        kind: "clarification",
+        revision: 1,
+        document_id: "doc-2",
+        document_title: "Untitled ad",
+        doc_kind: "scene",
+        run_id: "run-2",
+        questions: [{ id: "q1", question: "Which tone?", default: "Bold" }],
+      },
+    }),
+  ]);
+
+  const part = state.turns.get(TURN)?.parts[0]?.part;
+  assert.equal(part?.kind === "clarification" && part.accountName, null);
 });

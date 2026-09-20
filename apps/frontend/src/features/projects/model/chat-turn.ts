@@ -102,6 +102,7 @@ const TurnViewWireSchema = z.object({
   last_event_id: z.number().int().nullable().default(null),
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
+  derivation: z.string().nullable().default(null),
   stop_request: StopRequestSchema.nullable().default(null),
 });
 
@@ -116,6 +117,11 @@ export interface ChatTurn {
   generationAttempts: number;
   /** Accepted user bytes not yet materialized into canonical thread history. */
   submissionMessage: ChatMessage | null;
+  /**
+   * Non-null when the server made this turn from the user's own message (a design-leg
+   * redelivery or first turn): the transcript renders no user bubble for it.
+   */
+  derivation: string | null;
   stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
@@ -137,6 +143,7 @@ export const ChatTurnListResponseSchema = z
         lastEventId: item.last_event_id,
         generationAttempts: item.generation_attempts,
         stopRequest: item.stop_request,
+        derivation: item.derivation,
         submissionMessage:
           item.submission_message === null
             ? null

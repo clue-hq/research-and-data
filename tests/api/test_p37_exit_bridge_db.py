@@ -67,6 +67,7 @@ class _ScriptedJudge:
         brief: str,
         history: tuple[tuple[str, str], ...],
         message: str,
+        artifacts: tuple[str, ...] = (),
         artifact: str | None = None,
         tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None:
@@ -75,6 +76,9 @@ class _ScriptedJudge:
                 "brief": brief,
                 "history": history,
                 "message": message,
+                # v3 shows the leg's artifacts numbered; ``artifact`` is v2's one line, kept
+                # on the protocol for compatibility and unused by the runner.
+                "artifacts": artifacts,
                 "artifact": artifact,
                 "tags": tags,
             }

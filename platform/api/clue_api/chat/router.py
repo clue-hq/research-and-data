@@ -66,6 +66,7 @@ from clue_api.arv2.icp_confirmation import (
     current_icp_document,
     pin_project_icp,
 )
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.attachments import (
@@ -116,6 +117,7 @@ from clue_api.chat.schemas import (
     ComposerContextEntityWire,
     CreateBlankProjectRequest,
     CreateThreadRequest,
+    DesignArtifactAccountWire,
     DesignArtifactListItemWire,
     DesignArtifactListResponse,
     DesignArtifactResponse,
@@ -277,7 +279,7 @@ def _framed(*parts: str) -> str:
 
 
 def _design_artifact_list_item(
-    project_id: str, document: Mapping[str, Any]
+    project_id: str, document: Mapping[str, Any], *, settings: Settings | None = None
 ) -> DesignArtifactListItemWire:
     """One gallery row, carrying only what the document itself records.
 
@@ -287,9 +289,33 @@ def _design_artifact_list_item(
     the document's own artifact type and page size ride the wire and a document
     that records neither yields ``None`` for both. A card then says nothing
     rather than something false; its name is its identity.
+
+    Spec 2026-09-19 §3.8: the document's account rides along too, in the artifacts
+    page's own shape, and stays ``None`` when the document names no account.
     """
 
     fields = design_document_card_fields(document)
+    account = (
+        DesignArtifactAccountWire(
+            id=str(document["account_id"]),
+            name=str(document["account_name"]),
+            domain=document["account_domain"],
+            logo_path=(
+                brandfetch_logo_url(
+                    str(document["account_domain"]), client_id=settings.brandfetch_client_id
+                )
+                if settings is not None and document.get("account_domain")
+                else None
+            ),
+            account_entity_id=(
+                None
+                if document["account_entity_id"] is None
+                else str(document["account_entity_id"])
+            ),
+        )
+        if document.get("account_id") is not None
+        else None
+    )
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
@@ -304,6 +330,7 @@ def _design_artifact_list_item(
         artifact_type=fields["artifact_type"],
         width_px=fields["width_px"],
         height_px=fields["height_px"],
+        account=account,
     )
 
 
@@ -625,7 +652,7 @@ async def _validated_submission_context(
     *,
     workspace_id: str,
     refs: tuple[Any, ...],
-    design_leg_document_id: str | None = None,
+    design_leg_document_ids: tuple[str, ...] = (),
     storage: StorageBackend | None = None,
     project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
@@ -644,7 +671,7 @@ async def _validated_submission_context(
             conn,
             workspace_id=workspace_id,
             refs=requested,
-            design_leg_document_id=design_leg_document_id,
+            design_leg_document_ids=design_leg_document_ids,
             storage=storage,
             project_id=project_id,
         )
@@ -1332,7 +1359,10 @@ def build_chat_router(
                 project_id=project_id,
             )
         return DesignArtifactListResponse(
-            data=tuple(_design_artifact_list_item(project_id, document) for document in documents)
+            data=tuple(
+                _design_artifact_list_item(project_id, document, settings=settings)
+                for document in documents
+            )
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")
@@ -2617,13 +2647,27 @@ def build_chat_router(
                 # idempotent replay above is proved from its immutable receipt,
                 # so a design document advancing after acceptance cannot make
                 # the accepted turn unreplayable.
+                #
+                # Spec §3.7: one leg holds many documents, so the composer's design tags are
+                # validated against the leg's whole SET. A leg born before the join table was
+                # written falls back to its own pinned document.
+                design_leg_document_ids: tuple[str, ...] = ()
+                if open_leg is not None:
+                    design_leg_document_ids = tuple(
+                        str(row["document_id"])
+                        for row in await design_leg_dal.list_leg_documents(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            leg_id=str(open_leg["id"]),
+                        )
+                    )
+                    if not design_leg_document_ids and open_leg.get("document_id"):
+                        design_leg_document_ids = (str(open_leg["document_id"]),)
                 context_refs = await _validated_submission_context(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
-                    design_leg_document_id=(
-                        None if open_leg is None else open_leg.get("document_id")
-                    ),
+                    design_leg_document_ids=design_leg_document_ids,
                     storage=storage,
                     project_id=project_id,
                 )

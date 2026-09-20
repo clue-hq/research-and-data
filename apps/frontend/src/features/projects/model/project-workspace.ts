@@ -124,7 +124,9 @@ export const ProjectArtifactSizeSchema = z.object({
 
 export const ProjectArtifactSchema = z.object({
   accountId: z.string().min(1).optional(),
-  accountLogoPath: z.string().startsWith("/").optional(),
+  // A platform path or Brandfetch's Logo API URL — the same rule the composer's
+  // entity images follow (`isComposerEntityImagePath`).
+  accountLogoPath: z.string().refine(isComposerEntityImagePath).optional(),
   accountName: z.string().min(1).optional(),
   canvasPagePaths: z.array(z.string().startsWith("/")).optional(),
   collateralType: GalleryCollateralTypeSchema.optional(),
