@@ -58,8 +58,11 @@ __all__ = [
 # the model id is presentation metadata, not an instruction the browser may send independently.
 # v58 grants `run_python@1` — one short script per call in a locked-down container over the
 # turn's own workspace — and mounts the project's `attachments/` read-only, so a human who
-# attaches a PDF, a deck or a spreadsheet gets an answer about what is in it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v58"
+# attaches a PDF, a deck or a spreadsheet gets an answer about what is in it. v59 moves
+# `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
+# prompt that stops telling the user to speak before generation begins: the leg's first design
+# turn is queued from the message that opened it.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v60"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
