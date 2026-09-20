@@ -64,11 +64,17 @@
 }
 
 .projectRowActions {
+  position: absolute;
+  inset: 4px 4px 4px auto;
+  z-index: 1;
   display: flex;
-  flex: none;
   align-items: center;
   gap: 0;
-  padding-right: 4px;
+  border-radius: inherit;
+  /* The hover token is translucent; an opaque base covers the name beneath. */
+  background:
+    linear-gradient(var(--clue-ds-color-bg-neutral-hover), var(--clue-ds-color-bg-neutral-hover)),
+    var(--clue-ds-color-bg-neutral);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease-out;
