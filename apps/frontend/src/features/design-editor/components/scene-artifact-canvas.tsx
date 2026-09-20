@@ -45,6 +45,7 @@ import {
 } from "../adapter/scene-canvas-view";
 import {
   EMPTY_SCENE_PRESS,
+  freezeMotionReport,
   freezeOperationsToPersist,
   pressArmedAfterFreeze,
   sceneDescriptorPoint,
@@ -1394,7 +1395,23 @@ function SceneDocumentCanvas({
       // is entirely the caller's own (pre-computed) answer.
       return true;
     }
+    const preFreezeScene = controls.sceneSnapshot();
     const outcome = controls.applyStructuredEdit(freezeLayoutEdit());
+    if (outcome?.accepted && preFreezeScene) {
+      // The zero-motion contract, checked where it actually matters: on the
+      // human's real document. A freeze is a pure re-expression of the solve,
+      // so if it moved anything the ad just jumped under their finger — an
+      // ENGINE defect this canvas cannot repair. It is reported loudly and
+      // nothing else changes: ruling C-9 stands and the press goes on to arm
+      // (refusing here would trade a visible jump for a dead grab).
+      const report = freezeMotionReport(preFreezeScene, outcome.scene);
+      if (report.moved.length > 0) {
+        console.error(
+          "[freeze] a freeze moved nodes; this is an engine defect",
+          report.moved,
+        );
+      }
+    }
     const operations = freezeOperationsToPersist(outcome);
     if (outcome && operations.length > 0) {
       // Persisted whether or not the PRESSED node was freed: these operations
