@@ -186,3 +186,8 @@ for `make db-smoke` (it reads CLUE_DATABASE_URL and downgrades to base — never
 `.artifacts` copied; helper built; CLUE_MEMORY_ENABLED=true.
 OWED (founder-triggered): the ten-step browser walk (plan Task 15 step 4) on 3026/8016/8026/8036;
 rulings R1–R10 remain assumed; F1–F7 from the spec stand.
+
+## 2026-09-20 — founder ruling: no "← project" link in the chat shell
+The dummy's `chatProjectLink` element above the conversation stage (lifted in Task 11) is removed
+from `chat-surface.tsx` on the founder's request after the first live look; the sidebar's project
+row is the way back to the project home. Spec §2.5 "Chat shell" paragraph is superseded.
