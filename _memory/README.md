@@ -27,6 +27,20 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
+  sandbox and project-management authority tests; isolated database migration smoke.
+- `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names
+  on hover/focus instead of reserving empty space in the sidebar row.
+- `2026-09-20-remove-chat-tool-activity.md` — release cleanup: removed per-tool step
+  activity rows from the shared chat renderer across all conversations and states.
+- `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
+  chat fidelity map: shared body tokens (now 14/22), mention identity and attachment geometry now
+  implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
+- `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
+  drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.
+- `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:
+  worker UID/GID + child-only umask 077, defensive-only mode repair, native Linux volume smoke
+  and Docker-to-workspace-finalize regression; 144 focused tests passed.
 - `2026-09-17-pr62-design-agent-v1-merge-context.md` — merges `origin/research-streaming` into
   `codex/design-agent-v1` (PR #62): the 37-conflict resolution under the founder's rulings, the
   semantic fixes the gates surfaced, the Alembic join, the gateway numeric-code retry follow-up,

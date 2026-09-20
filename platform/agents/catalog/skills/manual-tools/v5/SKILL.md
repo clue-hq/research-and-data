@@ -32,7 +32,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `launch_arv2_account_research@1` | spend | yes | no | Complete a project step |
 | `launch_arv2_discovery@1` | spend | yes | no | Complete a project step |
 | `launch_arv2_person_research@1` | spend | yes | no | Complete a project step |
-| `open_design_leg@5` | write | no | no | Complete a project step |
+| `open_design_leg@4` | write | no | no | Complete a project step |
 | `open_directive_confirmation_gate@1` | write | no | yes | Complete a project step |
 | `open_icp_confirmation_gate@2` | write | no | yes | Prepare the profile for your review |
 | `open_product_set_selection_gate@1` | write | no | yes | Complete a project step |
@@ -45,6 +45,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `read_discovery_run@2` | read | no | no | Review the discovery run |
 | `read_project_accounts@1` | read | no | no | Review the project's accounts |
 | `record_interview_answer@1` | spend | yes | no | Save your answer |
+| `run_python@1` | write | no | no | Complete a project step |
 | `submit_ingestion@1` | spend | yes | no | Complete a project step |
 
 ## draft_account_research_directive@5
@@ -387,14 +388,14 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **See also.** `.deepagent/skills/manual-siblings/v5/SKILL.md`, `.deepagent/skills/manual-accounts-research/v5/SKILL.md`, `.deepagent/skills/manual-claims/v5/SKILL.md`.
 
-## open_design_leg@5
+## open_design_leg@4
 
-**What it does.** Hand this conversation to the design deepagent — the only way to get a website (or any design artifact) made. Use it the moment the user asks for a landing page, microsite, or page to be built or changed. For a NEW website pass doc_kind='web' and no document_id; for a NEW ad or any designed page pass doc_kind='scene' and no document_id. In both cases also pass artifacts, one item per artifact the user wants — a title the user would recognise, a note with that item's own words (its account, its emphasis), and account_id when the item is for a tagged research account; one item for one ad, twenty for twenty accounts, five for five variants with a distinct emphasis each; the shared ask stays in brief. Each item becomes its own document, opens in its own tab and iterates in its own design session, and they appear in the project's gallery immediately. Put the user's actual ask in brief — what the artifacts are for, who they are for, what they must say — because Design sees the brief, not this conversation. To keep working on an EXISTING artifact pass its document_id instead (doc_kind and artifacts are then refused). On a scene birth the design agent authors the page itself — size, unit (px for digital, mm/in for print) and layout come from the user's own words, so put everything the user said about format, dimensions, medium and purpose in brief. Do not infer or restate dimensions yourself; Design owns them. To resume a design session you closed by mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is open, every user message on this thread goes directly to Design — you will not see the thread again until the leg closes. Opening a leg spends nothing and runs no design turn: the user's NEXT message is what starts generation, and generating a page takes minutes, not seconds. Tell the user the design session is open and end your turn.
+**What it does.** Hand this conversation to the design deepagent — the only way to get a website (or any design artifact) made. Use it the moment the user asks for a landing page, microsite, or page to be built or changed. For a NEW website pass doc_kind='web' and no document_id: an empty web document is created and the leg is pinned to it, so the artifact appears in the project's gallery immediately. Pass title as the name the user would recognise ("Insight Health landing page"); omitted, it is taken from the brief. Put the user's actual ask in brief — what the page is for, who it is for, what it must say — because Design sees the brief, not this conversation. To keep working on an EXISTING artifact pass its document_id instead (doc_kind is then ignored). For a NEW ad or any designed page pass doc_kind='scene' and no document_id: an empty design document is created (no page yet) and the design agent authors the page itself — size, unit (px for digital, mm/in for print) and layout come from the user's own words, so put everything the user said about format, dimensions, medium and purpose in brief. Do not infer or restate dimensions yourself; Design owns them. To resume a design session you closed by mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is open, every user message on this thread goes directly to Design — you will not see the thread again until the leg closes. Opening a leg spends nothing and runs no design turn: the user's NEXT message is what starts generation, and generating a page takes minutes, not seconds. Tell the user the design session is open and end your turn.
 
 - Effect class: `write`.
 - Spends: no.
 - Opens a human gate: no.
-- Replay identity: one design leg per delegating turn (leg id derived from the turn), and one born document per (leg, artifact position) — every birth, the leg and its document rows in one transaction.
+- Replay identity: one design leg per delegating turn (leg id derived from the turn), and one born document per leg (document id derived from the leg) — both in one transaction.
 - Pins the call is bound to: `project`.
 - Journal-safe input fields: `document_id`, `doc_kind`, `expected_document_version`, `brand_kit_id`, `brand_kit_version`.
 - The human sees: "Complete a project step".
@@ -407,7 +408,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `brief` | `str` | required | min_length=1, max_length=16000 | The design brief — what the user wants made. Free text (D5: no fabricated content plane). |
 | `document_id` | `str or None` | `None` | min_length=1, max_length=200 | Target document (nullable — a leg may create its document, §2.1). |
 | `doc_kind` | `Optional[Literal['web', 'scene']]` | `None` | none | What to create when there is no `document_id` — REQUIRED on a document-less open. `web` births one empty website-mode document; `scene` births one empty, PAGELESS design document (genad2 ruling 1, 2026-08-23 — @3 took an `ad_format` and minted an artboard; the design deepagent owns page geometry now). With a `document_id` present the durable row's own kind is the truth and this field is ignored. |
-| `artifacts` | `tuple[DesignArtifactSpec, ...]` | `()` | max_length=200 | What to make, one item per artifact (@5, spec §3.1 — this replaced @4's single `title`). REQUIRED (at least one item) on a document-less open; refused beside `document_id` or `reopen_leg_id`, which name artifacts that already exist. The 200-item schema bound is a sanity bound, not a product cap (ruling 5: no confirmation before spend, at any batch size). |
+| `title` | `str or None` | `None` | min_length=1, max_length=200 | The born document's title (F5). Absent ⇒ the brief's first ~8 words. Ignored when the leg pins an existing document — a delegation never renames someone else's artifact. |
 | `expected_document_version` | `int or None` | `None` | ge=0 | The document version the agent believes is current. When present it must match the durable `current_version` exactly (the D5 CAS guard); when absent the current version is pinned. |
 | `brand_kit_id` | `str or None` | `None` | min_length=1, max_length=200 | The D5 fail-closed brand pin — both fields or neither. |
 | `brand_kit_version` | `int or None` | `None` | ge=1 | — |
@@ -426,7 +427,6 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `bundle_artifact_key` | `str` | — |
 | `bundle_sha256` | `str` | — |
 | `document_id` | `str or None` | — |
-| `document_ids` | `tuple[str, ...]` | Every document of the leg, in position order (@5). `document_ids[0]` is `document_id` — the leg's own pin — and the list is served on every path, read back off `design_leg_document` for a replay or a reopen. |
 | `document_version_guard` | `int or None` | — |
 | `brand_kit_id` | `str or None` | — |
 | `brand_kit_version` | `int or None` | — |
@@ -1125,6 +1125,57 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** stage0-interview v33 section 6, "Record what they told you".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v5/SKILL.md`, `.deepagent/skills/manual-claims/v5/SKILL.md`.
+
+## run_python@1
+
+**What it does.** Run a short Python script in a locked-down container over this turn's workspace. Use it to read files that plain text tools cannot open — PDFs, Word documents, slide decks, spreadsheets — and to do arithmetic or produce a CSV, a chart or a report. The script's working directory holds the same folders your file tools use: `attachments/` (read-only) holds every file anyone has attached in this project, `project/` and `brand/` are read-only too, and `scratch/`, `work/` and `outputs/` are yours to write. Write a file if you want to keep it; print what you want to read back. There is no network, so do not try to download anything, and nothing outside those folders exists. Output longer than 16 KB is written to a file and the result tells you its path. You get a few runs per turn, and the result says how many are left, so plan the script before you call. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#run_python
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: this operation's journaled receipt.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `code`, `note`, `timeout_s`.
+- The human sees: "Complete a project step".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `code` | `str` | required | min_length=1, max_length=65536 | The whole script, as source. It runs with no network and no arguments; anything it needs it reads from the workspace, and anything it produces it prints or writes to a file. |
+| `timeout_s` | `float or None` | `None` | gt=0 | Ask for *less* wall-clock time than the operator allows — useful for a probe you expect to be instant. It is clamped to the operator's ceiling, so it can never buy more. |
+| `note` | `str or None` | `None` | max_length=200 | One line saying what this run is for, carried into the journal beside the code. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `exit_code` | `int or None` | The script's exit status; `None` exactly when the run timed out. |
+| `timed_out` | `bool` | — |
+| `duration_ms` | `int` | — |
+| `stdout` | `str` | The script's stdout, up to `INLINE_OUTPUT_BUDGET_BYTES`. |
+| `stdout_spilled_to` | `str or None` | Workspace-relative path of the whole stdout when it was larger than the inline budget. |
+| `stdout_truncated` | `bool` | The container's own output cap cut this stream before the tool ever saw the end of it. |
+| `stderr` | `str` | — |
+| `stderr_spilled_to` | `str or None` | — |
+| `stderr_truncated` | `bool` | — |
+| `files_written` | `tuple[dict[str, object], ...]` | `{"path": …, "size": …}` for every file this run wrote or changed and the policy kept. |
+| `files_removed` | `tuple[dict[str, str], ...]` | `{"path": …, "reason": …}` for everything the post-run sweep took back out. |
+| `runs_remaining` | `int` | How many runs this turn may still take. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `sandbox_unavailable` | Tell the human you cannot open the file on this deployment, and name the file; do not describe contents you never read. No run was spent. |
+| `workspace_unavailable` | Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools. |
+| `run_budget_exhausted` | Say what you have read so far and what is left, and do the rest in one script on the next turn. |
+
+**Afterwards.** One script has run in the sandbox over this turn's workspace and is gone. What it printed is in stdout, or in the file stdout_spilled_to names when it printed more than the inline budget; what it left on disk is in files_written, and anything the workspace policy took back out is in files_removed. Nothing outside your own workspace changed, and runs_remaining says how many runs this turn has left. A file you have not opened is a file you have not read: do not describe an attachment from its name. The script itself is capped at 65,536 characters, which is a validation error rather than a refusal — split the work across runs instead of writing one enormous script.
+
+**Taught by.** code-execution v1 section 1, "When to run code, when not to".
+
+**See also.** `.deepagent/skills/manual-workspace/v5/SKILL.md`, `.deepagent/skills/manual-limits/v5/SKILL.md`.
 
 ## submit_ingestion@1
 

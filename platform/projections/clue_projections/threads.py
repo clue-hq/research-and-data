@@ -91,11 +91,18 @@ class ThreadPage(_View):
 
 
 class ProjectSidebarProjectView(_View):
-    """One workspace project and its batch-hydrated thread summaries."""
+    """One workspace project and its batch-hydrated thread summaries.
+
+    ``updated_at`` is the composite ``GREATEST(project.updated_at, MAX(active thread.updated_at))``
+    the project directory sorts by (spec 2026-09-19 §2.3) — the same expression, deliberately, so
+    the rail and the directory can never present the same workspace in two different orders.
+    """
 
     project_id: str
     title: str
+    pinned: bool
     created_at: AwareDatetime
+    updated_at: AwareDatetime
     threads: tuple[ThreadView, ...]
 
 
@@ -244,26 +251,48 @@ async def threads_for_project(
 
 _PROJECT_SIDEBAR_PAGE = text(
     """
-    WITH selected_projects AS MATERIALIZED (
-        SELECT project_id, name, created_at
-        FROM project
-        WHERE workspace_id = :workspace_id
-          -- Archiving a project takes it out of the rail entirely (O6). The
-          -- filter belongs here rather than in the client so the page cursor
-          -- never has to step over rows nobody may see.
-          AND status = 'active'
+    WITH activity AS (
+        -- An archived conversation is not activity, exactly as the directory read defines it
+        -- (clue_projections.projects._ITEM_SELECT); the two composites must agree row for row.
+        SELECT t.project_id,
+               MAX(t.updated_at) FILTER (WHERE t.status = 'active') AS last_thread_at
+        FROM agent_thread t
+        WHERE t.workspace_id = :workspace_id
+        GROUP BY t.project_id
+    ),
+    selected_projects AS MATERIALIZED (
+        SELECT p.project_id,
+               p.name,
+               p.created_at,
+               p.pinned,
+               GREATEST(p.updated_at, COALESCE(a.last_thread_at, p.updated_at)) AS updated_at
+        FROM project p
+        LEFT JOIN activity a ON a.project_id = p.project_id
+        WHERE p.workspace_id = :workspace_id
+          -- Archiving a project takes it out of the rail entirely (O6), and a system scope
+          -- anchor never enters it. Both filters belong here rather than in the client so the
+          -- page cursor never has to step over rows nobody may see.
+          AND p.status = 'active'
+          AND p.kind = 'marketing'
           AND (
-              CAST(:cursor_created_at AS timestamptz) IS NULL
-              OR (created_at, project_id)
-                 < (:cursor_created_at, CAST(:cursor_project_id AS text))
+              CAST(:cursor_pinned AS boolean) IS NULL
+              OR (
+                     p.pinned,
+                     GREATEST(p.updated_at, COALESCE(a.last_thread_at, p.updated_at)),
+                     p.project_id
+                 )
+                 < (CAST(:cursor_pinned AS boolean), CAST(:cursor_updated_at AS timestamptz),
+                    CAST(:cursor_project_id AS text))
           )
-        ORDER BY created_at DESC, project_id DESC
+        ORDER BY p.pinned DESC, updated_at DESC, p.project_id DESC
         LIMIT :row_limit
     )
     SELECT
         p.project_id,
         p.name AS project_title,
         p.created_at AS project_created_at,
+        p.pinned AS project_pinned,
+        p.updated_at AS project_updated_at,
         t.id AS thread_id,
         t.title AS thread_title,
         t.status AS thread_status,
@@ -275,7 +304,8 @@ _PROJECT_SIDEBAR_PAGE = text(
       ON t.workspace_id = :workspace_id
      AND t.project_id = p.project_id
     ORDER BY
-        p.created_at DESC,
+        p.pinned DESC,
+        p.updated_at DESC,
         p.project_id DESC,
         t.pinned DESC NULLS LAST,
         t.updated_at DESC NULLS LAST,
@@ -291,23 +321,36 @@ async def project_sidebar_page(
     cursor: str | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ProjectSidebarPage:
-    """One project page with all its thread summaries in one SQL read.
+    """One page of the rail: the workspace's marketing projects, pinned first then most recently
+    active, each with all its thread summaries, in one SQL read.
+
+    The order is the project directory's order (spec 2026-09-19 §2.3) — same pin flag, same
+    composite ``updated_at``, same tiebreak — because the rail and the directory show the same
+    workspace and may never disagree about which project is on top.
 
     The project limit is applied inside the CTE, before the thread join, so a
     project with many conversations cannot crowd another project out of the
     page. Thread hydration is one batch query for the whole page; gate and busy
     status are separate whole-page batch reads at the HTTP composition layer.
+
+    The cursor carries the whole sort key — the pin flag, the composite ``updated_at`` and the
+    project id — so a project that is pinned (or whose newest conversation moves) between two page
+    reads still pages deterministically instead of repeating or skipping rows.
     """
 
     if not 1 <= limit <= MAX_PROJECT_SIDEBAR_PAGE_SIZE:
         raise ValueError(
             f"project sidebar page size must be between 1 and {MAX_PROJECT_SIDEBAR_PAGE_SIZE}"
         )
-    cursor_created_at: datetime | None = None
+    cursor_pinned: bool | None = None
+    cursor_updated_at: datetime | None = None
     cursor_project_id: str | None = None
     if cursor is not None:
-        position, cursor_project_id = decode_cursor(cursor, parts=2)
-        cursor_created_at = _parse_timestamp(position)
+        pinned_part, position, cursor_project_id = decode_cursor(cursor, parts=3)
+        if pinned_part not in ("0", "1"):
+            raise InvalidCursorError("sidebar cursor pinned flag must be 0 or 1")
+        cursor_pinned = pinned_part == "1"
+        cursor_updated_at = _parse_timestamp(position)
 
     async with conn_factory() as conn:
         rows = (
@@ -316,7 +359,8 @@ async def project_sidebar_page(
                     _PROJECT_SIDEBAR_PAGE,
                     {
                         "workspace_id": workspace_id,
-                        "cursor_created_at": cursor_created_at,
+                        "cursor_pinned": cursor_pinned,
+                        "cursor_updated_at": cursor_updated_at,
                         "cursor_project_id": cursor_project_id,
                         "row_limit": limit + 1,
                     },
@@ -354,13 +398,19 @@ async def project_sidebar_page(
         ProjectSidebarProjectView(
             project_id=project_id,
             title=str(project_rows[project_id]["project_title"]),
+            pinned=bool(project_rows[project_id]["project_pinned"]),
             created_at=cast(datetime, project_rows[project_id]["project_created_at"]),
+            updated_at=cast(datetime, project_rows[project_id]["project_updated_at"]),
             threads=tuple(threads[project_id]),
         )
         for project_id in selected_ids
     )
     next_cursor = (
-        encode_cursor(items[-1].created_at.isoformat(), items[-1].project_id)
+        encode_cursor(
+            "1" if items[-1].pinned else "0",
+            items[-1].updated_at.isoformat(),
+            items[-1].project_id,
+        )
         if has_more and items
         else None
     )

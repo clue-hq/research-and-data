@@ -1,13 +1,18 @@
 """Chat uploads: what a person may attach, and the row that remembers its filename.
 
 The bytes live in the content-addressed artifact store like every turn artifact; this module owns
-the two things that store cannot say — the filename the person gave the file and which family
-(text or image) it belongs to — and the validation both the upload route and the submission route
-apply. Spec: docs/superpowers/specs/2026-09-18-chat-attachments-design.md.
+the two things that store cannot say — the filename the person gave the file and which family it
+belongs to — and the validation both the upload route and the submission route apply. Three
+families are accepted: text (.md, .txt), image (PNG, JPEG, WebP, GIF) and document (PDF, DOCX,
+PPTX, XLSX, CSV, JSON). A document is never converted here — it is checked by size and magic bytes
+and stored as-is, for the agent's workspace to read. Specs:
+docs/superpowers/specs/2026-09-18-chat-attachments-design.md and
+docs/superpowers/specs/2026-09-19-agent-code-execution-and-document-attachments-design.md.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -22,8 +27,12 @@ from clue_agents.contracts import ArtifactRef
 from clue_config import Settings
 
 __all__ = [
+    "ALLOWED_DOCUMENT_MEDIA_TYPES",
     "ALLOWED_IMAGE_MEDIA_TYPES",
     "ALLOWED_TEXT_MEDIA_TYPES",
+    "DOCX",
+    "PPTX",
+    "XLSX",
     "ChatUploadRow",
     "UploadRefused",
     "attachment_family",
@@ -34,8 +43,16 @@ __all__ = [
     "validate_upload_bytes",
 ]
 
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 ALLOWED_TEXT_MEDIA_TYPES = frozenset({"text/markdown", "text/plain"})
 ALLOWED_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+ALLOWED_DOCUMENT_MEDIA_TYPES = frozenset(
+    {"application/pdf", DOCX, PPTX, XLSX, "text/csv", "application/json"}
+)
+_OOXML_TYPES = frozenset({DOCX, PPTX, XLSX})
 _EXTENSION_MEDIA_TYPES = {
     ".md": "text/markdown",
     ".markdown": "text/markdown",
@@ -45,6 +62,12 @@ _EXTENSION_MEDIA_TYPES = {
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
     ".gif": "image/gif",
+    ".pdf": "application/pdf",
+    ".docx": DOCX,
+    ".pptx": PPTX,
+    ".xlsx": XLSX,
+    ".csv": "text/csv",
+    ".json": "application/json",
 }
 _MAGIC = {
     "image/png": (b"\x89PNG\r\n\x1a\n",),
@@ -61,12 +84,14 @@ class UploadRefused(Exception):
         self.message = message
 
 
-def attachment_family(media_type: str) -> Literal["text", "image"] | None:
+def attachment_family(media_type: str) -> Literal["text", "image", "document"] | None:
     lowered = media_type.lower()
     if lowered in ALLOWED_TEXT_MEDIA_TYPES:
         return "text"
     if lowered in ALLOWED_IMAGE_MEDIA_TYPES:
         return "image"
+    if lowered in ALLOWED_DOCUMENT_MEDIA_TYPES:
+        return "document"
     return None
 
 
@@ -87,7 +112,8 @@ def resolve_media_type(*, declared: str | None, filename: str) -> str:
     if by_extension is None:
         raise UploadRefused(
             "UPLOAD_UNSUPPORTED_TYPE",
-            "attach a .md or .txt file, or a PNG, JPEG, WebP or GIF image",
+            "attach a .md, .txt, .pdf, .docx, .pptx, .xlsx, .csv or .json file, "
+            "or a PNG, JPEG, WebP or GIF image",
         )
     return by_extension
 
@@ -98,15 +124,34 @@ def validate_upload_bytes(*, data: bytes, media_type: str, settings: Settings) -
         raise UploadRefused(
             "UPLOAD_UNSUPPORTED_TYPE", f"{media_type} is not an accepted attachment"
         )
-    limit = (
-        settings.chat_attachment_text_max_bytes
-        if family == "text"
-        else settings.chat_attachment_image_max_bytes
-    )
+    limits = {
+        "text": settings.chat_attachment_text_max_bytes,
+        "image": settings.chat_attachment_image_max_bytes,
+        "document": settings.chat_attachment_document_max_bytes,
+    }
+    limit = limits[family]
     if len(data) > limit:
         raise UploadRefused(
             "UPLOAD_TOO_LARGE", f"a {family} attachment may be at most {limit} bytes"
         )
+    if family == "document":
+        if media_type == "application/pdf" and not data.startswith(b"%PDF-"):
+            raise UploadRefused("UPLOAD_NOT_A_DOCUMENT", "the file is not a PDF")
+        if media_type in _OOXML_TYPES and not data.startswith(b"PK\x03\x04"):
+            raise UploadRefused("UPLOAD_NOT_A_DOCUMENT", "the file is not an Office document")
+        if media_type in ("text/csv", "application/json"):
+            try:
+                text_body = data.decode("utf-8-sig")
+            except UnicodeDecodeError as exc:
+                raise UploadRefused("UPLOAD_NOT_A_DOCUMENT", "the file is not UTF-8") from exc
+            if media_type == "application/json":
+                try:
+                    json.loads(text_body)
+                except json.JSONDecodeError as exc:
+                    raise UploadRefused(
+                        "UPLOAD_NOT_A_DOCUMENT", "the file is not valid JSON"
+                    ) from exc
+        return
     if family == "text":
         try:
             data.decode("utf-8")

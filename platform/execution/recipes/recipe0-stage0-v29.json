@@ -42,7 +42,7 @@
           "inspect_statement_history@1",
           "inspect_readiness_history@1",
           "draft_account_research_directive@5",
-          "open_design_leg@5",
+          "open_design_leg@4",
           "open_directive_confirmation_gate@1",
           "open_product_selection_gate@1",
           "get_research_view@1",
@@ -63,7 +63,8 @@
           "read_account_research@2",
           "read_claims@1",
           "read_artifact@1",
-          "read_discovery_run@2"
+          "read_discovery_run@2",
+          "run_python@1"
         ],
         "dynamic_pin_kinds": [
           "artifact_input",
@@ -106,7 +107,7 @@
           {"kind": "tool", "key": "inspect_statement_history", "version": "1"},
           {"kind": "tool", "key": "inspect_readiness_history", "version": "1"},
           {"kind": "tool", "key": "draft_account_research_directive", "version": "5"},
-          {"kind": "tool", "key": "open_design_leg", "version": "5"},
+          {"kind": "tool", "key": "open_design_leg", "version": "4"},
           {"kind": "tool", "key": "open_directive_confirmation_gate", "version": "1"},
           {"kind": "tool", "key": "open_product_selection_gate", "version": "1"},
           {"kind": "tool", "key": "get_research_view", "version": "1"},
@@ -133,7 +134,8 @@
           {"kind": "tool", "key": "read_account_research", "version": "2"},
           {"kind": "tool", "key": "read_claims", "version": "1"},
           {"kind": "tool", "key": "read_artifact", "version": "1"},
-          {"kind": "tool", "key": "read_discovery_run", "version": "2"}
+          {"kind": "tool", "key": "read_discovery_run", "version": "2"},
+          {"kind": "tool", "key": "run_python", "version": "1"}
         ]
       },
       {
@@ -161,7 +163,7 @@
       "inspect_statement_history@1",
       "inspect_readiness_history@1",
       "draft_account_research_directive@5",
-      "open_design_leg@5",
+      "open_design_leg@4",
       "open_directive_confirmation_gate@1",
       "open_product_selection_gate@1",
       "get_research_view@1",
@@ -182,7 +184,8 @@
       "read_account_research@2",
       "read_claims@1",
       "read_artifact@1",
-      "read_discovery_run@2"
+      "read_discovery_run@2",
+      "run_python@1"
     ],
     "authority_allowlist": ["human"],
     "activity_allowlist": [],
@@ -208,7 +211,7 @@
         {"kind": "tool", "key": "inspect_statement_history", "version": "1"},
         {"kind": "tool", "key": "inspect_readiness_history", "version": "1"},
         {"kind": "tool", "key": "draft_account_research_directive", "version": "5"},
-        {"kind": "tool", "key": "open_design_leg", "version": "5"},
+        {"kind": "tool", "key": "open_design_leg", "version": "4"},
         {"kind": "tool", "key": "open_directive_confirmation_gate", "version": "1"},
         {"kind": "tool", "key": "open_product_selection_gate", "version": "1"},
         {"kind": "tool", "key": "get_research_view", "version": "1"},
@@ -235,7 +238,8 @@
         {"kind": "tool", "key": "read_account_research", "version": "2"},
         {"kind": "tool", "key": "read_claims", "version": "1"},
         {"kind": "tool", "key": "read_artifact", "version": "1"},
-        {"kind": "tool", "key": "read_discovery_run", "version": "2"}
+        {"kind": "tool", "key": "read_discovery_run", "version": "2"},
+        {"kind": "tool", "key": "run_python", "version": "1"}
       ]
     }
   },

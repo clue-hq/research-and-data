@@ -118,6 +118,7 @@ from clue_api.design_leg_wiring import (
 )
 from clue_api.frontend_read import latest_project_run_context
 from clue_api.langfuse_callbacks import build_langfuse_callbacks
+from clue_api.project_attachments import sync_project_attachments
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
     CompiledProjectFile,
@@ -766,6 +767,19 @@ class ProjectConversationTurnRunner:
                 pin_created=project_pin_created,
                 replayed_from_pin=pinned_tree_name is not None,
             )
+        # Spec 2026-09-19 §3.2: every file attached in this project, byte for byte, beside the
+        # threads. Synced here — on the worker that owns the workspace root — never by the API.
+        # Unconditional: an attachment is the human's own file and does not depend on whether
+        # this runner composes the project's knowledge library.
+        async with self._conn_factory() as conn:
+            await sync_project_attachments(
+                self._engine.components.workspaces,
+                self._engine.components.artifacts,
+                conn,
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
+            )
+        mounts = replace(mounts, attachments=True)
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -954,6 +968,10 @@ class ProjectConversationTurnRunner:
                     submitted_by_user_id=submission.submitted_by_user_id,
                     submitted_via_membership_id=submission.submitted_via_membership_id,
                     stream=stream,
+                    # The exact mount table this turn's lease was acquired with, so the code
+                    # sandbox binds the directories the model's own file tools see — including
+                    # a replayed turn's pinned project tree — rather than re-deriving them.
+                    mounts=mounts,
                 ),
                 submission=submission,
                 turn_id=request.turn_id,

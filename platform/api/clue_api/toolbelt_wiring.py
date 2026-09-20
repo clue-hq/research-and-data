@@ -128,7 +128,13 @@ from clue_api.project_document_tools import (
     build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
-from clue_api.project_tools import RenameProjectTool
+from clue_api.project_tools import (
+    CreateProjectTool,
+    RenameProjectTool,
+    SetProjectArchivedTool,
+    SetProjectPinnedTool,
+    UpdateProjectDetailsTool,
+)
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
@@ -143,6 +149,8 @@ from clue_api.prose_synthesis_tools import (
 )
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
+from clue_api.run_python_tool import build_run_python_tools
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_project_tools import stage0_project_tools
 from clue_api.stage0_tools import stage0_tools
@@ -2667,6 +2675,7 @@ def build_toolbelt(
     persona_requests: PersonaRequestService | None = None,
     project_documents: ProjectDocumentService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
+    sandbox_workspaces: SandboxWorkspaces | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
@@ -2847,6 +2856,15 @@ def build_toolbelt(
     # together with the manual chapter that teaches it and the recipe revision that admits it.
     for tool in build_artifact_read_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)
+    # The code sandbox (spec 2026-09-19 §3.4). Registered on every deployment like its
+    # neighbours above so the write surface and the authority audit stay complete; composed
+    # only where turns are driven, because ``sandbox_workspaces`` is the registry the turn
+    # worker binds one execution's host directories into. Without it — and on a host with no
+    # sandbox image, or with ``CLUE_SANDBOX_ENABLED`` off — it refuses
+    # ``sandbox_unavailable`` before it reaches for a container. Registered UNGRANTED: the
+    # grant is a reviewed head-of-abm profile bump, never a dict edit.
+    for tool in build_run_python_tools(settings=resolved_settings, workspaces=sandbox_workspaces):
+        registry.register(tool, make_default=True)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
     # the gate that confirms one. Registered on every deployment for the same reason as its
     # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and
@@ -2944,6 +2962,16 @@ def build_toolbelt(
     # module per the chokepoint protocol.
     register_thread_tools(registry, conn_factory=conn_factory)
     registry.register(RenameProjectTool(conn_factory=conn_factory), make_default=True)
+    # Projects directory (2026-09-19): the four project-row tools the directory and the
+    # project header drive. Registered like every other write path, granted to no role —
+    # filing, pinning and archiving a project are the human's decisions.
+    for tool in (
+        CreateProjectTool(conn_factory=conn_factory),
+        UpdateProjectDetailsTool(conn_factory=conn_factory),
+        SetProjectPinnedTool(conn_factory=conn_factory),
+        SetProjectArchivedTool(conn_factory=conn_factory),
+    ):
+        registry.register(tool, make_default=True)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
     register_agent_gate_tools(

@@ -22,6 +22,7 @@ from clue_memory import (
     _store,  # test setup/inspection only
     rank_key,
     record_kickoff,
+    retire,
     set_memory_enabled,
 )
 
@@ -219,5 +220,48 @@ def test_off_cycles_do_not_age_memories() -> None:
             assert row is not None and row.cycles_since_confirmed == 1
             events = {e["event_type"] for e in await _store.list_events(conn, memory_id)}
             assert "kickoff_cycle" in events
+
+    run_async(scenario())
+
+
+def test_retire_refuses_a_record_that_is_not_active_and_journals_nothing() -> None:
+    """The human verb is active-only: a crowded-out dormant record (and a missing id) is
+    refused without a journal entry, so *Remove memory* can never fake a transition."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            spine = await seed_spine(conn)
+            caps = make_caps(store_caps={"brand": 1})
+            first = await _write(conn, spine, "Guidance one.", caps, scope_id=spine.brand_id)
+            await _store.record_confirmation(conn, first, trust_grade=4)
+            dormant = await _write(conn, spine, "Guidance two.", caps, scope_id=spine.brand_id)
+            row = await _store.get_memory(conn, dormant)
+            assert row is not None and row.status is MemoryStatus.DORMANT
+
+            assert (
+                await retire(
+                    conn,
+                    memory_id=dormant,
+                    workspace_id=spine.workspace_id,
+                    actor="usr_home",
+                    cause="removed on project home",
+                )
+                is False
+            )
+            still = await _store.get_memory(conn, dormant)
+            assert still is not None and still.status is MemoryStatus.DORMANT
+            events = {e["event_type"] for e in await _store.list_events(conn, dormant)}
+            assert "invalidated" not in events
+
+            assert (
+                await retire(
+                    conn,
+                    memory_id="mem_does_not_exist",
+                    workspace_id=spine.workspace_id,
+                    actor="usr_home",
+                    cause="ghost",
+                )
+                is False
+            )
 
     run_async(scenario())

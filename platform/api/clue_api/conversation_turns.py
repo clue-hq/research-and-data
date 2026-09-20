@@ -40,6 +40,7 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DeterministicAgentContextAssembler,
+    MountRequest,
     ResolvedAgentProfile,
     WorkspaceSeedFile,
 )
@@ -74,6 +75,7 @@ from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
 )
+from clue_api.sandbox.workspaces import SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_core import ContextAssembly, ExecutionId, MemoryType
 from clue_db import ConnFactory, transaction
@@ -177,11 +179,9 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
 # key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
 # replay input for turns pinned to it.
-# Revision 29 (multi-artifact legs) re-pins one address: ``open_design_leg`` moves to ``@5``, the
-# contract `head-of-abm@v58` grants — the top-level ``title`` is gone and the input carries an
-# ``artifacts`` list, so one open births one document per item. ``@4`` leaves the slot rather than
-# stand beside ``@5``, for the reason revision 22 recorded: one version per ``(kind, key)``
-# resolves, so both at once is a ``conflicting_requirement``. v28 stays the exact replay input for
+# Revision 29 (the code sandbox) admits one address and removes none: ``run_python@1``, granted
+# for the first time at `head-of-abm@v58`, so a turn can open a PDF, a deck or a spreadsheet the
+# human attached instead of guessing from its filename. v28 stays the exact replay input for
 # turns pinned to it.
 CONVERSATION_RECIPE_VERSION = 29
 
@@ -357,6 +357,7 @@ class ConversationTurnEngine:
         submitted_via_membership_id: str | None = None,
         stream: TurnStreamEmitter | None = None,
         input_seeds: tuple[WorkspaceSeedFile, ...] = (),
+        mounts: MountRequest | None = None,
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -378,6 +379,13 @@ class ConversationTurnEngine:
         ``input_seeds`` (ARV2 onboarding O6) are the surface's read-only workspace inputs for this
         turn. The engine only forwards them: what they are, and how they were pinned, belongs to
         the surface that composed them.
+
+        ``mounts`` (spec 2026-09-19 §3.4) is the exact :class:`~clue_agents.MountRequest` the
+        caller acquired ``lease`` with. It is what lets this method derive the turn's host
+        directories for the code sandbox — the tool is handed ids, never handles, so the paths
+        have to be registered here, under the turn's execution id, while the lease is held. A
+        caller that passes none registers nothing and ``run_python@1`` refuses by name, which is
+        the honest answer: a mount table nobody named is a guess.
         """
 
         constitution = request.constitution
@@ -417,33 +425,63 @@ class ConversationTurnEngine:
                 profile=self.resolved.profile,
                 history=prior_history,
             )
-            execution = build_head_of_abm_stage0_execution(
-                request=request,
-                profiles=self.components.profiles,
-                tools=self._tools,
-                tool_invoker=self._tool_invoker,
-                executor=self._executor,
-                compatibility=self._compatibility,
-                artifacts=self.components.artifacts,
-                plans=self._plans,
-                checkpointer_factory=postgres_agent_checkpointer,
-                budget_limit_millicents=budget_limit_millicents,
-                captured_turns=self._captured_turns,
-                surface=self.surface,
-                # The thread's own workspace is where a governed result too large for its receipt
-                # lands: `reads/<operation>.json`, readable by the model, written by nobody else.
-                spill_sink=lease.backend,
-                conn_factory=self._conn_factory,
-            )
-            outcome = await self._runtime.run(
-                request=request,
-                context=context,
-                lease=lease,
-                execution=execution,
-                completion_guard=completion_guard,
-                stream=stream,
-                input_seeds=input_seeds,
-            )
+            # The code sandbox's one binding (spec 2026-09-19 §3.4). ``ToolContext`` carries
+            # the execution id and nothing else, so this is where ``run_python@1`` is told which
+            # host directories this turn owns — derived from the lease the spill sink below is
+            # bound to, and from the very mount table the model's own file tools see. With no
+            # registry (the sandbox is off) or no ``MountRequest`` (a surface that acquired its
+            # own lease and named nothing) this binds nothing, and the tool refuses by name
+            # rather than running against a guessed path.
+            sandbox = self.components.sandbox_workspaces
+            bound_sandbox: SandboxWorkspaces | None = None
+            if sandbox is not None and mounts is not None:
+                bound_sandbox = sandbox
+                sandbox.register(
+                    constitution.execution_id,
+                    sandbox_mounts_for_lease(
+                        lease,
+                        self.components.workspaces,
+                        brand=mounts.brand,
+                        project_library=mounts.project_library,
+                        project_library_name=mounts.project_library_name,
+                        attachments=mounts.attachments,
+                    ),
+                )
+            try:
+                execution = build_head_of_abm_stage0_execution(
+                    request=request,
+                    profiles=self.components.profiles,
+                    tools=self._tools,
+                    tool_invoker=self._tool_invoker,
+                    executor=self._executor,
+                    compatibility=self._compatibility,
+                    artifacts=self.components.artifacts,
+                    plans=self._plans,
+                    checkpointer_factory=postgres_agent_checkpointer,
+                    budget_limit_millicents=budget_limit_millicents,
+                    captured_turns=self._captured_turns,
+                    surface=self.surface,
+                    # The thread's own workspace is where a governed result too large for its
+                    # receipt lands: `reads/<operation>.json`, readable by the model, written by
+                    # nobody else.
+                    spill_sink=lease.backend,
+                    conn_factory=self._conn_factory,
+                )
+                outcome = await self._runtime.run(
+                    request=request,
+                    context=context,
+                    lease=lease,
+                    execution=execution,
+                    completion_guard=completion_guard,
+                    stream=stream,
+                    input_seeds=input_seeds,
+                )
+            finally:
+                # On every exit path — returned, raised, cancelled — and idempotent, because the
+                # binding must not outlive the lease it names: a later turn's script reaching a
+                # released tree is exactly what this registry exists to prevent.
+                if bound_sandbox is not None:
+                    bound_sandbox.release(constitution.execution_id)
         else:
             outcome = committed
         return await self._result_from_outcome(

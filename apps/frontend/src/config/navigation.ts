@@ -15,7 +15,7 @@ export interface SidebarNavigationItem {
 export const primaryNavigation: SidebarNavigationItem[] = [
   { href: "/", icon: "home", label: "Home" },
   { href: "/accounts", icon: "account", label: "Account" },
-  { href: "/projects", icon: "project", label: "Project" },
+  { href: "/projects", icon: "project", label: "Projects" },
 ];
 
 export const workspaceNavigation: SidebarNavigationItem[] = [

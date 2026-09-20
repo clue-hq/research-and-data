@@ -4,10 +4,8 @@ import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
 import type { ProjectEntity } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
-import { useTurnInspector } from "../hooks/use-turn-inspector";
 import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
-import { ChatTurnInspector } from "./chat-turn-inspector";
 import styles from "./project-flow.module.css";
 
 /**
@@ -36,21 +34,13 @@ export function ConversationContent({
   contextEntities,
   contextHandoffError,
   onOpenPlan,
-  projectId,
 }: {
   chat: ProjectChatController;
   /** The composer's whole catalog, so a chip resolves whatever was mentioned. */
   contextEntities: ProjectEntity[];
   contextHandoffError: string | null;
   onOpenPlan?: (documentId: string) => void;
-  projectId: string;
 }) {
-  // The dev-lens turn inspector. Its own controller, not part of `chat`: it
-  // reads nothing the conversation needs and the conversation needs nothing
-  // from it, so a debugging affordance never joins the state machine that
-  // drives real turns. `available` is false in every deployment that did not
-  // register the routes, which is every production deployment.
-  const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
   const activeUserMessageId = chat.transcript.reduce<string | null>(
     (latest, message) => (message.role === "user" ? message.id : latest),
     null,
@@ -124,11 +114,8 @@ export function ConversationContent({
           contextEntities={contextEntities}
           gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
-          onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
         />
       </div>
-      <ChatTurnInspector inspector={turnInspector} />
-
     </>
   );
 }

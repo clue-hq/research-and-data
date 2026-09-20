@@ -1,18 +1,16 @@
-"""Name a turn's attachments for L7 from the submission rows (spec 2026-09-18 §3.4).
+"""Name a turn's attachments for L7 from the submission rows (spec 2026-09-19 §3.2).
 
 L7 may say only what the durable rows prove. The filename comes from
 ``agent_turn_submission_attachment`` — written at submit from the upload row, never from anything
-the browser retyped — and a workspace path is named only when a servable document really sits at
-``attachments/<filename>`` in this project, so the agent is never told to open a file that is not
-there. An image gets no path at all: it is shown in the transcript, not written into the tree.
+the browser retyped — and the path is ``attachments/<filename>``, the one place the fleet worker's
+sync puts every file attached to this project, whatever its family. The family itself is read
+from the row's media type and only chooses which tool L7 names for opening the file.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-
-from sqlalchemy import text
 
 from clue_agents.contracts import AgentTurnRequest
 from clue_api.agent_turn_submission import submission_attachment_refs
@@ -24,10 +22,11 @@ __all__ = ["DbAttachmentDescriber", "DescribedAttachment"]
 
 @dataclass(frozen=True, slots=True)
 class DescribedAttachment:
-    """One attachment as L7 names it: what it is called, and where it is readable when it is."""
+    """One attachment as L7 names it: what it is called, where it sits, and what kind it is."""
 
     filename: str
     workspace_path: str | None
+    family: str
 
 
 class DbAttachmentDescriber:
@@ -44,26 +43,15 @@ class DbAttachmentDescriber:
                 conn, workspace_id=workspace_id, turn_id=request.turn_id
             )
             for row in rows:
-                path: str | None = None
-                if attachment_family(row.ref.media_type) == "text":
-                    # The servable statuses and the ``artifact_key IS NOT NULL`` clause are the
-                    # project-document store's own definition of "this version owns its path";
-                    # anything else is a document whose words nobody can read yet.
-                    served = (
-                        await conn.execute(
-                            text(
-                                "SELECT 1 FROM brand_knowledge_document WHERE workspace_id = :ws "
-                                "AND project_id = :project AND path = :path "
-                                "AND status IN ('ready', 'proposed', 'confirmed') "
-                                "AND artifact_key IS NOT NULL LIMIT 1"
-                            ),
-                            {
-                                "ws": workspace_id,
-                                "project": request.constitution.project_id,
-                                "path": f"attachments/{row.filename}",
-                            },
-                        )
-                    ).first()
-                    path = f"project/attachments/{row.filename}" if served else None
-                result[row.ref.artifact_key] = DescribedAttachment(row.filename, path)
+                family = attachment_family(row.ref.media_type)
+                if family is None:
+                    # Upload validation accepts no other media type, so this is a row from
+                    # outside that gate: leave it undescribed and let L7 print the pointer line
+                    # rather than invent a family for it.
+                    continue
+                result[row.ref.artifact_key] = DescribedAttachment(
+                    filename=row.filename,
+                    workspace_path=f"attachments/{row.filename}",
+                    family=family,
+                )
         return result

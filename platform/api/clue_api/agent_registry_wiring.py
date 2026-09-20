@@ -178,27 +178,19 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
     # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
     # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
-    # v58 (one ask, many artifacts, 2026-09-19): v57's surface exactly, with ONE address moved and
-    # the prompt that teaches it. `open_design_leg` becomes @5 — the top-level `title` is deleted
-    # and the input carries an `artifacts` list of `{title, note, account_id?}`, so a single
-    # message asking for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births
-    # twenty documents, each stamped with the account its item names. Prompt v10 → v11 because the
-    # two design paragraphs are what decides how many items get listed: they become one paragraph
-    # covering every designed page, telling the agent to read the count out of the message and to
-    # give each item its own note. The conversation recipe moves 28 → 29 (the interaction slot
-    # re-pins the delegation entry; @4 leaves rather than stand beside @5), and the manual
-    # re-mints at `manual-*@v5` because its generated `tools` chapter renders the grant.
-    # v59 (the leg's first turn starts itself, 2026-09-20): v58's surface exactly, prompt only.
-    # `open_design_leg@5` now queues the leg's first design turn from the user's own message,
-    # inside the transaction that opens the leg, so the leg starts generating without the user
-    # saying "go". Prompt v11 → v12 changes one sentence: "Opening a leg starts nothing: the
-    # user's next message begins generation" becomes "Opening a leg starts generation at once".
-    # No address moves, so the conversation recipe stays at 29, but the manual re-mints at
-    # `manual-*@v6`: its generated `tools` and `limits` chapters render THIS profile's version
-    # into their title line, so a chapter that still said `@v58` would name a profile nobody
-    # holds. Every v6 body is byte-identical to its v5 sibling but for that line and the
-    # cross-reference paths, which is the proof the grant and the caps did not move.
-    AgentRole.HEAD_OF_ABM: "v59",
+    # v58 (the code sandbox and the project's attachments, 2026-09-19): v57's surface with
+    # `run_python@1` GRANTED — one short Python script per call, in a locked-down container with
+    # no network, over this turn's own workspace and nothing else — and `attachments` added to
+    # the readable prefixes, so every file anyone attached in this project is mounted read-only
+    # at `attachments/<filename>`. The two go together: a file tool that reads UTF-8 text cannot
+    # open a PDF, a deck, a spreadsheet or an image, and a human who attaches one is entitled to
+    # an answer about what is in it rather than a guess from its filename. `allowed_extensions`
+    # is unmoved — the extra formats a script may PRODUCE are enforced by the post-run workspace
+    # sweep, not by `write_file`. Skill pin v33→v34 and prompt pin v10→v11 for the same
+    # paragraph, plus `code-execution@v1` pinned as the sandbox's whole procedure. The manual
+    # re-mints at `manual-*@v5` because the grant moved. The conversation recipe moves 28 → 29:
+    # the interaction slot admits `run_python@1`.
+    AgentRole.HEAD_OF_ABM: "v58",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -267,9 +259,25 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
     # artifact stops being a memory of the turn that made it.
     "read_artifact": (AgentRole.HEAD_OF_ABM,),
+    # The code sandbox (spec 2026-09-19 §3.4): one short script in a locked-down container
+    # over this turn's own workspace, and the only way to open a PDF, a deck, a spreadsheet or
+    # an image the project's `attachments/` holds. It arrived here UNGRANTED, on the same terms
+    # every new write surface arrives on — `build_agent_profile_registry` refuses to compose
+    # when a role's authority and its profile's tool list disagree, so a grant is a reviewed
+    # profile bump and never an edit to this dict. `head-of-abm@v58` is that bump: it pins the
+    # tool's two schema digests, opens `attachments` on the readable prefixes, and mints
+    # `code-execution@v1` and `manual-*@v5` to teach it.
+    "run_python": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
+    # Projects directory (2026-09-19): creating, retitling, pinning and archiving a
+    # project are the human's filing decisions. An agent that could archive a project
+    # could hide its own work, so all four stay ungranted.
+    "create_project": (),
+    "update_project_details": (),
+    "set_project_pinned": (),
+    "set_project_archived": (),
     "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,

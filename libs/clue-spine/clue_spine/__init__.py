@@ -6,6 +6,7 @@ from clue_spine.spine import (
     Product,
     ProductStatus,
     Project,
+    ProjectKind,
     ProjectProductSet,
     ProjectStatus,
     Workspace,
@@ -32,8 +33,12 @@ from clue_spine.spine import (
     new_project_id,
     new_workspace_id,
     rename_workspace,
+    set_project_archived,
     set_project_name,
     set_project_name_if_untitled,
+    set_project_pinned,
+    touch_project,
+    update_project_details,
 )
 
 __all__ = [
@@ -43,6 +48,7 @@ __all__ = [
     "Product",
     "ProductStatus",
     "Project",
+    "ProjectKind",
     "ProjectProductSet",
     "ProjectStatus",
     "new_workspace_id",
@@ -69,5 +75,9 @@ __all__ = [
     "list_project_product_sets",
     "set_project_name",
     "set_project_name_if_untitled",
+    "update_project_details",
+    "set_project_pinned",
+    "set_project_archived",
+    "touch_project",
     "UNTITLED_PROJECT_NAME",
 ]

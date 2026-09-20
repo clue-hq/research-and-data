@@ -989,7 +989,6 @@ export function ChatSurface({
                 contextEntities={controller.composerEntities}
                 contextHandoffError={controller.contextHandoffError}
                 onOpenPlan={(id) => void documentTabs.openById(id)}
-                projectId={projectId}
               />
             </div>
           ) : null}

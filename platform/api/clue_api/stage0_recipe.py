@@ -475,6 +475,10 @@ class Stage0StepPinProvider:
             "read_claims",
             "read_discovery_run",
             "read_project_accounts",
+            # ``run_python`` joins them at recipe0-stage0@29 for the same reason: its body is a
+            # script, so it names no project either, and the project it must be bound to — the
+            # one whose ``attachments/`` the container can see — is the execution's own.
+            "run_python",
         }:
             requested.append(await self._execution_project_pin(ctx))
 

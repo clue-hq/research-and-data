@@ -5,8 +5,16 @@ import {
   attachmentFamily,
   attachmentLimitError,
   chatAttachmentSnapshot,
+  CHAT_ATTACHMENT_ACCEPT,
   CHAT_ATTACHMENT_LIMITS,
 } from "./chat-attachments";
+
+const DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const XLSX =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 function ready(
   i: number,
@@ -31,7 +39,77 @@ test("family by type then by extension", () => {
   assert.equal(attachmentFamily({ name: "x.md", type: "" }), "text");
   assert.equal(attachmentFamily({ name: "x.txt", type: "text/plain" }), "text");
   assert.equal(attachmentFamily({ name: "x.png", type: "image/png" }), "image");
-  assert.equal(attachmentFamily({ name: "x.pdf", type: "application/pdf" }), null);
+  assert.equal(
+    attachmentFamily({ name: "x.pdf", type: "application/pdf" }),
+    "document",
+  );
+  assert.equal(attachmentFamily({ name: "x.exe", type: "" }), null);
+});
+
+test("documents are their own family, by type or by extension", () => {
+  assert.equal(
+    attachmentFamily({ name: "x.pdf", type: "application/pdf" }),
+    "document",
+  );
+  assert.equal(attachmentFamily({ name: "x.docx", type: DOCX }), "document");
+  assert.equal(attachmentFamily({ name: "x.pptx", type: PPTX }), "document");
+  assert.equal(attachmentFamily({ name: "x.xlsx", type: XLSX }), "document");
+  assert.equal(attachmentFamily({ name: "x.csv", type: "text/csv" }), "document");
+  assert.equal(
+    attachmentFamily({ name: "x.json", type: "application/json" }),
+    "document",
+  );
+  // Browsers frequently report a generic, empty or plain wrong type for these.
+  for (const name of ["x.pdf", "x.docx", "x.pptx", "x.xlsx", "x.csv", "x.json"]) {
+    assert.equal(attachmentFamily({ name, type: "" }), "document", name);
+    assert.equal(
+      attachmentFamily({ name, type: "application/octet-stream" }),
+      "document",
+      name,
+    );
+  }
+  assert.equal(
+    attachmentFamily({ name: "x.csv", type: "application/vnd.ms-excel" }),
+    "document",
+  );
+});
+
+test("the accept list offers every document type", () => {
+  const accepted = CHAT_ATTACHMENT_ACCEPT.split(",");
+  for (const entry of [
+    ".pdf",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".csv",
+    ".json",
+    "application/pdf",
+    DOCX,
+    PPTX,
+    XLSX,
+    "text/csv",
+    "application/json",
+  ]) {
+    assert.ok(accepted.includes(entry), entry);
+  }
+});
+
+test("a document may be 25 MB but not a byte more", () => {
+  const pdf = (size: number) =>
+    ({ name: "deck.pdf", type: "application/pdf", size }) as File;
+  assert.equal(
+    CHAT_ATTACHMENT_LIMITS.documentMaxBytes,
+    26_214_400,
+    "25 MiB, matching the backend's CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES",
+  );
+  assert.equal(
+    attachmentLimitError([], [pdf(CHAT_ATTACHMENT_LIMITS.documentMaxBytes)]),
+    null,
+  );
+  assert.equal(
+    attachmentLimitError([], [pdf(CHAT_ATTACHMENT_LIMITS.documentMaxBytes + 1)]),
+    "deck.pdf is over 25 MB.",
+  );
 });
 
 test("limits: count, per-file size, total size", () => {

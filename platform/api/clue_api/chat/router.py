@@ -67,13 +67,11 @@ from clue_api.arv2.icp_confirmation import (
     pin_project_icp,
 )
 from clue_api.arv2.logo_resolution import brandfetch_logo_url
-from clue_api.arv2.project_documents import ProjectDocumentRefused
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
 from clue_api.chat.attachments import (
     AttachmentReferenceError,
     ValidatedAttachment,
-    materialize_text_attachments,
     validated_attachment_refs,
 )
 from clue_api.chat.composer_context import (
@@ -117,6 +115,7 @@ from clue_api.chat.schemas import (
     AgentProfileOptionWire,
     AttachmentRefRequest,
     ComposerContextEntityWire,
+    CreateBlankProjectRequest,
     CreateThreadRequest,
     DesignArtifactAccountWire,
     DesignArtifactListItemWire,
@@ -135,16 +134,18 @@ from clue_api.chat.schemas import (
     PrepareComposerContextRequest,
     PreparedComposerContextResponse,
     PreparedComposerContextWire,
+    ProjectActivityWire,
     ProjectBootstrapProjectWire,
     ProjectBootstrapResponse,
     ProjectBootstrapThreadWire,
     ProjectBootstrapWire,
+    ProjectDirectoryItemResponse,
+    ProjectDirectoryItemWire,
+    ProjectDirectoryResponse,
     ProjectShellResponse,
     ProjectShellWire,
-    RenameProjectRequest,
-    RenameProjectResponse,
-    RenameProjectWire,
     ResearchTaskListResponse,
+    SetProjectArchivedRequest,
     SidebarConversationWire,
     SidebarPageMeta,
     SidebarProjectsResponse,
@@ -154,6 +155,7 @@ from clue_api.chat.schemas import (
     ThreadResponse,
     TurnAcceptedResponse,
     TurnAcceptedWire,
+    UpdateProjectRequest,
     UpdateThreadRequest,
     gate_response_message,
     gate_wire,
@@ -185,14 +187,19 @@ from clue_design.documents import get_document as get_design_document
 from clue_design.errors import DesignNotFoundError
 from clue_obs import get_logger
 from clue_projections import (
+    DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
     DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
     DEFAULT_THREAD_PAGE_SIZE,
+    MAX_PROJECT_DIRECTORY_PAGE_SIZE,
     MAX_PROJECT_SIDEBAR_PAGE_SIZE,
     MAX_THREAD_MESSAGE_PAGE_SIZE,
     MAX_THREAD_PAGE_SIZE,
     InvalidCursorError,
+    ProjectDirectoryItemView,
     open_gate_kinds_for_threads,
+    project_directory_item,
+    project_directory_page,
     project_sidebar_page,
     thread_gates,
     thread_messages,
@@ -248,6 +255,15 @@ _REASON_STATUS: dict[str, tuple[int, str]] = {
     "project_not_found": (404, "PROJECT_NOT_FOUND"),
     "thread_not_found": (404, "THREAD_NOT_FOUND"),
     "thread_archived": (409, "THREAD_ARCHIVED"),
+    "project_archived": (409, "PROJECT_ARCHIVED"),
+    "project_running": (409, "PROJECT_RUNNING"),
+    # A system project is a scope anchor the directory never shows, so its refusal has to read
+    # like a missing row on this surface — naming it would disclose a project the human never
+    # filed. The tool's own reason code stays ``project_system`` for the journal.
+    "project_system": (404, "PROJECT_NOT_FOUND"),
+    "project_draft": (409, "PROJECT_DRAFT"),
+    "project_title_reserved": (422, "PROJECT_TITLE_RESERVED"),
+    "brand_not_found": (404, "BRAND_NOT_FOUND"),
 }
 
 _HOME_PROJECT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-home-project-bootstrap")
@@ -707,51 +723,6 @@ async def _validated_submission_attachments(
         raise _refuse(status_code=status_code, code=exc.code, message=exc.message) from exc
 
 
-async def _wrote_attachment_documents(
-    conn: AsyncConnection,
-    *,
-    attachments: Sequence[ValidatedAttachment],
-    artifacts: DurableAgentArtifactStore | None,
-    storage: StorageBackend | None,
-    workspace_id: str,
-    brand_id: str,
-    project_id: str,
-    turn_id: UUID,
-    user_id: str,
-) -> bool:
-    """Make this turn's text attachments documents of the project, in the turn's own transaction.
-
-    Same transaction as the submission that carried them: a turn the agent will be handed cannot
-    exist without the files it was handed, and a refused write takes the whole turn with it rather
-    than accepting a message whose attachment nobody can read. Returns whether anything was
-    written, which is what tells the caller the project's library needs recompiling after commit.
-    """
-
-    if not any(item.family == "text" for item in attachments):
-        return False
-    # Guaranteed by _validated_submission_attachments: attachments without storage are refused.
-    assert storage is not None and artifacts is not None
-    try:
-        await materialize_text_attachments(
-            conn,
-            storage,
-            artifacts,
-            workspace_id=workspace_id,
-            brand_id=brand_id,
-            project_id=project_id,
-            turn_id=turn_id,
-            user_id=user_id,
-            attachments=attachments,
-        )
-    except ProjectDocumentRefused as refusal:
-        raise _refuse(
-            status_code=422,
-            code="ATTACHMENT_DOCUMENT_REFUSED",
-            message=str(refusal),
-        ) from refusal
-    return True
-
-
 def _composer_capabilities(*, storage_available: bool) -> HomeComposerCapabilitiesWire:
     """Attachments are offered exactly when this deployment can durably hold their bytes."""
 
@@ -879,6 +850,69 @@ def build_chat_router(
             ) from exc
         return dict(result.references)
 
+    async def _directory_items(
+        workspace_id: str, views: Sequence[ProjectDirectoryItemView]
+    ) -> tuple[ProjectDirectoryItemWire, ...]:
+        """Dress a page of directory rows with their live conversation activity.
+
+        Two queries for the whole page, not two per card: the directory read already carried each
+        project's active thread ids, so the badges are counted over one gate read and one
+        running-turn read for the page.
+        """
+
+        thread_ids = tuple(t for view in views for t in view.thread_ids)
+        open_gates = await open_gate_kinds_for_threads(
+            workspace_id=workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        busy = await threads_running(
+            workspace_id=workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        return tuple(
+            ProjectDirectoryItemWire(
+                id=view.project_id,
+                title=view.title,
+                description=view.description,
+                href=f"/projects/{view.project_id}",
+                status=view.status,
+                pinned=view.pinned,
+                brand_id=view.brand_id,
+                product_id=view.product_id,
+                created_at=view.created_at.isoformat(),
+                updated_at=view.updated_at.isoformat(),
+                archived_at=(None if view.archived_at is None else view.archived_at.isoformat()),
+                activity=ProjectActivityWire(
+                    chats=view.chat_count,
+                    running=sum(1 for t in view.thread_ids if t in busy),
+                    needs_input=sum(1 for t in view.thread_ids if open_gates.get(t)),
+                ),
+            )
+            for view in views
+        )
+
+    async def _directory_item_or_404(
+        workspace_id: str, project_id: str
+    ) -> ProjectDirectoryItemWire:
+        """The one directory row, or the same not-found sentence the tools use.
+
+        The read applies the directory's lens, so a system anchor, a draft, and another tenant's
+        project are all 404 here — a caller cannot reach by id what the listing hides.
+        """
+
+        view = await project_directory_item(
+            workspace_id=workspace_id, project_id=project_id, conn_factory=conn_factory
+        )
+        if view is None:
+            raise _refuse(
+                status_code=404,
+                code="PROJECT_NOT_FOUND",
+                message="no such project in this workspace",
+            )
+        return (await _directory_items(workspace_id, (view,)))[0]
+
     # --- Home bootstrap ------------------------------------------------------------------------
 
     @router.get("/home")
@@ -952,9 +986,6 @@ def build_chat_router(
                 idempotency_key=key,
             )
             digest = content_address(body.message.encode())
-            # Set when this first turn's text attachments became documents of the new project. A
-            # replay wrote nothing and refreshes nothing; the first attempt already did both.
-            wrote_attachment_documents = False
 
             async with conn_factory() as conn:
                 # One logical Home act owns one transaction-wide lock. It serializes concurrent
@@ -1108,17 +1139,6 @@ def build_chat_router(
                             code="IDEMPOTENCY_CONFLICT",
                             message=str(exc),
                         ) from exc
-                    wrote_attachment_documents = await _wrote_attachment_documents(
-                        conn,
-                        attachments=attachments,
-                        artifacts=artifacts,
-                        storage=storage,
-                        workspace_id=who.workspace_id,
-                        brand_id=project.brand_id,
-                        project_id=project_id,
-                        turn_id=turn_id,
-                        user_id=who.user_id,
-                    )
                     await emit_turn_event(
                         conn,
                         workspace_id=who.workspace_id,
@@ -1138,11 +1158,6 @@ def build_chat_router(
                         thread_id=thread_id,
                     )
 
-            # After the commit, never inside it: the library's compile takes this project's row
-            # lock. Best-effort by contract — a turn whose attachments are durable must not report
-            # failure because the tree they belong in could not be recompiled yet.
-            if wrote_attachment_documents and project_library is not None:
-                await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             href = thread_href(project_id=project_id, thread_id=thread_id)
             if replayed:
                 response.status_code = 200
@@ -1172,6 +1187,75 @@ def build_chat_router(
                     href=href,
                 )
             )
+
+    # Registered before ``GET /projects/{project_id}``: Starlette matches in registration order,
+    # so a literal path that a parametrised sibling would also match has to come first (the
+    # ``/projects/sidebar`` route below already relies on this).
+    @router.get("/projects")
+    async def project_directory_route(
+        who: PrincipalDep,
+        status: Annotated[Literal["active", "archived"], Query()] = "active",
+        limit: Annotated[
+            int,
+            Query(ge=1, le=MAX_PROJECT_DIRECTORY_PAGE_SIZE),
+        ] = DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
+        cursor: Annotated[str | None, Query()] = None,
+    ) -> ProjectDirectoryResponse:
+        """One keyset page of this workspace's marketing projects, pinned first."""
+
+        _require(who, PERMISSION_PROJECT_READ)
+        try:
+            page = await project_directory_page(
+                workspace_id=who.workspace_id,
+                status=status,
+                limit=limit,
+                cursor=cursor,
+                conn_factory=conn_factory,
+            )
+        except InvalidCursorError as exc:
+            raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
+        return ProjectDirectoryResponse(
+            data=await _directory_items(who.workspace_id, page.items),
+            meta=SidebarPageMeta(next_cursor=page.next_cursor),
+        )
+
+    @router.post("/projects/blank", status_code=201)
+    async def create_blank_project_route(
+        body: CreateBlankProjectRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> ProjectDirectoryItemResponse:
+        """Create an empty project the human named, with no thread and no turn.
+
+        The Idempotency-Key is **required**, as it is for the Home bootstrap: the project id is
+        derived from it, so a retried create returns the same project instead of a second one.
+        """
+
+        _require(who, PERMISSION_PROJECT_WRITE)
+        if not idempotency_key or not idempotency_key.strip():
+            raise _refuse(
+                status_code=400,
+                code="IDEMPOTENCY_KEY_REQUIRED",
+                message="creating a project requires an Idempotency-Key header",
+            )
+        key = idempotency_key.strip()
+        project_id = (
+            "prj_" + uuid5(_HOME_PROJECT_NAMESPACE, f"{who.workspace_id}:blank:{key}").hex[:24]
+        )
+        references = await _invoke(
+            "create_project",
+            {
+                "project_id": project_id,
+                "brand_id": body.brand_id,
+                "title": body.title,
+                "description": body.description,
+            },
+            who=who,
+            idempotency_key=f"blank-project:{key}",
+        )
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, str(references["id"]))
+        )
 
     @router.get("/projects/sidebar")
     async def project_sidebar_route(
@@ -1213,6 +1297,8 @@ def build_chat_router(
                     id=project.project_id,
                     title=project.title,
                     href=f"/projects/{project.project_id}",
+                    pinned=project.pinned,
+                    updated_at=project.updated_at.isoformat(),
                     conversations=tuple(
                         SidebarConversationWire(
                             id=thread.thread_id,
@@ -1354,7 +1440,9 @@ def build_chat_router(
                     workspace_id=who.workspace_id,
                 )
             )
-        if project is None:
+        # A system project is the invisible per-brand scope anchor, not a project the human filed:
+        # the directory never lists it, so the shell must not serve it either.
+        if project is None or project.kind == "system":
             raise _refuse(
                 status_code=404,
                 code="PROJECT_NOT_FOUND",
@@ -1364,10 +1452,16 @@ def build_chat_router(
             data=ProjectShellWire(
                 id=project.project_id,
                 title=project.name,
+                description=project.description,
                 brand_id=project.brand_id,
                 product_id=project.product_id,
                 status=project.status,
+                pinned=project.pinned,
                 created_at=project.created_at.isoformat(),
+                updated_at=project.updated_at.isoformat(),
+                archived_at=(
+                    None if project.archived_at is None else project.archived_at.isoformat()
+                ),
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
@@ -1376,20 +1470,78 @@ def build_chat_router(
         )
 
     @router.patch("/projects/{project_id}")
-    async def rename_project_route(
+    async def update_project_route(
         project_id: str,
-        body: RenameProjectRequest,
+        body: UpdateProjectRequest,
         who: PrincipalDep,
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ) -> RenameProjectResponse:
+    ) -> ProjectDirectoryItemResponse:
+        """Rename, re-describe and/or pin one project.
+
+        Two independent governed mutations dispatched from one body, the way
+        ``update_thread_route`` does it: any label edit — title, objective, or both — is one
+        ``update_project_details@1`` call, and the pin toggle is always its own
+        ``set_project_pinned@1`` call. They cannot share one call, because pinning an archived
+        project is allowed and relabelling one is not.
+
+        The route dispatches; it decides nothing. Every refusal here is the tool's:
+        ``update_project_details@1`` is what refuses ``project_archived`` (409) and
+        ``project_system`` (a 404 on this surface), and no status is inspected in this function.
+        The one read it does make is the current directory row, because a title-only edit must
+        keep the objective the human wrote and a description-only edit must keep the title —
+        ``update_project_details@1`` takes both labels together, so whichever one the body omits
+        has to be supplied from the row. ``_directory_item_or_404`` applies the directory's lens,
+        so that read also 404s a system anchor, a draft, or another tenant's project.
+
+        ``rename_project@1`` stays registered for replay and for the sidebar's contract history;
+        this surface no longer calls it.
+        """
+
         _require(who, PERMISSION_PROJECT_WRITE)
-        references = await _invoke(
-            "rename_project",
-            {"project_id": project_id, "title": body.title},
+        if body.title is not None or body.description is not None:
+            current = await _directory_item_or_404(who.workspace_id, project_id)
+            await _invoke(
+                "update_project_details",
+                {
+                    "project_id": project_id,
+                    "title": body.title if body.title is not None else current.title,
+                    "description": (
+                        body.description if body.description is not None else current.description
+                    ),
+                },
+                who=who,
+                idempotency_key=(None if idempotency_key is None else f"{idempotency_key}:details"),
+            )
+        if body.pinned is not None:
+            await _invoke(
+                "set_project_pinned",
+                {"project_id": project_id, "pinned": body.pinned},
+                who=who,
+                idempotency_key=(None if idempotency_key is None else f"{idempotency_key}:pinned"),
+            )
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, project_id)
+        )
+
+    @router.post("/projects/{project_id}/archive")
+    async def set_project_archived_route(
+        project_id: str,
+        body: SetProjectArchivedRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> ProjectDirectoryItemResponse:
+        """Archive a project or restore it. Reversible, and never a delete."""
+
+        _require(who, PERMISSION_PROJECT_WRITE)
+        await _invoke(
+            "set_project_archived",
+            {"project_id": project_id, "archived": body.archived},
             who=who,
             idempotency_key=idempotency_key,
         )
-        return RenameProjectResponse(data=RenameProjectWire.model_validate(references))
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, project_id)
+        )
 
     @router.post("/projects/{project_id}/composer-context/prepare")
     async def prepare_project_composer_context_route(
@@ -2380,9 +2532,6 @@ def build_chat_router(
             # transaction that wrote the pin has committed. A replayed answer pins nothing and
             # returns from inside the transaction, so it refreshes nothing either.
             pinned_project_icp = False
-            # Set when this turn's text attachments became documents of this project below, for
-            # the same reason: a new document changes what the library serves.
-            wrote_attachment_documents = False
             async with conn_factory() as conn:
                 thread = await get_thread(
                     conn,
@@ -2614,17 +2763,6 @@ def build_chat_router(
                         code="IDEMPOTENCY_CONFLICT",
                         message=str(exc),
                     ) from exc
-                wrote_attachment_documents = await _wrote_attachment_documents(
-                    conn,
-                    attachments=attachments,
-                    artifacts=artifacts,
-                    storage=storage,
-                    workspace_id=who.workspace_id,
-                    brand_id=project.brand_id,
-                    project_id=project_id,
-                    turn_id=turn_id,
-                    user_id=who.user_id,
-                )
                 if gate is not None:
                     response = _gate_response(body)
                     # The receipt is derived from the turn this request just made durable — the
@@ -2884,7 +3022,7 @@ def build_chat_router(
             # After the commit, never inside it: the library's compile takes this project's row
             # lock. Best-effort by contract — an approval that confirmed and pinned must not
             # report failure because its rendering could not be written.
-            if (pinned_project_icp or wrote_attachment_documents) and project_library is not None:
+            if pinned_project_icp and project_library is not None:
                 await project_library.refresh(workspace_id=who.workspace_id, project_id=project_id)
             return TurnAcceptedResponse(
                 data=TurnAcceptedWire(

@@ -6,6 +6,10 @@
 # checkout's database. Unlike the hangzhou wrapper, every knob lives in .env (the DEV_STACK_*
 # block) and this script only exports it — one source of truth, nothing to keep in sync here.
 #
+# The agent code sandbox (2026-09-20): `up`/`restart-workers` refuse until `make sandbox-image`
+# has built the image on this host, because the fleet workers below run Head-of-ABM's
+# run_python@1 in that container (CLUE_SANDBOX_ENABLED is on by default; see DEV_STACK.md).
+#
 #   ./scripts/dev_stack_trenton.sh up|down|restart-api|restart-workers|status
 #
 #   3029  frontend        http://localhost:3029

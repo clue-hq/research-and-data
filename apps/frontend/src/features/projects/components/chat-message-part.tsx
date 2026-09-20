@@ -20,7 +20,6 @@ import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import { ChatGateCard } from "./chat-gate-card";
 import { ChatResearchTask } from "./chat-research-task";
-import { ChatToolCall } from "./chat-tool-call";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -72,7 +71,9 @@ export function ChatMessagePartView({
       // in the stream/inspector, without duplicating the same rounds in chat.
       return null;
     case "tool":
-      return <ChatToolCall part={part} />;
+      // Tool receipts remain in the event history, but per-step activity rows
+      // are not part of the chat UI (release cleanup, 2026-09-20).
+      return null;
     case "task":
       return <ChatResearchTask part={part} />;
     case "plan":

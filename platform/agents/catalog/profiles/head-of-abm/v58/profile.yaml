@@ -3,25 +3,30 @@ kind: profile
 name: head-of-abm
 version: v58
 status: active
-# v58 (one ask, many artifacts — spec 2026-09-19): v57's surface exactly — the same grant, the
-# same skills, the same workspace, the same caps — with ONE address moved and the prompt that
-# teaches it. `open_design_leg` becomes @5: its input carries an `artifacts` list of
-# `{title, note, account_id?}` items instead of one top-level `title`, so a single message asking
-# for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births twenty documents,
-# each with the account it is for stamped on it and its own note in the user's own words. The @4
-# schema stays registered and frozen for replay; only the input digest moves (the output shape is
-# unchanged).
-# Prompt v10 -> v11 because the two design paragraphs are the thing that decides how many items
-# get listed: they become one paragraph that covers every designed page (site, landing page,
-# microsite, ad, banner, flyer, poster), tells the agent to read the count out of the message,
-# and requires a per-item note — the account (name, domain, `account_id` from the tag) or the
-# emphasis that makes this variant different from its siblings — because the design agent reads
-# the brief and its item's note, never this conversation.
-# Recipe revision 29 admits `open_design_leg@5`: a requirement set resolves one version per
-# (kind, key), so @4 leaves the slot rather than stand beside @5.
-# The manual re-mints at `manual-*@v5` because the generated `tools` chapter renders THIS
-# profile's grant — the delegation entry's address, inputs and refusals — and a catalog version is
-# immutable: v57 keeps its v4 chapters.
+# v58 (the code sandbox and the project's attachments, 2026-09-19): v57's surface with one tool
+# added and one folder opened. `run_python@1` is GRANTED for the first time: one short Python
+# script per call, in a locked-down container with no network, over this turn's own workspace and
+# nothing else. It exists because a file tool that reads UTF-8 text cannot open a PDF, a Word
+# document, a slide deck, a spreadsheet or an image, and a human who attaches one of those to a
+# message is entitled to an answer about what is actually in it rather than a guess from its
+# filename. It is a WRITE over the agent's own workspace — it spends nothing, approves nothing and
+# launches nothing — and what a run leaves behind is swept against this workspace policy the
+# moment it exits, so a file outside the allowed formats, over the per-file ceiling or over the
+# quota is deleted and named in `files_removed`.
+# `attachments` joins `readable_prefixes`: every file anyone has attached in this project is
+# mounted read-only at `attachments/<filename>`, for the file tools and for a script alike. It is
+# NOT writable — an attachment is the human's file, exactly as uploaded — and it is absent from a
+# project nobody has attached anything to. `allowed_extensions` is deliberately UNMOVED: the extra
+# formats a script may produce (`.csv`, `.xlsx`, `.docx`, `.pptx`, `.pdf`, `.png`) are enforced by
+# the post-run sweep over what the container wrote, not by `write_file`, which stays text-only.
+# Skill pin v33→v34: §1 names `attachments/` and which tool opens which kind of file — nothing
+# else in the agent's context says what is in one — and §7c adds the rule that an attached file
+# is opened and read to the end before it is summarised. `code-execution@v1` is pinned beside the
+# document skills: the whole procedure for the sandbox, the recipe for each file kind, and what
+# may be said about a file afterwards. Prompt pin v10→v11 replaces v10's "no code execution"
+# clause with the one route that now exists. The manual re-mints at `manual-*@v5`: the grant moved, so the four generated chapters
+# move with it, and the workspace chapter is rewritten for `attachments/` and the sandbox.
+# Recipe revision 29 admits `run_python@1` to the interaction slot.
 # v57 (the turn caps move to the founder's numbers, 2026-09-14): v56's surface exactly — the same
 # grant, the same skills, the same workspace — with the two numbers that bound a turn raised to
 # the ones the founder ruled on 2026-09-08: `turn_timeout_s` 300 → 1800 and `max_model_rounds`
@@ -179,11 +184,11 @@ role: head_of_abm
 prompt:
   name: head-of-abm
   version: v11
-  sha256: 65f8892baf6c7a9770b377d2a2d843ddd0464e7f5f5281064000167ff8d953ef
+  sha256: bae640829dc544f2ded131b5a0952e388d20f3c5dabdb3374bee1e881b386763
 skills:
   - name: stage0-interview
-    version: v33
-    sha256: 18f57a17dafcf2fad56ccebb7ae3a95dd2ce065a6ec515d7726d3b100582a69d
+    version: v34
+    sha256: abb0de5ba1c07fc076b7ea23ae70152221a4cc45970e4309a263192766fb7a71
   # The three document skills. Each one is the whole procedure for one document the agent
   # now writes as a file under `project/`: the profile it may propose, the personas for the
   # profile the human confirmed, and the project's one plan. They grant no tool — the writing
@@ -198,16 +203,24 @@ skills:
   - name: plan-authoring
     version: v2
     sha256: 08f016d89695b9fd03fe9382e4ee851702feaec89c102aae2cb182848f423ba2
+  # The sandbox skill, pinned at v58 with the tool it teaches. It is the whole procedure for
+  # `run_python@1`: when running code is the right move and when it is not, the recipe for each
+  # kind of file the file tools cannot open, what the workspace sweep will take back out, and
+  # what may be said about a file afterwards — never its contents from its name. It grants no
+  # tool of its own; the grant is the `run_python` entry below.
+  - name: code-execution
+    version: v1
+    sha256: c4c9383e26d4921ecde44e495f569cd2af38df9e06831f16c13b5df5b4f4820a
   # The operating manual: fifteen chapters, pinned in reading order so the capability map lists
   # them that way. `manual-index` is the map of the library; the rest are its chapters. Four of
   # them (`tools`, `fields`, `errors`, `limits`) are rendered from this exact profile version by
   # `python -m clue_api.manual_build --write`, so they cannot drift from the grant without the
   # build saying so; the other eleven are hand-written and guarded by `tests/agents/
   # test_manual_drift.py`. Every chapter grants no tool (`tools: []`), so pinning one widens
-  # nothing: it only discloses a summary and an openable path. They are at v5 because this
-  # version's GRANT changed — the generated `tools` chapter renders the delegation entry off this
-  # profile, and `open_design_leg` moved to @5 with a new input — and a catalog version is
-  # immutable: v57 keeps the v4 chapters.
+  # nothing: it only discloses a summary and an openable path. They are at v5 because the GRANT
+  # moved — `run_python@1` joins it, so the generated `tools`, `errors` and `limits` chapters all
+  # move — and because the workspace chapter is rewritten for `attachments/` and the sandbox. A
+  # catalog version is immutable: v57 keeps the v4 chapters.
   - name: manual-index
     version: v5
     sha256: 0370fa09513126eb3a54167b6aff3c6aa5c70b60b1802cc18bfb377a4ca72885
@@ -216,10 +229,10 @@ skills:
     sha256: 96ab8c385d364e4bd916d7f2c876bf723070bbe0cd981ace3ea3d4aa7548f2a9
   - name: manual-workspace
     version: v5
-    sha256: 908642ee8967a0e2ebe642c3caa26f704c9fa44f9595a501aefaf21e51fcdff3
+    sha256: 293d705467f8d216b27a9978e27cc9b86afde367a25c6a4575aa4a76fce08c97
   - name: manual-tools
     version: v5
-    sha256: 318711af3f00de2b5ae4b9b63358cd791d7e2ca32bbc8ef34252674970b1bb44
+    sha256: f11b2615d601f0ef4390e16c77a64c5300f34e17d0bd3cb2f3cf54be4eb4c275
   - name: manual-fields
     version: v5
     sha256: 8bd157218dde300d01e650f1fc95cbceae61a09e0250f39f869036b4a877c4e1
@@ -249,7 +262,7 @@ skills:
     sha256: 8d4199724c9940008f919a69627d56b6ba9a5778aea5d9508d7eefdc876ee633
   - name: manual-limits
     version: v5
-    sha256: f2ac9311da8820843e1c5fd71e1f3f1dd1466ebad1edfc31d683d4233cbc9824
+    sha256: 60ccfd4320aa41bef729e7d3d0202a98c06ddbb944789b1436648ca176b4ae41
   - name: manual-glossary
     version: v5
     sha256: 792c3e3945d2a3986a713dc244721c861219b39ba15432ce7a8269cd84d14eef
@@ -297,15 +310,15 @@ tools:
     version: "1"
     input_schema_sha256: d968b9e07d39af88cab9ce8ec9aaa211fb5ba62396cbd8f96e5be53ad100cead
     output_schema_sha256: 63313e7dfdb79fe60dea37eb0284d1295c08026e33893afec9878a97e8fed067
-  # Multi-artifact legs (spec 2026-09-19) promote the delegation entry to @5: the top-level
-  # `title` is DELETED and the input carries an `artifacts` list of `{title, note, account_id?}`
-  # items, one per document the leg is to create. One open, N births, each document stamped with
-  # the account its item names. The @4 schema is frozen for replay; only the input digest moves
+  # genad2 promotes the delegation entry to @4: a document-less doc_kind='scene' open now
+  # births a ZERO-PAGE scene and the design agent authors the page itself, so the platform
+  # owns no page geometry at all — ad_format/ad_width/ad_height are DELETED from the input
+  # (@3 required a format). The @3 schema is frozen for replay; only the input digest moves
   # (the output shape is unchanged).
   - name: open_design_leg
-    version: "5"
-    input_schema_sha256: cf0b0534ed46006d661e269b8ceb871a108cb43686c6f07e0874bf0d6bd01872
-    output_schema_sha256: 2a3d13666fbdad3c34bc5106914f0ce353c9d0fbe4ce396a3132fa10933ad626
+    version: "4"
+    input_schema_sha256: b78a27a3e54aa0f67da8e5fdbe30030035d6e444af0949b254c8a39843821ad0
+    output_schema_sha256: aede29ad524cf857c31c2411cef4553ff75d7b555661b6de81ab339d09e3b21d
   - name: open_directive_confirmation_gate
     version: "1"
     input_schema_sha256: 12d9a95bb3d8b4dc76fab84022edc45eeb1fb8fbd14aa18b0c6b597dff3dad69
@@ -385,6 +398,17 @@ tools:
     version: "1"
     input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc
     output_schema_sha256: 5f0e0fe7baad009e16af713744ef7abbc390615d627a69f5f25c43eb8734e7a8
+  # The code sandbox, granted for the first time at v58 (spec 2026-09-19 §3.4): one short Python
+  # script per call, in a container with no network, over this turn's own workspace. It is what
+  # opens a PDF, a Word document, a deck, a spreadsheet or an image — the files `read_file`
+  # refuses — and what does arithmetic over a table instead of eyeballing it. A WRITE, because a
+  # script leaves files behind; it spends nothing and starts nothing, and what it wrote is swept
+  # against this profile's workspace policy the moment the container exits. `code-execution@v1` is
+  # the procedure. Digests read off the live descriptor.
+  - name: run_python
+    version: "1"
+    input_schema_sha256: c3c261b3cb0dbd182dbbd14921a2228b29fcd5e3a626a387a7d4eee50db334d4
+    output_schema_sha256: f4fe91bacc68b4a45c7bcda24c72548481dc562b31312426db47f415b8a07c85
   - name: submit_ingestion
     version: "1"
     input_schema_sha256: 9b0a3d6ca25706d310fafd8a28969d6d39cff1272d904f3e4943eddb0b8b83c9
@@ -402,6 +426,10 @@ workspace:
   max_file_bytes: 1048576
   max_file_count: 400
   allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  # `attachments` joins the readable list at v58 and NOT the writable one: every file anyone has
+  # attached in this project is mounted read-only at `attachments/<filename>`, for the file tools
+  # and for a sandboxed script alike, and an attachment is the human's own file. It is absent from
+  # a project nobody has attached anything to.
   readable_prefixes:
     [
       ".deepagent",
@@ -413,6 +441,7 @@ workspace:
       "outputs",
       "brand",
       "project",
+      "attachments",
     ]
   writable_prefixes: ["scratch", "work", "outputs", "project"]
   retention_class: agent-ephemeral-v1

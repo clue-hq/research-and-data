@@ -21,7 +21,7 @@ The workspace-local agent-proposal change has a
 Head-of-ABM manual, both ARV2 research bundles and platform-only snapshot generation. A repository
 prose edit alone does not reach the running agent.
 
-Current code selects Head of ABM **v57**, manual **v4**, and ARV2 account/person bundles **v1**.
+Current code selects Head of ABM **v58**, manual **v5**, and ARV2 account/person bundles **v1**.
 The table below describes the original C6 baseline, not the current selector inventory. Inspect
 `C6_ACTIVE_PROFILE_VERSIONS`, the selected profile and `arv2/account_research_catalog.py` before
 choosing new versions. The scope amendment is not active; publish replacement guidance alongside

@@ -128,14 +128,9 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
     # already-pinned execution able to resolve the unpaged reads.
     "recipe0-stage0-v28.json",
-    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
-    # ``open_design_leg@5``, the contract ``head-of-abm@v58`` grants — its input carries an
-    # ``artifacts`` list, so one open births one document per item. The slot pins EXACT addresses
-    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
-    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
-    # one version per (kind, key), so @4 and @5 in one slot is a ``conflicting_requirement`` that
-    # refuses promotion. v29 is v28 with that one address moved and nothing else; v28 stays the
-    # exact replay input for turns pinned to it.
+    # The code sandbox: `run_python@1` joins the interaction slot, granted for the first time at
+    # `head-of-abm@v58`. Nothing leaves — it is one address ADDED, not a re-pin — so v29 is v28
+    # plus that address and v28 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v29.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",

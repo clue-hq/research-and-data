@@ -57,7 +57,7 @@ Once the finalize budget is spent the runtime appends: "Nothing was committed an
 
 ## The workspace envelope
 
-- Readable: `.deepagent`, `inputs`, `context`, `scratch`, `reads`, `work`, `outputs`, `brand`, `project`.
+- Readable: `.deepagent`, `inputs`, `context`, `scratch`, `reads`, `work`, `outputs`, `brand`, `project`, `attachments`.
 - Writable: `scratch`, `work`, `outputs`, `project`.
 - Allowed file types: `.json`, `.md`, `.txt`, `.yaml`.
 - Retention class: `agent-ephemeral-v1`. The directory belongs to the chat thread, not to one turn. It is purged when the human archives the thread, or 86,400 seconds (`CLUE_AGENT_WORKSPACE_RETENTION_S`) after the thread's newest turn reached a terminal status. A turn still running, or awaiting input, keeps it.

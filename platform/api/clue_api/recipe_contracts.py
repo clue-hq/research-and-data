@@ -108,6 +108,14 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "read_claims@1",
     "read_artifact@1",
     "read_discovery_run@2",
+    # The code sandbox (recipe0-stage0@29): one short Python script per call, in a container with
+    # no network, over the turn's own workspace. Granted for the first time at `head-of-abm@v58`
+    # and admitted to the interaction slot in the same revision. It is a WRITE, so unlike its
+    # neighbours above it is operation-bound and OPERATION_IDEMPOTENT — a retry of the same call
+    # converges on the journaled receipt of one run rather than running the script twice — and it
+    # declares the same ``project`` pin as its siblings, the spine row the execution is bound to
+    # and the project whose ``attachments/`` the container can see.
+    "run_python@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (
