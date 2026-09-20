@@ -30,7 +30,7 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-09-20-remove-chat-tool-activity.md` — release cleanup: removed per-tool step
   activity rows from the shared chat renderer across all conversations and states.
 - `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
-  chat fidelity map: shared body tokens (now 14/22), mention identity and attachment geometry now
+  chat fidelity map: shared body tokens (now 14/20), mention identity and attachment geometry now
   implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
 - `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
   drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.

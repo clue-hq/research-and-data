@@ -1,5 +1,19 @@
 # Chat appearance review documented
 
+## Follow-up: tighter chat line height trial
+
+- Founder requested trying 14px font with 20px line height and seeing the result.
+  Changed the shared chat body-line-height source token from 22 to 20; the 14px font
+  size remains. Updated the current typography record and regenerated CSS.
+- Browser confirmed 14px/20px for the composer and all four loaded user/assistant
+  message bodies. Screenshot reviewed and chat left open for the requested preview.
+  Creating a new visible browser tab failed with a session-ownership error; recovered
+  by selecting the available user tab and navigating to the requested chat preview.
+- Design-system generation, lint and production build passed; the same two existing
+  canvasOperations unused-function warnings remain. No new tests for this token-only
+  trial. Closing state: saved locally with no remote publication; visual preference
+  remains for the founder to assess. No message sent.
+
 ## Follow-up: smaller chat body type
 
 - Founder selected 14px text with the existing 22px line height. Updated the shared
