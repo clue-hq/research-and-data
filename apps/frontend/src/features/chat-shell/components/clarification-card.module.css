@@ -126,7 +126,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 0.5px solid var(--clue-ds-color-border-subtle);
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: var(--clue-ds-product-component-button-sm-radius);
   background: transparent;
   padding: 8px 10px;
@@ -182,7 +182,7 @@
   flex: 1 1 auto;
   min-width: 0;
   height: 30px;
-  border: 0.5px solid var(--clue-ds-color-border-subtle);
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: var(--clue-ds-product-component-button-sm-radius);
   background: transparent;
   padding: 0 10px;
@@ -203,7 +203,7 @@
 .skip {
   flex: none;
   height: 30px;
-  border: 0.5px solid var(--clue-ds-color-border-subtle);
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: var(--clue-ds-product-component-button-sm-radius);
   background: transparent;
   padding: 0 10px;
