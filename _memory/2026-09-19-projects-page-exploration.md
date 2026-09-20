@@ -191,3 +191,10 @@ rulings R1–R10 remain assumed; F1–F7 from the spec stand.
 The dummy's `chatProjectLink` element above the conversation stage (lifted in Task 11) is removed
 from `chat-surface.tsx` on the founder's request after the first live look; the sidebar's project
 row is the way back to the project home. Spec §2.5 "Chat shell" paragraph is superseded.
+
+## 2026-09-20 — founder ruling: ship with CLUE_MEMORY_ENABLED=true
+Live proof on the lane: the human note written 11:20:56 (judge verdict add, born active) was
+included in the next turn's assembled bundle at 11:21:28 (`memory_bundle_journal`, recipe
+recipe0-stage0@28). `.env.example` default flipped false → true with the R0 posture comment
+rewritten; spec follow-up F5 is closed. Owner action per environment that predates R0: count
+`memory` rows by scope/provenance before enabling.
