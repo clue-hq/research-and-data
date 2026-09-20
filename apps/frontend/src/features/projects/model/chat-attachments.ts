@@ -1,29 +1,77 @@
 import type { ProjectComposerAttachment } from "./project-composer";
 
+const DOCX =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const XLSX =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
 /**
- * Chat attachments (the `.md`/`.txt`/image files a marketer drops on a project
- * chat turn or the Home composer). The backend's `POST /frontend/v1/uploads`
- * owns the authoritative refusals; these limits only spare the user a round
- * trip that would come back 413/415.
+ * Chat attachments (the `.md`/`.txt`/document/image files a marketer drops on a
+ * project chat turn or the Home composer). The backend's
+ * `POST /frontend/v1/uploads` owns the authoritative refusals; these limits only
+ * spare the user a round trip that would come back 413/415. A document is
+ * stored as-is — nothing here converts it.
  */
-export const CHAT_ATTACHMENT_ACCEPT =
-  ".md,.txt,.png,.jpg,.jpeg,.webp,.gif,text/markdown,text/plain,image/png,image/jpeg,image/webp,image/gif";
+export const CHAT_ATTACHMENT_ACCEPT = [
+  ".md",
+  ".txt",
+  ".pdf",
+  ".docx",
+  ".pptx",
+  ".xlsx",
+  ".csv",
+  ".json",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  "text/markdown",
+  "text/plain",
+  "application/pdf",
+  DOCX,
+  PPTX,
+  XLSX,
+  "text/csv",
+  "application/json",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+].join(",");
 
 export const CHAT_ATTACHMENT_LIMITS = {
   maxFiles: 10,
   maxTotalBytes: 157_286_400,
   imageMaxBytes: 10_485_760,
   textMaxBytes: 5_242_880,
+  documentMaxBytes: 26_214_400,
 } as const;
 
-export type AttachmentFamily = "text" | "image";
+export type AttachmentFamily = "text" | "image" | "document";
 
 const TEXT = new Set(["text/markdown", "text/plain"]);
 const IMAGE = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const DOCUMENT = new Set([
+  "application/pdf",
+  DOCX,
+  PPTX,
+  XLSX,
+  "text/csv",
+  "application/json",
+]);
 const BY_EXT: Record<string, string> = {
   ".md": "text/markdown",
   ".markdown": "text/markdown",
   ".txt": "text/plain",
+  ".pdf": "application/pdf",
+  ".docx": DOCX,
+  ".pptx": PPTX,
+  ".xlsx": XLSX,
+  ".csv": "text/csv",
+  ".json": "application/json",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -31,13 +79,20 @@ const BY_EXT: Record<string, string> = {
   ".gif": "image/gif",
 };
 
-/** The media type we will claim for a file: its own, else its extension's. */
+/**
+ * The media type we will claim for a file: its own, else its extension's.
+ * Browsers routinely report a document as `application/octet-stream` (or a
+ * `.csv` as `application/vnd.ms-excel`), so an unrecognised declared type falls
+ * through to the extension exactly as `.md` always has.
+ */
 export function attachmentMediaType(file: {
   name: string;
   type: string;
 }): string | null {
   const declared = file.type.toLowerCase();
-  if (TEXT.has(declared) || IMAGE.has(declared)) return declared;
+  if (TEXT.has(declared) || IMAGE.has(declared) || DOCUMENT.has(declared)) {
+    return declared;
+  }
   const dot = file.name.lastIndexOf(".");
   return dot >= 0 ? (BY_EXT[file.name.slice(dot).toLowerCase()] ?? null) : null;
 }
@@ -49,7 +104,9 @@ export function attachmentFamily(file: {
 }): AttachmentFamily | null {
   const media = attachmentMediaType(file);
   if (media === null) return null;
-  return TEXT.has(media) ? "text" : "image";
+  if (TEXT.has(media)) return "text";
+  if (DOCUMENT.has(media)) return "document";
+  return "image";
 }
 
 /** The first limit the incoming files would break, as its user-facing message. */
@@ -67,6 +124,12 @@ export function attachmentLimitError(
     }
     if (family === "text" && file.size > CHAT_ATTACHMENT_LIMITS.textMaxBytes) {
       return `${file.name} is over 5 MB.`;
+    }
+    if (
+      family === "document" &&
+      file.size > CHAT_ATTACHMENT_LIMITS.documentMaxBytes
+    ) {
+      return `${file.name} is over 25 MB.`;
     }
   }
   const total =

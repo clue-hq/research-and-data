@@ -491,6 +491,21 @@ async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list
     ]
 
 
+async def runs_for_execution(
+    conn: AsyncConnection, *, workspace_id: str, execution_id: UUID
+) -> list[JsonObject]:
+    """Every run dispatched under one platform execution, oldest first (spec §3.3/§3.9: the
+    batch of one leg turn is the runs stamped with that turn's execution id)."""
+    rows = await conn.execute(
+        text(
+            "SELECT * FROM design_agent_run WHERE workspace_id = :w AND execution_id = :e "
+            "ORDER BY created_at ASC, run_id ASC"
+        ),
+        {"w": workspace_id, "e": execution_id},
+    )
+    return [_agent_run_from_row(row) for row in rows]
+
+
 async def active_run_for_document(
     conn: AsyncConnection, *, workspace_id: str, document_id: str
 ) -> str | None:
@@ -522,6 +537,34 @@ async def active_run_for_document(
         )
     ).first()
     return None if row is None else str(row.run_id)
+
+
+async def latest_terminal_run_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> JsonObject | None:
+    """The newest TERMINAL run whose frozen envelope targets ``document_id``, else ``None``.
+
+    Spec 2026-09-20 (clarification cards) §2.3: "this document has an open question" is derived
+    — its latest terminal run's result status is ``clarification_requested`` — never stored.
+    Same predicate as :func:`active_run_for_document` (the payload, not the nullable column).
+
+    Terminal means ``succeeded`` or ``failed``: a ``queued`` or ``running`` run has not said
+    anything yet, so letting one answer this read would report a stale question (or none) while
+    the current turn is still deciding.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_agent_run"
+                " WHERE workspace_id = :w AND status IN ('succeeded', 'failed')"
+                "   AND payload ->> 'document_id' = :d"
+                " ORDER BY created_at DESC, run_id DESC"
+                " LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else _agent_run_from_row(row)
 
 
 # --- the stranded-work surface (D5 Round C) ----------------------------------------------------

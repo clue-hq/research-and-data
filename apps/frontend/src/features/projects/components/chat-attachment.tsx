@@ -1,4 +1,5 @@
 import {
+  type AttachmentData,
   Attachment,
   AttachmentHoverCard,
   AttachmentHoverCardContent,
@@ -9,14 +10,17 @@ import {
   getAttachmentLabel,
   getMediaCategory,
 } from "@/components/ai-elements/attachments";
-import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
+import styles from "./project-flow.module.css";
 
-export function ProjectComposerAttachment({
+export function ChatAttachment({
   attachment,
   onRemove,
 }: {
-  attachment: ProjectComposerAttachmentData;
-  onRemove: (attachmentId: string) => void;
+  attachment: AttachmentData & {
+    status?: "failed" | "ready" | "uploading";
+    error?: string;
+  };
+  onRemove?: (attachmentId: string) => void;
 }) {
   const label = getAttachmentLabel(attachment);
   const mediaCategory = getMediaCategory(attachment);
@@ -26,21 +30,23 @@ export function ProjectComposerAttachment({
       <AttachmentHoverCardTrigger
         closeDelay={100}
         delay={250}
-        render={<div className="w-fit" />}
+        render={<div className="w-fit min-w-0 max-w-full shrink-0" />}
       >
         <Attachment
           aria-busy={attachment.status === "uploading"}
           aria-invalid={attachment.status === "failed" || undefined}
+          className={styles.chatAttachment}
+          title={label}
           data={attachment}
-          onRemove={() => onRemove(attachment.id)}
+          onRemove={onRemove ? () => onRemove(attachment.id) : undefined}
         >
           <div className="relative size-5 shrink-0">
-            <div className="absolute inset-0 transition-opacity group-hover:opacity-0">
-              <AttachmentPreview />
+            <div className={onRemove ? "absolute inset-0 transition-opacity group-hover:opacity-0" : "absolute inset-0"}>
+              <AttachmentPreview className={styles.chatAttachmentPreview} />
             </div>
             <AttachmentRemove
               className="absolute inset-0"
-              label={`Remove ${attachment.filename}`}
+              label={`Remove ${label}`}
             />
           </div>
           <AttachmentInfo
@@ -50,7 +56,7 @@ export function ProjectComposerAttachment({
       </AttachmentHoverCardTrigger>
       <AttachmentHoverCardContent>
         <div className="space-y-2">
-          {mediaCategory === "image" && attachment.url ? (
+          {mediaCategory === "image" && attachment.type === "file" && attachment.url ? (
             // AI Elements accepts blob URLs from the local file picker.
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -60,7 +66,7 @@ export function ProjectComposerAttachment({
             />
           ) : null}
           <div className="space-y-1 px-0.5">
-            <p className="font-medium text-sm leading-none">{label}</p>
+            <p className="break-words font-medium text-sm leading-none">{label}</p>
             <p className="text-muted-foreground text-xs">{attachment.mediaType}</p>
             {attachment.status === "uploading" ? (
               <p className="text-muted-foreground text-xs" role="status">

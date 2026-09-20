@@ -5,8 +5,10 @@ description: Use when a new scene creative or ad is requested, including short r
 
 # Brief and copy
 
-Read the user request, brand card, available evidence and asset inventory in one
-gather. Shortlist relevant advertiser examples, product imagery and supplied
+Read the user request, brand card, `seller/index.md`, available evidence and asset
+inventory in one gather; `seller/` holds the brand's own knowledge documents (company,
+products, audience) and the account reads answer for a named target company (see
+account-adaptation). Shortlist relevant advertiser examples, product imagery and supplied
 references; view their pixels before choosing copy or treatment. Start with a
 small useful set and broaden to resolve a named gap. Distinguish what the examples
 actually show from metadata and assumptions. Derive the

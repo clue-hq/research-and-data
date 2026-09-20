@@ -44,6 +44,8 @@
 #                                    (CLUE_FLEET_WORKER_CONCURRENCY, O6 task 9d)
 #   DEV_STACK_AGENT_WORKSPACE_ROOT   CLUE_AGENT_WORKSPACE_ROOT for the lane
 #   DEV_STACK_LOG_PREFIX             log file prefix (default /tmp/browser)
+#   DEV_STACK_BUILD_SANDBOX_IMAGE    1 = let `up` build the agent code-sandbox image when it is
+#                                    missing (default 0: refuse and name `make sandbox-image`)
 # PORT KNOBS (added 2026-09-17 so a lane can run beside another lane's stack
 # instead of having to `down` it first — the hangzhou lane was the first to
 # need it, see scripts/dev_stack_hangzhou.sh). Defaults are THE PORT MAP above,
@@ -57,6 +59,17 @@
 #   DEV_STACK_DESIGN_PORT            design API (lumen) port     (default 8010)
 #   DEV_STACK_PLATFORM_PORT          platform API port           (default 8020)
 #   DEV_STACK_PLATFORM2_PORT         platform API twin's port    (default 8030)
+#
+# THE AGENT CODE SANDBOX (added 2026-09-20; spec docs/superpowers/specs/2026-09-19-agent-code-
+# execution-and-document-attachments-design.md). Head-of-ABM's `run_python@1` runs the agent's
+# Python in a Docker container from CLUE_SANDBOX_IMAGE (.env; default clue-agent-sandbox:latest),
+# and the flag CLUE_SANDBOX_ENABLED is ON by default (founder, 2026-09-20). The FLEET WORKERS are
+# the processes that start containers, so a worker host without Docker or without the image
+# makes every run refuse `sandbox_unavailable` and every PDF / DOCX / PPTX / XLSX attachment
+# unreadable to the agent. `up` and `restart-workers` therefore check Docker and the image
+# BEFORE starting workers and refuse on a miss — build once per host with `make sandbox-image`
+# (~600 MB, ~2 min), or set DEV_STACK_BUILD_SANDBOX_IMAGE=1 to let `up` build it. Setting
+# CLUE_SANDBOX_ENABLED=false in .env skips the check (and turns the tool off). `status` reports it.
 # =============================================================================
 set -euo pipefail
 
@@ -80,6 +93,35 @@ PLATFORM_ENV=(
 )
 
 load_env() { set -a; source "$ROOT/.env"; set +a; }
+
+# The code sandbox's preconditions, checked where the workers are (re)started. Reads the .env
+# already loaded by the caller. Exits 2 with the fix named rather than starting workers that
+# would refuse every run_python call.
+sandbox_preflight() {
+  if [ "${CLUE_SANDBOX_ENABLED:-true}" != "true" ]; then
+    echo "  sandbox: disabled (CLUE_SANDBOX_ENABLED=${CLUE_SANDBOX_ENABLED}) — binary attachments are unreadable to the agent"
+    return 0
+  fi
+  local image="${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest}"
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "sandbox: CLUE_SANDBOX_ENABLED=true but docker is not installed on this host — install Docker Desktop, or set CLUE_SANDBOX_ENABLED=false in .env" >&2
+    exit 2
+  fi
+  if ! docker info >/dev/null 2>&1; then
+    echo "sandbox: CLUE_SANDBOX_ENABLED=true but the Docker daemon is not reachable — start Docker Desktop, or set CLUE_SANDBOX_ENABLED=false in .env" >&2
+    exit 2
+  fi
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    if [ "${DEV_STACK_BUILD_SANDBOX_IMAGE:-0}" = "1" ]; then
+      echo "sandbox: image $image missing — building it (DEV_STACK_BUILD_SANDBOX_IMAGE=1)…"
+      ( cd "$ROOT" && CLUE_SANDBOX_IMAGE="$image" make sandbox-image ) || exit 2
+    else
+      echo "sandbox: CLUE_SANDBOX_ENABLED=true but the image $image is not built on this host — run 'make sandbox-image' once (~600 MB, ~2 min), or DEV_STACK_BUILD_SANDBOX_IMAGE=1 $0 up, or set CLUE_SANDBOX_ENABLED=false in .env" >&2
+      exit 2
+    fi
+  fi
+  echo "  sandbox: enabled, image $image present"
+}
 
 worker_log() {  # worker 1 keeps the historical name; 2..N get a suffix
   if [ "$1" -eq 1 ]; then echo "${LOG}_fleet_worker.log"; else echo "${LOG}_fleet_worker_$1.log"; fi
@@ -129,6 +171,7 @@ start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, launched t
 # databases, and a bare "clue_api.fleet_main" match killed theirs (2026-09-12).
 restart_workers() {
   load_env
+  sandbox_preflight
   pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
   for _ in $(seq 1 20); do
     [ "$(pgrep -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" | wc -l | tr -d ' ')" -eq 0 ] && break
@@ -140,6 +183,7 @@ restart_workers() {
 
 up() {
   load_env
+  sandbox_preflight
   mkdir -p "$AGENT_WORKSPACE_ROOT" && chmod 700 "$AGENT_WORKSPACE_ROOT"
 
   ( cd "$ROOT/subsystems/clue-design" && \
@@ -202,6 +246,15 @@ status() {
     echo "  langfuse: enabled (${CLUE_LANGFUSE_HOST:-https://cloud.langfuse.com}, env=${CLUE_LANGFUSE_ENVIRONMENT:-unset}) — make langfuse-check to verify the keys"
   else
     echo "  langfuse: disabled"
+  fi
+  if [ "${CLUE_SANDBOX_ENABLED:-true}" = "true" ]; then
+    if docker image inspect "${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest}" >/dev/null 2>&1; then
+      echo "  sandbox: enabled, image ${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest} present"
+    else
+      echo "  sandbox: enabled but image ${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest} MISSING or Docker down — run_python refuses; make sandbox-image"
+    fi
+  else
+    echo "  sandbox: disabled (CLUE_SANDBOX_ENABLED=false) — binary attachments unreadable to the agent"
   fi
 }
 

@@ -79,6 +79,26 @@ def test_receipts_carry_the_design_role_and_the_gateway_cost(
     assert receipts[1].cost_usd is None
 
 
+def test_a_sequence_offset_lands_a_run_after_the_calls_before_it(
+    design_turn_request: AgentTurnRequest,
+) -> None:
+    """A batch's second run numbers its calls after the first run's — the ledger keys receipts
+    on ``(turn_id, sequence)`` and every run of a batch lands on ONE turn."""
+    receipts = receipts_from_design_run(
+        {"model_calls": [_collected(1), _collected(2)]},
+        request=design_turn_request,
+        sequence_offset=31,
+    )
+    assert [r.sequence for r in receipts] == [32, 33]
+    # The default is the shipped one-run numbering, untouched.
+    assert [
+        r.sequence
+        for r in receipts_from_design_run(
+            {"model_calls": [_collected(1)]}, request=design_turn_request
+        )
+    ] == [1]
+
+
 def test_a_run_without_model_calls_yields_no_receipts(
     design_turn_request: AgentTurnRequest,
 ) -> None:
@@ -118,13 +138,16 @@ def _conn_factory() -> Any:
     return _Held
 
 
-def _terminal_run(*, sequence: int) -> dict[str, Any]:
+def _terminal_run(
+    *, sequence: int | None = None, sequences: tuple[int, ...] = ()
+) -> dict[str, Any]:
+    calls = [_collected(n) for n in ((sequence,) if sequence is not None else sequences)]
     return {
         "run_id": "run_x",
         "status": "succeeded",
         "document_id": None,
         # The design API's shipped DTO key for the ``result_json`` column.
-        "result": {"status": "accepted", "model_calls": [_collected(sequence)]},
+        "result": {"status": "accepted", "model_calls": calls},
     }
 
 
@@ -132,38 +155,61 @@ def _dispatch_against(
     monkeypatch: pytest.MonkeyPatch,
     request: AgentTurnRequest,
     *,
-    run: dict[str, Any],
+    run: dict[str, Any] | None = None,
     config: dict[str, Any],
+    runs_by_position: dict[int, dict[str, Any]] | None = None,
 ) -> _RecordingJournal:
-    """Run ``_dispatch`` where ``get_run`` already answers terminal, and return the journal."""
+    """Run the dispatch where ``get_run`` already answers terminal, and return the journal.
+
+    A one-document batch (spec §3.3) by default: the addressed set is the leg's single
+    synthesised document, so this is the same re-join branch it always was. ``runs_by_position``
+    makes it a real batch — one terminal run per addressed document, keyed by the position each
+    derived run id is seeded from.
+    """
     from clue_api import design_leg_wiring as wiring
 
     turn_id = request.turn_id
     workspace_id = request.constitution.workspace_id
-    run_id = wiring.design_leg_run_id(turn_id)
-    work_id = wiring.design_runs.work_id_for_run(run_id)
-    job = {
-        "workspace_id": workspace_id,
-        "payload": {
-            "kind": "agent_turn",
-            "work_id": str(work_id),
-            "workspace_id": workspace_id,
-            "run_id": run_id,
-            "checkpoint_thread_id": run_id,
-            "config": config,
-        },
+    if runs_by_position is None:
+        assert run is not None
+        runs_by_position = {0: run}
+    runs_by_id = {
+        wiring.design_leg_run_id(turn_id, position): terminal
+        for position, terminal in runs_by_position.items()
     }
+    documents = tuple(
+        {"document_id": None, "position": position, "note": "", "title": None}
+        for position in sorted(runs_by_position)
+    )
+
+    def _job_for(run_id: str) -> dict[str, Any]:
+        return {
+            "workspace_id": workspace_id,
+            "payload": {
+                "kind": "agent_turn",
+                "work_id": str(wiring.design_runs.work_id_for_run(run_id)),
+                "workspace_id": workspace_id,
+                "run_id": run_id,
+                "checkpoint_thread_id": run_id,
+                "config": config,
+            },
+        }
 
     class _Runs:
         work_id_for_run = staticmethod(wiring.design_runs.work_id_for_run)
 
         @staticmethod
         async def get_run(conn: Any, *, workspace_id: str, run_id: str) -> dict[str, Any]:
-            return run
+            return runs_by_id[run_id]
 
         @staticmethod
         async def get_run_by_work_id(conn: Any, *, work_id: Any) -> dict[str, Any]:
-            return job
+            (run_id,) = [
+                candidate
+                for candidate in runs_by_id
+                if wiring.design_runs.work_id_for_run(candidate) == work_id
+            ]
+            return _job_for(run_id)
 
     monkeypatch.setattr(wiring, "design_runs", _Runs)
     # Only reachable on the design-memory path; ``None`` keeps the DB-backed receipt store out.
@@ -179,7 +225,7 @@ def _dispatch_against(
         conn_factory=_conn_factory(),
     )
     asyncio.run(
-        runner._dispatch(
+        runner._dispatch_batch(
             submission=SimpleNamespace(
                 turn_id=turn_id,
                 thread_id=request.thread_id,
@@ -190,8 +236,10 @@ def _dispatch_against(
             execution_id=request.constitution.execution_id,
             user_message_ref=request.user_message_artifact_ref,
             prior_history=(),
-            pinned_document=None,
-            account_card=None,
+            documents=documents,
+            document_rows={},
+            account_cards={},
+            leg_document_count=len(documents),
             focus_refs=(),
             workspace_id=workspace_id,
             scope_pin=None,
@@ -223,3 +271,40 @@ def test_a_crashed_producer_re_join_still_records_its_receipts(
     )
     assert [r.sequence for r in journal.receipts] == [4]
     assert journal.receipts[0].cost_usd == Decimal("0.008700")
+
+
+def test_a_batch_records_every_run_on_the_one_turn_numbered_after_the_runs_before_it(
+    monkeypatch: pytest.MonkeyPatch, design_turn_request: AgentTurnRequest
+) -> None:
+    """Three terminal re-joins on one turn: each run numbers its calls from 1, and the ledger
+    keys ``(turn_id, sequence)`` — the first live batch (2026-09-20) recorded run 0's 1..31 and
+    crashed on run 1's call 1. Position order, cumulative offsets, gapless."""
+    journal = _dispatch_against(
+        monkeypatch,
+        design_turn_request,
+        config={},
+        runs_by_position={
+            0: _terminal_run(sequences=(1, 2)),
+            1: _terminal_run(sequences=(1, 2, 3)),
+            2: _terminal_run(sequences=(1,)),
+        },
+    )
+    assert [r.sequence for r in journal.receipts] == [1, 2, 3, 4, 5, 6]
+    assert len({r.model_call_id for r in journal.receipts}) == 6
+    assert all(r.turn_id == design_turn_request.turn_id for r in journal.receipts)
+
+
+def test_a_batch_run_with_no_calls_leaves_the_numbering_where_it_was(
+    monkeypatch: pytest.MonkeyPatch, design_turn_request: AgentTurnRequest
+) -> None:
+    journal = _dispatch_against(
+        monkeypatch,
+        design_turn_request,
+        config={},
+        runs_by_position={
+            0: _terminal_run(sequences=(1, 2)),
+            1: _terminal_run(sequences=()),
+            2: _terminal_run(sequences=(1,)),
+        },
+    )
+    assert [r.sequence for r in journal.receipts] == [1, 2, 3]

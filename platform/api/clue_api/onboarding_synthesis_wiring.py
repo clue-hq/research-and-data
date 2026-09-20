@@ -229,14 +229,17 @@ async def ensure_onboarding_project(
 
     ``agent_turn.project_id`` and ``execution.project_id`` are real foreign keys, so a governed
     turn always belongs to a project. Onboarding is not a marketing motion, so the row is born
-    ``archived`` and carries no product: it is a scope anchor, never something a marketer opens.
+    ``kind = 'system'`` and ``archived`` (with its ``archived_at``) and carries no product: it is
+    a scope anchor, never something a marketer opens — and ``kind`` is what keeps it out of the
+    projects directory without anyone having to read its id prefix.
     """
 
     project_id = onboarding_project_id(workspace_id=workspace_id, brand_id=brand_id)
     await conn.execute(
         text(
-            "INSERT INTO project (project_id, workspace_id, brand_id, name, status) "
-            "VALUES (:project_id, :workspace_id, :brand_id, :name, 'archived') "
+            "INSERT INTO project (project_id, workspace_id, brand_id, name, status, kind, "
+            "archived_at) "
+            "VALUES (:project_id, :workspace_id, :brand_id, :name, 'archived', 'system', now()) "
             "ON CONFLICT (project_id) DO NOTHING"
         ),
         {

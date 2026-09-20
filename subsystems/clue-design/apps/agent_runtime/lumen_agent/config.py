@@ -26,6 +26,11 @@ class AgentRuntimeConfig:
     # recognise the retry and resume the thread instead of re-prompting it. None mints a fresh
     # runtime id per construction, exactly as before (editor preview, CLI, fixtures).
     run_id: str | None = None
+    # Design note 2026-09-19: the platform's reads for a LEG turn — the target account's
+    # research through the governed tools, and the seller's pinned knowledge — injected by
+    # value as one object the design side calls from its worker thread. None (editor preview,
+    # CLI, fixtures, direct turns) means no such tools and no seller files.
+    platform_reads: Any | None = None
     # Agent LLM service. OpenRouter is the SOLE gateway for every LLM call — there
     # is no native-provider fallback. `agent_base_url` defaults to the OpenRouter API
     # and `model` must be an "openai:<openrouter-model-id>" value; `agent_api_key`

@@ -164,3 +164,66 @@ def test_without_langfuse_no_config_is_passed_to_the_model() -> None:
     judge, model = _judge_with(AIMessage(content=_VERDICT))
     assert _run(judge) is not None
     assert model.configs == [{}]
+
+
+def test_v3_the_judge_is_shown_the_legs_numbered_artifacts() -> None:
+    """A multi-document leg passes ``artifacts=``; the whole numbered list must reach the
+    model and the tag must carry its number, or the judge cannot answer an address."""
+
+    judge, model = _judge_with(AIMessage(content=_VERDICT))
+    verdict = run_async(
+        judge(
+            brief="Three launch ads.",
+            history=(),
+            message="the two hospital ones need a softer palette",
+            artifacts=(
+                '1. "Apollo ad" (scene ad) [account: Apollo Clinics]',
+                '2. "Mercy ad" (scene ad) [account: Mercy Health]',
+                '3. "Premier ad" (scene ad) [account: Premier Gastro]',
+            ),
+            tags=('design "Mercy ad" (scene ad) (artifact 2)',),
+        )
+    )
+    assert verdict is not None
+    prompt = model.prompts[0]
+    assert '<<<ARTIFACTS\n1. "Apollo ad" (scene ad) [account: Apollo Clinics]' in prompt
+    assert '3. "Premier ad" (scene ad) [account: Premier Gastro]\nARTIFACTS>>>' in prompt
+    assert '- design "Mercy ad" (scene ad) (artifact 2)' in prompt
+    assert "addressed_artifacts" in prompt and "clarifying_question" in prompt
+
+
+def test_v4_the_judge_is_told_an_asked_artifact_is_waiting_for_an_answer() -> None:
+    """Spec 2026-09-20 §2.5: a bare answer ("the 40% stat") names no artifact, so without
+    this instruction the judge asks which one the user already answered for."""
+
+    judge, model = _judge_with(AIMessage(content=_VERDICT))
+    verdict = run_async(
+        judge(
+            brief="Three launch ads.",
+            history=(),
+            message="the 40% stat",
+            artifacts=(
+                '1. "Apollo ad" (scene ad)',
+                '2. "Mercy ad" (scene ad) [asked: "Which proof point should lead the ad?"]',
+            ),
+        )
+    )
+    assert verdict is not None
+    prompt = model.prompts[0]
+    assert (
+        "- An artifact marked [asked: …] is waiting for an answer; a message that answers one of\n"
+        "  those questions is work on THAT artifact, even when it names nothing.\n"
+    ) in prompt
+    assert '[asked: "Which proof point should lead the ad?"]' in prompt
+    assert prompt.rstrip().endswith("prompt_version: v4")
+
+
+def test_the_judges_output_budget_leaves_room_for_a_question() -> None:
+    """v3's answer can carry a clarifying question on top of the reasoning; a truncated
+    verdict is an unparseable one, which costs a whole fail-safe turn."""
+
+    model = _FakeModel(AIMessage(content=_VERDICT))
+    models = _FakeModels(model)
+    judge = build_design_leg_exit_judge(models=models, profiles=_FakeProfiles())
+    assert _run(judge) == _LOCKED
+    assert models.build_calls[0]["max_output_tokens"] == 600

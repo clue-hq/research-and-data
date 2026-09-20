@@ -338,6 +338,9 @@
   --clue-ds-product-component-button-effect-focus-primary: 0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring), 0 2px 0 rgb(0 0 0 / 5%);
   --clue-ds-product-component-button-effect-focus-surface: inset 0 1px 0 1px rgb(255 255 255 / 100%), 0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring), 0 2px 0 rgb(0 0 0 / 5%);
   --clue-ds-product-component-button-effect-focus-transparent: 0 0 0 2px var(--clue-ds-color-bg-neutral), 0 0 0 3px var(--clue-ds-color-components-button-focus-ring);
+  --clue-ds-product-component-chat-body-font-size: 14px;
+  --clue-ds-product-component-chat-body-line-height: 22px;
+  --clue-ds-product-component-chat-user-message-background: #eff0f3;
   --clue-ds-product-component-sidebar-inner-width: 224px;
   --clue-ds-product-component-sidebar-logo-width: 69px;
   --clue-ds-product-component-sidebar-logo-height: 17px;

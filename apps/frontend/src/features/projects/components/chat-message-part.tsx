@@ -15,11 +15,11 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources";
 import { MessageResponse } from "@/components/ai-elements/message-response";
+import { ClarificationHistoryCard } from "@/features/chat-shell/components/clarification-card";
 import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import { ChatGateCard } from "./chat-gate-card";
 import { ChatResearchTask } from "./chat-research-task";
-import { ChatToolCall } from "./chat-tool-call";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -32,6 +32,8 @@ import styles from "./project-flow.module.css";
  */
 export interface ChatPartActions {
   busy: boolean;
+  /** The turn whose clarification parts the card above the composer is showing; its inline record is suppressed. */
+  openClarificationTurnId?: string | null;
   onOpenPlan?: (documentId: string) => void;
   gateFor(part: ChatGatePart): GateCardModel | null;
   onGateDecision(
@@ -69,7 +71,9 @@ export function ChatMessagePartView({
       // in the stream/inspector, without duplicating the same rounds in chat.
       return null;
     case "tool":
-      return <ChatToolCall part={part} />;
+      // Tool receipts remain in the event history, but per-step activity rows
+      // are not part of the chat UI (release cleanup, 2026-09-20).
+      return null;
     case "task":
       return <ChatResearchTask part={part} />;
     case "plan":
@@ -110,6 +114,12 @@ export function ChatMessagePartView({
         />
       );
     }
+    case "clarification":
+      // The interactive card lives above the composer and is driven from the
+      // transcript's LAST turn (`openClarification`). Here — inline, in the
+      // message that asked — the part is a read-only record: the questions and
+      // their defaults, and the fact that the answer is the next message.
+      return <ClarificationHistoryCard part={part} />;
     case "sources":
       return (
         <Sources className={styles.projectSources} defaultOpen={false}>

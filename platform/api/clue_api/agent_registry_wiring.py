@@ -178,12 +178,42 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # (2026-09-08: observe a looping run, never pre-restrict), so the caps become the ruling's
     # numbers. No tool address moves, so the recipe stays at 28; the manual re-mints at
     # `manual-*@v4` because its generated `limits` chapter renders both numbers off this profile.
-    AgentRole.HEAD_OF_ABM: "v57",
+    # v58 (the code sandbox and the project's attachments, 2026-09-19): v57's surface with
+    # `run_python@1` GRANTED — one short Python script per call, in a locked-down container with
+    # no network, over this turn's own workspace and nothing else — and `attachments` added to
+    # the readable prefixes, so every file anyone attached in this project is mounted read-only
+    # at `attachments/<filename>`. The two go together: a file tool that reads UTF-8 text cannot
+    # open a PDF, a deck, a spreadsheet or an image, and a human who attaches one is entitled to
+    # an answer about what is in it rather than a guess from its filename. `allowed_extensions`
+    # is unmoved — the extra formats a script may PRODUCE are enforced by the post-run workspace
+    # sweep, not by `write_file`. Skill pin v33→v34 and prompt pin v10→v11 for the same
+    # paragraph, plus `code-execution@v1` pinned as the sandbox's whole procedure. The manual
+    # re-mints at `manual-*@v5` because the grant moved. The conversation recipe moves 28 → 29:
+    # the interaction slot admits `run_python@1`.
+    # v59 (one ask, many artifacts, 2026-09-19): v58's surface with ONE address moved and the
+    # prompt that teaches it. `open_design_leg` becomes @5: its input carries an `artifacts` list
+    # of `{title, note, account_id?}` items instead of one top-level `title`, so one message
+    # asking for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births twenty
+    # documents, each stamped with the account its item names. Prompt pin v11→v12 folds the two
+    # design paragraphs into the one that covers every designed page and tells the agent to read
+    # the count out of the message. The conversation recipe moves 29 → 30: @4 leaves the
+    # delegation slot rather than stand beside @5. The manual re-mints at `manual-*@v6`.
+    # v60 (the leg's first turn starts itself, 2026-09-20): v59's surface exactly, with the
+    # prompt that no longer tells the user to speak before generation begins — `open_design_leg@5`
+    # queues the leg's first design turn from the user's own message in the transaction that opens
+    # the leg, so prompt pin v12→v13 changes one sentence. No tool address moves, so the recipe
+    # stays at 30; the manual re-mints at `manual-*@v7` because its generated chapters render this
+    # profile's version into their title.
+    AgentRole.HEAD_OF_ABM: "v60",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
     # P3.3 (PD-part3): the composite design deepagent's platform-facing profile.
-    AgentRole.DESIGN: "v1",
+    # v2 (2026-09-19): v1 plus the three account reads — `read_project_accounts@1`,
+    # `read_account_research@2` and `read_claims@1`, the same tools on the same contracts
+    # head-of-abm holds — so a 1:1 creative can open the target account's research itself
+    # instead of writing from whatever the brief happened to carry. Nothing else moves.
+    AgentRole.DESIGN: "v2",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -223,8 +253,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # approve nothing and launch nothing, so the only thing a call can do is make an answer true:
     # a fact about an account now comes from a claim the read returned rather than from an earlier
     # thread's memory.
-    "read_project_accounts": (AgentRole.HEAD_OF_ABM,),
-    "read_account_research": (AgentRole.HEAD_OF_ABM,),
+    # 2026-09-19: the design role reads the target account with the same three tools
+    # (`design@v2` pins them; the registry refuses a grant the profile does not pin). Their
+    # authority is head-of-abm's: workspace- and project-scoped through the turn's identity,
+    # no per-account scoping added. `read_discovery_run` is NOT among them — the design leg
+    # never proposes a discovery.
+    "read_project_accounts": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
+    "read_account_research": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     "read_discovery_run": (AgentRole.HEAD_OF_ABM,),
     # Their newest sibling: the general claims query (one account or contact, by field family,
     # source tier, verification status or date, paged, behind the same display gate). Granted with
@@ -232,15 +267,31 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # teaches it, because `build_agent_profile_registry` refuses to compose when a role's
     # authority and its profile's tool list disagree, so a grant is that bump and never a dict
     # edit. stage0-interview v33 §7c says which question it is the read for.
-    "read_claims": (AgentRole.HEAD_OF_ABM,),
+    "read_claims": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
     # artifact stops being a memory of the turn that made it.
     "read_artifact": (AgentRole.HEAD_OF_ABM,),
+    # The code sandbox (spec 2026-09-19 §3.4): one short script in a locked-down container
+    # over this turn's own workspace, and the only way to open a PDF, a deck, a spreadsheet or
+    # an image the project's `attachments/` holds. It arrived here UNGRANTED, on the same terms
+    # every new write surface arrives on — `build_agent_profile_registry` refuses to compose
+    # when a role's authority and its profile's tool list disagree, so a grant is a reviewed
+    # profile bump and never an edit to this dict. `head-of-abm@v58` is that bump: it pins the
+    # tool's two schema digests, opens `attachments` on the readable prefixes, and mints
+    # `code-execution@v1` and `manual-*@v5` to teach it.
+    "run_python": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
+    # Projects directory (2026-09-19): creating, retitling, pinning and archiving a
+    # project are the human's filing decisions. An agent that could archive a project
+    # could hide its own work, so all four stay ungranted.
+    "create_project": (),
+    "update_project_details": (),
+    "set_project_pinned": (),
+    "set_project_archived": (),
     "set_thread_pinned": (),
     "compose_handoff": (
         AgentRole.CONTENT_DRAFTER,
@@ -747,8 +798,11 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # requirement set resolves one version per (kind, key) — but a role holding a version no
     # current profile pins is authority nobody asked for, so they are ungranted here.
     # The same shape `open_icp_confirmation_gate` has, with the grant on the newer version.
+    # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
+    # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
+    # on `@2` only. The `@1`s stay held by nobody.
     if name in {"read_account_research", "read_discovery_run"}:
-        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

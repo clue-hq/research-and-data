@@ -89,6 +89,17 @@ export function editorShellReducer(
         surface: "artifact",
       };
     case "open-artifact":
+      // Re-opening the tab that is already in front is a no-op. Resetting
+      // edit mode and the selection here would throw a person out of an edit
+      // they are in the middle of — which is what a feed refresh carrying their
+      // own write did until 2026-09-20.
+      if (
+        state.activeArtifactId === action.artifact.id &&
+        state.surface === "artifact" &&
+        state.panelOpen
+      ) {
+        return state;
+      }
       return {
         ...state,
         activeArtifactId: action.artifact.id,

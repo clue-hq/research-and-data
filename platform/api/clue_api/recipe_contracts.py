@@ -59,10 +59,12 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # promoted to @2 in @17 (genweb slice 2 — a document-less open births the web document), to @3
     # in @18 (genad — a document-less ``doc_kind='scene'`` open births the ad document at a named
     # format) and to @4 in @19 (genad2 — the scene births ZERO pages and the design agent authors
-    # them, so the format inputs are gone). Opening a leg is still a durable write with no spend
-    # and no dispatch; each birth is one governed create keyed on the same replay identity as the
-    # leg, so a retried delegation converges on one leg and one document rather than minting twins.
-    "open_design_leg@4",
+    # them, so the format inputs are gone), and to @5 in @30 (multi-artifact legs — the input
+    # carries an ``artifacts`` list, so one open births one document per item). Opening a leg is
+    # still a durable write with no spend and no dispatch; each birth is one governed create keyed
+    # on the same replay identity as the leg, so a retried delegation converges on one leg and its
+    # documents rather than minting twins.
+    "open_design_leg@5",
     # ARV2 onboarding O6 (added in recipe0-stage0@22): the new-lane onboarding surface Head-of-ABM
     # drives in the conversation slot — the set-valued product gate, the artifact-shaped ICP
     # confirmation gate, and the ARV2 launch/read pair. Nothing is removed: every address the
@@ -106,6 +108,14 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "read_claims@1",
     "read_artifact@1",
     "read_discovery_run@2",
+    # The code sandbox (recipe0-stage0@29): one short Python script per call, in a container with
+    # no network, over the turn's own workspace. Granted for the first time at `head-of-abm@v58`
+    # and admitted to the interaction slot in the same revision. It is a WRITE, so unlike its
+    # neighbours above it is operation-bound and OPERATION_IDEMPOTENT — a retry of the same call
+    # converges on the journaled receipt of one run rather than running the script twice — and it
+    # declares the same ``project`` pin as its siblings, the spine row the execution is bound to
+    # and the project whose ``attachments/`` the container can see.
+    "run_python@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

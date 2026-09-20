@@ -1256,6 +1256,80 @@ def test_a_direct_bff_web_turn_joins_no_session_even_on_a_document_the_agent_wro
     assert captured["prompt"] == "Build a landing page"
 
 
+def test_a_leg_web_turn_hands_the_platform_reads_to_the_runtime_and_a_direct_turn_does_not(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design note 2026-09-19: the web executor threads the platform's reads exactly as the
+    scene one does — resolved for a LEG turn, absent for a direct BFF turn.
+
+    Captured at the runtime call rather than inside it (the scene suite owns the
+    ``AgentRuntimeConfig`` proof): what this file has to say is that the host's factory is
+    consulted for a leg turn, its answer reaches ``run_web_agent_turn``, and a direct turn's
+    call is unchanged.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_api.main as main
+
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    store = HybridRepository()
+    seen: list = []
+
+    def fake_web_turn(doc, prompt, model, root, **kwargs):
+        seen.append(kwargs.get("platform_reads"))
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    monkeypatch.setattr(main, "run_web_agent_turn", fake_web_turn)
+
+    sentinel = object()
+    host = dataclass_replace(
+        _turn_host(client, None),
+        platform_reads_factory=lambda envelope: sentinel if "leg" in envelope.config else None,
+    )
+
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {
+                "request": {"prompt": "Go ahead.", "base_version": 1},
+                "leg": {"leg_id": "leg-1"},
+            },
+        ),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {"request": {"prompt": "Build a landing page", "base_version": 1}},
+        ),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    assert seen == [sentinel, None]
+
+
 def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
     client: TestClient,
 ) -> None:

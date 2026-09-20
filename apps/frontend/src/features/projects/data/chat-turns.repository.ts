@@ -167,6 +167,7 @@ export function createFixtureChatTurnsRepository(
         lastEventId: null,
         generationAttempts: 0,
         submissionMessage: null,
+        derivation: null,
       });
       return record;
     },
@@ -207,6 +208,7 @@ export function createFixtureChatTurnsRepository(
         lastEventId: null,
         generationAttempts: 0,
         submissionMessage: null,
+        derivation: null,
       });
       return record;
     },

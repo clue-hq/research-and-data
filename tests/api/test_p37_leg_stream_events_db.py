@@ -161,6 +161,7 @@ def test_the_leg_lifecycle_lands_on_the_turn_stream_end_to_end(
                     "source_turn_ref": derive_turn_action_ref(delegating.turn_id),
                     "brief": "A streamed artboard.",
                     "doc_kind": "web",
+                    "artifacts": [{"title": "A streamed artboard"}],
                 },
                 _context(seeds),
                 idempotency_ttl_s=60,
@@ -267,6 +268,7 @@ def test_replayed_invocations_announce_no_second_transition(
                 "source_turn_ref": derive_turn_action_ref(delegating.turn_id),
                 "brief": "Once only.",
                 "doc_kind": "web",
+                "artifacts": [{"title": "Once only"}],
             }
             await invoke_tool(
                 tools, "open_design_leg", open_args, _context(seeds), idempotency_ttl_s=60

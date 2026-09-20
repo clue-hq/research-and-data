@@ -322,7 +322,12 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                     headers={"X-Workspace-Id": "ws-home-create"},
                 )
             assert pending_turns.status_code == 200, pending_turns.text
-            accepted_message = pending_turns.json()["data"][0]["submission_message"]
+            pending_turn_item = pending_turns.json()["data"][0]
+            # A human turn says so: the wire always carries `derivation`, null unless the
+            # server made the turn from the user's own bytes.
+            assert "derivation" in pending_turn_item
+            assert pending_turn_item["derivation"] is None
+            accepted_message = pending_turn_item["submission_message"]
             assert accepted_message["body"] == request_body["message"]
             assert accepted_message["turn_id"] == first["turn"]["turn_id"]
             assert [ref["object_id"] for ref in accepted_message["refs"]] == [

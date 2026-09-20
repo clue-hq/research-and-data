@@ -41,10 +41,25 @@ import {
   type ChatTurnsRepository,
 } from "./chat-turns.repository";
 import {
+  createFixtureProjectDirectoryRepository,
+  createHttpProjectDirectoryRepository,
+  type ProjectDirectoryRepository,
+} from "./project-directory.repository";
+import {
   createFixtureProjectHomeRepository,
   createHttpProjectHomeRepository,
   type ProjectHomeRepository,
 } from "./project-home.repository";
+import {
+  createFixtureProjectInstructionsRepository,
+  createHttpProjectInstructionsRepository,
+  type ProjectInstructionsRepository,
+} from "./project-instructions.repository";
+import {
+  createFixtureProjectMemoryRepository,
+  createHttpProjectMemoryRepository,
+  type ProjectMemoryRepository,
+} from "./project-memory.repository";
 import {
   createHttpProjectWorkspaceRepository,
   fixtureProjectWorkspaceRepository,
@@ -67,6 +82,12 @@ export interface ChatRepositories {
   transport: ChatTransport;
   home: ProjectHomeRepository;
   projects: ProjectWorkspaceRepository;
+  /** The projects directory: the whole list, its creation, and its shelving. */
+  directory: ProjectDirectoryRepository;
+  /** One project's standing instructions document. */
+  instructions: ProjectInstructionsRepository;
+  /** One project's scope memory, written through the backend's one seam. */
+  memory: ProjectMemoryRepository;
   sidebar: SidebarProjectsRepository;
   threads: ChatThreadsRepository;
   messages: ChatMessagesRepository;
@@ -92,6 +113,9 @@ export function createChatRepositories(
       transport,
       home: createHttpProjectHomeRepository(transport),
       projects: createHttpProjectWorkspaceRepository(transport),
+      directory: createHttpProjectDirectoryRepository(transport),
+      instructions: createHttpProjectInstructionsRepository(),
+      memory: createHttpProjectMemoryRepository(),
       sidebar: createHttpSidebarProjectsRepository(transport),
       threads: createHttpChatThreadsRepository(transport),
       messages: createHttpChatMessagesRepository(transport),
@@ -110,6 +134,9 @@ export function createChatRepositories(
     transport,
     home: createFixtureProjectHomeRepository(),
     projects: fixtureProjectWorkspaceRepository,
+    directory: createFixtureProjectDirectoryRepository(),
+    instructions: createFixtureProjectInstructionsRepository(),
+    memory: createFixtureProjectMemoryRepository(),
     sidebar: fixtureSidebarProjectsRepository,
     threads: createFixtureChatThreadsRepository(),
     messages: createFixtureChatMessagesRepository(),

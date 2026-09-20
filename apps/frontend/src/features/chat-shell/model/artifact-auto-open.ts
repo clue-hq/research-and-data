@@ -22,36 +22,52 @@ export interface AutoOpenFeedArtifact {
   type: ProjectArtifact["type"];
 }
 
-/** New/changed files from this chat only; newest update wins if several arrive together. */
-export function artifactToAutoOpen({
+/**
+ * Every new/changed file from this chat, oldest-born first.
+ *
+ * One chat message can birth MANY documents on one design leg (one per target
+ * account), so this returns the whole set rather than a single winner: each
+ * born document gets its own tab. The order is the order they were born, and
+ * documents born in the same instant keep the order the feed served them (the
+ * sort is stable) — so the tab strip reads like the leg's own history.
+ */
+export function artifactsToAutoOpen({
   activeThreadId,
   artifacts,
   knownArtifactIds,
   knownUpdates,
+  openArtifactIds,
 }: {
   activeThreadId: string | null;
   artifacts: readonly AutoOpenFeedArtifact[];
   knownArtifactIds: ReadonlySet<string>;
   knownUpdates?: ReadonlyMap<string, string | undefined>;
-}): ChatShellOpenArtifact | null {
-  if (activeThreadId === null) return null;
-  let winner: AutoOpenFeedArtifact | null = null;
-  let winnerBornAt = Number.NEGATIVE_INFINITY;
+  /**
+   * The tabs already open. An UPDATED document that is already open needs no
+   * opening — its canvas reloads on its own — and opening it again is not
+   * harmless: the shell's `open-artifact` resets edit mode and the inspector
+   * selection, so a person's own edit (which bumps the document's version and
+   * therefore re-lists it as "updated") threw them out of edit mode on every
+   * change (2026-09-20). A NEW document is never in this set, so births open
+   * exactly as before.
+   */
+  openArtifactIds?: ReadonlySet<string>;
+}): ChatShellOpenArtifact[] {
+  if (activeThreadId === null) return [];
+  const opening: AutoOpenFeedArtifact[] = [];
   for (const artifact of artifacts) {
     if (knownArtifactIds.has(artifact.id) && (!artifact.updatedAt || !knownUpdates?.has(artifact.id) || knownUpdates.get(artifact.id) === artifact.updatedAt)) continue;
     if (artifact.originThreadId !== activeThreadId) continue;
-    const bornAt = updatedAtOf(artifact);
-    // Strictly greater: a tie leaves the earlier feed row in place.
-    if (winner !== null && bornAt <= winnerBornAt) continue;
-    winner = artifact;
-    winnerBornAt = bornAt;
+    if (openArtifactIds?.has(artifact.id)) continue;
+    opening.push(artifact);
   }
-  if (winner === null) return null;
-  return {
-    id: winner.id,
-    kind: winner.type === "website" ? "web" : "ad",
-    title: winner.title,
-  };
+  return opening
+    .sort((left, right) => updatedAtOf(left) - updatedAtOf(right))
+    .map((artifact) => ({
+      id: artifact.id,
+      kind: artifact.type === "website" ? ("web" as const) : ("ad" as const),
+      title: artifact.title,
+    }));
 }
 
 /** Latest update, falling back to creation time; absent/unparseable ranks oldest. */

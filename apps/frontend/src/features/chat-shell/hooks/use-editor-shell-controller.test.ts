@@ -114,6 +114,38 @@ test("opening an artifact appends once and activates it", () => {
   assert.equal(reopened.activeArtifactId, "a");
 });
 
+test("re-opening the tab already in front is a no-op — edit mode and the selection survive", () => {
+  // A feed refresh carrying the person's own write re-dispatches open-artifact
+  // for the active tab. Until 2026-09-20 that reset editing and the inspector
+  // selection on every change they made.
+  const before = stateWith({
+    activeArtifactId: "b",
+    editing: true,
+    inspectorSelection: "text",
+  });
+  const after = editorShellReducer(before, {
+    artifact: { id: "b", kind: "web", title: "Pricing page" },
+    type: "open-artifact",
+  });
+  assert.equal(after, before);
+
+  // Opening the same artifact from the GALLERY (not in front) still brings it
+  // forward with a fresh, non-editing canvas.
+  const fromGallery = editorShellReducer(
+    stateWith({ activeArtifactId: "b", editing: true, surface: "gallery" }),
+    { artifact: { id: "b", kind: "web", title: "Pricing page" }, type: "open-artifact" },
+  );
+  assert.equal(fromGallery.surface, "artifact");
+  assert.equal(fromGallery.editing, false);
+
+  // And with the rail closed, opening the active artifact opens the rail.
+  const fromClosed = editorShellReducer(
+    stateWith({ activeArtifactId: "b", panelOpen: false }),
+    { artifact: { id: "b", kind: "web", title: "Pricing page" }, type: "open-artifact" },
+  );
+  assert.equal(fromClosed.panelOpen, true);
+});
+
 test("closing the active tab activates the next tab", () => {
   const state = editorShellReducer(stateWith({ activeArtifactId: "b" }), {
     artifactId: "b",

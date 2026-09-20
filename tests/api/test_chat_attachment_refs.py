@@ -89,6 +89,16 @@ def test_matching_ref_validates_and_classifies(monkeypatch: pytest.MonkeyPatch) 
     assert validated.ref.artifact_key == row.artifact_key
 
 
+def test_a_document_upload_validates_as_the_document_family(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One mechanism for every family: a PDF is carried as an attachment like any other file."""
+
+    row = _row(uuid4(), media="application/pdf", name="brief.pdf")
+    (validated,) = _run(monkeypatch, [_request(row)], [row])
+    assert validated.family == "document" and validated.filename == "brief.pdf"
+
+
 def test_mismatch_and_absence_refuse_by_code(monkeypatch: pytest.MonkeyPatch) -> None:
     row = _row(uuid4())
     with pytest.raises(AttachmentReferenceError) as missing:

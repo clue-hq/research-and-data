@@ -10,8 +10,8 @@
   padding: 0 8px;
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-sidebar-section-label-font-family);
-  font-size: var(--clue-ds-product-typography-sidebar-section-label-font-size);
-  font-weight: var(--clue-ds-product-typography-sidebar-section-label-font-weight);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-sidebar-section-label-line-height);
 }
 
@@ -26,8 +26,8 @@
   border-radius: 4px;
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 
@@ -64,11 +64,17 @@
 }
 
 .projectRowActions {
+  position: absolute;
+  inset: 4px 4px 4px auto;
+  z-index: 1;
   display: flex;
-  flex: none;
   align-items: center;
   gap: 0;
-  padding-right: 4px;
+  border-radius: inherit;
+  /* The hover token is translucent; an opaque base covers the name beneath. */
+  background:
+    linear-gradient(var(--clue-ds-color-bg-neutral-hover), var(--clue-ds-color-bg-neutral-hover)),
+    var(--clue-ds-color-bg-neutral);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease-out;
@@ -142,8 +148,8 @@
   padding: 0 8px 0 32px;
   color: var(--clue-ds-color-content-disabled);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 

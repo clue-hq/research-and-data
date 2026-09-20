@@ -150,9 +150,18 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all. It raises `turn_timeout_s` to 1800 and `max_model_rounds` to 100 — the
         # founder's numbers, after a real plan-draft turn was cut mid-thought at the 300-second
         # cap — and the manifest carries the limits and the `manual-*@v4` bodies its generated
-        # `limits` chapter renders them into, so the digest moves on those alone. Digest measured
-        # off this tree.
-        AgentRole.HEAD_OF_ABM: ("cfdcbfd12f1363af84e4095085812102e6e1f1bdd2e242a88a4740a4bdbd0a42"),
+        # `limits` chapter renders them into, so the digest moves on those alone. v58 moves it for
+        # both reasons at once: one address is ADDED (`run_python@1`, the code sandbox, granted
+        # here for the first time) and every pinned body in the manifest is new — prompt v11,
+        # stage0-interview v34, the new `code-execution@v1`, and the re-minted `manual-*@v5`.
+        # v59 moves it for both reasons again: one granted address changes version
+        # (`open_design_leg@4` -> `@5`, a different input digest, so one ask can open one leg that
+        # births many artifacts) and two pinned bodies in the manifest are new — prompt v12 and
+        # the re-minted `manual-*@v6`. v60 moves it for neither reason: no tool and no grant
+        # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
+        # and the `manual-*@v7` bodies that render this profile version into their title.
+        # Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("abc2e4117e9ef1a346876a21b2d24478e6cd32a3c81afa686d8289da7fed7437"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -274,7 +283,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (154 -> 156).
-    assert len(by_address) == 156
+    # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
+    # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
+    # the head now sees it AVAILABLE rather than role-unavailable.
+    assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    assert len(by_address) == 161
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -382,13 +396,22 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (154 -> 156).
-    assert len(by_address) == 156
+    # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
+    # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
+    # the head now sees it AVAILABLE rather than role-unavailable.
+    assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    assert len(by_address) == 161
     for address in (
         "create_thread@1",
         "rename_thread@1",
         "rename_project@1",
         "set_thread_pinned@1",
         "archive_thread@1",
+        "create_project@1",
+        "update_project_details@1",
+        "set_project_pinned@1",
+        "set_project_archived@1",
     ):
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
@@ -459,6 +482,16 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # contracts, so the `@1`s drop to ROLE_UNAVAILABLE beside the retired document tools — and
     # `read_claims@1` and `read_artifact@1` join, granted at the same version and taught by
     # stage0-interview v33 §7c.
+    #
+    # The code sandbox adds `run_python@1`: one short Python script per call, in a locked-down
+    # container over the turn's own workspace, and the only way to open the PDFs, decks,
+    # spreadsheets and images the project's `attachments/` holds. Granted at `head-of-abm@v58`
+    # and taught by `code-execution@v1`. It spends nothing and starts nothing — its only effect
+    # is on files in the agent's own workspace, swept against the profile's policy on exit.
+    #
+    # Multi-artifact legs move one: `open_design_leg` is available at `@5` — `head-of-abm@v59`
+    # pins that exact contract, whose input carries an `artifacts` list instead of one `title` —
+    # so `@4` drops to ROLE_UNAVAILABLE beside the other superseded addresses.
     assert available == {
         "draft_account_research_directive@5",
         "get_research_view@1",
@@ -466,7 +499,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "launch_arv2_account_research@1",
         "launch_arv2_discovery@1",
         "launch_arv2_person_research@1",
-        "open_design_leg@4",
+        "open_design_leg@5",
         "open_directive_confirmation_gate@1",
         "open_icp_confirmation_gate@2",
         "open_product_set_selection_gate@1",
@@ -479,6 +512,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "read_discovery_run@2",
         "read_project_accounts@1",
         "record_interview_answer@1",
+        "run_python@1",
         "submit_ingestion@1",
     }
     # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
@@ -542,9 +576,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v57"
+    assert production.profile_ref.address == "profile:head-of-abm@v60"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v33"
+        "skill:stage0-interview@v34"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -588,7 +622,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v33")
+    body = production.open_skill("skill:stage0-interview@v34")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -648,13 +682,16 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v33",
+        "skill:stage0-interview@v34",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
+        # v58 adds the sandbox skill after them and before the reference shelf: the whole
+        # procedure for `run_python@1`, which it is the one disclosed skill to require.
+        "skill:code-execution@v1",
+        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -771,7 +808,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v33")
+    body = head.open_skill("skill:stage0-interview@v34")
 
     assert required_guidance in body
 
@@ -825,14 +862,17 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v33" not in remaining
+    assert "skill:stage0-interview@v34" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v4" for name in MANUAL_CHAPTERS),
+        # v58 adds the sandbox skill after them and before the reference shelf: the whole
+        # procedure for `run_python@1`, which it is the one disclosed skill to require.
+        "skill:code-execution@v1",
+        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -862,7 +902,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v10/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v13/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
@@ -910,12 +950,21 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     P3.2-gate-ratified model policy on its face. P3.5 adds the fiftieth pin:
     `finish_design_leg@1`, the leg-level exit (§2.2) — the composite's one doorway
     back to head-of-abm.
+
+    2026-09-19 adds three pins: the account reads, granted so a 1:1 creative can open
+    the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v1"
-    assert len(resolved.profile.tools) == 50
+    assert resolved.profile.version == "v2"
+    assert len(resolved.profile.tools) == 53
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
+    # 2026-09-19: the design agent reads the target account the way head-of-abm does.
+    # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
+    # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
+    # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
+    for address in ("read_project_accounts@1", "read_account_research@2", "read_claims@1"):
+        assert any(pin.address == address for pin in resolved.profile.tools), address
 
     by_address = {item.address: item for item in resolved.capabilities}
     available = {

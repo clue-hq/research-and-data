@@ -40,6 +40,7 @@ from .config import AgentRuntimeConfig
 from .frame import build_frame_payload
 from .models.schemas import SceneVisualCritique, VisualCritique
 from .models.state import CONSTITUTION_FIELDS, LumenTurnState
+from .platform_reads import make_platform_read_tools
 from .prompts import (
     SCENE_LOGO_SELECTION_GUIDANCE,
     build_author_prompt,
@@ -638,6 +639,23 @@ def create_design_deepagent(
     frame_payload = build_frame_payload(tools) if fast_loop else None
     fetch_logo = _make_candidate_fetch_logo_tool(tools) if scene_candidate else tools.fetch_logo
 
+    # Design note 2026-09-19: on a LEG turn the platform hands the runtime its reads
+    # (`config.platform_reads`, duck-typed — the design side imports nothing from the platform),
+    # and the target account's research becomes three tools. Off a leg turn there is no such
+    # object and the three tools simply do not exist: the same tool-absence enforcement the
+    # reviewer and `request_clarification` use, decided before any model call.
+    platform_read_tools = (
+        make_platform_read_tools(tools, runtime_config.platform_reads)
+        if runtime_config.platform_reads is not None
+        else []
+    )
+    if platform_read_tools:
+        tools.record(
+            "orchestrator",
+            "platform_reads_attached",
+            payload={"tools": [read.name for read in platform_read_tools]},
+        )
+
     author_tools = [
         view,
         tools.inspect,
@@ -651,6 +669,10 @@ def create_design_deepagent(
         author_tools.append(author_render_preview)
     if scene_candidate:
         author_tools.append(tools.validate_creative_direction)
+    if not scene_solo:
+        # The author writes the copy, so the author reads the account: a headline about this
+        # company is written from what research found, not from the director's paraphrase.
+        author_tools.extend(platform_read_tools)
 
     subagents = [] if scene_solo else [
         {
@@ -755,6 +777,11 @@ def create_design_deepagent(
     if not runtime_config.auto_defaults and not clarification_already_requested:
         # Insert before finalize_run so the honest exits sit together at the tail.
         orchestrator_tools.insert(len(orchestrator_tools) - 1, tools.request_clarification)
+
+    # Both paths: the reads sit before finalize_run, the way request_clarification does, so the
+    # tail of the list stays the honest exits.
+    for read_tool in platform_read_tools:
+        orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
 
     if scene_solo:
         from .prompts import build_scene_solo_prompt

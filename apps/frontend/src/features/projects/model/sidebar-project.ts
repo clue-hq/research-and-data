@@ -29,6 +29,11 @@ export const SidebarProjectSchema = z.object({
   id: z.string().min(1),
   pinned: z.boolean().default(false),
   title: z.string().min(1),
+  /**
+   * Optional because the sidebar itself never shows it: it is here so the one
+   * project record can also seed a directory card without a second read.
+   */
+  updatedAt: z.string().min(1).optional(),
 });
 
 export const SidebarProjectsResponseSchema = z.object({
@@ -41,6 +46,10 @@ const SidebarProjectsWireSchema = z.object({
     id: z.string().min(1),
     title: z.string().min(1),
     href: z.string().startsWith("/projects/"),
+    // Defaulted rather than required so a deployment that predates the
+    // directory work still serves a readable sidebar.
+    pinned: z.boolean().default(false),
+    updated_at: z.string().min(1).optional(),
     conversations: z.array(z.object({
       id: z.string().min(1),
       title: z.string().min(1).nullable(),
@@ -68,8 +77,9 @@ export const SidebarProjectsWireResponseSchema = SidebarProjectsWireSchema.trans
         expanded: false,
         href: project.href,
         id: project.id,
-        pinned: false,
+        pinned: project.pinned,
         title: project.title,
+        updatedAt: project.updated_at,
       })),
       meta: { nextCursor: meta.next_cursor },
     }),

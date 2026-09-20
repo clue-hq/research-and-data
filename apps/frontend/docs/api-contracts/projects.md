@@ -278,7 +278,15 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   the default transcript projects the fetched durable answer as **Profile
   approved**, **Profile declined**, or **Changes requested**. The normal chat
   never renders the gate id, expected digest, subject id, or transport JSON;
-  those details remain available through the explicit turn inspector.
+  those details remain available through the developer inspector API. As of
+  2026-09-20, chat no longer renders the Inspect action or drawer and does not
+  probe inspector availability.
+- As of 2026-09-20, the shared chat renderer also omits `tool` parts in every
+  state. Per-call activity rows such as **Complete a project step** and **Save
+  your answer** are absent across all conversations, including replayed history
+  and live updates. Tool execution, event persistence and wire payloads are
+  unchanged; reasoning, response text, research tasks, plans and approval cards
+  retain their own presentation.
 - The composer height is content-driven and bounded. The editor scrolls
   internally before it can overlap the mention/model/send footer.
 - Every split-pane and transcript flex boundary may shrink (`min-width: 0`),
@@ -471,8 +479,8 @@ are never accepted from the browser or model.
 - Internal ids, object references, hashes, digests, operation keys, tool schema
   versions and backend refusal details never render in the normal transcript,
   gate card, activity labels, recovery copy, source fallbacks or accessibility
-  labels. The turn inspector retains those diagnostics behind an explicit
-  developer-oriented action.
+  labels. The developer inspector API retains those diagnostics; the chat
+  interface no longer exposes an inspector action or drawer (2026-09-20).
 - Known operations receive stable human labels. Unknown operations fail closed:
   the transcript shows only a generic activity label and completion state; it
   never renders an arbitrary tool name, input or output payload.
@@ -601,9 +609,10 @@ project composer uploads up to four PNG/JPEG/WebP/SVG inspiration images through
 design BFF `POST /assets` seam. These are submitted as ordered `design_asset` `context_refs`,
 never as generic `attachment_refs`.
 
-Before accepting the turn, the platform proves the open leg is scene-backed and every referenced
-asset belongs to the workspace, is `ready`, is one of the four image media types, and still has
-readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
+Before accepting the turn, the platform proves EVERY document of the open leg is scene-backed (a
+leg holds many documents, not one — 2026-09-19 spec `multi-artifact-design-legs-design.md` §3.7),
+and every referenced asset belongs to the workspace, is `ready`, is one of the four image media
+types, and still has readable durable bytes. A fifth ref is `422 CONTEXT_REF_LIMIT_EXCEEDED`; missing/cross-workspace
 assets or bytes are scoped `404`s. The accepted ids stay on the immutable submission receipt and
 become `request.reference_asset_ids` in the design-leg envelope. Transcript reads batch-join the
 current asset library only for display metadata (`label`, `media_type`, `thumbnail_digest`). A
@@ -2088,6 +2097,320 @@ that chat names survive refreshes and new sessions.
 - This adds no project pin/delete operation, no agent-profile grants, and no new runtime flag.
   Fixture mode does not offer project rename; it requires a connected workspace.
 
+## Projects directory and project home — as built (2026-09-19)
+
+**Authoritative for the projects directory (`/projects`), the project home (`/projects/{id}`),
+the project's standing instructions, and the project's human memory notes.** Design record:
+`docs/superpowers/specs/2026-09-19-projects-directory-and-home-integration-design.md`
+(the plan is `docs/superpowers/plans/2026-09-19-projects-directory-and-home-integration.md`).
+This section records what the backend actually serves; where the spec and the code differ, the
+code is what is written here and the difference is called out.
+
+**What this supersedes.**
+
+- It supersedes the 2026-09-12 rename amendment's line "Unknown fields (including `pinned`) are
+  rejected with 422". `PATCH /api/v1/projects/:projectId` now accepts `{title?, description?,
+  pinned?}` and requires at least one of them.
+- It supersedes §9's line "Project rename/pin/delete and project-wide archive controls stay
+  hidden until their real endpoints are separately contracted and implemented" **for pin and
+  archive only**. Both now have real endpoints and are visible. **Project delete still does not
+  exist** — archive is the reversible removal, and no destructive project endpoint is contracted.
+- The historical frontend proposal above (`GET /projects/directory` as one aggregate read, plus
+  the client-side command bus and its localStorage store) **was not adopted**. It remains in this
+  file as the historical proposal it is labelled as. Production uses the paginated read and the
+  governed per-mutation writes below.
+
+**System projects are invisible everywhere a human looks.** `project.kind` is `'marketing'` or
+`'system'`; the per-brand onboarding anchors are `kind = 'system'`. They are never served by the
+directory, the archived view, the sidebar, the project shell, the instructions routes or the
+memory routes. The write tools refuse them with the reason code `project_system`, which this HTTP
+surface reports as **`404 PROJECT_NOT_FOUND`** — naming a system project would disclose a project
+the human never filed. (The spec's §4 table listed a distinct `PROJECT_SYSTEM` 404 code; the code
+deliberately does not emit one.)
+
+**`updated_at` is a composite, not a column read.** Every directory and sidebar row serves
+`GREATEST(project.updated_at, MAX(agent_thread.updated_at))` over that project's **non-archived
+(`status = 'active'`) threads**, so the *Last updated* sort reflects conversations without a write
+per turn. The stored `project.updated_at` is bumped by details edits, rename, archive/restore, an
+instructions save and a memory write; **pinning does not bump it**, and neither does the
+conversation namer.
+
+**The conversation namer never renames a human-named project.** `set_project_name_if_untitled`
+updates only rows whose `name` is still the `UNTITLED_PROJECT_NAME` placeholder, and
+`create_project@1` refuses that literal title, so a project a human named can never be
+auto-renamed.
+
+### Directory read — `GET /api/v1/projects`
+
+`GET /api/v1/projects?status=active|archived&limit=&cursor=` requires `project.read`.
+`status` defaults to `active`; `limit` defaults to 50 and is constrained to 1–100; `cursor` is
+the opaque keyset cursor from `meta.next_cursor`. Only `kind = 'marketing'` rows of the
+authenticated workspace are served, and `draft` rows are never served. Order is
+`pinned DESC, updated_at DESC, project_id DESC` over the composite `updated_at`; the cursor
+carries all three parts, so a project that is pinned (or whose newest conversation moves) between
+two pages still pages deterministically. A foreign or malformed cursor is `422 INVALID_CURSOR`.
+
+```json
+{
+  "data": [
+    {
+      "id": "prj_01J...",
+      "title": "Q4 enterprise push",
+      "description": "",
+      "href": "/projects/prj_01J...",
+      "status": "active",
+      "pinned": true,
+      "brand_id": "brand_01J...",
+      "product_id": null,
+      "created_at": "2026-09-19T12:00:00Z",
+      "updated_at": "2026-09-19T12:30:00Z",
+      "archived_at": null,
+      "activity": { "chats": 4, "running": 1, "needs_input": 0 }
+    }
+  ],
+  "meta": { "next_cursor": null }
+}
+```
+
+`status` is exactly `"active" | "archived"`. `archived_at` is non-null if and only if
+`status = "archived"` (a durable CHECK). `activity` is counted, never guessed: `chats` is the
+project's active thread count, and `running` / `needs_input` come from the same whole-page
+`threads_running` and `open_gate_kinds_for_threads` batch reads the sidebar already uses — two
+queries for the page, not two per card. The same item shape is the response body of all three
+write routes below.
+
+The frontend walks the cursor once on screen load (projects are tens, not thousands) and keeps
+the dummy's client-side search, sort and 12-per-page paging.
+
+### Directory writes
+
+All three require `project.write`, dispatch through the journaled toolbelt, and return
+`{ "data": <directory item> }`. The four tools behind them — `create_project@1`,
+`update_project_details@1`, `set_project_pinned@1`, `set_project_archived@1` — are
+`ToolEffectClass.WRITE` and **granted to no agent role**: they are human-only through this HTTP
+boundary. (An agent that could archive a project could hide its own work.) Each resolves the
+project workspace-scoped and refuses `project_not_found` for a foreign or missing id.
+
+**`POST /api/v1/projects/blank`** → `201 { "data": <directory item> }`.
+
+```json
+{ "brand_id": "brand_01J...", "title": "Q4 enterprise push", "description": "" }
+```
+
+`title` is trimmed, 1–200 characters; `description` is ≤2000 characters and defaults to `""`.
+**`Idempotency-Key` is required** (the Home-bootstrap rule): the project id is derived from it, so
+a retried create returns the same project instead of a second one. A missing or blank header is
+`400 IDEMPOTENCY_KEY_REQUIRED`. A brand outside the workspace is `404 BRAND_NOT_FOUND`; the
+reserved untitled placeholder as a title is `422 PROJECT_TITLE_RESERVED`. The project is born
+`active`, `kind = 'marketing'`, with zero threads. No brand picker is exposed — the frontend
+chooses the brand the way Home does.
+
+**`PATCH /api/v1/projects/:projectId`** `{ "title"?, "description"?, "pinned"? }` →
+`200 { "data": <directory item> }`. At least one field is required (`422` otherwise); `title`
+1–200 trimmed, `description` ≤2000, `pinned` boolean. The route **dispatches and decides
+nothing**: any label edit — title, objective, or both — is one `update_project_details@1` call,
+and `pinned` is always its own `set_project_pinned@1` call. They cannot share one call, because
+pinning an archived project is allowed and relabelling one is not. When the body carries only one
+label, the other is supplied from the current directory row, so a title-only edit keeps the
+objective the human wrote. Relabelling an archived project is `409 PROJECT_ARCHIVED`.
+
+> Spec deviation: the spec routed a title-only PATCH to `rename_project@1`. As built, this
+> surface never calls `rename_project@1` for any body; the tool stays registered for replay and
+> for this file's contract history, and thread rename is unaffected.
+
+**`POST /api/v1/projects/:projectId/archive`** `{ "archived": true|false }` →
+`200 { "data": <directory item> }`. Reversible, and never a delete. Archiving is refused
+`409 PROJECT_RUNNING` while any active thread of the project has running work ("This project has
+running work. Wait for it to finish before archiving." — the message carries no count, unlike the
+spec's sketch); a **restore never asks that question**, so a project cannot be trapped in the
+archive by work it started before. A `draft` project is `409 PROJECT_DRAFT`. Archived projects
+leave the sidebar entirely and are read-only on the home; `create_thread@1` refuses a new chat in
+one with `project_archived`.
+
+`Idempotency-Key` is optional on PATCH and archive (the chat-tool convention); PATCH suffixes the
+key per dispatched tool (`…:details`, `…:pinned`) so the two mutations never collide.
+
+> Spec deviation: `create_project@1` ships `ReplayPolicy.DOMAIN_IDEMPOTENT` with durable identity
+> `project(project_id, workspace_id)`, not the spec's `OPERATION_IDEMPOTENT` /
+> `project(project_id)`. The id is still derived from the Idempotency-Key, so the retry guarantee
+> the route advertises is unchanged.
+
+### Sidebar and shell additions
+
+`GET /api/v1/projects/sidebar` now serves **`pinned` and `updated_at` on each project** and orders
+`pinned DESC, updated_at DESC, project_id DESC` over the same composite `updated_at` as the
+directory — the rail and the directory show the same workspace and may never disagree about which
+project is on top. Its cursor is now `(pinned, updated_at, project_id)`. It keeps serving only
+`kind = 'marketing'`, `status = 'active'` rows. This supersedes §5's line "Project-level `pinned`
+is absent because no project-pin mutation exists"; the frontend wire transform no longer
+hard-codes `pinned: false`.
+
+```json
+{
+  "id": "prj_01J...",
+  "title": "Q4 enterprise push",
+  "href": "/projects/prj_01J...",
+  "pinned": true,
+  "updated_at": "2026-09-19T12:30:00Z",
+  "conversations": [ /* unchanged */ ]
+}
+```
+
+`GET /api/v1/projects/:projectId` (the shell, §5) adds `description` (`""` when unset), `pinned`,
+`updated_at` and `archived_at` to the wire. It does **not** expose `kind`; a system project is
+`404 PROJECT_NOT_FOUND` here instead, which is what the spec's "system projects 404 here as
+everywhere" line means in practice. *Recent chats* on the home is the existing
+`GET /api/v1/projects/:projectId/threads`, unchanged.
+
+### Instructions — `/frontend/v1/projects/{id}/instructions`
+
+The home's Instructions panel is one project document and nothing more:
+`project/instructions.md` in the project's own document chain. Storing it there rather than in a
+column is the point — the agent already reads this project's documents in its mounted workspace,
+so instructions a human types are context the next turn has, with no second mechanism carrying
+them. These two routes live on the `/frontend/v1` app (browser path
+`/api/clue/frontend/v1/…`), not the chat router.
+
+**`GET /frontend/v1/projects/{id}/instructions`** — scoped by the authenticated session's
+workspace, as every `/frontend/v1` read is (the writes below additionally require
+`project.write`):
+
+```json
+{ "data": { "body": "Always lead with the security angle.", "revision": 3,
+            "updated_at": "2026-09-19T12:30:00Z" } }
+```
+
+`data: null` is the honest empty panel — this project has never had instructions. A deployment
+with no artifact storage also reads `null` (nothing was ever stored there), while the PUT below
+refuses loudly.
+
+**`PUT /frontend/v1/projects/{id}/instructions`** (`project.write`)
+`{ "body": "…", "expected_revision": 3 | null }` → the same response shape. `body` is ≤12,000
+characters. The wire names a **revision, never a document id**: the panel holds the version it
+last read and sends it back with the next save. `expected_revision: null` means "there were none
+when I opened this" and creates version 1; an integer (≥1) means "I typed over this version" and
+appends the next one. Either request that disagrees with what is at rest is
+`409 DOCUMENT_REVISION_CONFLICT` — the same answer the documents PUT gives, because it is the same
+event: someone wrote first. Other refusals: `404 PROJECT_NOT_FOUND` (foreign, missing, or system),
+`409 PROJECT_ARCHIVED`, `422 PROJECT_DOCUMENT_BODY_EMPTY`, `503 KNOWLEDGE_STORAGE_UNAVAILABLE`
+(this process composed no artifact storage), `401 UNAUTHORIZED`.
+
+A successful save bumps `project.updated_at` inside the write's own transaction (a refused save
+never moves the project's row) and then, **after the commit**, refreshes the project library so
+the version the human just saved is the one the agent's mounted workspace serves on the next turn.
+
+`project/instructions.md` is excluded from the **project documents list**
+(`GET /frontend/v1/projects/{id}/documents`) — it is a real document of the project and is still
+served by id, but the home draws it in its own panel and a second card for it in that feed is a
+surface the design never drew. The exclusion is at the list composition only, so the agent's
+project-library tree still contains the file.
+
+Not decided here: whether instructions ride the opening-context envelope every turn. They do not
+today (the opening cards run an 8 KiB budget against a 12,000-character cap); that is a recorded
+context-budget follow-up.
+
+### Memory — `/frontend/v1/projects/{id}/memory`
+
+The home's Memory panel is **not** a notes table this surface owns. Every note a human types goes
+through the scoped-memory write seam (Doc M), so it is reconciled against what is already
+remembered, born with the trust its provenance earns, journaled and capped — exactly like a note
+the agent distils from a conversation. There is one write path into memory and this is it.
+
+Notes are submitted as `scope = project`, `type = preference`,
+`provenance_class = user_stated`, `trigger = "project_home_note"`. All four routes are
+`(workspace, project)`-scoped; every write requires `project.write` and refuses
+`409 PROJECT_ARCHIVED` on an archived project.
+
+**`GET /frontend/v1/projects/{id}/memory`** (workspace-scoped, like every `/frontend/v1` read)
+→ `{ "data": [ … ] }` — **active, `user_stated`, project-scope memories only**, newest first:
+
+```json
+{ "id": "mem_01J...", "text": "Prefer case studies over feature lists.",
+  "source_thread_id": "thr_01J...", "source_thread_title": "Northstar outreach",
+  "created_at": "2026-09-19T12:30:00Z" }
+```
+
+The list is deliberately narrower than the store's filter: an agent-observed record and a
+superseded one are real memories the agent still reasons over, but they are not this human's list
+of notes, and showing them would invite a human to "delete" something they never wrote.
+`source_thread_title` is joined from `agent_thread` at read time rather than copied onto the
+memory, so a renamed thread never leaves the panel quoting a title that no longer exists; a null
+title renders the frontend's "New chat" label.
+
+**`POST /frontend/v1/projects/{id}/memory`** (`project.write`)
+`{ "text": "…", "source_thread_id": null }` → `201`:
+
+```json
+{ "data": { /* the note */ }, "verdict": "add" }
+```
+
+`text` is 1–4000 characters. `verdict` is the reconciliation outcome —
+`add | update | supersede | noop` — carried because "we already knew that" is a different outcome
+from "noted" (a `noop` returns the surviving twin). The UI does not render it today.
+
+**`PUT /frontend/v1/projects/{id}/memory/{memory_id}`** (`project.write`), same body, → `200` with
+the same shape. The substrate is append-only, so **an edit is a retire plus a submit, not an
+update**: the successor carries a new id and the old record keeps its trail. Both happen in **one
+transaction** — a refused submit rolls the retire back and the note the human was editing survives
+intact, so the dialog's Save behaves exactly as drawn.
+
+**`DELETE /frontend/v1/projects/{id}/memory/{memory_id}`** (`project.write`) → `204`. Removal
+**invalidates** the record (journaled, never deleted), so a repeat click is a `404` rather than a
+second write.
+
+Refusals, all in the shared `{"error": {"code", "message", "requestId"}}` envelope:
+
+| HTTP | `error.code` | Meaning |
+|---|---|---|
+| 409 | `MEMORY_DISABLED` | Memory is off for this workspace. **On the read too** — a panel that drew nothing would say "no notes" when the truth is "nothing is being kept". |
+| 422 | `MEMORY_REJECTED` | The seam refused the note: fact-shaped (facts belong in the claim store; memory holds only advisory preferences and learnings) or a body rule (verbatim personal content without a resolved subject). The seam's own words are the `message`, and the frontend renders them verbatim in the dialog's existing error slot. |
+| 503 | `MEMORY_UNAVAILABLE` | This deployment composed no model gateway, so there is no reconcile judge. The two submitting writes (POST, PUT) refuse; the list and DELETE still serve. |
+| 404 | `MEMORY_NOT_FOUND` | The note is not this project's, not `user_stated`, or is no longer active. A repeat removal is this, not a second write. |
+| 422 | `MEMORY_SOURCE_NOT_IN_PROJECT` | `source_thread_id` is not a thread of this project. |
+| 404 | `PROJECT_NOT_FOUND` | Foreign, missing, or a system project. |
+| 409 | `PROJECT_ARCHIVED` | Writes only. |
+
+> Spec deviation: the spec's §4 sketched `MEMORY_REJECTED` as `422 {reason, detail}`. As built the
+> envelope is the shared `{code, message}` one — the seam's detail is the `message`, and no
+> separate `reason` field rides the wire.
+
+An accepted write bumps `project.updated_at` in the write's own transaction, so a refused note
+never moves the project's row.
+
+**Deployment precondition.** These routes need `CLUE_MEMORY_ENABLED=true` for the workspace (the
+`.env.example` default is `false`), `CLUE_MEMORY_RECONCILE_MODEL` set, and a real gateway key:
+**every human note costs one reconcile-judge model call.** `.env.example` carries that note beside
+the flag.
+
+### Error codes this integration adds
+
+| HTTP | `error.code` | Where |
+|---|---|---|
+| 400 | `IDEMPOTENCY_KEY_REQUIRED` | `POST /api/v1/projects/blank` with no usable header. |
+| 404 | `PROJECT_NOT_FOUND` | Every project route: foreign, missing, `draft` (on directory-lensed reads), or `kind = 'system'`. |
+| 404 | `BRAND_NOT_FOUND` | Create, for a brand outside the workspace. |
+| 409 | `PROJECT_ARCHIVED` | Details edit, instructions save, memory write, new thread. |
+| 409 | `PROJECT_RUNNING` | Archive, while a thread of the project is running. |
+| 409 | `PROJECT_DRAFT` | Archive, on a `draft` project. |
+| 409 | `DOCUMENT_REVISION_CONFLICT` | Instructions PUT, on any disagreement with what is at rest. |
+| 409 | `MEMORY_DISABLED` | Every memory route, read included. |
+| 422 | `PROJECT_TITLE_RESERVED` | Create, with the untitled placeholder as the title. |
+| 422 | `INVALID_CURSOR` | Directory and sidebar paging. |
+| 422 | `MEMORY_REJECTED` / `MEMORY_SOURCE_NOT_IN_PROJECT` | Memory writes. |
+| 422 | `PROJECT_DOCUMENT_BODY_EMPTY` | Instructions PUT. |
+| 503 | `MEMORY_UNAVAILABLE` / `KNOWLEDGE_STORAGE_UNAVAILABLE` | A deployment with no gateway / no artifact storage. |
+
+Schema failures stay `422`. The frontend keeps the dialog draft on any failure and shows the
+`message`; out-of-dialog failures use the directory's dismissible error bar.
+
+### What this integration deliberately does not add
+
+Project deletion; an aggregate `GET /projects/directory`; a client command bus or localStorage
+project store; a brand picker; agent-observed memory review; in-place memory editing; memory types
+other than `preference`; automatic memory extraction from chats; a bulk "archive all chats"
+endpoint; any agent-role grant for the four project tools; and any new visible control, label or
+caption for backend concepts the design did not draw.
+
 ## As-built thread-shell contract — founder-ratified 2026-08-08 (Lane D D0–D2)
 
 **This section is authoritative over the historical proposal above and subordinate only to the
@@ -2485,11 +2808,18 @@ Every refusal below reaches the browser as the FI-1 error envelope
   media_type, byte_count, artifact_key, sha256}}`. Workspace-scoped (`X-Workspace-Id`), requires
   `project.write`. Post `FormData` without a hand-set `Content-Type` so the browser writes the
   multipart boundary.
-- Accepted types: `text/markdown`, `text/plain`, `image/png`, `image/jpeg`, `image/webp`,
-  `image/gif`. The declared content type is used only if it is one of those; otherwise the
-  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`).
+- Accepted types, in three families. **Text**: `text/markdown`, `text/plain`. **Image**:
+  `image/png`, `image/jpeg`, `image/webp`, `image/gif`. **Document** (2026-09-19):
+  `application/pdf`, `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+  (docx), `…presentationml.presentation` (pptx), `…spreadsheetml.sheet` (xlsx), `text/csv`,
+  `application/json`. The declared content type is used only if it is one of those; otherwise the
+  extension decides (`.md`/`.markdown`/`.txt`/`.png`/`.jpg`/`.jpeg`/`.webp`/`.gif`/`.pdf`/`.docx`/
+  `.pptx`/`.xlsx`/`.csv`/`.json`).
 - Refusals: `413 UPLOAD_TOO_LARGE`, `415 UPLOAD_UNSUPPORTED_TYPE`, `422 UPLOAD_NOT_UTF8` /
-  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_FILENAME_INVALID`, `503 STORAGE_UNAVAILABLE`.
+  `UPLOAD_NOT_AN_IMAGE` / `UPLOAD_NOT_A_DOCUMENT` / `UPLOAD_FILENAME_INVALID`,
+  `503 STORAGE_UNAVAILABLE`. `UPLOAD_NOT_A_DOCUMENT` is the document family's content check: a PDF
+  must begin `%PDF-`, a docx/pptx/xlsx must begin `PK\x03\x04`, a `.csv`/`.json` must decode as
+  UTF-8, and a `.json` must parse. Nothing is converted — the bytes are stored as uploaded.
 - `GET /frontend/v1/uploads/{upload_id}/bytes` → the bytes, workspace-scoped, `Cache-Control:
   private`; an upload this workspace never made is `404 UPLOAD_NOT_FOUND` (absent, not "forbidden").
   Browser path: `/api/clue/frontend/v1/uploads/{upload_id}/bytes`.
@@ -2503,12 +2833,13 @@ Every refusal below reaches the browser as the FI-1 error envelope
 - Limits (settings, all in `.env.example`): at most `CLUE_CHAT_ATTACHMENT_MAX_FILES` = 10 per
   message, `CLUE_CHAT_ATTACHMENT_MAX_TOTAL_BYTES` = 150 MB total,
   `CLUE_CHAT_ATTACHMENT_IMAGE_MAX_BYTES` = 10 MB per image,
-  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file.
+  `CLUE_CHAT_ATTACHMENT_TEXT_MAX_BYTES` = 5 MB per text file,
+  `CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES` = 25 MB per document. The size check runs before the
+  content check, so an oversized PDF refuses `UPLOAD_TOO_LARGE`, not `UPLOAD_NOT_A_DOCUMENT`.
 - Refusals: `404 ATTACHMENT_NOT_FOUND` (a receipt naming an upload this workspace never made),
-  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE` /
-  `ATTACHMENT_DOCUMENT_REFUSED`. `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists
-  only at the validator level — the submission routes are not registered without storage, so it is
-  unreachable over HTTP.
+  `409 ATTACHMENT_MISMATCH`, `422 ATTACHMENT_LIMIT_EXCEEDED` / `ATTACHMENT_DUPLICATE`.
+  `503 CAPABILITY_UNAVAILABLE` for a storage-less deployment exists only at the validator level —
+  the submission routes are not registered without storage, so it is unreachable over HTTP.
 - Acceptance is all-or-nothing: a refused attachment takes the whole turn with it.
 - `composer_capabilities.attachments` is true exactly when the deployment has artifact storage.
 
@@ -2521,12 +2852,16 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 ### What the agent receives
 
-- Text attachments become project documents at `attachments/<filename>` (kind `attachment`),
-  written in the submitting turn's own transaction, versioned like every project document, mounted
-  read-only at `project/attachments/<filename>`, and listed in the Gallery under Documents.
-  Re-attaching identical bytes under the same name replays the existing version; an edited file
-  appends a new version to the same chain.
-- Every attachment is named on the turn's L7 context line with where it is readable.
+- Every attached file — text, image or document alike — reaches the agent the one way: as a file
+  in the read-only `attachments/` folder of the agent's workspace (2026-09-19 ruling). No
+  attachment becomes a project document, and none is listed in the Gallery.
+- Every attachment is named on the turn's L7 context line with where it is readable and which tool
+  opens it: `read_file` for the text family, `run_python` for the document family (the skill adds
+  that a small `.csv`/`.json` is plain text and opens with `read_file` too). `run_python@1` is the
+  agent writing Python against the file in a no-network Docker sandbox over the thread's workspace.
+  A deployment that has not built the sandbox image (`make sandbox-image`) or that sets
+  `CLUE_SANDBOX_ENABLED=false` (it defaults to `true`) cannot read binary documents at all — the tool refuses
+  `sandbox_unavailable` and the agent says so.
 - Images are sent to the model as image parts on the sending turn, and re-sent for prior turns of
   the same thread, newest first, up to `CLUE_CHAT_ATTACHMENT_HISTORY_IMAGES_MAX` (default 20;
   `0` = no cap). Erased or tombstoned history images are skipped.
@@ -2536,5 +2871,5 @@ Every refusal below reaches the browser as the FI-1 error envelope
 
 While an ad design leg is open, images attached through `+` or dropped on the chat keep the
 existing design-reference route (design API upload, `design_asset` context refs, at most 4); text
-files take the attachment route above. The two caps apply separately; the design refusal is shown
-first.
+and document files take the attachment route above. The two caps apply separately; the design
+refusal is shown first.

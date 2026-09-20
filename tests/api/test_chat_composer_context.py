@@ -251,7 +251,7 @@ def test_context_validation_accepts_exact_nodes_only_on_the_open_leg_document(
                 object(),  # type: ignore[arg-type]
                 workspace_id="ws-r8-context",
                 refs=refs,
-                design_leg_document_id="doc_target",
+                design_leg_document_ids=("doc_target",),
             )
         )
         == refs
@@ -263,10 +263,71 @@ def test_context_validation_accepts_exact_nodes_only_on_the_open_leg_document(
                 object(),  # type: ignore[arg-type]
                 workspace_id="ws-r8-context",
                 refs=refs,
-                design_leg_document_id="doc_other",
+                design_leg_document_ids=("doc_other",),
             )
         )
     assert wrong_leg.value.code == "CONTEXT_REF_RELATIONSHIP_MISMATCH"
+
+
+def test_context_validation_accepts_nodes_on_any_document_of_a_multi_document_leg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spec §3.7: a leg holds MANY documents, and the targeted one only has to be in the set."""
+
+    def _scene(document_id: str) -> dict[str, object]:
+        return {
+            "id": document_id,
+            "doc_kind": "scene",
+            "current_version": 7,
+            "scene": {
+                "pages": {"page_ad": {"id": "page_ad", "children": ["frame"]}},
+                "nodes": {
+                    "frame": {"children": ["headline"]},
+                    "headline": {"children": []},
+                },
+            },
+        }
+
+    documents_by_id = {"doc_first": _scene("doc_first"), "doc_second": _scene("doc_second")}
+
+    async def get_document(*_args: object, document_id: str, **_kwargs: object):
+        from clue_design.errors import DesignNotFoundError
+
+        try:
+            return documents_by_id[document_id]
+        except KeyError:
+            raise DesignNotFoundError("design_document", document_id) from None
+
+    from clue_design import documents
+
+    monkeypatch.setattr(documents, "get_document", get_document)
+    refs = (
+        _design_ref("design_document", "doc_second", version=7),
+        _design_ref("design_node", "headline", version=7),
+    )
+
+    assert (
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=refs,
+                design_leg_document_ids=("doc_first", "doc_second"),
+            )
+        )
+        == refs
+    )
+
+    with pytest.raises(ContextReferenceError) as off_the_leg:
+        asyncio.run(
+            validated_context_refs(
+                object(),  # type: ignore[arg-type]
+                workspace_id="ws-r8-context",
+                refs=refs,
+                design_leg_document_ids=("doc_first",),
+            )
+        )
+    assert off_the_leg.value.code == "CONTEXT_REF_RELATIONSHIP_MISMATCH"
 
 
 @pytest.mark.parametrize(
@@ -307,7 +368,7 @@ def test_context_validation_refuses_stale_or_missing_design_nodes(
                 object(),  # type: ignore[arg-type]
                 workspace_id="ws-r8-context",
                 refs=refs,
-                design_leg_document_id="doc_target",
+                design_leg_document_ids=("doc_target",),
             )
         )
     assert refused.value.code == code

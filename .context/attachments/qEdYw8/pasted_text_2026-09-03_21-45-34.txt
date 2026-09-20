@@ -1,0 +1,158 @@
+Here is the overview. Both folders are **experiment runs**, not production code. Shashank ran throwaway Python scripts against live APIs, saved every raw response, and wrote a report answering specific questions you (the founder) had asked. Nothing touched the database or the platform's pipeline. The value is the evidence, the measured costs, and the rulings recorded from it.
+
+The three commits, in order:
+
+| Commit | Date | What it is |
+|---|---|---|
+| `d27d741c9` | Aug 31 | Head-of-ABM agent refinements program: an audit of the current agent, six deep-research briefs, and three draft skills. Lives in `head-of-abm-agent-refinements/`. |
+| `e01e43972` | Sep 1 | The **Person-Depth run**: 10 buying-committee people researched to personal-dossier depth. |
+| `8d6362cf4` | Sep 2 | The **One-Account run**: Zafran Security researched end to end using AI Ark as the only data provider, plus a real Gemini media layer. |
+
+## Module 1: the Person-Depth run (`.context/arv2-person-depth/`)
+
+**Why it exists.** The earlier cluehq.ai smoke test researched people only professionally (title, employer, email). It never ran the "personal hooks" charter. You wanted every committee person researched to the depth of the Insight Health physician dossiers, and a working demo of Google's multimodal models inside the pipeline. This run was the fix, budgeted at a $2.00 ceiling.
+
+**Who was researched.** Ten people across four target accounts: Zafran (Vari Kaur, Nick Fisher, CEO Sanaz Yashar), Cogent (Alexander Semien, Cameron Coles, CEO Vineet Edupuganti), Harmonic (Ana Corio, Tyler Chonoles, CEO Alastair Paterson), and UPTIQ (Mandar Marathe). Identities were already locked from the smoke test, so no identity was re-purchased.
+
+**The charter each person was researched against.** Only non-sensitive categories, and every item must carry a verbatim quote plus a URL or be marked "not found":
+
+- Background: hometown, alma mater, early career, military/sports/arts, languages.
+- Life outside work, only as they state it themselves: hobbies, side projects, causes, self-announced milestones.
+- Voice: 3 to 5 verbatim quotes from podcasts, talks, or authored articles.
+- Professional identity: what they own, what they are proud of, how they buy.
+- Unique insight: the one thing a generic enrichment tool would never surface.
+- Three openers, each grounded in a specific hook.
+- A hard sensitivity floor: no health, faith, politics, sexuality, family tragedy, or minors. Never recorded, never used.
+
+**How the pipeline works, script by script.** The scripts run in order and each phase writes JSON that the next reads:
+
+1. `p1_sweep.py`: 12 search angles per person on Exa (podcast, YouTube, authored articles, alumni pages, awards, personal site, social, local press, etc.). Every query and result is saved verbatim. `p1b_triage.py` builds a per-person source-coverage matrix. `p1c_targeted.py` fetches the LinkedIn profile copy and runs 10 targeted follow-ups.
+2. `p2a` to `p2f`: the media layer. Resolve media URLs, try YouTube captions, fall back to Exa page contents, hunt for transcripts, and build `media_index.json` with duration and exact Gemini cost math per item.
+3. `p3_deep.py`: one Exa deep-reasoning call per person with the full charter as the prompt, target-locked to "this exact person at this exact employer".
+4. `p4_structure.py`: OpenRouter gpt-5-mini turns each dossier into typed claim rows. `p4b_unique.py` asks one extra narrow question per person for the unique insight.
+5. `p5_tables.py` computes depth scores and cost tables in code. `p5b_redact.py` is the governance pass.
+6. `p_lib.py` is the shared library: HTTP helpers, the cost ledger, and timing.
+
+**The claim row shape.** Every row in `claims_people.json` carries: field key (existing `contact.facet.*` keys plus three proposed ones), value, evidence quote, source URL, source timestamp, source type, charter category, priority (P1/P2/P3), use class, identity binding, and an `outreach_safe` boolean.
+
+**Results.** 119 claims across 10 people, zero rows missing a quote or URL.
+
+| Metric | Result |
+|---|---|
+| Spend | $1.29 of $2.00 ceiling, 0 AI Ark credits |
+| Time | 8.8 minutes measured |
+| Average depth score | 61 / 100 |
+| Average hooks per person | 7.2 |
+| At or above the Insight Health bar (~5 hooks) | 8 of 10 |
+| Alma mater found | 10 / 10 |
+| Hobby, book, or side project found | 7 / 10 |
+| Long-form spoken voice located | 3 / 10 (all CEOs) |
+| Cost per person, full recipe | $0.13 |
+| Cost per person, trimmed recipe | $0.07 |
+
+Standout finds: Nick Fisher is a cocktail YouTuber who published a book. Sanaz Yashar spent 15 years in Unit 8200 and lists Thai boxing as her hobby. Vineet Edupuganti won the 2016 Siemens Competition Grand Prize in high school. Tyler Chonoles' hobbies came from his college golf roster page. Alastair Paterson sold Digital Shadows for $160M.
+
+**Governance enforced in code, not in prompts.** This is the part I would flag as most important. Both the deep-research prompt and the structuring prompt let a post mentioning Sanaz's children through. Only the deterministic regex pass in `p5b_redact.py` caught it. The same script forces `outreach_safe: false` on her first-person "born in Iran" origin line (kept as biography, barred from every hook and opener) and auto-purges any row whose value is "NOT FOUND" or lacks a quote or URL. Two rows were purged that way. Every redaction is logged in the claims file.
+
+**The Gemini media layer did not run** because no Gemini key was present, checked twice as the brief required. What happened instead:
+
+- YouTube's free `timedtext` caption endpoint is dead. Seven request forms all returned HTTP 200 with zero bytes. Ruling: delete that code path.
+- Rescue: Exa `/contents` on a YouTube watch URL returns the full auto-caption transcript for 4 of 5 videos at about $0.001 to $0.004. No timestamps, but the words.
+- Podcast MP3s (5 of the 10 media items, including both CEO interviews) were unreadable without Gemini.
+- Exact modelled Gemini cost for all 5 hours of media: $0.25 total, or $0.04 per hour. Embedding raw audio for everything would have cost $2.90, 13.5 times more.
+
+**Decisions and rulings recorded from this run:**
+
+- Transcribe cheap with Flash-Lite, embed the text with `gemini-embedding-2`, embed raw audio only for clips under 3 minutes.
+- Cut five search angles (video-site search, podcast directories, Substack/Medium, awards lists, X/Bluesky/Threads/Reddit). They cost 27% of the run and produced zero uniquely cited URLs. Public social media is dead for this segment: 0 of 10 people had any indexed presence.
+- `includeDomains` on Exa is a trap. Restricting to a domain forces Exa to return same-name strangers.
+- The deep-reasoning call beats the sweep that feeds it: 16% of cited URLs were never seen by any of the 120 sweep queries, including the cocktail-book post.
+- Exa deep-reasoning fails silently. Signature is 9 results at $0.015 versus 18 to 20 at $0.023. Add an auto-retry guard.
+- One broad extraction call said "thin footprint" for 7 of 10 people who plainly had gold. One narrow $0.002 follow-up question took the unique-insight hit rate from 3/10 to 10/10. Never let one broad call decide whether something exists.
+- Verify who actually speaks before quoting. Two "company-named" media items featured colleagues, not the target.
+- Never fetch LinkedIn-native or X-native video. Record as `unfetchable_walled`.
+- Add permanently to the contact charter: `contact.facet.hooks`, `contact.facet.openers`, `contact.facet.voice_quote` (with `media_url` and `timestamp`), `contact.facet.education_highschool`, an `outreach_safe` boolean on every facet claim, a university-athletics source type.
+- The inconvenient finding: seniority buys voice but not personality. The three thinnest people are all marketing leaders, the people most likely to buy. LinkedIn is the spine for this segment, then a cliff.
+
+## Module 2: the One-Account run (`.context/arv2-one-account-aiark/`)
+
+**Why it exists.** You asked three questions with evidence required: what exactly does AI Ark return, what information is actually fruitful for outreach, and what does a trimmed per-account recipe cost. Zafran Security was the subject, chosen as the top researched-intent account from the smoke test. Ceilings were $3.00 cash and 25 AI Ark credits.
+
+**The ruling this run was built around: Apollo is not used. AI Ark is the database.** This is provable, not just asserted. The only HTTP module in the run, `z_lib.py`, has no Apollo helper at all, and the 65-call cost ledger contains only `ai_ark, exa, gemini, live_http, openrouter`.
+
+**The stack as it actually ran, in order:**
+
+1. AI Ark company lookup by domain, then a 12-person domain-scoped roster, then three name-scoped lookups (because AI Ark's title filter is broken), then four email exports.
+2. Free sources: the Ashby job-board API (27 live job postings with full descriptions), the podcast RSS feed, and Exa page reads of zafran.io.
+3. Eight cheap Exa searches for gaps and media discovery.
+4. One Exa deep-reasoning call covering product, funding, GTM team, hiring, tooling, and negatives.
+5. Gemini media layer, run for real: one 43-minute podcast (Sanaz) via MP3 and two short YouTube videos (Nick), plus one discarded video.
+6. Gemini embedding-2 retrieval demo over 29 transcript chunks with three real questions.
+7. gpt-5-mini structuring into 174 typed claims in `claims_zafran.json`.
+
+Scripts follow the same pattern as the person run (`z1a` through `z11`, `z_lib.py` shared), Python stdlib only, every raw response saved before parsing, and `profile.birth_date` dropped at parse time and scrubbed from `raw/`.
+
+**Results.**
+
+| Metric | Result |
+|---|---|
+| Cash spent | $0.166 of $3.00 |
+| AI Ark credits | 11.6 of 25 |
+| Apollo calls | 0 |
+| Claims produced | 174 |
+| Full recipe per account | $0.166 + 11.6 credits |
+| Trimmed recipe per account | $0.072 + 4.1 credits |
+| Trimmed recipe at $0.02/credit, 1,000 accounts | $154 |
+| Media cost, blended | $0.035 per hour of media |
+
+**What AI Ark actually returns.** The report has a full field inventory with real values for every endpoint. The verdict: AI Ark is an excellent spine (identity, money, org shape, contactability) and knows almost nothing about timing, intent, reputation, or voice.
+
+- Most valuable fields: legal name, `funding.rounds[]` with exact dates, amounts and named investors (it found a $40M Series B that no prior run had), exact headcount, `technologies[]`, and on people `certifications[]`, awards, department/seniority routing, full career history with dates, follower counts, and the email block with SMTP status and MX provider.
+- `certifications[]` is called the single best field in the whole API. Vari Kaur, the champion, is 6sense-certified and twice Demandbase-certified. Two prior deep-research runs had returned that as NOT FOUND.
+- Empty or missing: non-LinkedIn social links, SIC/NAICS codes (not returned at all), `GET /v1/credit` returns 401, and Ben Seri's profile was nearly empty because AI Ark is only as rich as the person's own LinkedIn.
+- The company object embedded inside a person response is richer than the company endpoint. It carries Aberdeen IT spend, which `/v1/companies` does not.
+
+**Operational findings on AI Ark:**
+
+- The name filter works while the title filter is broken. A name-scoped, domain-scoped search returned exactly the right person for 0.5 credit, three times out of three. The 6-credit domain roster returned ten sales/CS/finance seats and only two committee members. Ruling: the roster is a trap, use name-scoped pulls only, 12 times cheaper.
+- Email verification is served from cache but still billed at full price.
+- Wire requirements: a browser User-Agent (Cloudflare blocks otherwise) and at least 10 seconds between calls on the free tier.
+
+**The Gemini media layer, run for real, exposed a production-critical failure.** `gemini-3.5-flash-lite` transcribed the 43-minute podcast in one shot and silently looped after 12 minutes 41 seconds. It emitted 329 timestamped lines but only 120 were unique, with confident, well-formatted, fabricated timestamps that would pass any eyeball check. The dedicated `gemini-3.5-transcribe` model re-ran the whole episode faithfully for less money, but returns its text under a different response key and gives no timestamps or speaker labels. The ruling for production: transcribe model primary, flash-lite only for timestamp alignment and quotes, and verify every quote as an exact substring of the faithful transcript in code. Also measured: a YouTube URL costs about 91 tokens per second versus 25 for an MP3, so YouTube is 3.6 times dearer per minute. Pull the MP3 from RSS when one exists. Embedding raw audio would have cost 167 times what the text embeddings cost.
+
+**The honest failure kept on the record.** A search for Nick Fisher's cocktail channel returned a video by a different British cocktail YouTuber. Transcribing it cost $0.006 and proved it was the wrong person. It is recorded as an explicit exclusion with its cost, and the report builds a three-link identity chain (his own LinkedIn post, the Simon & Schuster author page, and the transcript where he says "it's Nick") before any claim was admitted.
+
+**The top outreach-moving facts, ranked.** The full top 15 is in the report. The top five:
+
+1. Vari Kaur's 6sense and Demandbase certifications (AI Ark, 0.5 credit).
+2. The actual SDR stack, "Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach", from a free Ashby job posting. The $0.025 deep call had marked this NOT FOUND.
+3. The ABM hiring req has been open 77 days, reporting to the Head of Growth Marketing (free).
+4. Four verified work emails, all VALID, pattern `firstname@zafran.io` (4 credits).
+5. Named customers with named CISOs on the homepage: Kraft Heinz, Chipotle, Netskope ($0.001).
+
+Three facts are marked `outreach_safe: false` and must never be mentioned: the refuted Cisco acquisition rumour, the third-party "$20M ARR, high burn" claim, and the co-founder's departure to NVIDIA. Their value is defensive.
+
+**The committee read.** Marketing owns this deal. Vari is the champion, Nick the economic buyer with public reach, Sanaz the sponsor whose public language is about "changing habits", Tom Anthony (SVP Sales) is adjacent because BDRs report into Marketing, and Ben Seri is the technical evaluator.
+
+## Cross-cutting rulings and decisions
+
+**Tech stack and providers across both runs:**
+
+- AI Ark for all structured company and people data, including email export. Apollo retired. Sumble dropped earlier (402s and 100x cost).
+- Exa for search, page contents, and one deep-reasoning call per subject.
+- Google Gemini: `gemini-3.5-flash-lite` and `gemini-3.5-transcribe` for media, `gemini-embedding-2` (768 dimensions, multimodal) for retrieval. The Gemini project was fixed on Sep 2 with a new key and billing on.
+- OpenRouter gpt-5-mini, minimal reasoning, for structuring prose into typed claims, one subject per call.
+- Free primary sources: the Ashby ATS posting API, podcast RSS feeds, and the target's own website.
+- Python 3 standard library only, raw responses saved before parsing, per-call cost and timing ledgers as first-class deliverables, never print keys.
+
+**Rulings Shashank recorded that should shape the production pipeline:**
+
+- Free primary sources first, always. The free ATS API out-researched the paid deep call at its own job in both runs, because a job description is a primary source and a search index is not.
+- Accuracy and appropriateness are different gates and need different fields. A true, well-sourced, self-published fact can be correct to record and wrong to use. `outreach_safe` becomes a permanent facet field.
+- The sensitivity floor lives in code, not in prompts. The models let a minors reference through; the regex caught it.
+- No quote, no URL, no claim. Enforced by an automatic purge.
+- Conflicts are flagged, never smoothed. AI Ark says 167 employees, a LinkedIn-derived count said 141, and both are recorded as a disagreement.
+- Long media needs a two-model recipe and a duplicate-line check, always.
+- The person most likely to buy is the person you can research least. Marketing leaders publish about their company, never about themselves.
+
+**What is still open.** Exact ARR, which ABM platform Zafran uses (the honest read is they have not bought one), timestamps for the second half of the podcast, and the production wiring of any of this. Both runs are evidence for the ARV2 account-research rebuild plan in `docs/specs/ARV2-account-research-rebuild-plan.md`, which per the memory notes is still a proposal awaiting your ratification.

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
@@ -73,6 +74,7 @@ def build_design_job_handler(
     purpose: str = "design_job_drain",
     preference_resolver_factory: PreferenceResolverFactory | None = None,
     turn_callbacks_factory: Any = None,
+    platform_reads_factory: Any = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -89,6 +91,12 @@ def build_design_job_handler(
     side and returns that turn's ``lumen_agent.usage_collector.TurnCallbacks``. The drain handler
     here takes none by default; :func:`build_design_leg_lane_driver` passes one that opens the
     platform's Langfuse handler, so a leg's design trio reports into the leg's own trace.
+
+    ``platform_reads_factory`` (design note 2026-09-19) is the leg turn's reads — the target
+    account's research through the governed tools and the seller's pinned knowledge — handed
+    over the same way the preference resolver is: a live callable composed HERE with the
+    worker's invoker and storage, which the design side calls and never assembles. Passed on
+    only when present, so a deployment without it composes exactly the handler it did before.
     """
     if not enabled:
         return None
@@ -107,6 +115,10 @@ def build_design_job_handler(
         "spend_drain": _drain_design_spend,
         "turn_callbacks_factory": turn_callbacks_factory,
     }
+    if platform_reads_factory is not None:
+        # The design side puts it on the host it builds, whichever host that is — so this rides
+        # beside the preference resolver's host_provider rather than inside it.
+        extras["platform_reads_factory"] = platform_reads_factory
     if preference_resolver_factory is None:
         handler: Any = _build(**extras)
     else:
@@ -189,7 +201,10 @@ class InlineDesignLaneDriver:
         #: per mutation and rung A's checkpoints once per authoring round (tens of seconds) —
         #: neither is a per-compile-frame cadence, so a 1 Hz tail loses nothing but latency.
         self._checkpoint_poll_interval_s = checkpoint_poll_interval_s
-        self._forwarder: _DesignEventForwarder | None = None
+        #: Every tail the CURRENT (or most recent) drive started — one per envelope, so a batch
+        #: of N documents reports the frames of all N rather than of whichever ran last.
+        #: :meth:`drive` sets it to its single forwarder; :meth:`drive_batch` to the batch's.
+        self._forwarders: list[_DesignEventForwarder] = []
         #: Successful renewals across this driver's lifetime — observable, so a test (or an
         #: operator counter) can prove the beat is real rather than infer it from silence.
         self.renewals = 0
@@ -202,9 +217,12 @@ class InlineDesignLaneDriver:
         Live rather than summed at the end, for the same reason :attr:`renewals` is: the tail's
         whole claim is that it announces work *while* the turn runs, and a counter that only
         settles afterwards could not tell that apart from a drain.
+
+        Summed across a batch's tails: a multi-document leg's frames all belong to the one chat
+        turn, so the count an operator (or a test) reads is the turn's, not one document's.
         """
 
-        return 0 if self._forwarder is None else self._forwarder.forwarded
+        return sum(forwarder.forwarded for forwarder in self._forwarders)
 
     async def drive(self, *, envelope: Any) -> None:
         """Drive the run terminal, tailing its progress onto the leg's thread as it goes.
@@ -227,7 +245,7 @@ class InlineDesignLaneDriver:
             conn_factory=self._conn_factory,
             poll_interval_s=self._checkpoint_poll_interval_s,
         )
-        self._forwarder = forwarder
+        self._forwarders = [forwarder]
         tail = asyncio.create_task(forwarder.run())
         try:
             await self._drive_to_terminal(envelope=envelope)
@@ -239,6 +257,113 @@ class InlineDesignLaneDriver:
             # can raise is the ``CancelledError`` of a drive the caller is stopping — which must
             # keep propagating rather than be absorbed into a silent normal return.
             await forwarder.drain()
+
+    async def drive_batch(self, *, envelopes: Sequence[Any]) -> None:
+        """Drive every run of one leg turn's batch terminal — spec §3.3 step 3.
+
+        The single-run rule applied across siblings, unchanged: for every non-terminal run,
+        acquire its lease and drive it inline if nobody holds it; skip it while a LIVE foreign
+        lease proves another slot is driving it; when every run that is left is held elsewhere,
+        wait and poll. Parallelism is therefore whatever the fleet's free slots supply — an idle
+        fleet runs the siblings together, a fully busy one leaves them all to this slot, which
+        drives them one after another. There is no new knob (ruling 2026-09-10).
+
+        One tail per envelope for the whole drive, for the same reason :meth:`drive` starts one:
+        each document's canvas reloads on its OWN run's checkpoint frames, and the frames must
+        be announced while the batch is still running.
+
+        A single-envelope batch delegates to :meth:`drive` verbatim, so a one-document leg keeps
+        byte-identical behaviour (and byte-identical logs) to what shipped.
+        """
+
+        if len(envelopes) == 1:
+            await self.drive(envelope=envelopes[0])
+            return
+        forwarders = [
+            _DesignEventForwarder(
+                envelope=envelope,
+                conn_factory=self._conn_factory,
+                poll_interval_s=self._checkpoint_poll_interval_s,
+            )
+            for envelope in envelopes
+        ]
+        self._forwarders = forwarders
+        tails = [asyncio.create_task(forwarder.run()) for forwarder in forwarders]
+        try:
+            await self._drive_batch_to_terminal(envelopes=list(envelopes))
+        finally:
+            for tail in tails:
+                tail.cancel()
+            for tail in tails:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await tail
+            # Unguarded, exactly as in ``drive``: ``drain`` swallows its own failures, so the
+            # only thing this can raise is the ``CancelledError`` of a drive being stopped.
+            for forwarder in forwarders:
+                await forwarder.drain()
+
+    async def _drive_batch_to_terminal(self, *, envelopes: list[Any]) -> None:
+        """The batch loop — drive what nobody holds, wait only on a live foreign lease.
+
+        The window is **progress-based** rather than a fixed deadline, which is the one thing
+        this loop does that the single-run one cannot: ``join_timeout_s`` is measured from the
+        last moment the batch moved (a run reached terminal, or one of our own drives returned),
+        so a busy fleet never fails a batch for being large — while a batch nobody is driving
+        still fails within the same window one run does.
+        """
+
+        loop = asyncio.get_running_loop()
+        last_progress = loop.time()
+        pending = list(envelopes)
+        while pending:
+            progressed = False
+            still: list[Any] = []
+            for envelope in pending:
+                if await self._run_is_terminal(envelope):
+                    progressed = True
+                    continue
+                work_id = WorkId(envelope.work_id)
+                async with self._conn_factory() as conn:
+                    lease = await acquire_work_lease(
+                        conn,
+                        work_id=work_id,
+                        worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                        ttl=self._lease_ttl,
+                    )
+                if lease is not None:
+                    await self._drive_claimed(envelope=envelope, work_id=work_id, lease=lease)
+                    progressed = True
+                    if not await self._run_is_terminal(envelope):
+                        # Fenced mid-drive (or abandoned): re-check it on the next round, where
+                        # it either re-acquires or waits on the takeover exactly like any other.
+                        still.append(envelope)
+                    continue
+                async with self._conn_factory() as conn:
+                    foreign = await get_work_lease(conn, work_id)
+                if foreign is None or not foreign.live:
+                    # Free, but our acquire raced someone's release: retry on the next round.
+                    # That race IS movement, so it counts as progress.
+                    still.append(envelope)
+                    progressed = True
+                    continue
+                # A live foreign holder: a real slot is executing this job. Skip it and wait.
+                log.info(
+                    "design_leg.lane_lease_held_elsewhere",
+                    work_id=str(work_id),
+                )
+                still.append(envelope)
+            pending = still
+            if not pending:
+                return
+            now = loop.time()
+            if progressed:
+                last_progress = now
+            elif now - last_progress >= self._join_timeout_s:
+                raise RuntimeError(
+                    "the design-leg batch made no progress within the lane's join window; "
+                    "the reaper (or an operator requeue) owns what is left"
+                )
+            await asyncio.sleep(self._join_poll_interval_s)
 
     async def _drive_to_terminal(self, *, envelope: Any) -> None:
         """Drive the run terminal — actively (MED-6, adversarial-review fix).
@@ -446,7 +571,10 @@ class InlineDesignLaneDriver:
 
 
 def build_design_leg_lane_driver(
-    *, enabled: bool, preference_resolver_factory: PreferenceResolverFactory | None = None
+    *,
+    enabled: bool,
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
+    platform_reads_factory: Any = None,
 ) -> InlineDesignLaneDriver | None:
     """The design-leg lane for :func:`build_agent_turn_work_handler`, or ``None`` when off.
 
@@ -476,6 +604,9 @@ def build_design_leg_lane_driver(
         purpose="design_leg_inline_lane",
         preference_resolver_factory=preference_resolver_factory,
         turn_callbacks_factory=turn_callbacks,
+        # Design note 2026-09-19: the SAME reads the queued drain handler gets — a leg turn
+        # driven inline and one taken over by a design_job worker are one unit of work.
+        platform_reads_factory=platform_reads_factory,
     )
     if handler is None:
         return None

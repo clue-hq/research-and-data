@@ -603,6 +603,10 @@ def _build_embedded_fleet_worker(app: FastAPI) -> Any:
             # explicit root would otherwise have its worker writing into the settings default).
             engine_cache_root=app.state.engine_cache_root,
             preference_resolver_factory=getattr(app.state, "preference_resolver_factory", None),
+            # Design note 2026-09-19: composed by the PLATFORM's composition root, which this
+            # app is not — so the design API's own embedded worker normally has none, and its
+            # leg turns simply design without the platform's reads.
+            platform_reads_factory=getattr(app.state, "platform_reads_factory", None),
         )
 
     worker = LeasedWorkWorker(
@@ -9275,6 +9279,7 @@ def run_agent_turn_preview(
     scoped_preferences: Any = None,
     runtime_workspace_guard: Any = None,
     callbacks: Any = None,
+    platform_reads: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -9345,6 +9350,13 @@ def run_agent_turn_preview(
             # Absent (the editor preview route, the CLI, fixtures) the runtime keeps its
             # per-run folder and its own generated id, byte-identical to before.
             config = replace(config, session_id=session_id, run_id=run_id)
+        if platform_reads is not None:
+            # Design note 2026-09-19: what this LEG turn may read from the platform — the target
+            # account's research through the governed tools, and the seller's pinned knowledge.
+            # Composed by the platform and passed BY VALUE, the same rule as every other
+            # capability here: the runtime never opens the platform database. Absent (a direct
+            # editor turn, the CLI, fixtures) the config is byte-identical to before the note.
+            config = replace(config, platform_reads=platform_reads)
         if payload.max_iterations is not None:
             # v0 harness does not consume max_iterations (no Python-loop cap);
             # kept set for config parity + offline/CLI paths that still read it.
@@ -9858,6 +9870,7 @@ def run_web_agent_turn(
     session_manifest: dict | None = None,
     cancel_requested: Any = None,
     callbacks: Any = None,
+    platform_reads: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -9973,6 +9986,10 @@ def run_web_agent_turn(
             # owns the runtime's folder; the run id rides along so a retried run resumes rather
             # than opening a second turn on the thread.
             config = replace(config, session_id=session_id, run_id=run_id)
+        if platform_reads is not None:
+            # Design note 2026-09-19: see run_agent_turn_preview — a leg turn's platform reads,
+            # by value, and nothing on any other path.
+            config = replace(config, platform_reads=platform_reads)
         if model:
             config = replace(config, model=model)
         if config.asset_store_root is None:
@@ -10664,6 +10681,26 @@ def _execute_agent_turn_job(
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
 
+    # --- design note 2026-09-19: what this turn may read from the platform ---------------------
+    # A LEG turn only. The factory is the platform's (composed at its composition root with the
+    # journaled tool invoker); this side calls it and never assembles it. Reads are a CAPABILITY,
+    # not a precondition — unlike the scoped preferences above, which are the human's explicit
+    # selection and so refuse the turn when they cannot be authorized, a turn that cannot compose
+    # these still designs from the brief, exactly as it did before this note.
+    platform_reads = None
+    if leg_block:
+        reads_factory = getattr(host, "platform_reads_factory", None)
+        if callable(reads_factory):
+            try:
+                platform_reads = reads_factory(envelope)
+            except Exception:
+                api_logger.warning(
+                    "design_turn.platform_reads_unavailable",
+                    run_id=envelope.run_id,
+                    exc_info=True,
+                )
+                platform_reads = None
+
     # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
     # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
     # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
@@ -10846,6 +10883,9 @@ def _execute_agent_turn_job(
                 # Lane 3 slice 5: the platform's handlers plus this turn's receipt collector,
                 # attached at the graph's invoke config by the harness.
                 callbacks=callbacks,
+                # Design note 2026-09-19: the platform's reads for this leg turn; None on every
+                # other path, which leaves the runtime config as it was.
+                platform_reads=platform_reads,
                 **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
                 **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
             )
@@ -11308,6 +11348,25 @@ def _execute_web_turn_job(
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
     leg_block = envelope.config.get("leg") or {}
+
+    # --- design note 2026-09-19: what this turn may read from the platform ---------------------
+    # The scene executor's rule verbatim: a LEG turn only, resolved through the host's factory,
+    # and a CAPABILITY rather than a precondition — a turn that cannot compose these still
+    # generates from the brief, exactly as it did before this note.
+    platform_reads = None
+    if leg_block:
+        reads_factory = getattr(host, "platform_reads_factory", None)
+        if callable(reads_factory):
+            try:
+                platform_reads = reads_factory(envelope)
+            except Exception:
+                api_logger.warning(
+                    "design_turn.platform_reads_unavailable",
+                    run_id=envelope.run_id,
+                    exc_info=True,
+                )
+                platform_reads = None
+
     user_message = payload.prompt
     # Session continuity (2026-09-18), the scene executor's rule verbatim: a CONTINUED thread
     # already holds every earlier turn of this session, so the history block would say it all
@@ -11440,6 +11499,8 @@ def _execute_web_turn_job(
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
                 # Lane 3 slice 5: see the scene executor.
                 callbacks=callbacks,
+                # Design note 2026-09-19: see the scene executor.
+                platform_reads=platform_reads,
             )
         if response.get("status") == "applied":
             operations = response.get("operations")

@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 28
+    assert CONVERSATION_RECIPE_VERSION == 30
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -636,6 +636,138 @@ def test_paged_and_new_reads_mint_recipe_v28_without_rewriting_v27() -> None:
     assert slot["dynamic_pin_kinds"] == v27_slot["dynamic_pin_kinds"]
 
 
+def test_the_code_sandbox_mints_recipe_v29_without_rewriting_v28() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v28 = json.loads((root / "recipe0-stage0-v28.json").read_text())
+    v29 = json.loads((root / "recipe0-stage0-v29.json").read_text())
+    # One address JOINS and none leaves: `run_python@1`, granted for the first time at
+    # `head-of-abm@v58`. There is no `@1`/`@2` question to settle here — the tool has one
+    # version — so v29 is v28 plus exactly this address, and v28 stays the exact replay input
+    # for a turn pinned to it.
+    added = {"run_python@1"}
+
+    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
+    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
+        "recipe0-stage0-v28.json",
+        "recipe0-stage0-v29.json",
+    )
+    assert added.isdisjoint(v28["graph"]["tool_allowlist"])
+    assert added <= set(v29["graph"]["tool_allowlist"])
+    slot = next(node for node in v29["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v29["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    joined = {tuple(address.split("@")) for address in added}
+    assert joined <= slot_requirements
+    assert joined <= node_compatibility
+    # One version per (kind, key) in the resolved set, which is what keeps promotion from
+    # refusing with `conflicting_requirement`.
+    assert [item for item in slot_requirements if item[0] == "run_python"] == [("run_python", "1")]
+    # v29 is v28 PLUS that one address and nothing else: v28 is untouched on disk, so an
+    # execution pinned to it still validates against the surface it was validated against.
+    v28_slot = next(
+        node for node in v28["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert set(v28["graph"]["tool_allowlist"]) | added == set(v29["graph"]["tool_allowlist"])
+    assert set(v28_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    v28_requirements = {
+        (item["key"], item["version"])
+        for item in v28_slot["requirements"]
+        if item["kind"] == "tool"
+    }
+    v28_compatibility = {
+        (item["key"], item["version"])
+        for item in v28["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    assert v28_requirements | joined == slot_requirements
+    assert v28_compatibility | joined == node_compatibility
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert v28["version"] == 28
+    assert v29["version"] == 29
+    assert slot["dynamic_pin_kinds"] == v28_slot["dynamic_pin_kinds"]
+
+
+def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v29 = json.loads((root / "recipe0-stage0-v29.json").read_text())
+    v30 = json.loads((root / "recipe0-stage0-v30.json").read_text())
+    # One address is RE-PINNED and none joins: `open_design_leg` moves to `@5`, the contract
+    # `head-of-abm@v59` grants — its input carries an `artifacts` list, so one open births one
+    # document per item. `@4` LEAVES the slot rather than stand beside `@5`: a requirement set
+    # resolves one version per (kind, key), so both at once refuses promotion.
+    added = {"open_design_leg@5"}
+    removed = {"open_design_leg@4"}
+
+    v29_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v29.json")
+    assert SYSTEM_RECIPE_FILENAMES[v29_index : v29_index + 2] == (
+        "recipe0-stage0-v29.json",
+        "recipe0-stage0-v30.json",
+    )
+    assert added.isdisjoint(v29["graph"]["tool_allowlist"])
+    assert added <= set(v30["graph"]["tool_allowlist"])
+    assert removed <= set(v29["graph"]["tool_allowlist"])
+    assert removed.isdisjoint(v30["graph"]["tool_allowlist"])
+    slot = next(node for node in v30["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    assert removed.isdisjoint(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v30["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    joined = {tuple(address.split("@")) for address in added}
+    gone = {tuple(address.split("@")) for address in removed}
+    assert joined <= slot_requirements
+    assert joined <= node_compatibility
+    assert gone.isdisjoint(slot_requirements)
+    assert gone.isdisjoint(node_compatibility)
+    # One version per (kind, key) in the resolved set, which is what keeps promotion from
+    # refusing with `conflicting_requirement`.
+    assert [item for item in slot_requirements if item[0] == "open_design_leg"] == [
+        ("open_design_leg", "5")
+    ]
+    # The code sandbox stays where revision 29 put it: this revision moves one address, not two.
+    assert "run_python@1" in set(slot["dynamic_tool_allowlist"])
+    # v30 is v29 with that one address moved and nothing else: v29 is untouched on disk, so an
+    # execution pinned to it still validates against the surface it was validated against.
+    v29_slot = next(
+        node for node in v29["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert (set(v29["graph"]["tool_allowlist"]) - removed) | added == set(
+        v30["graph"]["tool_allowlist"]
+    )
+    assert (set(v29_slot["dynamic_tool_allowlist"]) - removed) | added == set(
+        slot["dynamic_tool_allowlist"]
+    )
+    v29_requirements = {
+        (item["key"], item["version"])
+        for item in v29_slot["requirements"]
+        if item["kind"] == "tool"
+    }
+    v29_compatibility = {
+        (item["key"], item["version"])
+        for item in v29["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    assert (v29_requirements - gone) | joined == slot_requirements
+    assert (v29_compatibility - gone) | joined == node_compatibility
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert removed.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
+    assert v29["version"] == 29
+    assert v30["version"] == 30
+    assert slot["dynamic_pin_kinds"] == v29_slot["dynamic_pin_kinds"]
+
+
 def test_operation_id_requirements_are_explicit() -> None:
     audit = build_replay_safety_audit(_standing_recipe_registry())
     operation_bound = {item.address for item in audit if item.operation_id_required}
@@ -663,6 +795,10 @@ def test_operation_id_requirements_are_explicit() -> None:
         "run_deep_account@1",
         "start_confirmed_project_run@3",
         "start_project_run@1",
+        # The code sandbox is operation-bound because its durable identity IS the operation's
+        # journaled receipt: a retried call converges on the run that already happened rather
+        # than running the script a second time over the same workspace.
+        "run_python@1",
         "start_recon@1",
         "submit_onboarding_input@1",
         "synthesize_icps@3",

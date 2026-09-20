@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal
@@ -70,6 +70,8 @@ from clue_api.chat.turn_parts import (
     ActivityStep,
     ActivityStepStatus,
     AgentActivityPart,
+    ClarificationPart,
+    ClarificationQuestion,
     GatePart,
     PartKind,
     PlanPart,
@@ -83,6 +85,7 @@ from clue_api.chat.turn_parts import (
     TurnPart,
     activity_part_id,
     assistant_message_id,
+    clarification_part_id,
     gate_part_id,
     object_ref_wire,
     plan_part_id,
@@ -904,6 +907,43 @@ class TurnStreamEmitter:
                 gate_ref=wire,
                 gate_kind=gate_kind,
                 state=state,
+            ),
+        )
+
+    async def emit_clarification_part(
+        self,
+        *,
+        document_id: str,
+        document_title: str,
+        doc_kind: str,
+        account_name: str | None,
+        run_id: str,
+        questions: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Spec 2026-09-20 §2.1: the questions a document's run asked, as one part per document."""
+
+        part_id = clarification_part_id(document_id)
+        await self._part(
+            TurnEventType.PART_CREATED,
+            ClarificationPart(
+                part_id=part_id,
+                revision=self._revision(part_id),
+                document_id=document_id,
+                document_title=document_title,
+                doc_kind=doc_kind,
+                account_name=account_name,
+                run_id=run_id,
+                questions=tuple(
+                    ClarificationQuestion(
+                        id=str(q["id"]),
+                        question=str(q["question"]),
+                        why_it_matters=str(q.get("why_it_matters") or ""),
+                        options=tuple(str(o) for o in (q.get("options") or ())),
+                        default=str(q["default"]),
+                        allow_freeform=bool(q.get("allow_freeform", True)),
+                    )
+                    for q in questions
+                ),
             ),
         )
 

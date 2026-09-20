@@ -7,6 +7,24 @@ import type { SidebarProject } from "../model/sidebar-project";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
 
 /**
+ * Folds a reload's server truth over the tree's local view state.
+ *
+ * Expansion is a purely local affordance — nothing durable records which
+ * folders a reader opened — so a reload keeps it; every other field, `pinned`
+ * included, is the server's answer and replaces what the browser held.
+ */
+export function mergeExpandedState(
+  current: SidebarProject[],
+  data: SidebarProject[],
+): SidebarProject[] {
+  const expanded = new Map(current.map((project) => [project.id, project.expanded]));
+  return data.map((project) => ({
+    ...project,
+    expanded: expanded.get(project.id) ?? project.expanded,
+  }));
+}
+
+/**
  * The sidebar tree.
  *
  * It reads through the repository seam (`frontend.md`:95) rather than importing
@@ -21,7 +39,10 @@ export function useSidebarProjectsController() {
   const repositories = useChatRepositories();
   const catalogInvalidation = useProjectCatalogInvalidation();
   const sidebar = repositories.sidebar;
-  const projectMutationsAvailable = repositories.transport.mode === "fixture";
+  // Pin and archive are durable against both transports now that the directory
+  // repository has a fixture adapter as well as an HTTP one, so the sidebar no
+  // longer hides them behind a mode check.
+  const projectMutationsAvailable = true;
   const projectRenameAvailable = repositories.transport.mode === "http";
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
@@ -32,13 +53,7 @@ export function useSidebarProjectsController() {
   const saveInFlight = useRef(false);
 
   const receiveProjects = useCallback((data: SidebarProject[]) => {
-    setProjects((current) => {
-      const expanded = new Map(current.map((project) => [project.id, project.expanded]));
-      return data.map((project) => ({
-        ...project,
-        expanded: expanded.get(project.id) ?? project.expanded,
-      }));
-    });
+    setProjects((current) => mergeExpandedState(current, data));
   }, []);
 
   const reload = useCallback(async () => {
@@ -126,13 +141,21 @@ export function useSidebarProjectsController() {
     router.push(thread.href);
   }
 
-  function togglePinned(projectId: string) {
-    if (!projectMutationsAvailable) return;
-    updateProject(projectId, (project) => ({
-      ...project,
-      pinned: !project.pinned,
-    }));
+  async function togglePinned(projectId: string) {
     setMenuProjectId(null);
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    try {
+      await repositories.directory.update(projectId, { pinned: !project.pinned });
+      await reload();
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Your change could not be saved. Please try again.",
+      );
+    }
   }
 
   function beginEditProject(projectId: string) {
@@ -177,6 +200,29 @@ export function useSidebarProjectsController() {
     }
   }
 
+  async function archiveProject() {
+    if (!editProjectId || saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSavingProject(true);
+    setEditProjectError(null);
+    try {
+      await repositories.directory.setArchived(editProjectId, true);
+      setEditProjectId(null);
+      setEditProjectName("");
+      await reload();
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Your change could not be saved. Please try again.",
+      );
+    } finally {
+      saveInFlight.current = false;
+      setSavingProject(false);
+    }
+  }
+
   async function archiveProjectChats(projectId: string) {
     setMenuProjectId(null);
     const project = projects.find((item) => item.id === projectId);
@@ -191,6 +237,9 @@ export function useSidebarProjectsController() {
   }
   return {
     activePathname: pathname,
+    archiveProject: () => {
+      void archiveProject();
+    },
     archiveProjectChats: (projectId: string) => {
       void archiveProjectChats(projectId);
     },
@@ -216,7 +265,9 @@ export function useSidebarProjectsController() {
     },
     setEditProjectName,
     toggleMenu,
-    togglePinned,
+    togglePinned: (projectId: string) => {
+      void togglePinned(projectId);
+    },
     toggleProject,
   };
 }

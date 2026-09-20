@@ -273,6 +273,9 @@ async def _open(
         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
         "brief": "A launch landing page for Insight Health, aimed at clinical operations leads.",
         "doc_kind": "web",
+        # @5 retired the single top-level `title` into the artifacts list; one artifact is a
+        # list of one, which is exactly what every @4 test in this file asks for.
+        "artifacts": [{"title": "A launch landing page for Insight Health, aimed"}],
     }
     args.update(overrides)
     return await invoke_tool(
@@ -296,7 +299,7 @@ def test_a_document_less_web_open_births_the_document_and_pins_the_leg_to_it(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             seeds = await _seed_conversation(conn, storage_root=tmp_path, label="birth")
-            result = await _open(seeds, title="Insight Health landing page")
+            result = await _open(seeds, artifacts=[{"title": "Insight Health landing page"}])
             refs = result.references
             assert refs["created"] is True
             assert refs["document_created"] is True
@@ -408,7 +411,7 @@ def test_the_leg_born_document_appears_in_the_projects_gallery_feed(
     async def scenario() -> None:
         async with rollback_conn() as conn:
             seeds = await _seed_conversation(conn, storage_root=tmp_path, label="rail")
-            result = await _open(seeds, title="Insight Health landing page")
+            result = await _open(seeds, artifacts=[{"title": "Insight Health landing page"}])
 
             feed = await project_design_documents(
                 conn,
@@ -425,11 +428,13 @@ def test_the_leg_born_document_appears_in_the_projects_gallery_feed(
     run_async(scenario())
 
 
-def test_the_title_falls_back_to_the_briefs_first_words(
+def test_the_items_title_is_the_born_documents_title(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
-    """F5: no title ⇒ the brief's first ~8 words, so the gallery card is never nameless."""
+    """F5, at @5: the item's own title names the document, so the gallery card is never
+    nameless. The @4 fallback (no title ⇒ the brief's first ~8 words) is GONE — an artifact
+    always carries a title, and a document-less open with no artifacts is refused instead."""
 
     if not migrated_db:
         pytest.skip("database not reachable")
@@ -488,14 +493,16 @@ def test_another_workspaces_document_cannot_be_pinned(
                 scene={"meta": {"id": f"doc_stranger_{uuid4().hex[:8]}", "title": "Not yours"}},
             )
             with pytest.raises(PreconditionFailed) as failure:
-                await _open(seeds, document_id=stranger["id"])
+                # @5: a pin carries no artifacts list (they are exclusive), so the refusal
+                # under test is the workspace mismatch and nothing else.
+                await _open(seeds, document_id=stranger["id"], artifacts=[])
             assert "design_document_not_found" in str(failure.value)
             assert await _no_leg_and_no_document(conn, seeds)
 
     run_async(scenario())
 
 
-def test_a_reopen_ignores_doc_kind_and_title(
+def test_a_reopen_ignores_doc_kind(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
 ) -> None:
@@ -535,11 +542,14 @@ def test_a_reopen_ignores_doc_kind_and_title(
                 )
             ).scalar_one()
 
+            # @5: `artifacts` beside a reopen is refused outright (a reopen resumes the
+            # leg's OWN artifacts), so the doc_kind that used to be silently ignored is the
+            # only thing left to ignore here.
             result = await _open(
                 seeds,
                 reopen_leg_id=str(closed["id"]),
                 doc_kind="web",
-                title="A brand new page please",
+                artifacts=[],
             )
             assert result.references["reopened"] is True
             assert result.references["document_created"] is False

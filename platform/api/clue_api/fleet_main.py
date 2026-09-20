@@ -103,6 +103,7 @@ from clue_api.design_fleet import (
 )
 from clue_api.design_leg_wiring import build_design_leg_finisher
 from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
+from clue_api.design_platform_reads import build_design_platform_reads_factory
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -172,6 +173,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
@@ -1002,6 +1004,17 @@ async def _serve() -> None:
         # mirrors the account page's display gate, whose tier-4 arm is armed by
         # ``verification_enabled``.
         arv2_reads = DbArv2ReadService(settings=settings)
+        # The code sandbox's one registry (spec 2026-09-19 §3.4), built HERE because two
+        # composition steps need the SAME object: the toolbelt, whose ``run_python@1`` looks a
+        # turn up in it, and the platform components, whose conversation engine registers the
+        # turn in it while it holds the lease. Two instances would mean a tool that can never
+        # find the turn the engine bound. With the sandbox off nothing is composed, both sides
+        # get ``None``, and the tool refuses by name.
+        sandbox_workspaces = (
+            SandboxWorkspaces(max_runs_per_turn=settings.sandbox_max_runs_per_turn)
+            if settings.sandbox_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -1040,6 +1053,7 @@ async def _serve() -> None:
             project_documents=project_documents,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
+            sandbox_workspaces=sandbox_workspaces,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -1127,6 +1141,18 @@ async def _serve() -> None:
             if memory is not None
             else None
         )
+        # Design note 2026-09-19: what a design LEG turn may read from the platform mid-turn —
+        # the target account's research through the governed tools, and the seller's pinned
+        # knowledge. Composed HERE, with this worker's journaled invoker and storage, because the
+        # design runtime opens no platform database; gated on the same switch as the lane below,
+        # since a deployment that runs no design work has nothing to read for.
+        design_platform_reads_factory = (
+            build_design_platform_reads_factory(
+                invoker=tool_invoker, storage=storage, conn_factory=transaction
+            )
+            if settings.design_runtime_enabled
+            else None
+        )
         platform_components: AgentPlatformComponents | None = None
         if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
@@ -1135,6 +1161,7 @@ async def _serve() -> None:
                 gateway_config=gateway_config,
                 storage=storage,
                 tools=registry,
+                sandbox_workspaces=sandbox_workspaces,
             )
         if settings.chat_enabled and platform_components is not None:
             assert memory is not None
@@ -1167,6 +1194,7 @@ async def _serve() -> None:
                 design_lane=build_design_leg_lane_driver(
                     enabled=settings.design_runtime_enabled,
                     preference_resolver_factory=design_preference_resolver_factory,
+                    platform_reads_factory=design_platform_reads_factory,
                 ),
                 # P3.7: the §2.2 exit bridge — the design role's own catalog model judges
                 # each leg message pre-dispatch, and the governed finish tool executes a
@@ -1314,6 +1342,9 @@ async def _serve() -> None:
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,
                 preference_resolver_factory=design_preference_resolver_factory,
+                # The same reads the inline leg lane above composes: a queued design job and an
+                # inline leg turn are one unit of work and must see one platform.
+                platform_reads_factory=design_platform_reads_factory,
             ),
             queue=work_queue,
         )

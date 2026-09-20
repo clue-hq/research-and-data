@@ -1,0 +1,879 @@
+{
+  "assets": {
+    "asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4": {
+      "font": null,
+      "id": "asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4",
+      "kind": "raster_image",
+      "label": "open-access scheduling moment",
+      "license": {
+        "allow_embedding": true,
+        "allow_export": true,
+        "allow_modification": true,
+        "allow_subsetting": false,
+        "name": "generated_commercial_use",
+        "restrictions": [],
+        "source_url": null
+      },
+      "logo": null,
+      "media": {
+        "byte_length": 1281006,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "e4d465da43f2b3c41e246ef64bbddcf195a56f3816fba6f905276e1e1f14c99b"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/e4/e4d465da43f2b3c41e246ef64bbddcf195a56f3816fba6f905276e1e1f14c99b",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/74/7483bc823ca18a129f553084048b6d91ea1a5b8aa5211634751f0a4df698f63c",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 256,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": null,
+        "created_at": "2026-09-20T09:18:18.503786+00:00",
+        "created_by": "agent",
+        "notes": [
+          "model=openai/gpt-image-2",
+          "provider=image-gen-v1",
+          "request_id=asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4",
+          "image_request={\"cost_usd\":\"0\",\"effective_aspect_ratio\":\"1:1\",\"effective_reference_framing\":\"Generate a NEW image guided by these ordered references:\\nReference 1 (treatment): use the palette, texture, mood and rendering treatment.\\nReference 2 (treatment): use the palette, texture, mood and rendering treatment.\\nPreserve the campaign\\u2019s cream ground, mint-and-lavender rounded soft color fields, and airy professional healthcare light. Vary the subject to an open-access screening visit with no product UI, no logos, and no baked-in copy.\",\"ledger_row_id\":\"d5d86518-38a5-4f4b-ad2e-d65fc09378dd\",\"operation\":\"new_concept\",\"output_dimensions\":{\"height\":1024,\"width\":1024},\"provider_api_style\":\"images\",\"provider_operation\":\"generate\",\"reference_framing\":\"Preserve the campaign\\u2019s cream ground, mint-and-lavender rounded soft color fields, and airy professional healthcare light. Vary the subject to an open-access screening visit with no product UI, no logos, and no baked-in copy.\",\"reference_inputs\":[{\"index\":1,\"mime_type\":\"image/png\",\"role\":\"treatment\",\"sha256\":\"c87ce63f6cc4b526a33de42997aa5471c92c6cf9d7acd49e712e01fa51f5ceb9\"},{\"index\":2,\"mime_type\":\"image/webp\",\"role\":\"treatment\",\"sha256\":\"0a77561bb366822764949806e31e91424a7f3bfe6abbb2a8ac6f97c8244ec394\"}],\"reference_roles\":[\"treatment\",\"treatment\"],\"requested_aspect_ratio\":null,\"requested_canvas\":{\"height\":1024,\"width\":1024}}",
+          "output 1024x1024",
+          "reference-conditioned on 2 attachment(s): c87ce63f6cc4b526a33de42997aa5471c92c6cf9d7acd49e712e01fa51f5ceb9, 0a77561bb366822764949806e31e91424a7f3bfe6abbb2a8ac6f97c8244ec394"
+        ],
+        "source_label": "image generation"
+      },
+      "raster": {
+        "aspect_ratio": 1.0,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_height": 1024,
+        "pixel_width": 1024
+      },
+      "source": {
+        "kind": "generated",
+        "model": "openai/gpt-image-2",
+        "request_id": "asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4"
+      },
+      "status": "ready",
+      "tags": [],
+      "vector": null
+    },
+    "asset_ing_56a8225dcaec8700": {
+      "font": null,
+      "id": "asset_ing_56a8225dcaec8700",
+      "kind": "raster_image",
+      "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 2960,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815"
+        },
+        "filename": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "location": {
+          "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815",
+          "provider": "clue-storage",
+          "url": null
+        },
+        "mime_type": "image/webp",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/57e1104d78104a5a08cd6f9685b10f9cd95df53b4149a00c09c0e73ccbf772df",
+            "provider": "clue-storage",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 38,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.7,
+        "created_at": "2026-09-11T06:22:02.620566+00:00",
+        "created_by": "lumen_ingestion",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": {
+        "aspect_ratio": 6.676056338028169,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_height": 71,
+        "pixel_width": 474
+      },
+      "source": {
+        "kind": "brand_guide",
+        "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "source_asset_id": "asset_ing_56a8225dcaec8700"
+      },
+      "status": "ready",
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "vector": null
+    },
+    "asset_ing_8dab72dd3afd9fcb": {
+      "font": null,
+      "id": "asset_ing_8dab72dd3afd9fcb",
+      "kind": "raster_image",
+      "label": "Austin Gastroenterology logo (light_lockup)",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 14661,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "8dab72dd3afd9fcb42d1d03cca8f8d454badaafce83791e7e5315fce549d3610"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/8d/8dab72dd3afd9fcb42d1d03cca8f8d454badaafce83791e7e5315fce549d3610",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/png",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/15/15a971066950f6399a73d1840eaa687dfaa745c1627b06bd91e81d43569fea11",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 61,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.87,
+        "created_at": null,
+        "created_by": "logo_ladder",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": {
+        "aspect_ratio": 4.184100418410042,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_height": 239,
+        "pixel_width": 1000
+      },
+      "source": {
+        "captured_at": "2026-09-20T09:12:56Z",
+        "kind": "website",
+        "url": "https://www.austingastro.com/wp-content/uploads/sites/61/2025/05/Austin_logo_color.png"
+      },
+      "status": "ready",
+      "tags": [
+        "target-account",
+        "logo-ladder"
+      ],
+      "vector": null
+    }
+  },
+  "export_profiles": [],
+  "meta": {
+    "artifact_type": null,
+    "brand_kit": {
+      "id": "brand_kit_ing_6709960c4caa40cdab9b2213f05ed4cb",
+      "version": 1
+    },
+    "id": "doc_a2397f0963565248bcff683d5ab67220",
+    "medium": "ad",
+    "status": {
+      "kind": "draft"
+    },
+    "title": "Austin Gastroenterology LinkedIn ad"
+  },
+  "nodes": {
+    "ag_logo": {
+      "asset_placement": {
+        "alt_text": "Austin Gastroenterology logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "ag_logo",
+      "kind": {
+        "alt": "Austin Gastroenterology logo",
+        "asset_id": "asset_ing_8dab72dd3afd9fcb",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 84.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 430.0
+        }
+      },
+      "source_asset_id": "asset_ing_8dab72dd3afd9fcb",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "artboard": {
+      "children": [
+        "identity",
+        "copycol",
+        "cta_btn",
+        "hero"
+      ],
+      "clip": true,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_artboard_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "artboard",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 22.0,
+        "grow": 0.0,
+        "padding": [
+          48.0,
+          56.0,
+          48.0,
+          56.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "copycol": {
+      "children": [
+        "headline",
+        "support"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "copycol",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 14.0,
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "cta": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_cta_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "cta",
+      "kind": {
+        "align": "left",
+        "content": "See the GI front door",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 600,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.2,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "hug"
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "cta_btn": {
+      "children": [
+        "cta"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 40.0,
+        "bottom_right": 40.0,
+        "top_left": 40.0,
+        "top_right": 40.0
+      },
+      "fills": [
+        {
+          "id": "paint_cta_btn_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand"
+          }
+        }
+      ],
+      "id": "cta_btn",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "center",
+        "align_y": "center",
+        "gap": 0.0,
+        "gap_token": "space.0",
+        "grow": 0.0,
+        "padding": [
+          16.0,
+          28.0,
+          16.0,
+          28.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "hug"
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "headline": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_headline_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.primary"
+          }
+        }
+      ],
+      "id": "headline",
+      "kind": {
+        "align": "left",
+        "content": "Let patients skip the referral",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 51.5,
+        "font_size_token": "type.size.5xl",
+        "font_weight": 700,
+        "kind": "text",
+        "letter_spacing": -0.02,
+        "line_height": 1.05,
+        "style_token": "type.display",
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "hero": {
+      "asset_placement": {
+        "alt_text": "Patient confirming a screening visit at a GI clinic desk",
+        "fit": "cover",
+        "focal_point": {
+          "x": 0.48,
+          "y": 0.42
+        }
+      },
+      "children": [],
+      "clip": true,
+      "computed": null,
+      "corner": {
+        "bottom_left": 24.0,
+        "bottom_right": 24.0,
+        "top_left": 24.0,
+        "top_right": 24.0
+      },
+      "fills": [],
+      "id": "hero",
+      "kind": {
+        "alt": "Patient confirming a screening visit at a GI clinic desk",
+        "asset_id": "asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "source_asset_id": "asset_img_run_1f6b_358e6cba66b14c54b5a752c809e754a4",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "identity": {
+      "children": [
+        "ih_logo",
+        "sep",
+        "ag_logo"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "identity",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 16.0,
+        "gap_token": "space.lg",
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "ih_logo": {
+      "asset_placement": {
+        "alt_text": "InsightHealth logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "ih_logo",
+      "kind": {
+        "alt": "InsightHealth logo",
+        "asset_id": "asset_ing_56a8225dcaec8700",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 38.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 248.0
+        }
+      },
+      "source_asset_id": "asset_ing_56a8225dcaec8700",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "sep": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_sep_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "sep",
+      "kind": {
+        "align": "left",
+        "content": "x",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "hug"
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "support": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_support_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "support",
+      "kind": {
+        "align": "left",
+        "content": "Open access colonoscopy already has a dedicated line. Add MagicDocs, Intake AI Agent, and a Direct Access Colonoscopy Agent to cover the GI front door.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  },
+  "pages": {
+    "linkedin_sq": {
+      "background": [],
+      "bleed": null,
+      "children": [
+        "artboard"
+      ],
+      "id": "linkedin_sq",
+      "name": "linkedin_sq",
+      "safe_area": null,
+      "size": {
+        "height": 1080.0,
+        "orientation": "landscape",
+        "output": {
+          "raster": {
+            "height_px": 1080,
+            "width_px": 1080
+          }
+        },
+        "preset": "custom",
+        "source": {
+          "height": 1080.0,
+          "unit": "px",
+          "width": 1080.0
+        },
+        "unit": "pt",
+        "width": 1080.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}

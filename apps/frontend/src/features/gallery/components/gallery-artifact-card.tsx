@@ -106,7 +106,7 @@ export function GalleryArtifactCard({
         </span>
         {artifact.account?.logoPath ? (
           <span className={styles.accountBadge} title={artifact.account.name}>
-            <Image alt="" height={15} src={artifact.account.logoPath} width={15} />
+            <Image alt="" height={15} src={artifact.account.logoPath} unoptimized width={15} />
           </span>
         ) : null}
       </span>
@@ -145,7 +145,7 @@ export function GalleryArtifactListRow({
       </span>
       <span className={styles.listAccountCell}>
         {artifact.account?.logoPath ? (
-          <Image alt="" height={16} src={artifact.account.logoPath} width={16} />
+          <Image alt="" height={16} src={artifact.account.logoPath} unoptimized width={16} />
         ) : null}
         {artifact.account?.name}
       </span>

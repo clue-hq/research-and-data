@@ -27,6 +27,20 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
+  sandbox and project-management authority tests; isolated database migration smoke.
+- `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names
+  on hover/focus instead of reserving empty space in the sidebar row.
+- `2026-09-20-remove-chat-tool-activity.md` — release cleanup: removed per-tool step
+  activity rows from the shared chat renderer across all conversations and states.
+- `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
+  chat fidelity map: shared body tokens (now 14/22), mention identity and attachment geometry now
+  implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
+- `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
+  drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.
+- `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:
+  worker UID/GID + child-only umask 077, defensive-only mode repair, native Linux volume smoke
+  and Docker-to-workspace-finalize regression; 144 focused tests passed.
 - `2026-09-17-pr62-design-agent-v1-merge-context.md` — merges `origin/research-streaming` into
   `codex/design-agent-v1` (PR #62): the 37-conflict resolution under the founder's rulings, the
   semantic fixes the gates surfaced, the Alembic join, the gateway numeric-code retry follow-up,
@@ -586,3 +600,4 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-09-16-provider-incidents.md` — provider incidents end to end (classifier, `provider_incident` table + Sentry open/close, the drain and chat-turn writers, three inline surfaces); rulings PI-1..PI-5, the live Exa refusal→recovery proof, and what the founder's browser walk still owes.
 - `2026-09-17-composer-file-tagging.md` — composer `@` tagging of Gallery files, microsites and accounts: the clipped-picker fix (`89f34dd4e`), the approved spec and the 8-task plan; execution not started (founder ruling); rulings and the one spec deviation recorded.
 - `2026-09-17-custom-domain-publishing-research.md` — custom-domain publishing for web pages: what the tree actually serves today (interim `/w/{ws}/p/{slug}`, hardcoded `share.cluehq.ai` chrome, tenant-subdomain v1 unbuilt, absolute asset URLs baked at publish), how Notion/Mutiny/Ploy do it, Railway 20-domains-per-service cap, Cloudflare-for-SaaS recommendation, which dummy Pages fields to keep/drop; section-20 rules + Option C RATIFIED; design approved; spec at `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md`. No code.
+- `2026-09-18-design-session-continuity.md` — the design agent's durable session (one workspace and one thread per design session, continue/resume, session sync through the blob store, erasure), then the 2026-09-19 exit judge v2 (free reasoning + three engine actions, artifact and tags shown), and the **seller + target-account context** shipped the same day on `design-agent-account-context-transfer`: the design role is granted `read_project_accounts@1` / `read_account_research@2` / `read_claims@1`, they reach the runtime as tools on LEG turns only, a governed refusal arrives as `{"error": "refused", "reasons": [...]}`, the seller's pinned knowledge documents are written read-only into `workspace/seller/` with an `index.md`, and the account-adaptation / scene-brief-copy / tools skills teach all of it. **Skill text pending founder review; the three live acceptance proofs (spec §6) are owed.**

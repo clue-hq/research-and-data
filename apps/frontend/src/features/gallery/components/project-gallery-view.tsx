@@ -70,7 +70,7 @@ export function ProjectGalleryView({
               {controller.groupBy !== "none" ? (
                 <header className={styles.groupHeader}>
                   {group.account?.logoPath ? (
-                    <Image alt="" height={16} src={group.account.logoPath} width={16} />
+                    <Image alt="" height={16} src={group.account.logoPath} unoptimized width={16} />
                   ) : null}
                   <span>{group.label}</span>
                   <small>{group.artifacts.length}</small>

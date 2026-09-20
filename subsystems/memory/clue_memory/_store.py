@@ -30,7 +30,7 @@ from clue_memory.model import Memory, new_memory_id
 _MEMORY_COLUMNS = (
     "memory_id, workspace_id, scope_type, scope_id, type, trigger, body, provenance_class, "
     "trust_grade, creating_quote, status, superseded_by, confirmation_count, last_confirmed_at, "
-    "cycles_since_confirmed, subject_entity_id, retention_class, created_at"
+    "cycles_since_confirmed, subject_entity_id, source_thread_id, retention_class, created_at"
 )
 
 
@@ -71,6 +71,7 @@ async def insert_memory(
     subject_entity_id: UUID | None,
     claim_refs: tuple[UUID, ...],
     memory_id: str | None = None,
+    source_thread_id: str | None = None,
 ) -> Memory:
     """Insert one record (+ its claim refs). Scope validity is the composite FKs' job: a
     cross-workspace or dangling scope id raises ``IntegrityError`` here — by design."""
@@ -97,6 +98,7 @@ async def insert_memory(
         "creating_quote": creating_quote,
         "status": status.value,
         "subject_entity_id": subject_entity_id,
+        "source_thread_id": source_thread_id,
         "retention_class": "person_adjacent" if subject_entity_id is not None else "standard",
     }
     if scope_columns is not None:
@@ -112,11 +114,11 @@ async def insert_memory(
             "INSERT INTO memory (memory_id, workspace_id, scope_type, scope_brand_id, "
             "scope_product_id, scope_project_id, scope_account_entity_id, type, trigger, body, "
             "provenance_class, trust_grade, creating_quote, status, subject_entity_id, "
-            "retention_class) "
+            "source_thread_id, retention_class) "
             "VALUES (:memory_id, :workspace_id, :scope_type, :scope_brand_id, "
             ":scope_product_id, :scope_project_id, :scope_account_entity_id, :type, :trigger, "
             ":body, :provenance_class, :trust_grade, :creating_quote, :status, "
-            ":subject_entity_id, :retention_class) "
+            ":subject_entity_id, :source_thread_id, :retention_class) "
             f"RETURNING {_MEMORY_COLUMNS}"
         ),
         params,

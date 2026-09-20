@@ -127,7 +127,7 @@ function HeaderCell({
 
   return (
     <div
-      className={`${readability.uiRegular} relative flex min-w-0 h-[var(--clue-ds-product-dimension-table-header-height)] items-center gap-1 px-4 ${
+      className={`${tableStyles.textRegular} relative flex min-w-0 h-[var(--clue-ds-product-dimension-table-header-height)] items-center gap-1 px-4 ${
         pinned
           ? pinnedHeaderBorder
           : showLeadingDivider
@@ -169,7 +169,7 @@ function TableBadge({
   tone?: string;
 }) {
   return (
-    <span className={`${readability.pillMedium} ${components.badge} ${tableStyles.badge} ${tone}`} title={title ?? children}>
+    <span className={`${tableStyles.textMedium} ${components.badge} ${tableStyles.badge} ${tone}`} title={title ?? children}>
       {icon ? <span className="flex shrink-0">{icon}</span> : null}
       <span className="min-w-0 truncate">{children}</span>
     </span>
@@ -283,7 +283,7 @@ function AccountTableRow({
                   unoptimized={account.logoPath != null}
                   width={24}
                 />
-                <span className={`${readability.uiMedium} truncate`}>
+                <span className={`${tableStyles.textMedium} truncate`}>
                   {account.name}
                 </span>
                 {/* Ruling f: a locally created account is a draft, and says so
@@ -514,7 +514,7 @@ export function AccountsTable({
   return (
     <div
       aria-label={label}
-      className={`${readability.uiRegular} isolate`}
+      className={`${tableStyles.textRegular} isolate`}
       role="grid"
       style={{
         minWidth: accountTableMinWidth(

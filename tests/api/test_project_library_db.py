@@ -196,6 +196,7 @@ async def _seed_design_document(
             "scene": json.dumps(scene),
         },
     )
+    leg_id = uuid4()
     await conn.execute(
         text(
             "INSERT INTO design_leg "
@@ -203,12 +204,21 @@ async def _seed_design_document(
             "VALUES (:id, :ws, :thread, :execution, 'open_awaiting_user', :document)"
         ),
         {
-            "id": uuid4(),
+            "id": leg_id,
             "ws": project.workspace_id,
             "thread": thread_id,
             "execution": execution_id,
             "document": document_id,
         },
+    )
+    # Spec §3.2: the leg's document SET is what binds a document to a project now; the
+    # shipped tool writes this row for every leg (position 0 for a single-document one).
+    await conn.execute(
+        text(
+            "INSERT INTO design_leg_document (leg_id, workspace_id, document_id, position) "
+            "VALUES (:leg, :ws, :document, 0)"
+        ),
+        {"leg": leg_id, "ws": project.workspace_id, "document": document_id},
     )
     return document_id, thread_id
 

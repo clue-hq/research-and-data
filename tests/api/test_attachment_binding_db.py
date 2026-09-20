@@ -1,4 +1,4 @@
-"""L7's attachment names come from the durable rows: a text file's path, an image's name only."""
+"""L7's attachment names come from the durable rows: one path per file, whatever its family."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from clue_agents.contracts import AgentTurnRequest
 from clue_api.agent_turn_submission import insert_submission
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.attachment_binding import DbAttachmentDescriber
-from clue_api.chat.attachments import ValidatedAttachment, materialize_text_attachments
+from clue_api.chat.attachments import ValidatedAttachment
 from clue_api.chat.uploads import record_chat_upload
 from clue_db import db_lifespan
 from clue_storage.fs import FsStorage
@@ -42,7 +42,9 @@ def _constitution(seeds: dict[str, Any]) -> Any:
     )
 
 
-def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) -> None:
+def test_every_family_is_named_at_its_one_attachments_path(tmp_path: Path) -> None:
+    """Text, document and image alike: the worker syncs each to ``attachments/<filename>``."""
+
     async def scenario() -> None:
         storage = FsStorage(tmp_path)
         async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
@@ -56,7 +58,7 @@ def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) 
             artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=bound)
 
             async def attach(
-                body: bytes, *, filename: str, media_type: str, family: str
+                body: bytes, *, filename: str, media_type: str, family: Any
             ) -> ValidatedAttachment:
                 ref = await artifacts.persist_body(
                     workspace_id=ws, data=body, media_type=media_type
@@ -70,10 +72,7 @@ def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) 
                     ref=ref,
                 )
                 return ValidatedAttachment(
-                    upload_id=row.upload_id,
-                    ref=ref,
-                    filename=filename,
-                    family=family,  # type: ignore[arg-type]
+                    upload_id=row.upload_id, ref=ref, filename=filename, family=family
                 )
 
             brief = await attach(
@@ -82,95 +81,36 @@ def test_describer_names_the_text_attachment_path_and_the_image(tmp_path: Path) 
                 media_type="text/markdown",
                 family="text",
             )
+            report = await attach(
+                b"%PDF-1.7\n",
+                filename="report.pdf",
+                media_type="application/pdf",
+                family="document",
+            )
             shot = await attach(
-                b"png-bytes",
-                filename="shot.png",
-                media_type="image/png",
-                family="image",
+                b"png-bytes", filename="shot.png", media_type="image/png", family="image"
             )
             kwargs = _submission_kwargs(seeds, "describe")
-            _row, created = await insert_submission(conn, attachment_refs=(brief, shot), **kwargs)
+            _row, created = await insert_submission(
+                conn, attachment_refs=(brief, report, shot), **kwargs
+            )
             assert created
-            # The text one is a project document from this turn on; the image never is.
-            await materialize_text_attachments(
-                conn,
-                storage,
-                artifacts,
-                workspace_id=ws,
-                brand_id=seeds["brand_id"],
-                project_id=seeds["project_id"],
-                turn_id=kwargs["turn_id"],
-                user_id=seeds["user_id"],
-                attachments=[brief, shot],
-            )
 
             request = AgentTurnRequest(
                 turn_id=kwargs["turn_id"],
                 thread_id=seeds["thread_id"],
                 constitution=_constitution(seeds),
                 user_message_artifact_ref=artifact("user-message.txt", workspace_id=ws),
-                attachment_refs=(brief.ref, shot.ref),
+                attachment_refs=(brief.ref, report.ref, shot.ref),
                 requested_at=datetime.now(UTC),
             )
             described = await DbAttachmentDescriber(conn_factory=bound).describe(request)
 
-            assert described[brief.ref.artifact_key].filename == "brief.md"
-            assert (
-                described[brief.ref.artifact_key].workspace_path == "project/attachments/brief.md"
-            )
-            assert described[shot.ref.artifact_key].filename == "shot.png"
-            assert described[shot.ref.artifact_key].workspace_path is None
-            await txn.rollback()
-
-    run_async(scenario())
-
-
-def test_a_text_attachment_with_no_document_yet_is_named_without_a_path(tmp_path: Path) -> None:
-    """Naming a path nobody wrote would send the agent to read a file that is not there."""
-
-    async def scenario() -> None:
-        storage = FsStorage(tmp_path)
-        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
-            seeds = await _seed(conn, storage)
-            ws = seeds["ws"]
-
-            @asynccontextmanager
-            async def bound() -> AsyncIterator[AsyncConnection]:
-                yield conn
-
-            artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=bound)
-            ref = await artifacts.persist_body(
-                workspace_id=ws, data=b"notes\n", media_type="text/plain"
-            )
-            row = await record_chat_upload(
-                conn,
-                workspace_id=ws,
-                user_id=seeds["user_id"],
-                filename="notes.txt",
-                media_type="text/plain",
-                ref=ref,
-            )
-            kwargs = _submission_kwargs(seeds, "unwritten")
-            await insert_submission(
-                conn,
-                attachment_refs=(
-                    ValidatedAttachment(
-                        upload_id=row.upload_id, ref=ref, filename="notes.txt", family="text"
-                    ),
-                ),
-                **kwargs,
-            )
-            request = AgentTurnRequest(
-                turn_id=kwargs["turn_id"],
-                thread_id=seeds["thread_id"],
-                constitution=_constitution(seeds),
-                user_message_artifact_ref=artifact("user-message.txt", workspace_id=ws),
-                attachment_refs=(ref,),
-                requested_at=datetime.now(UTC),
-            )
-            described = await DbAttachmentDescriber(conn_factory=bound).describe(request)
-            assert described[ref.artifact_key].filename == "notes.txt"
-            assert described[ref.artifact_key].workspace_path is None
+            for attached in (brief, report, shot):
+                named = described[attached.ref.artifact_key]
+                assert named.filename == attached.filename
+                assert named.workspace_path == f"attachments/{attached.filename}"
+                assert named.family == attached.family
             await txn.rollback()
 
     run_async(scenario())

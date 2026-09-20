@@ -1,0 +1,1 @@
+The PR is merged, and you've been switched to a new branch account-binding-v1 off origin/integration/design-improvement.

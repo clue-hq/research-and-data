@@ -153,7 +153,7 @@ class OpenProductSetSelectionGateTool(Tool):
         "derives the candidates from the brand's own product rows and the current product catalog; "
         "you may pass the icp_key you are working from to pre-check its products. This call "
         "confirms nothing. End the turn awaiting input with the returned gate_ref. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#open_product_set_selection_gate"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#open_product_set_selection_gate"
     )
     input_model: ClassVar[type[ToolInput]] = OpenProductSetSelectionGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenProductSetSelectionGateOutput

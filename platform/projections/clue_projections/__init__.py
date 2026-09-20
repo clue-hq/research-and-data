@@ -128,6 +128,14 @@ from clue_projections.production_context import (
     compile_project_conversation_card,
     compile_stage0_project_state_card,
 )
+from clue_projections.projects import (
+    DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
+    MAX_PROJECT_DIRECTORY_PAGE_SIZE,
+    ProjectDirectoryItemView,
+    ProjectDirectoryPage,
+    project_directory_item,
+    project_directory_page,
+)
 from clue_projections.proposals import (
     FieldProposalCard,
     ProposalScopeCard,
@@ -357,6 +365,13 @@ __all__ = [
     "turn_plan_receipt",
     "turn_status_ledger",
     "turn_tool_calls",
+    # spec 2026-09-19 project directory
+    "DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE",
+    "MAX_PROJECT_DIRECTORY_PAGE_SIZE",
+    "ProjectDirectoryItemView",
+    "ProjectDirectoryPage",
+    "project_directory_item",
+    "project_directory_page",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

@@ -66,6 +66,7 @@ from clue_storage import (
 
 __all__ = [
     "DEFAULT_DOCUMENT_KIND",
+    "INSTRUCTIONS_PATH",
     "PLAN_PATH",
     "PLAN_WORKSPACE_PATH",
     "PROJECT_DOCUMENT_SOURCE_KEY",
@@ -75,6 +76,7 @@ __all__ = [
     "ProjectDocumentWrite",
     "ProjectPlanWrite",
     "WrittenDocument",
+    "create_human_project_document",
     "current_document_version",
     "current_plan_version",
     "get_project_document",
@@ -102,6 +104,10 @@ PLAN_PATH = "project/plan.md"
 #: restates its prefixes: ``clue_api.arv2`` may not import ``clue_api`` modules outside the lane
 #: (Global Constraint 7).
 PLAN_WORKSPACE_PATH = "project/plan.md"
+#: The standing instructions a human types into the project home, stored as this project's own
+#: document so the agent reads them in its workspace like everything else under ``project/``
+#: (spec 2026-09-19 §2.6). Folder-qualified for the same reason :data:`PLAN_PATH` is.
+INSTRUCTIONS_PATH = "project/instructions.md"
 #: What a document calls itself when it says nothing. ``kind`` is the model's word for what it
 #: wrote, read off its front matter; a document that declares none is simply a document.
 DEFAULT_DOCUMENT_KIND = "document"
@@ -1149,3 +1155,114 @@ async def save_project_document(
             "project_document_version_race", "the edited document did not persist"
         )
     return _row(saved)
+
+
+async def create_human_project_document(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    project_id: str,
+    path: str,
+    kind: str,
+    title: str,
+    body: str,
+    user_id: str,
+    now: Callable[[], datetime] = _utcnow,
+) -> ProjectDocumentRow:
+    """The FIRST version of a path a human writes with no turn behind it (spec 2026-09-19 §2.6).
+
+    Every other version under ``project/`` is born from something: the agent's write names the turn
+    that produced it, and :func:`save_project_document` names the version it was typed over. The
+    project home's Instructions panel has neither — a human opens an empty panel and types — so
+    this writer exists for exactly that act: version 1, ``ready``, authored by a user and no turn.
+    ``produced_by_turn_id`` stays NULL, which is what the column's nullability is for.
+
+    It creates and only creates. A path that already has any version — servable or not — is refused
+    with ``project_document_exists``, because appending to it is :func:`save_project_document`'s
+    job and doing it here would mint a second version 1 the scoped unique index refuses anyway.
+    The project's row lock is taken first, in the one order every writer of this project takes it
+    (see :func:`lock_project`), so two humans racing the same empty panel serialize: the second
+    reads the first's version and is refused rather than deadlocking or duplicating.
+    """
+
+    if not body.strip():
+        raise ProjectDocumentRefused(
+            "project_document_body_empty", "the document body is empty; nothing was saved"
+        )
+    await lock_project(conn, workspace_id=workspace_id, project_id=project_id)
+    existing = await current_document_version(
+        conn, workspace_id=workspace_id, project_id=project_id, path=path
+    )
+    if existing is not None:
+        raise ProjectDocumentRefused(
+            "project_document_exists",
+            f"{path} is already at version {existing}; edit its current version instead",
+        )
+    brand_id = await conn.scalar(
+        text("SELECT brand_id FROM project WHERE workspace_id = :w AND project_id = :p"),
+        {"w": workspace_id, "p": project_id},
+    )
+    if brand_id is None:
+        raise ProjectDocumentRefused("project_not_found", "no such project in this workspace")
+    authored_at = now()
+    key, sha, data = await _record_document(
+        conn,
+        workspace_id=workspace_id,
+        document=KnowledgeDocument(
+            kind=kind,
+            folder=folder_of(path),
+            path=path,
+            # The same facts :func:`_edited_front_matter` stamps on a human's later edit, so
+            # version 1 and version 2 of this path carry one header and not two shapes.
+            front_matter={
+                "kind": kind,
+                "title": title,
+                "status": "ready",
+                "version": 1,
+                "project_id": project_id,
+                "user_edit": {"user_id": user_id, "edited_at": authored_at.isoformat()},
+            },
+            body=body,
+            cost=None,
+        ),
+        source_key=USER_EDIT_SOURCE_KEY,
+    )
+    document_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO brand_knowledge_document ("
+            "  document_id, workspace_id, brand_id, project_id, folder, path, kind, version, "
+            "  status, artifact_key, artifact_sha256"
+            ") VALUES ("
+            "  :document_id, :workspace_id, :brand_id, :project_id, :folder, :path, :kind, 1, "
+            "  'ready', :artifact_key, :artifact_sha256"
+            ")"
+        ),
+        {
+            "document_id": document_id,
+            "workspace_id": workspace_id,
+            "brand_id": brand_id,
+            "project_id": project_id,
+            "folder": folder_of(path),
+            "path": path,
+            "kind": kind,
+            "artifact_key": key,
+            "artifact_sha256": sha,
+        },
+    )
+    # The bytes land with the row that cites them at rest, exactly as the two writers above do: a
+    # refused create leaves no unreferenced object behind.
+    await _store_bytes(storage, key, data)
+    created = await _document(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        document_id=document_id,
+        servable_only=True,
+    )
+    if created is None:  # pragma: no cover - the INSERT above either landed or raised
+        raise ProjectDocumentRefused(
+            "project_document_version_race", f"the created {path} did not persist"
+        )
+    return _row(created)

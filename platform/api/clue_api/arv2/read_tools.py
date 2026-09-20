@@ -1358,7 +1358,7 @@ class ReadProjectAccountsTool(Tool):
         "by name or domain to find one account; page with limit and offset when total is larger "
         "than the page you received. Read this before saying how many accounts there are, which "
         "are researched, or before proposing more discovery. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_project_accounts"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_project_accounts"
     )
     input_model: ClassVar[type[ToolInput]] = ReadProjectAccountsInput
     output_model: ClassVar[type[ToolOutput]] = ReadProjectAccountsOutput
@@ -1452,7 +1452,7 @@ class ReadAccountResearchTool(Tool):
         "'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and "
         "outreach-unsafe claims are held back and counted in 'excluded'. Read this before "
         "saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
@@ -1556,7 +1556,7 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
         "can come back shorter than limit and still name a next_offset. Sensitive, unverified "
         "tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this "
         "before saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV2Input
     parameter_policy = JournalParameterPolicy(
@@ -1613,7 +1613,7 @@ class ReadDiscoveryRunTool(Tool):
         "found, how many candidates the verifier judged against the ICP, how many were shown and "
         "approved, and the top candidates with their verdict. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunInput
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunOutput
@@ -1720,7 +1720,7 @@ class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
         "(default 25) and follow next_offset until it is null to see every candidate; "
         "candidate_total is the whole run on every page. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunV2Input
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV2Output
@@ -1817,7 +1817,7 @@ class ReadClaimsTool(Tool):
         "Query the live claims about one account or contact: by field family (field_prefix), "
         "source tier, verification status, or collected since a date; paged; the same display "
         "gate as the account pages. Use read_account_research for the written overview. "
-        "Effect-free. Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_claims"
+        "Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_claims"
     )
     input_model: ClassVar[type[ToolInput]] = ReadClaimsInput
     output_model: ClassVar[type[ToolOutput]] = ReadClaimsOutput
