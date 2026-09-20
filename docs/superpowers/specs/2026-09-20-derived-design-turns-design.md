@@ -40,13 +40,17 @@ rely on. The append-only trigger on the table is untouched (the columns are set 
 
 ### 2.2 What a derived turn does NOT do
 
-- **No user row.** Neither runner appends the `uuid5(turn_id, "user")` thread message for a
-  derived turn (Head-of-ABM's `execute` AND its `replay_committed` short-circuit; the leg runner's
-  `run_leg_turn`). The message already sits in the transcript under the turn it was typed on.
 - **No user bubble.** The turn list (`GET …/turns`) carries `derivation` on each turn; the
-  transcript composer renders no user message for a derived turn — not the durable row (there is
-  none), not `submission_message`, not an optimistic one — while its assistant message, leg
-  notices and lifecycle state render exactly as before.
+  transcript composer renders no user message for a derived turn — not its durable user row, not
+  `submission_message`, not an optimistic one — while its assistant message, leg notices and
+  lifecycle state render exactly as before.
+- **The durable user row STAYS** (ruling 2026-09-20, after Task 2's first cut). Both runners keep
+  appending `uuid5(turn_id, "user")` for a derived turn exactly as before. The history loaders
+  are role-scoped by turn (`load_head_of_abm_history` excludes design turns; the leg loader
+  includes only its own leg's design turns), so the user's message under the leg turn is
+  invisible to Head-of-ABM and the message under the Head-of-ABM turn is invisible to the leg.
+  Dropping the derived turn's row would leave each role's later history with an answer and no
+  question before it. The repetition is a DISPLAY fact, fixed at the display.
 
 ### 2.3 The first design turn
 
@@ -101,7 +105,8 @@ The design agent's prompt for that turn is the user's real message rather than "
 ## 4. Acceptance
 
 1. A closed-and-routed message renders ONCE in the transcript, followed by the closing summary and
-   Head-of-ABM's answer; `agent_thread_message` holds one user row for it.
+   Head-of-ABM's answer; `agent_thread_message` still holds a user row per turn (role-scoped
+   history), and the derived turn's row is what the transcript hides.
 2. Opening a leg with N artifacts starts N design runs with no further message; the transcript
    shows the user's ask once, the leg notice "generating now", then the per-document summary.
 3. A replayed open (same turn, same inputs) creates no second first-turn submission.

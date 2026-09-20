@@ -220,60 +220,13 @@ git commit -m "feat(turns): a derived submission says so — derivation + derive
 
 ---
 
-### Task 2: Neither runner appends a user row for a derived turn
+### Task 2: REMOVED by controller ruling (2026-09-20)
 
-**Files:**
-- Modify: `platform/api/clue_api/conversation_turns.py` (`replay_committed` ~line 300–345, `execute` ~line 348–410)
-- Modify: `platform/api/clue_api/agent_turn_fleet_wiring.py` (the `replay_committed(` call ~line 539 and the `execute(` call ~line 950)
-- Modify: `platform/api/clue_api/design_leg_wiring.py` (`run_leg_turn`, the `self._history.append(... role="user" ...)` at ~line 1281)
-- Test: `tests/api/test_lane_d2_turn_submission_db.py` (one new test beside `test_a_committed_turn_is_replayed_never_re_executed`)
-- Test: `tests/api/test_p34_design_leg_engine_db.py` (one new test)
-
-**Interfaces:**
-- Consumes: `AgentTurnSubmissionRow.derivation` (Task 1).
-- Produces: `ConversationTurnEngine.execute(..., derived_turn: bool = False)`, `ConversationTurnEngine.replay_committed(..., derived_turn: bool = False)`.
-
-- [ ] **Step 1: Engine**
-
-Both methods gain `derived_turn: bool = False` (keyword-only, last). Each wraps its user append:
-
-```python
-        if not derived_turn:
-            # Spec 2026-09-20 §2.2: a derived turn (a leg redelivery, a leg's first turn) carries
-            # bytes the transcript already holds under the turn they were typed on.
-            await self.components.history.append(
-                message_id=uuid5(turn_id, "user"), ... unchanged ...
-            )
-```
-
-- [ ] **Step 2: Fleet wiring**
-
-At both call sites pass `derived_turn=submission.derivation is not None`.
-
-- [ ] **Step 3: Leg runner**
-
-In `run_leg_turn`, wrap the user append at ~line 1281 the same way, keyed on `submission.derivation is not None`, with the same one-line comment.
-
-- [ ] **Step 4: Tests**
-
-D2 test — copy `test_a_committed_turn_is_replayed_never_re_executed`'s setup (the engine with `_RuntimeThatMustNotRun`, the committed finalization), but insert the submission with `derivation="design_leg_redelivery", derived_from_turn_id=uuid4()` (or simply pass `derived_turn=True` to both engine calls, since the engine takes the flag and the wiring derives it), then assert:
-
-```python
-            assert list(messages) == ["assistant"]
-```
-
-Name: `test_a_derived_turn_appends_no_user_row_on_execute_or_replay`.
-
-Leg engine test — in `tests/api/test_p34_design_leg_engine_db.py`, extend `_submit_message` with optional keyword arguments `derivation: str | None = None, derived_from_turn_id: UUID | None = None` passed straight to `insert_submission`; then add `test_a_derived_leg_turn_appends_no_user_row` that submits with `derivation="design_leg_redelivery", derived_from_turn_id=uuid4()`, runs `_run_turn` with `_FakeLane(...)` (succeeded), and asserts the thread's `agent_thread_message` roles for that turn are exactly `["assistant"]`.
-
-- [ ] **Step 5: Run, lint, commit**
-
-```bash
-set -a; source .env; set +a
-uv run pytest tests/api/test_lane_d2_turn_submission_db.py tests/api/test_p34_design_leg_engine_db.py -q -p no:cacheprovider
-uv run ruff check / format on the five touched files
-git commit -m "fix(turns): a derived turn appends no user row — the transcript already holds the message"
-```
+The first cut of this task (runners append no user row for a derived turn) was reverted before
+review closed: `load_head_of_abm_history` filters by turn role and the leg loader by leg, so the
+derived turn's own user row is the ONLY copy of the question each role's later history can see.
+Dropping it left an answer with no question. The rows stay; Task 3 hides the bubble. Spec §2.2
+amended. Nothing to implement here.
 
 ---
 
@@ -318,7 +271,7 @@ git commit -m "fix(turns): a derived turn appends no user row — the transcript
 
 - [ ] **Step 3: Tests**
 
-`chat-transcript.test.ts`: add `test("a derived turn renders its assistant answer and no user bubble", ...)` — turns `[{...same shape as the accepted-message test..., derivation: "design_leg_redelivery", submissionMessage: acceptedMessage}]`, messages `[assistantMessage for that turn]`; assert no message with `role === "user"` for that turn and the assistant one is present; also assert a turn with `derivation: null` still renders the accepted user message (reuse the existing test's literal). Every other turn literal in this test file gains `derivation: null` (TypeScript will require it).
+`chat-transcript.test.ts`: add `test("a derived turn renders its assistant answer and no user bubble", ...)` — turns `[{...same shape as the accepted-message test..., derivation: "design_leg_redelivery", submissionMessage: acceptedMessage}]`, messages `[the durable USER row for that turn (sequence 1), the assistant row (sequence 2)]`; assert no message with `role === "user"` for that turn and the assistant one is present (the durable user row exists — role-scoped history keeps it — and is hidden by `derivation`, not by absence); a second variant with `messages: []` and only `submissionMessage` set asserts the same; also assert a turn with `derivation: null` still renders the accepted user message (reuse the existing test's literal). Every other turn literal in this test file gains `derivation: null` (TypeScript will require it).
 
 `design-leg.test.ts`: update the two expected strings.
 
@@ -428,7 +381,7 @@ git commit -m "feat(design-legs): open_design_leg queues the leg's first turn fr
 - Test: `tests/api/test_p34_design_leg_engine_db.py`
 
 **Interfaces:**
-- Consumes: `submission.derivation == DERIVATION_DESIGN_LEG_FIRST_TURN` (Task 1); `_submit_message(..., derivation=, derived_from_turn_id=)` (Task 2's test helper).
+- Consumes: `submission.derivation == DERIVATION_DESIGN_LEG_FIRST_TURN` (Task 1). Extend the test file's `_submit_message` (~line 194) with keyword arguments `derivation: str | None = None, derived_from_turn_id: UUID | None = None` passed straight to `insert_submission` (Task 2 was removed, so this task adds them).
 
 - [ ] **Step 1: Skip the judge on the first turn**
 
@@ -447,7 +400,7 @@ The `addressed` computation below already defaults to every document when `exit_
 
 - [ ] **Step 2: Test**
 
-`test_the_first_turn_of_a_leg_runs_every_document_without_the_judge`: build the runner with `exit_judge=` a callable that raises `AssertionError("the first turn is never judged")` and a finisher (so `_judge_exit` would run if reached — see how the existing judged tests in this file or `tests/api/test_p37_exit_bridge_db.py` construct the runner with a judge; copy that construction), submit with `derivation="design_leg_first_turn", derived_from_turn_id=<the leg's opening turn id from seeds>`, run with `_FakeLane(...)`; assert the outcome is `AWAITING_INPUT`, the lane saw exactly one envelope (one-document leg), and the turn's `agent_thread_message` roles are `["assistant"]`. Then a control: the same runner on a NON-derived submission raises the judge's `AssertionError` (proving the judge is reached on ordinary turns).
+`test_the_first_turn_of_a_leg_runs_every_document_without_the_judge`: build the runner with `exit_judge=` a callable that raises `AssertionError("the first turn is never judged")` and a finisher (so `_judge_exit` would run if reached — see how the existing judged tests in this file or `tests/api/test_p37_exit_bridge_db.py` construct the runner with a judge; copy that construction), submit with `derivation="design_leg_first_turn", derived_from_turn_id=<the leg's opening turn id from seeds>`, run with `_FakeLane(...)`; assert the outcome is `AWAITING_INPUT`, the lane saw exactly one envelope (one-document leg), and the turn's `agent_thread_message` roles are `["user", "assistant"]` (the row stays — ruling 2026-09-20; the transcript hides it). Then a control: the same runner on a NON-derived submission raises the judge's `AssertionError` (proving the judge is reached on ordinary turns).
 
 - [ ] **Step 3: Run, lint, commit**
 
