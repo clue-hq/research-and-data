@@ -295,7 +295,7 @@ git commit -m "feat(chat): the turn list says which turns are derived; the trans
 
 **Interfaces:**
 - Consumes: `insert_submission(..., derivation=, derived_from_turn_id=)`, `DERIVATION_DESIGN_LEG_FIRST_TURN`, `submission_context_refs`, `dispatch_next_thread_turn`, `get_submission`, `turn_id_for_submission` (all in `clue_api.agent_turn_submission`).
-- Produces: tool reference `first_turn_id: str | None`.
+- Produces: nothing new on the wire. Ruling 2026-09-20: `OpenDesignLegOutput` is the tool's `output_model` and the profile pins its schema digest, so the references do NOT change; the tool logs `design_leg.first_turn_queued` (`leg_id`, `turn_id`, `first_turn_id`). The derived id is `turn_id_for_submission(workspace_id=, thread_id=, idempotency_key=f"design-leg-first-turn:{leg_id}:{opening_turn_id}")`.
 
 - [ ] **Step 1: A helper on the tool**
 
@@ -336,6 +336,7 @@ git commit -m "feat(chat): the turn list says which turns are derived; the trans
         # A no-op while the opening turn's own task is in flight; the worker offers the next
         # turn when that task finishes (the redelivery relies on the same property).
         await dispatch_next_thread_turn(conn, workspace_id=ctx.workspace_id, thread_id=turn.thread_id)
+        log.info("design_leg.first_turn_queued", leg_id=leg_id, turn_id=str(turn.turn_id), first_turn_id=str(first_turn_id))
         return str(first_turn_id)
 ```
 
@@ -343,16 +344,19 @@ Imports: the same lazy-import block the exit tool uses (~line 1495) — move it 
 
 - [ ] **Step 2: Call it on both opening paths**
 
-In `invoke`: `first_turn_id: str | None = None` before the transaction; after `_emit_leg_lifecycle(... LEG_REOPENED ...)` and after `_emit_leg_lifecycle(... LEG_OPENED ...)` (still inside the `async with self._conn_factory() as conn:` block) call `first_turn_id = await self._queue_first_turn(conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"]))`. On the `existing_leg` replay branch, recompute the same derived id WITHOUT inserting: `first_turn_id = str(turn_id_for_submission(workspace_id=ctx.workspace_id, thread_id=resolved.turn.thread_id, idempotency_key=f"design-leg-first-turn:{leg['id']}:{resolved.turn.turn_id}"))` only if `await get_submission(conn, workspace_id=ctx.workspace_id, turn_id=<that id>)` is not None, else `None` — so a replayed call reports what the first call did. Add `"first_turn_id": first_turn_id` to the tool's `references`, and to the output schema/model if the tool declares one (find with `rg -n "created" platform/api/clue_api/design_leg_tools.py` around the `ToolResult(` at the end of `invoke`; if references are schema-checked by `output_schema_sha256` in the profile, STOP and report BLOCKED — the controller decides whether to mint `@6`).
+In `invoke`: after `_emit_leg_lifecycle(... LEG_REOPENED ...)` and after `_emit_leg_lifecycle(... LEG_OPENED ...)` (still inside the `async with self._conn_factory() as conn:` block) call `await self._queue_first_turn(conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"]))`. The `existing_leg` replay branch does nothing new (the first call already queued; `insert_submission` under the same key would replay anyway, but there is no need to touch it). The tool's `references` and `OpenDesignLegOutput` are NOT changed.
 
 - [ ] **Step 3: Tests** (`tests/api/test_p34_design_leg_tool_db.py`)
 
 In the full-delegation test (~line 222–320, the one that asserts `leg["state"] == "open_awaiting_user"` and then replays):
 
 ```python
-            first_turn_id = refs["first_turn_id"]
-            assert first_turn_id is not None
-            first = await get_submission(conn, workspace_id=seeds["workspace_id"], turn_id=UUID(first_turn_id))
+            first_turn_id = turn_id_for_submission(
+                workspace_id=seeds["workspace_id"],
+                thread_id=seeds["thread_id"],
+                idempotency_key=f"design-leg-first-turn:{refs['leg_id']}:{seeds['turn_id']}",
+            )
+            first = await get_submission(conn, workspace_id=seeds["workspace_id"], turn_id=first_turn_id)
             assert first is not None
             assert first.derivation == "design_leg_first_turn"
             assert first.derived_from_turn_id == seeds["turn_id"]
@@ -361,7 +365,7 @@ In the full-delegation test (~line 222–320, the one that asserts `leg["state"]
             assert first.thread_id == seeds["thread_id"]
 ```
 
-and after the replay: `assert replay.references["first_turn_id"] == first_turn_id` and that `submissions_for_thread(...)` holds exactly ONE submission with `derivation == "design_leg_first_turn"`. If the seeded opening turn in this test has no submission row, seed one the way the exit-bridge test seeds the closing turn's submission (`tests/api/test_p37_exit_bridge_db.py` ~line 280–300) before invoking the tool. Add one more test: opening from a turn with NO submission returns `first_turn_id is None` and inserts nothing.
+and after the replay: `submissions_for_thread(...)` holds exactly ONE submission with `derivation == "design_leg_first_turn"` (the replayed open queued nothing new). If the seeded opening turn in this test has no submission row, seed one the way the exit-bridge test seeds the closing turn's submission (`tests/api/test_p37_exit_bridge_db.py` ~line 280–300) before invoking the tool. Add one more test: opening from a turn with NO submission inserts no derived submission (`submissions_for_thread` holds none with a derivation) and the leg is still `open_awaiting_user`.
 
 - [ ] **Step 4: Run, lint, commit**
 

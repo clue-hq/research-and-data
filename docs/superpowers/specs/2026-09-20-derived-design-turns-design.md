@@ -67,7 +67,7 @@ rely on. The append-only trigger on the table is untouched (the columns are set 
 3. calls `dispatch_next_thread_turn` — a no-op while the opening turn's own task is in flight; the
    worker offers the next turn when that task finishes, exactly as the redelivery does.
 
-The tool's references gain `first_turn_id` (the derived turn id, or `null` when skipped).
+The tool's references are UNCHANGED (ruling 2026-09-20: the profile pins the output model's schema digest, so a new reference would force `@6` + recipe 30 + a manual re-mint for a value the agent never reads). The tool logs `design_leg.first_turn_queued` with the derived turn id; the derived id is recomputable from the key.
 
 The leg runner, on a submission whose `derivation == "design_leg_first_turn"`:
 
