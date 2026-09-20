@@ -55,3 +55,19 @@
   `npm run design-system:build && npm run build` exit 0.
 - Not run: DB-gated suites, design subsystem suites. Nothing pushed. Branch = target + 3 commits
   (two memory notes, one lint fix).
+
+## Merge of origin/research-streaming, 2026-09-21 (founder: merge, then push)
+- 144 incoming commits since the 2026-09-19 rebase: design fleet parallelism (PR #72, Head-of-ABM
+  v59/v60, recipe 30, manual v6/v7, the alembic join `ac9c9e2e8`), design clarification cards,
+  derived design turns (`open_design_leg` queues the first turn), damascus lane notes, and more.
+- One conflict, `platform/api/clue_api/design_leg_wiring.py` import line: our post-rebase dedupe
+  vs the target's own dedupe plus `ProjectRunId`. Took the target's (superset). Merge `941ce5761`.
+- Upstream formatting drift fixed here as `f4b7be31f`: `ruff format` on
+  `frontend_read/project_memory.py` and `tests/api/test_frontend_read_project_memory_db.py`
+  (both identical to the target before the fix, so the target's own `make lint` fails on them).
+- Verified locally: `uv sync`; `ruff check .` clean; `ruff format --check .` clean after the fix;
+  `alembic heads` = one head (`5cac3234cfb3`); focused pytest (design turn targets, fleet wiring +
+  worker, contracts, gateway, chat schema/submission notes) green; frontend `npm run lint` 0 errors
+  (same 2 pre-existing warnings); `npm run design-system:build && npm run build` exit 0.
+- Not run: DB-gated suites, design subsystem suites. Pushed to `origin/codex/design-agent-v1`
+  as a plain fast-forward (the remote already carried the 2026-09-19 rebased history).
