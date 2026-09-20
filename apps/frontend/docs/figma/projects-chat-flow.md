@@ -10,6 +10,11 @@ fixtures only when no API base URL is configured.
 
 ## Chat appearance inconsistency register (2026-09-20)
 
+**Current typography:** the founder selected **14px font size with 22px line height**
+for the composer, sent-user text, assistant responses and inline mentions. These
+surfaces share the product chat body tokens. This supersedes the 15px body size
+recorded in the original review and verification below; attachment labels remain 14px.
+
 **Reference polish after the bubble colour change:** shared attachment chips use
 the existing `bg-page` surface (`#f8f9fb`), a quiet Gray Alpha 100 border and regular
 label weight. File glyphs are 14px on a transparent preview background, removing
@@ -138,7 +143,7 @@ ordering and existing chat behaviours. No backend contract or migration change
 has been identified as necessary by this review.
 
 The dedicated [chat token source](../../packages/design-system/source/production/components/chat.json)
-adds 15px body size and 22px line height through the generator. The published global
+provides 14px body size and 22px line height through the generator. The published global
 14px text token remains intact. `.messageText` covers durable and streaming prose;
 the transcript container keeps its metadata default. Mentions share `ChatMentionVisual`;
 file chips share `ChatAttachment` and the AI Elements inline variant. Long labels truncate

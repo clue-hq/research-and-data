@@ -1,5 +1,17 @@
 # Chat appearance review documented
 
+## Follow-up: smaller chat body type
+
+- Founder selected 14px text with the existing 22px line height. Updated the shared
+  product chat body-font-size source token from 15 to 14; composer, sent-user text,
+  assistant prose and inline mentions consume it. No global typography change.
+- Regenerated tokens and updated the canonical appearance register. Browser computed
+  styles confirmed 14px/22px on the composer and all four loaded user/assistant message
+  bodies and paragraphs; temporary background verification tab closed, no message sent.
+- Design-system generation, lint and production build passed. Lint retains the same
+  two unused-function warnings in canvasOperations.ts. No new tests for this token-only
+  visual adjustment. Closing state: complete and saved locally, without remote publication.
+
 ## Follow-up: soften references on grey bubbles
 
 - Founder reported attachment/tag chips looking out of place after the bubble colour
