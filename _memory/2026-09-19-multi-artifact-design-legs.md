@@ -187,11 +187,11 @@ the real ads as fixtures). All three new ads are now fully Free (6/6, 4/4, 7/7 c
 - Fleet workers restarted via the runbook (`restart-workers`; its trailing `status` still
   hangs — bounded with `timeout`); 4 processes × 3 slots up, logs clean. The runner is composed
   in `fleet_main` only, so the platform APIs needed no restart.
-- Residual (NOT fixed, discuss first): a crash between `mark_leg_running` and
-  `_leg_back_to_awaiting` (any exception out of `_dispatch_batch` other than the two typed
-  refusals) leaves the leg stuck `running` — `_contain_crash` terminalizes the TURN only. Today's
-  collision is exactly that path. A containment that puts the leg back when its runs are all
-  terminal would make this self-healing.
+- Residual CLOSED the same day (founder go): `_contain_crash` now also calls
+  `_leg_back_to_awaiting` (suppressed on its own failure; only moves a `running` leg), so a crash
+  between `mark_leg_running` and the normal hand-back no longer strands the leg. Test:
+  `test_a_crashed_dispatch_hands_the_leg_back_instead_of_leaving_it_running` (red on the old
+  containment). Workers restarted again after it.
 - Also fixed today on the frontend (`e710e2d88`): a person's own edit no longer re-opens the
   active tab / drops edit mode / reloads the chat (see `2026-09-20-freeze-bake-fill-parity.md`
   addendum 2).
