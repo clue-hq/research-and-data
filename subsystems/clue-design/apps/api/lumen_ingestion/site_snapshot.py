@@ -198,6 +198,39 @@ async def _persist_one(
             source_key=SITE_SNAPSHOT_SOURCE_KEY,
         )
 
+    # Preserve every successful source download, even if a section cannot yet
+    # mint. Otherwise repair requires another network capture, and video (which
+    # deliberately bypasses the image engine) has no durable custody at all.
+    assets: list[dict[str, Any]] = []
+    for download in getattr(snapshot, "downloads", None) or []:
+        if download.kind == "screenshot":
+            continue
+        data = base64.b64decode(download.bytes_b64, validate=True)
+        digest = _digest(data)
+        if digest != download.sha256:
+            raise ValueError(f"capture asset digest mismatch: {download.url}")
+        media_type = download.content_type or "application/octet-stream"
+        await register_design_bytes(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            data=data,
+            media_type=media_type,
+            source_key=SITE_SNAPSHOT_SOURCE_KEY,
+        )
+        assets.append({
+            "url": download.url,
+            "digest": digest,
+            "kind": download.kind,
+            "content_type": media_type,
+            "byte_length": len(data),
+            "origin": download.origin,
+            "dark_scheme": download.dark_scheme,
+        })
+    meta = _meta(snapshot)
+    meta["assets"] = assets
+    meta["diagnostics"] = list(getattr(snapshot, "diagnostics", None) or [])
+
     snapshot_id = site_snapshot_id(job_id, page_url)
     await dal.upsert_site_snapshot(
         conn,
@@ -211,7 +244,7 @@ async def _persist_one(
         screenshot_digest=screenshot_digest,
         viewport_width=_viewport_width(snapshot),
         captured_at=snapshot.fetched_at,
-        meta=_meta(snapshot),
+        meta=meta,
     )
     return SiteSnapshotRef(
         snapshot_id=snapshot_id,

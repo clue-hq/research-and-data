@@ -418,7 +418,8 @@ def segment_snapshot(snapshot: Any) -> SectionSegmentation:
     """
     return segment_page(
         getattr(snapshot, "html", "") or "",
-        page_url=getattr(snapshot, "page_url", "") or "",
+        page_url=(getattr(snapshot, "meta", None) or {}).get("final_url")
+        or getattr(snapshot, "page_url", "") or "",
         bands=measured_bands(getattr(snapshot, "meta", None)),
         skips=skipped_children(getattr(snapshot, "meta", None)),
         viewport_width=getattr(snapshot, "viewport_width", None),

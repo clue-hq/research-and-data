@@ -1150,9 +1150,8 @@ def _mint_page_fragments(
     because each page was individually under the cap. Pages are minted entry-page first, so what
     the cap keeps is the homepage — which is what anyone cloning a site wants.
 
-    Reads the LIVE capture rather than the persisted snapshot, deliberately: the rehost map needs
-    the downloaded BYTES, and ``design_site_snapshot`` stores the html, the stylesheets and the
-    screenshot but not the assets. Re-reading them would mean re-fetching somebody's site.
+    Reads the live capture to reuse bytes already in memory. The durable snapshot
+    also retains every downloaded asset and its exact URL for later repair/replay.
     """
     from lumen_ingestion.sections import mint as section_mint
     from lumen_ingestion.sections.segment import segment_snapshot
@@ -1259,7 +1258,11 @@ class _SnapshotView:
     def __init__(self, snapshot: Any, *, snapshot_id: "str | None") -> None:
         geometry = getattr(snapshot, "geometry", None)
         self.html = getattr(snapshot, "html", "") or ""
-        self.page_url = getattr(snapshot, "requested_url", "") or ""
+        # Relative references belong to the document that actually loaded,
+        # including redirects to www or a canonical product path.
+        self.page_url = (
+            getattr(snapshot, "final_url", "") or getattr(snapshot, "requested_url", "") or ""
+        )
         self.snapshot_id = snapshot_id
         self.viewport_width = _viewport_from_geometry(geometry)
         from .sections.bands import (

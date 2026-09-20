@@ -31,7 +31,7 @@ class Download(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str
-    kind: Literal["font", "image", "logo", "screenshot", "og_image"]
+    kind: Literal["font", "image", "logo", "screenshot", "og_image", "video"]
     content_type: str | None = None
     bytes_b64: str
     sha256: str

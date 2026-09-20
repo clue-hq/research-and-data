@@ -569,3 +569,46 @@ def test_a_dead_byte_store_costs_the_snapshots_and_nothing_else(
     assert len(loud) == 1, kit["diagnostics"]
     assert loud[0]["severity"] == "error"
     assert "not durable" in loud[0]["message"]
+
+
+def test_snapshot_keeps_unminted_media_dependencies_in_durable_custody(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """A refused section must not discard its source video or prevent a later repair."""
+    from lumen_api.fragments.refs import asset_url
+
+    snapshot = _snapshot()
+    video = b"\x1a\x45\xdf\xa3original-video"
+    snapshot.downloads.append(
+        Download(
+            url="https://cdn.example/hero.webm",
+            kind="video",
+            content_type="video/webm",
+            bytes_b64=base64.b64encode(video).decode(),
+            sha256=_sha(video),
+            origin="video",
+        )
+    )
+    snapshot.downloads.append(
+        Download(
+            url="https://cdn.example/customer.png?width=640",
+            kind="image",
+            content_type="image/png",
+            bytes_b64=base64.b64encode(PNG).decode(),
+            sha256=_sha(PNG),
+            origin="img",
+        )
+    )
+    (ref,) = persist_site_snapshots(
+        [snapshot], workspace_id=workspace_id, job_id=_job(workspace_id), storage=design_storage
+    )
+    loaded = read_site_snapshot(
+        design_storage, workspace_id=workspace_id, snapshot_id=ref.snapshot_id
+    )
+    assets = {item["url"]: item for item in loaded.meta["assets"]}
+    assert assets["https://cdn.example/hero.webm"]["digest"] == _sha(video)
+    assert assets["https://cdn.example/hero.webm"]["kind"] == "video"
+    assert assets["https://cdn.example/customer.png?width=640"]["digest"] == _sha(PNG)
+    blobs = DesignBlobStore(design_storage, workspace_id)
+    assert blobs.read(_sha(video)) == video
+    assert asset_url(_sha(video)) == f"/asset-store/{_sha(video)}"

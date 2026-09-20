@@ -215,6 +215,8 @@ def _download_kind(candidate) -> str:
     """The ``Download.kind`` an origin maps to — the snapshot's own three-way split."""
     if candidate is None:
         return "image"
+    if candidate.origin == "video":
+        return "video"
     if candidate.origin == "font":
         return "font"
     if candidate.origin == "logo-rung":

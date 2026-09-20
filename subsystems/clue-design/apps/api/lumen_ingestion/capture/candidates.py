@@ -54,7 +54,9 @@ from .parse import font_face_source_rungs
 
 #: Origin tags, in the order the collector emits them. Task 3 and the F2 clone harvest read
 #: these off the candidate, so they are part of this module's contract, not decoration.
-ORIGINS = ("logo-rung", "font", "img", "srcset", "picture-dark", "css-url", "svg-ref")
+ORIGINS = (
+    "logo-rung", "font", "img", "srcset", "picture-dark", "poster", "video", "css-url", "svg-ref"
+)
 
 #: ``net.ResourceKind`` for each origin — what byte cap the fetcher applies.
 _KIND_BY_ORIGIN = {
@@ -63,6 +65,8 @@ _KIND_BY_ORIGIN = {
     "img": "image",
     "srcset": "image",
     "picture-dark": "image",
+    "poster": "image",
+    "video": "video",
     "css-url": "image",
     "svg-ref": "image",
 }
@@ -154,6 +158,18 @@ def collect_asset_candidates(tree, base_url: str, stylesheets) -> CandidateHarve
     #     srcset rung, so nothing a page offered is left unfetched.
     for node in tree.css("img"):
         _add_image_references(node, base_url, add)
+
+    # A video source is a dependency of the cloned markup, even when it is
+    # decorative. Keep every source rendition plus the poster in original URL
+    # spelling after base resolution. The transport applies a separate byte cap.
+    for node in tree.css("video"):
+        poster = (node.attributes.get("poster") or "").strip()
+        if poster and not poster.startswith(("data:", "blob:")):
+            add(urljoin(base_url, poster), "poster", detail="video poster")
+        for source in [node, *node.css("source")]:
+            src = (source.attributes.get("src") or "").strip()
+            if src and not src.startswith(("data:", "blob:")):
+                add(urljoin(base_url, src), "video", detail="video source")
 
     # 4 — CSS url() from inline style attributes and every fetched sheet.
     for node in tree.css("[style]"):

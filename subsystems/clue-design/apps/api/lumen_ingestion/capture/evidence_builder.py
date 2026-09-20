@@ -388,6 +388,10 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # chose, the mask a stylesheet pulls, and the sprite an inline <svg> points at. They are
     # stored, not narrated: nothing here invents evidence for them.
     for entry in snapshot.downloads:
+        if entry.kind == "video":
+            # Retained by site_snapshot and the fragment byte rehoster. The
+            # image/font ingest engine cannot analyze video; do not mislabel it.
+            continue
         queue(
             entry.sha256,
             entry.url,
