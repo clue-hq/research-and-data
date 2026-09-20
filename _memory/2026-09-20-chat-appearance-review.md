@@ -1,5 +1,20 @@
 # Chat appearance review documented
 
+## Correction: 14px/20px applies to accounts table
+
+- Founder clarified the prior request meant accounts table typography, not chat.
+  Restored chat to the accepted 14px/22px. AccountsTable now uses canonical
+  text-default tokens (14px/20px) for regular headers/cells and medium company
+  names/badges, scoped in accounts-table.module.css. Shared account readability
+  styles for other controls and detail surfaces stay intact.
+- Updated the current chat typography record and regenerated tokens. Live accounts
+  table measured 14px/20px in headers, cells, names and badges (400/500 weight hierarchy
+  retained); screenshot reviewed and Accounts kept open. The other chat tab measured
+  14px/22px on composer and message body, confirming the mistaken trial was undone.
+- Design-system generation, lint and production build passed; the same two existing
+  canvasOperations warnings remain. Three existing accounts-table layout tests passed.
+  Closing state: correction complete, saved locally without remote publication.
+
 ## Follow-up: tighter chat line height trial
 
 - Founder requested trying 14px font with 20px line height and seeing the result.
