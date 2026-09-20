@@ -128,6 +128,15 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.agent_turn_submission import (
+    DERIVATION_DESIGN_LEG_FIRST_TURN,
+    DERIVATION_DESIGN_LEG_REDELIVERY,
+    dispatch_next_thread_turn,
+    get_submission,
+    insert_submission,
+    submission_context_refs,
+    turn_id_for_submission,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.turn_action import (
@@ -143,6 +152,7 @@ from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
 from clue_design.documents import create_document, get_document
 from clue_design.errors import DesignNotFoundError
+from clue_obs import get_logger
 from clue_research.identity import get_account
 from clue_research.membership import projects_for_accounts
 from clue_storage import StorageBackend
@@ -179,6 +189,8 @@ __all__ = [
     "build_design_leg_tools",
     "design_leg_ref",
 ]
+
+log = get_logger("clue_api.design_leg_tools")
 
 #: The §2.3 bundle's own media type — one artifact kind, one name.
 DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE = "application/vnd.clue.design-delegation-bundle+json"
@@ -718,6 +730,9 @@ class OpenDesignLegTool(Tool):
                     event_type=TurnEventType.LEG_REOPENED,
                     leg_id=resolved.leg_id,
                 )
+                await self._queue_first_turn(
+                    conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"])
+                )
             elif resolved.existing_leg is not None:
                 leg = resolved.existing_leg
                 created = False
@@ -824,6 +839,9 @@ class OpenDesignLegTool(Tool):
                     event_type=TurnEventType.LEG_OPENED,
                     leg_id=resolved.leg_id,
                 )
+                await self._queue_first_turn(
+                    conn, ctx=ctx, turn=resolved.turn, leg_id=str(leg["id"])
+                )
             # The set is served from the durable child rows on EVERY path — the fresh one
             # (written just above, in this transaction), a replay, and a reopen — so the
             # answer is what the leg actually holds rather than what this call asked for.
@@ -854,6 +872,59 @@ class OpenDesignLegTool(Tool):
                 "reopened": reopened,
             },
         )
+
+    async def _queue_first_turn(
+        self, conn: AsyncConnection, *, ctx: ToolContext, turn: TurnIdentity, leg_id: str
+    ) -> str | None:
+        """Spec 2026-09-20 §2.3: the leg's first design turn, queued in the transaction that
+        opened (or reopened) the leg, from the opening turn's own submission — so nobody has to
+        say "go". Derived under ONE key per (leg, opening turn): a replayed open converges on
+        the same submission. A turn with no submission of its own (machine-originated) queues
+        nothing and the leg waits for the user exactly as before."""
+
+        submission = await get_submission(conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id)
+        if submission is None:
+            log.info(
+                "design_leg.first_turn_skipped_no_submission",
+                leg_id=leg_id,
+                turn_id=str(turn.turn_id),
+            )
+            return None
+        key = f"design-leg-first-turn:{leg_id}:{turn.turn_id}"
+        first_turn_id = turn_id_for_submission(
+            workspace_id=ctx.workspace_id, thread_id=turn.thread_id, idempotency_key=key
+        )
+        context_refs = await submission_context_refs(
+            conn, workspace_id=ctx.workspace_id, turn_id=turn.turn_id
+        )
+        await insert_submission(
+            conn,
+            turn_id=first_turn_id,
+            workspace_id=ctx.workspace_id,
+            project_id=submission.project_id,
+            thread_id=turn.thread_id,
+            submitted_by_user_id=submission.submitted_by_user_id,
+            submitted_via_membership_id=submission.submitted_via_membership_id,
+            onboarding_input_id=submission.onboarding_input_id,
+            message_artifact_key=submission.message_artifact_key,
+            message_sha256=submission.message_sha256,
+            idempotency_key=key,
+            context_refs=context_refs,
+            derivation=DERIVATION_DESIGN_LEG_FIRST_TURN,
+            derived_from_turn_id=turn.turn_id,
+        )
+        # A no-op while the opening turn's own task is in flight; the worker offers the next
+        # turn when that task finishes (the redelivery relies on the same property).
+        await dispatch_next_thread_turn(
+            conn, workspace_id=ctx.workspace_id, thread_id=turn.thread_id
+        )
+        log.info(
+            "design_leg.first_turn_queued",
+            leg_id=leg_id,
+            turn_id=str(turn.turn_id),
+            first_turn_id=str(first_turn_id),
+        )
+        return str(first_turn_id)
 
     async def _leg_document_ids(
         self,
@@ -1491,13 +1562,6 @@ class FinishDesignLegTool(Tool):
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
         assert isinstance(inputs, FinishDesignLegInput)
         self._require_runtime()
-        from clue_api.agent_turn_submission import (
-            DERIVATION_DESIGN_LEG_REDELIVERY,
-            dispatch_next_thread_turn,
-            insert_submission,
-            submission_context_refs,
-            turn_id_for_submission,
-        )
         from clue_api.agent_turn_wiring import DbAgentHistoryStore
         from clue_api.design_leg_wiring import design_leg_run_id
 
