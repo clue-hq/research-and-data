@@ -1670,3 +1670,62 @@ def test_recovered_footer_hint_cannot_borrow_the_original_page_footer_crop():
     original_footer = segmentation.by_role("footer")[0]
     recovered = replace(original_footer, index=20, dom_path=(1, 1, 2, 0))
     assert crop_extent(segmentation, recovered) is None
+
+
+def test_source_root_font_variable_class_is_preserved_without_its_layout():
+    sheets = [_Sheet("s.css", '''
+        .font_variable { --font-body-family: "Body Font"; min-height: 100vh }
+        html { font-family: var(--font-body-family), serif }
+    ''')]
+    matched = rules_for_subtree(
+        sheets, subtree_html=HERO_HTML, source_root_classes=("font_variable",)
+    )
+    assert ':root {--font-body-family: "Body Font";}' in matched.css
+    assert "100vh" not in matched.css
+    assert matched.root_variable_rules == 1
+    assert matched.rules_kept == 2
+
+
+def test_root_variable_alias_preserves_layer_media_importance_and_source_order():
+    matched = rules_for_subtree([_Sheet("s.css", '''
+        @layer fonts { .font_variable { --type: Wide !important } }
+        @media (max-width: 40em) { .font_variable { --type: Compact } }
+    ''')], subtree_html=HERO_HTML, source_root_classes=("font_variable",))
+    assert "@layer fonts" in matched.css and "@media (max-width: 40em)" in matched.css
+    assert "--type: Wide !important" in matched.css
+    assert matched.css.index("Wide") < matched.css.index("Compact")
+    assert matched.root_variable_rules == 2
+
+
+@pytest.mark.parametrize("selector", [".other", ".font_variable:hover", ".font_variable .child"])
+def test_root_variable_alias_does_not_guess_other_classes_or_state(selector):
+    matched = rules_for_subtree(
+        [_Sheet("s.css", selector + " { --font-body: Unknown }")],
+        subtree_html=HERO_HTML, source_root_classes=("font_variable",)
+    )
+    assert ":root" not in matched.css
+    assert matched.root_variable_rules == 0
+
+
+def test_mint_supplies_captured_root_classes_and_rehosts_their_variable_assets():
+    html = BANDED_PAGE.replace('<html>', '<html class="font_variable">')
+    outcome, recorder = _mint(html, stylesheets=[_Sheet("https://cdn.example/s.css", '''
+        .font_variable { --font-body: Brand; --texture: url(texture.png) }
+        html { font-family: var(--font-body) }
+    ''')], captured={"https://cdn.example/texture.png": CapturedAsset(
+        url="https://cdn.example/texture.png", data=b"texture", content_type="image/png"
+    )})
+    assert len(outcome.minted) == 4
+    call = recorder.created[0]
+    assert "--font-body: Brand" in call["css"]
+    assert "texture.png" in call["rehosted"]
+    assert call["provenance"]["css"]["root_variable_rules"] == 1
+
+
+def test_missing_source_root_variable_asset_still_refuses_custody():
+    html = BANDED_PAGE.replace('<html>', '<html class="font_variable">')
+    outcome, _ = _mint(html, stylesheets=[_Sheet("s.css", '''
+        .font_variable { --texture: url(/missing.png) }
+    ''')])
+    assert not outcome.minted
+    assert any(d.get("reference") == "/missing.png" for d in outcome.diagnostics)

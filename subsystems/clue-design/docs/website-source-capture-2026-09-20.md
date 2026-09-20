@@ -30,8 +30,8 @@ Offline renders are diagnostic staging, without the app’s full theme/runtime a
 
 ## Repairs and remaining work
 
-- Shipped locally: source URL resolution, video custody, quoted SVG references, kit capture associations, bounded multipage discovery, durable coverage, fair fragment allocation, React-comment-safe slot indexing, and bounded independent-section recovery from refused framework wrappers.
-- Still needed: preserve inherited root/ancestor typography and custom-property context; distinguish source content from transient support/consent overlays; validate recovered section context and supported responsive-media fallbacks.
+- Shipped locally: source URL resolution, video custody, quoted SVG references, kit capture associations, bounded multipage discovery, durable coverage, fair fragment allocation, React-comment-safe slot indexing, bounded independent-section recovery from refused framework wrappers, and captured HTML-root font-variable preservation.
+- Still needed: preserve broader body/ancestor context and compound/state-qualified root rules; distinguish source content from transient support/consent overlays; validate recovered section context and supported responsive-media fallbacks.
 - Compare frozen source and production output at matching viewport sizes and supported interaction states. No brand has received a final fidelity pass.
 - Import through the existing workspace-scoped ingestion/storage seams as new draft versions after the isolated integration checks. Do not overwrite prior kit versions or approve fragments automatically.
 - The live generation fleet still needs the standard Docker sandbox runtime. Docker, Colima and OrbStack were not found on this Mac during this pass. A user question about providing that runtime is pending; no sandbox requirement has been disabled.
@@ -45,6 +45,28 @@ Offline renders are diagnostic staging, without the app’s full theme/runtime a
 - Wrapper recovery regression matrix: 350 passed, including a pipeline-level fair-budget/partial-status check and non-dependency refusal/backstop tests, and a guard against borrowing the original footer crop for a recovered section. New-line Ruff findings: zero after import/line-length cleanup; full touched files retain inherited findings.
 - Frozen four-brand re-probe: Clue 8, Conduit 11, AWS 12, Google Cloud 10 admitted fragments. Google raw staging rendered at 1440 and 375 pixels with matching document scroll widths (no horizontal overflow in those views). Hero, source imagery and responsive layout were visually inspected. Carousel/tab interaction and motion were not verified; lazy offscreen image counts still must not be treated as broken dependencies.
 - Library and offline probe data live under ignored `.local-setup/website-capture/`. No source media was committed, no push occurred, and the original four-instance checkout was not changed.
+
+## Source-root typography follow-up
+
+Conduit attaches four font-variable classes to its source `<html>`. Their definitions were
+absent from section CSS even though the font bytes were captured. The extractor now aliases
+custom-property declarations from observed, single-class root rules onto the existing fragment
+root, preserving media/layer nesting, importance and source order. It does not copy the
+original document's layout box or flatten body/ancestor/compound-state context. Variable asset
+URLs remain subject to the existing rehosting gate; missing dependencies still refuse.
+
+Offline browser comparison used the frozen source HTML/CSS and before/after fragment builds,
+with all outbound requests intercepted. At 1440 pixels, 71 matched heading/paragraph samples
+now agree on font family, size, line height and weight; at 375 pixels, 69 agree. Before the fix,
+none of those samples matched the source font family (Times fallback). Source and repaired
+pages loaded the expected bodyFont/seasonFont families without font-load errors; desktop Inter
+also loaded. First-viewport screenshots were visually compared. This verifies this typography
+repair, not full-page interaction, animation or production generation fidelity.
+
+Conduit still admits 11/12 fragments, with the empty embed shell refused. Source root-rule
+inventory found four affected definitions in Conduit and zero in the other three homepages.
+The regression matrix passes 357 checks. Detailed immutable before/after evidence is under
+`.local-setup/website-capture/fragment-probe-20260920-root-vars/conduit/`.
 
 ## Selected official pages
 

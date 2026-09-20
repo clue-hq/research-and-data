@@ -756,7 +756,10 @@ def _mint_one(
         return None
     subtree = node.html or ""
 
-    matched = rules_for_subtree(stylesheets, subtree_html=subtree)
+    root_classes = ((tree.root.attributes.get("class") or "").split() if tree.root else ())
+    matched = rules_for_subtree(
+        stylesheets, subtree_html=subtree, source_root_classes=root_classes
+    )
     harvest = build_reference_harvest(
         subtree_html=subtree,
         page_url=segmentation.page_url,
@@ -1420,6 +1423,7 @@ def _provenance(
             "rules_kept": matched.rules_kept,
             "sheets_read": matched.sheets_read,
             "byte_length": matched.byte_length,
+            "root_variable_rules": matched.root_variable_rules,
         },
         "slots": list(detected.keys),
         "slot_notes": list(detected.notes),

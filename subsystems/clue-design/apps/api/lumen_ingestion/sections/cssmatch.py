@@ -27,10 +27,14 @@ Three families are kept unconditionally, because they have no selector to match 
   properties there. The subtree contains no ``<html>``, so a naive match would drop the
   section's whole colour scheme before the scoper ever got to re-anchor it onto the wrapper.
 
-The output is CSS text in source order, sheet by sheet, so the cascade a page relied on survives
-the extraction. Nothing here rewrites a declaration: references, scoping and the markup-breakout
-gate are the scoper's job, and this module must not pre-empt a fail-closed check by reformatting
-what it will read.
+Source-html font-variable classes need one additional step: a single observed root class may
+hold inherited custom properties while being absent from every section subtree. Those property
+definitions receive a :root alias in their original order and conditional/layer context. Other
+root-class declarations (such as document height) do not move. Compound/state selectors and
+body/ancestor inheritance are not flattened.
+
+The output is CSS text in source order, sheet by sheet. References, final fragment scoping and
+the markup-breakout gate remain the scoper's job, including for the root-variable aliases.
 """
 
 from __future__ import annotations
@@ -80,6 +84,8 @@ class MatchedCss:
     #: ``/img/x.png`` in a stylesheet served from a CDN is a CDN url, not a page-relative one —
     #: so the reference harvest needs the blocks kept apart to know each one's base.
     blocks: tuple[tuple[str, str], ...] = ()
+    #: Source-html class rules whose custom properties were re-anchored to the wrapper.
+    root_variable_rules: int = 0
 
     @property
     def byte_length(self) -> int:
@@ -93,9 +99,10 @@ class _Inventory:
     tags: frozenset[str]
     ids: frozenset[str]
     classes: frozenset[str]
+    source_root_classes: frozenset[str] = frozenset()
 
     @classmethod
-    def of(cls, html: str) -> "_Inventory":
+    def of(cls, html: str, source_root_classes: Sequence[str] = ()) -> _Inventory:
         tree = HTMLParser(html or "")
         tags: set[str] = set()
         ids: set[str] = set()
@@ -112,11 +119,13 @@ class _Inventory:
             if element_id:
                 ids.add(element_id)
             classes.update((node.attributes.get("class") or "").split())
-        return cls(frozenset(tags), frozenset(ids), frozenset(classes))
+        return cls(
+            frozenset(tags), frozenset(ids), frozenset(classes), frozenset(source_root_classes)
+        )
 
 
 def rules_for_subtree(
-    stylesheets: Sequence[Any], *, subtree_html: str
+    stylesheets: Sequence[Any], *, subtree_html: str, source_root_classes: Sequence[str] = ()
 ) -> MatchedCss:
     """The page's rules that could style this subtree, in source order.
 
@@ -124,7 +133,7 @@ def rules_for_subtree(
     never imports the snapshot read seam — the same discipline Task 11 applied to the segmenter,
     and for the same reason: a pure function must not drag the DAL in behind it.
     """
-    inventory = _Inventory.of(subtree_html)
+    inventory = _Inventory.of(subtree_html, source_root_classes)
     counter = _Counter()
     blocks: list[tuple[str, str]] = []
     notes: list[str] = []
@@ -146,6 +155,7 @@ def rules_for_subtree(
         sheets_read=sheets_read,
         notes=tuple(notes),
         blocks=tuple(blocks),
+        root_variable_rules=counter.root_variables,
     )
 
 
@@ -153,6 +163,7 @@ class _Counter:
     def __init__(self) -> None:
         self.considered = 0
         self.kept = 0
+        self.root_variables = 0
 
 
 def _keep_rules(
@@ -180,10 +191,20 @@ def _keep_rule(
     if isinstance(rule, ast.QualifiedRule):
         counter.considered += 1
         selector = tinycss2.serialize(rule.prelude).strip()
-        if not _selector_could_match(selector, inventory):
+        regular = _selector_could_match(selector, inventory)
+        root_variables = _source_root_custom_properties(rule, inventory)
+        if not regular and not root_variables:
             return ""
         counter.kept += 1
-        return f"{selector} {{{tinycss2.serialize(rule.content)}}}"
+        out = [f"{selector} {{{tinycss2.serialize(rule.content)}}}"] if regular else []
+        if root_variables:
+            # A single class and :root both have specificity (0, 1, 0). The existing scoper
+            # re-anchors :root to the fragment wrapper. Keep this at the original rule's
+            # position and conditional/layer nesting; move only inherited custom properties,
+            # never the original document's height, background, overflow or layout box.
+            out.append(f":root {{{root_variables}}}")
+            counter.root_variables += 1
+        return "\n".join(out)
 
     if isinstance(rule, ast.AtRule):
         return _keep_at_rule(rule, inventory, counter, notes, sheet_url)
@@ -193,6 +214,32 @@ def _keep_rule(
         # parse and render the rest, and so do we. Named, not swallowed.
         notes.append(f"skipped unparseable css in {sheet_url or 'a stylesheet'}: {rule.message}")
         return ""
+    return ""
+
+
+def _source_root_custom_properties(rule: ast.QualifiedRule, inventory: _Inventory) -> str:
+    """Preserve definitions from an observed html-root class, without guessing root state.
+
+    Next's font-variable classes are a common example. Only a single class selector is
+    equivalent in specificity to :root. Compound, ancestor and pseudo-class selectors need
+    their original context and are deliberately not flattened. Body/other ancestors are not
+    root classes either: collapsing their inheritance levels would change the cascade.
+    """
+    if not inventory.source_root_classes:
+        return ""
+    for selector in _split_selector_list(tinycss2.serialize(rule.prelude)):
+        tokens = [token for token in tinycss2.parse_component_value_list(selector)
+                  if token.type not in ("whitespace", "comment")]
+        if (len(tokens) == 2 and isinstance(tokens[0], ast.LiteralToken)
+                and tokens[0].value == "." and isinstance(tokens[1], ast.IdentToken)
+                and tokens[1].value in inventory.source_root_classes):
+            declarations = tinycss2.parse_declaration_list(
+                rule.content, skip_comments=True, skip_whitespace=True
+            )
+            return tinycss2.serialize([
+                declaration for declaration in declarations
+                if isinstance(declaration, ast.Declaration) and declaration.name.startswith("--")
+            ])
     return ""
 
 
