@@ -59,7 +59,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # promoted to @2 in @17 (genweb slice 2 — a document-less open births the web document), to @3
     # in @18 (genad — a document-less ``doc_kind='scene'`` open births the ad document at a named
     # format) and to @4 in @19 (genad2 — the scene births ZERO pages and the design agent authors
-    # them, so the format inputs are gone), and to @5 in @29 (multi-artifact legs — the input
+    # them, so the format inputs are gone), and to @5 in @30 (multi-artifact legs — the input
     # carries an ``artifacts`` list, so one open births one document per item). Opening a leg is
     # still a durable write with no spend and no dispatch; each birth is one governed create keyed
     # on the same replay identity as the leg, so a retried delegation converges on one leg and its

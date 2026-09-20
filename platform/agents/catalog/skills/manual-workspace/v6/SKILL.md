@@ -3,7 +3,7 @@ schema_version: "1"
 kind: skill
 name: manual-workspace
 version: v6
-summary: "Manual: your folders and mounts, every card the turn places for you, and how ls, read_file, glob, grep and edit_file really behave."
+summary: "Manual: your folders and mounts, the project's attachments, every card the turn places for you, and how ls, read_file, glob, grep and edit_file really behave."
 roles:
   - head_of_abm
 readiness_requirements: []
@@ -20,6 +20,7 @@ inside it. There is no host filesystem, no shell and no network here.
 
 | Folder | You may | What it is |
 | --- | --- | --- |
+| `attachments/` | read | every file anyone has attached in this project, under its own filename. Read only. |
 | `brand/` | read | the brand library: what the platform researched about this brand. Read only. |
 | `project/` | read and write | this project's library, shared by every thread of the project. Three paths under it are yours to write; the rest is compiled. |
 | `inputs/` | read | this turn's human message and the refs attached to it. Rewritten every turn. |
@@ -37,6 +38,35 @@ there lands a new version of the document the path names and refreshes the file 
 Which three paths are writable, and what every other path refuses, is in
 `.deepagent/skills/manual-documents-decisions/v6/SKILL.md`. You still cannot edit a brand
 knowledge file: `brand/` is read only.
+
+A script run by `run_python` sees the same tree at `/workspace` and answers to the same rules,
+with two differences. It may write the formats your own `write_file` may not — `.csv`, `.xlsx`,
+`.docx`, `.pptx`, `.pdf` and `.png` — because producing those files is what the sandbox is for.
+And it writes under `scratch/`, `work/` and `outputs/` only: `project/` is read-only to a script,
+so a project document is still written with `write_file`. Everything a run leaves behind is
+checked against this policy the moment it exits, and a file outside the extensions, over the
+per-file ceiling, or over the quota is deleted; the result's `files_written` and `files_removed`
+say what survived and what went. How to write the script is
+`.deepagent/skills/code-execution/v1/SKILL.md`.
+
+## `attachments/` — every file attached in this project
+
+- One folder, one copy per file, at `attachments/<filename>`. Every file anyone has attached in
+  any thread of this project is here, not just the ones attached to this turn; the turn's message
+  names the ones attached to it, with the path and the tool that opens each.
+- Nothing here is a summary, a conversion or an extract. It is the file itself, exactly as it was
+  uploaded. Nothing else in your context describes its contents, so a file you have not opened is
+  a file you have not read.
+- A text file — `.md` or `.txt`, and a small `.csv` or `.json` — opens with `read_file`.
+- A PDF, a Word file, a PowerPoint deck, an Excel workbook, an image, and any text file over the
+  per-file read ceiling open with `run_python`. `read_file` refuses them: over the ceiling is
+  `quota_exceeded`, and bytes that are not UTF-8 text are `permission_denied`.
+- The folder is read only, for you and for a script. It is also absent from a project nobody has
+  attached anything to, which is the ordinary state of a new project; `ls` shows it when it
+  exists.
+
+The recipes for opening each kind of file, and the rules about what you may say afterwards, are
+`.deepagent/skills/code-execution/v1/SKILL.md`.
 
 ## `brand/` the brand library
 
@@ -113,7 +143,7 @@ errors are plain strings, listed in `.deepagent/skills/manual-errors/v6/SKILL.md
 | Tool | What to know |
 | --- | --- |
 | `ls(path)` | a flat file walk. `is_dir` is always false, for every entry, always. There are no directory entries in a listing. The root is allowed. |
-| `read_file(file_path, offset, limit)` | `offset` and `limit` are in **lines**, not bytes. The default window is the first 2,000 lines. A file over the per file byte quota is refused, not truncated. Batch your reads: issue the reads you need in one step. |
+| `read_file(file_path, offset, limit)` | `offset` and `limit` are in **lines**, not bytes. The default window is the first 2,000 lines. A file over the per file byte quota is refused, not truncated, and a file that is not UTF-8 text is refused too — both open with `run_python` instead. Batch your reads: issue the reads you need in one step. |
 | `write_file(file_path, content)` | whole file replace, under a writable prefix and an allowed extension only. |
 | `edit_file(file_path, old_string, new_string)` | the source text must appear exactly once. Zero matches and more than one match are both refused. `replace_all=true` is in the schema and is refused outright. |
 | `glob(pattern, path)` | plain filename matching over a flat list, not path globbing. `*` crosses `/`, and `**` is just two stars. |

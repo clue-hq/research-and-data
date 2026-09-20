@@ -45,6 +45,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `read_discovery_run@2` | read | no | no | Review the discovery run |
 | `read_project_accounts@1` | read | no | no | Review the project's accounts |
 | `record_interview_answer@1` | spend | yes | no | Save your answer |
+| `run_python@1` | write | no | no | Complete a project step |
 | `submit_ingestion@1` | spend | yes | no | Complete a project step |
 
 ## draft_account_research_directive@5
@@ -1125,6 +1126,57 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** stage0-interview v33 section 6, "Record what they told you".
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v6/SKILL.md`, `.deepagent/skills/manual-claims/v6/SKILL.md`.
+
+## run_python@1
+
+**What it does.** Run a short Python script in a locked-down container over this turn's workspace. Use it to read files that plain text tools cannot open — PDFs, Word documents, slide decks, spreadsheets — and to do arithmetic or produce a CSV, a chart or a report. The script's working directory holds the same folders your file tools use: `attachments/` (read-only) holds every file anyone has attached in this project, `project/` and `brand/` are read-only too, and `scratch/`, `work/` and `outputs/` are yours to write. Write a file if you want to keep it; print what you want to read back. There is no network, so do not try to download anything, and nothing outside those folders exists. Output longer than 16 KB is written to a file and the result tells you its path. You get a few runs per turn, and the result says how many are left, so plan the script before you call. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#run_python
+
+- Effect class: `write`.
+- Spends: no.
+- Opens a human gate: no.
+- Replay identity: this operation's journaled receipt.
+- Pins the call is bound to: `project`.
+- Journal-safe input fields: `code`, `note`, `timeout_s`.
+- The human sees: "Complete a project step".
+
+**Inputs**
+
+| Field | Type | Default | Bounds | What it is |
+| --- | --- | --- | --- | --- |
+| `code` | `str` | required | min_length=1, max_length=65536 | The whole script, as source. It runs with no network and no arguments; anything it needs it reads from the workspace, and anything it produces it prints or writes to a file. |
+| `timeout_s` | `float or None` | `None` | gt=0 | Ask for *less* wall-clock time than the operator allows — useful for a probe you expect to be instant. It is clamped to the operator's ceiling, so it can never buy more. |
+| `note` | `str or None` | `None` | max_length=200 | One line saying what this run is for, carried into the journal beside the code. |
+
+**Outputs**
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `exit_code` | `int or None` | The script's exit status; `None` exactly when the run timed out. |
+| `timed_out` | `bool` | — |
+| `duration_ms` | `int` | — |
+| `stdout` | `str` | The script's stdout, up to `INLINE_OUTPUT_BUDGET_BYTES`. |
+| `stdout_spilled_to` | `str or None` | Workspace-relative path of the whole stdout when it was larger than the inline budget. |
+| `stdout_truncated` | `bool` | The container's own output cap cut this stream before the tool ever saw the end of it. |
+| `stderr` | `str` | — |
+| `stderr_spilled_to` | `str or None` | — |
+| `stderr_truncated` | `bool` | — |
+| `files_written` | `tuple[dict[str, object], ...]` | `{"path": …, "size": …}` for every file this run wrote or changed and the policy kept. |
+| `files_removed` | `tuple[dict[str, str], ...]` | `{"path": …, "reason": …}` for everything the post-run sweep took back out. |
+| `runs_remaining` | `int` | How many runs this turn may still take. |
+
+**Refusals**
+
+| Code | Next move |
+| --- | --- |
+| `sandbox_unavailable` | Tell the human you cannot open the file on this deployment, and name the file; do not describe contents you never read. No run was spent. |
+| `workspace_unavailable` | Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools. |
+| `run_budget_exhausted` | Say what you have read so far and what is left, and do the rest in one script on the next turn. |
+
+**Afterwards.** One script has run in the sandbox over this turn's workspace and is gone. What it printed is in stdout, or in the file stdout_spilled_to names when it printed more than the inline budget; what it left on disk is in files_written, and anything the workspace policy took back out is in files_removed. Nothing outside your own workspace changed, and runs_remaining says how many runs this turn has left. A file you have not opened is a file you have not read: do not describe an attachment from its name. The script itself is capped at 65,536 characters, which is a validation error rather than a refusal — split the work across runs instead of writing one enormous script.
+
+**Taught by.** code-execution v1 section 1, "When to run code, when not to".
+
+**See also.** `.deepagent/skills/manual-workspace/v6/SKILL.md`, `.deepagent/skills/manual-limits/v6/SKILL.md`.
 
 ## submit_ingestion@1
 

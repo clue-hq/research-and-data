@@ -183,7 +183,13 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # for the first time at `head-of-abm@v58`, so a turn can open a PDF, a deck or a spreadsheet the
 # human attached instead of guessing from its filename. v28 stays the exact replay input for
 # turns pinned to it.
-CONVERSATION_RECIPE_VERSION = 29
+# Revision 30 (multi-artifact legs) re-pins one address: ``open_design_leg`` moves to ``@5``, the
+# contract `head-of-abm@v59` grants — the top-level ``title`` is gone and the input carries an
+# ``artifacts`` list, so one open births one document per item. ``@4`` leaves the slot rather than
+# stand beside ``@5``, for the reason revision 22 recorded: one version per ``(kind, key)``
+# resolves, so both at once is a ``conflicting_requirement``. ``run_python@1`` stays where
+# revision 29 put it. v29 stays the exact replay input for turns pinned to it.
+CONVERSATION_RECIPE_VERSION = 30
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were
