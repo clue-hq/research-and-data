@@ -70,7 +70,10 @@ from clue_agents import (
 from clue_agents.ports import INTERRUPTED_ASSISTANT_NOTICE
 from clue_agents.turns import AgentModelCallStatus
 from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnScopePinRow
-from clue_api.agent_turn_submission import AgentTurnSubmissionRow
+from clue_api.agent_turn_submission import (
+    DERIVATION_DESIGN_LEG_FIRST_TURN,
+    AgentTurnSubmissionRow,
+)
 from clue_api.agent_turn_wiring import (
     DbAgentContextReceiptStore,
     DbAgentTurnJournal,
@@ -1347,13 +1350,25 @@ class DesignLegTurnRunner:
             # Every exit category is a judgment about the INCOMING message (lock-in, out-of-scope,
             # abandon), so the judgment runs pre-dispatch: an exiting turn spends nothing on the
             # design lane. The fail-safe envelope (P3.6) means a broken judge can only continue.
-            exit_decision = await self._judge_exit(
-                leg=leg,
-                prior_history=prior_history,
-                user_message_ref=user_message_ref,
-                focus_refs=focus_refs,
-                leg_documents=leg_documents,
-            )
+            if submission.derivation == DERIVATION_DESIGN_LEG_FIRST_TURN:
+                # Spec 2026-09-20 §2.3: the leg's first turn is the ask that opened it, queued
+                # by open_design_leg. Nobody has spoken ON the leg yet, so there is nothing to
+                # judge, and it addresses every document of the leg.
+                log.info(
+                    "design_leg.first_turn",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    documents=len(leg_documents),
+                )
+                exit_decision: ExitDecision | None = None
+            else:
+                exit_decision = await self._judge_exit(
+                    leg=leg,
+                    prior_history=prior_history,
+                    user_message_ref=user_message_ref,
+                    focus_refs=focus_refs,
+                    leg_documents=leg_documents,
+                )
             if exit_decision is not None and exit_decision.action == "finish":
                 assert exit_decision.reason is not None  # decide_exit always maps a close
                 return await self._exit_leg(

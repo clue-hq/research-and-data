@@ -21,7 +21,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -104,6 +104,15 @@ class _FakeLane:
                     }
                 ),
             )
+
+
+class _BatchFakeLane(_FakeLane):
+    """A fake lane that also answers the multi-document seam (§3.3's ``drive_batch``),
+    completing every sibling the turn dispatched in the order it was handed them."""
+
+    async def drive_batch(self, *, envelopes: Any) -> None:
+        for envelope in envelopes:
+            await self.drive(envelope=envelope)
 
 
 class _LaneThatMustNotRun:
@@ -199,6 +208,8 @@ async def _submit_message(
     message: str,
     previous_turn_outcome: str | None = None,
     focus_refs: tuple[DomainObjectRef, ...] = (),
+    derivation: str | None = None,
+    derived_from_turn_id: UUID | None = None,
 ) -> AgentTurnSubmissionRow:
     turn_id = uuid5(NAMESPACE_URL, f"p34e:{label}:turn")
     captured = await persist_user_turn(
@@ -225,6 +236,8 @@ async def _submit_message(
         idempotency_key=f"p34e-{label}",
         context_refs=focus_refs,
         previous_turn_outcome=previous_turn_outcome,
+        derivation=derivation,
+        derived_from_turn_id=derived_from_turn_id,
     )
     return submission
 
@@ -992,5 +1005,130 @@ def test_leg_history_is_leg_scoped_and_head_of_abm_never_ingests_it(
                 thread_id=seeds["thread_id"],
             )
             assert [item.turn_id for item in hoabm_history] == [strategy_turn]
+
+    run_async(scenario())
+
+
+def test_the_first_turn_of_a_leg_runs_every_document_without_the_judge(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec 2026-09-20 §2.3: the leg's first turn is the ask that OPENED the leg, queued by
+    ``open_design_leg`` as a derived submission. Nobody has spoken on the leg yet, so there is
+    nothing to judge — the exit judge is never asked — and the turn addresses every document
+    of the leg. The user row stays (ruling 2026-09-20: only the transcript hides the derived
+    bubble), so the turn's thread messages read ``["user", "assistant"]`` like any other.
+
+    The control at the end proves the skip is the DERIVATION's doing and not a dead judge:
+    the very same runner, on an ordinary (non-derived) message, reaches the judge.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="firstturn")
+            lane = _BatchFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            judged: list[dict[str, Any]] = []
+
+            async def judge(**kwargs: Any) -> None:
+                # P3.6's fail-safe envelope swallows anything a judge raises, so the raise alone
+                # could never fail this test — the call log is what the assertions read. The raise
+                # stays because a judge REACHED here is already the bug.
+                judged.append(kwargs)
+                raise AssertionError("the first turn is never judged")
+
+            async def finisher(**kwargs: Any) -> dict[str, Any]:
+                # A judge without a finisher is treated as absent, so the bridge needs both
+                # composed for "the judge would have run" to be true at all.
+                raise AssertionError("no design-leg first turn exits the leg")
+
+            runner = DesignLegTurnRunner(
+                profiles=registry,
+                artifacts=seeds["artifacts"],
+                turns=DbAgentTurnJournal(conn_factory=seeds["conn_factory"]),
+                history=DbAgentHistoryStore(conn_factory=seeds["conn_factory"]),
+                lane=lane,
+                exit_judge=judge,
+                finisher=finisher,
+                conn_factory=seeds["conn_factory"],
+            )
+
+            async def run(submission: AgentTurnSubmissionRow) -> Any:
+                leg = await design_legs.get_open_leg_for_thread(
+                    conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+                )
+                assert leg is not None
+                return await runner.run_leg_turn(
+                    submission=submission,
+                    leg=leg,
+                    user_message_ref=await message_artifact_ref(conn, submission),
+                    focus_refs=(),
+                    card_payload=_card_payload(seeds),
+                    stream=None,
+                )
+
+            # A TWO-document leg, so "every document" is a real claim: without the skip this
+            # turn would reach the judge, and §3.5's many-document fail-safe would ASK and
+            # dispatch nothing at all.
+            extra = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            pinned = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            await design_legs.add_leg_documents(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                leg_id=seeds["leg"]["id"],
+                documents=[
+                    design_legs.LegDocumentSpec(
+                        document_id=pinned["id"], position=0, note="the hero artboard"
+                    ),
+                    design_legs.LegDocumentSpec(
+                        document_id=extra["id"], position=1, note="the square cut"
+                    ),
+                ],
+            )
+
+            # The head-of-abm turn whose bytes ``open_design_leg`` carried onto the leg. The
+            # column carries no FK, so the seed names it rather than journaling a whole turn.
+            opening_turn = uuid5(NAMESPACE_URL, "p34e:firstturn:opening-turn")
+            first = await _submit_message(
+                conn,
+                seeds,
+                label="firstturn-1",
+                message="A launch artboard for the spring push.",
+                derivation="design_leg_first_turn",
+                derived_from_turn_id=opening_turn,
+            )
+            assert first.derivation == "design_leg_first_turn"
+
+            result = await run(first)
+
+            assert judged == []  # the judge was never asked
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            # Every document of the leg was dispatched — both of them, in position order.
+            assert [str(envelope.document_id) for envelope in lane.envelopes] == [
+                pinned["id"],
+                extra["id"],
+            ]
+            roles = (
+                await conn.execute(
+                    text(
+                        "SELECT role FROM agent_thread_message "
+                        "WHERE workspace_id = :ws AND turn_id = :turn ORDER BY sequence"
+                    ),
+                    {"ws": seeds["workspace_id"], "turn": first.turn_id},
+                )
+            ).scalars()
+            assert list(roles) == ["user", "assistant"]
+
+            # Control: the SAME runner, an ordinary message — the judge is reached.
+            ordinary = await _submit_message(
+                conn, seeds, label="firstturn-2", message="Make the headline two lines."
+            )
+            await run(ordinary)
+            assert [call["message"] for call in judged] == ["Make the headline two lines."]
 
     run_async(scenario())
