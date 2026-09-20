@@ -10,6 +10,7 @@ import {
   getAttachmentLabel,
   getMediaCategory,
 } from "@/components/ai-elements/attachments";
+import styles from "./project-flow.module.css";
 
 export function ChatAttachment({
   attachment,
@@ -34,14 +35,14 @@ export function ChatAttachment({
         <Attachment
           aria-busy={attachment.status === "uploading"}
           aria-invalid={attachment.status === "failed" || undefined}
-          className="max-w-full"
+          className={styles.chatAttachment}
           title={label}
           data={attachment}
           onRemove={onRemove ? () => onRemove(attachment.id) : undefined}
         >
           <div className="relative size-5 shrink-0">
             <div className={onRemove ? "absolute inset-0 transition-opacity group-hover:opacity-0" : "absolute inset-0"}>
-              <AttachmentPreview />
+              <AttachmentPreview className={styles.chatAttachmentPreview} />
             </div>
             <AttachmentRemove
               className="absolute inset-0"

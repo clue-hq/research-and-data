@@ -10,6 +10,15 @@ fixtures only when no API base URL is configured.
 
 ## Chat appearance inconsistency register (2026-09-20)
 
+**Reference polish after the bubble colour change:** shared attachment chips use
+the existing `bg-page` surface (`#f8f9fb`), a quiet Gray Alpha 100 border and regular
+label weight. File glyphs are 14px on a transparent preview background, removing
+the separate square behind the icon; image thumbnails remain 20px. Hover uses
+`bg-subtle` and Gray Alpha 200. Mentions retain their transparent, underlined
+presentation with a softer Gray Alpha 200 underline. Draft and sent references
+share these rules; 32px attachment height, truncation and removal behaviour remain.
+This supersedes the medium-weight attachment measurement in the earlier review.
+
 **User message background:** sent-user message boxes use the founder-selected
 `#eff0f3`, provided by the product chat `user-message-background` token. The shared
 user-role rule applies across conversations and to optimistic/persisted messages.

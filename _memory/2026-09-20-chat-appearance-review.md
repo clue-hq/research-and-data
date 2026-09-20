@@ -1,5 +1,21 @@
 # Chat appearance review documented
 
+## Follow-up: soften references on grey bubbles
+
+- Founder reported attachment/tag chips looking out of place after the bubble colour
+  change. Shared ChatAttachment now uses canonical bg-page + Gray Alpha 100 border,
+  regular label weight, 14px file glyphs and transparent preview backing. Hover uses
+  bg-subtle + Gray Alpha 200. Mention underline uses Gray Alpha 200; its preferred
+  transparent inline treatment remains. Same primitives style drafts and sent refs.
+- Live persisted image/document chips measured 32px height, 14px regular text,
+  rgb(248,249,251) fill and rgba(0,30,75,.067) border; document preview backing is
+  transparent and its glyph is 14px. Screenshot reviewed on the grey user bubble.
+- Draft account mention verified at 15px with transparent background and Gray Alpha 200
+  underline (rgba(0,31,72,.098)); draft cleared and send disabled, temporary tab closed.
+- Token generation, lint and production build passed; only the two existing design-editor
+  unused-function warnings remain. Visual-only change; no message/upload/provider call.
+  Documentation updated and change saved as a local commit, without remote publication.
+
 ## Follow-up: sent-user background
 
 - Founder selected `#eff0f3` for all sent-user message boxes. Added the product chat
