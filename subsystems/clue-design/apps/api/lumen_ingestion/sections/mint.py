@@ -70,7 +70,7 @@ from .deadheight import (
     DeadHeightAssessment,
     assess_dead_height,
 )
-from .segment import SectionRecord, SectionSegmentation, resolve_section
+from .segment import SectionRecord, SectionSegmentation, recovery_sections, resolve_section
 from .slotdetect import detect_slots
 
 logger = logging.getLogger(__name__)
@@ -127,6 +127,8 @@ MINT_DEGRADED_RECONCILED_CODE = "LUMI0536"
 #: that is the honest-absence posture the whole detector is built on (`DeadHeightAssessment.judged`
 #: exists for exactly this distinction), and the one place it could still be silent was here.
 MINT_CHECK_NOT_RUN_CODE = "LUMI0538"
+#: Independent authored descendants attempted after a wrapper refused a missing dependency.
+MINT_RECOVERY_CODE = "LUMI0539"
 
 _PREVIEW_MEDIA_TYPE = "image/png"
 _DEFAULT_INLINE_MEDIA_TYPE = "application/octet-stream"
@@ -396,7 +398,9 @@ def crop_extent(
         return CropExtent(
             top_px=geometry.top_px, bottom_px=geometry.bottom_px, basis=geometry.basis
         )
-    if record.hidden_on_source:
+    # Inference only applies to the original top-level flow. Recovered descendants have no
+    # measured placement; a footer-like label must not borrow the actual page footer's pixels.
+    if record.hidden_on_source or record not in segmentation.sections:
         return None
 
     measured = [
@@ -505,6 +509,30 @@ class MintOutcome:
     diagnostics: tuple[dict[str, Any], ...] = ()
 
 
+def _recovery_plan(
+    segmentation: SectionSegmentation, tree: SectionParser
+) -> dict[int, tuple[SectionRecord, ...]]:
+    records = (*segmentation.sections, *segmentation.hidden_sections)
+    index = max((r.index for r in records), default=-1) + 1
+    plan = {}
+    for record in segmentation.sections:
+        children = recovery_sections(tree, record, start_index=index)
+        if children:
+            plan[record.index] = children
+            index += len(children)
+    return plan
+
+
+def visible_mint_capacity(segmentation: SectionSegmentation, html: str) -> int:
+    """Reserve fair page budget for recovery without minting parent AND children.
+
+    The parent is preferred. Only a refused parent spends its reservation on descendants;
+    planning with just top-level wrappers would allocate Google's entire body one slot.
+    """
+    plan = _recovery_plan(segmentation, SectionParser(html or ""))
+    return sum(max(1, len(plan.get(record.index, ()))) for record in segmentation.sections)
+
+
 def mint_sections(
     segmentation: SectionSegmentation,
     *,
@@ -554,6 +582,12 @@ def mint_sections(
     # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
     # times to extract twelve subtrees would be the most expensive thing this module does.
     tree = SectionParser(html or "")
+    recovery_plan = _recovery_plan(segmentation, tree)
+    recovery_parents = {
+        child.index: parent
+        for parent in segmentation.sections
+        for child in recovery_plan.get(parent.index, ())
+    }
 
     def _mint_bounded(
         records: Sequence[SectionRecord], budget: int, scope: str
@@ -564,7 +598,8 @@ def mint_sections(
         # `remaining` — "segmented and not cloned, and not otherwise reported" — announce sections
         # the job had already explained twice over.
         reported = 0
-        for record in records:
+        queue = list(records)
+        for position, record in enumerate(queue):
             if len(minted) >= budget:
                 break
             try:
@@ -582,6 +617,7 @@ def mint_sections(
                     mark_degraded=mark_degraded,
                     diagnostics=diagnostics,
                     weight=weight,
+                    recovery_parent=recovery_parents.get(record.index),
                 )
             except FragmentRefused as refusal:
                 # The diagnostic is for the human reading the job; this is for the operator
@@ -608,6 +644,37 @@ def mint_sections(
                     )
                 )
                 reported += 1
+                # Only dependency custody failures qualify. No fallback after writer errors,
+                # security refusals, byte budgets or an empty sanitized shell. No recursive
+                # recovery: this map contains original top-level wrapper indices only.
+                children = recovery_plan.get(record.index, ())
+                if refusal.code == "fragment.unrehosted_reference" and children:
+                    omitted = max(0, len(children) - max(0, SECTION_MINT_CAP))
+                    children = children[:max(0, SECTION_MINT_CAP)]
+                    queue[position + 1 : position + 1] = children
+                    diagnostics.append(_diag(
+                        MINT_RECOVERY_CODE,
+                        f"wrapper section {record.index} refused; attempting {len(children)} "
+                        "independent authored descendants. The wrapper layout, decorations "
+                        "and inherited context are not preserved; source fidelity is unverified.",
+                        section_index=record.index,
+                        parent_dom_path=list(record.dom_path),
+                        parts=len(children),
+                        omitted_parts=omitted,
+                        wrapper_layout_preserved=False,
+                        fidelity_verified=False,
+                    ))
+                    if omitted:
+                        diagnostics.append(_diag(
+                            MINT_CAPPED_CODE,
+                            f"{omitted} authored descendants were not attempted because "
+                            "the per-wrapper recovery candidate cap was reached",
+                            section_index=record.index,
+                            scope=scope,
+                            cap=SECTION_MINT_CAP,
+                            remaining=omitted,
+                            reason="recovery_candidate_cap",
+                        ))
                 continue
             except Exception as error:  # noqa: BLE001 — one section is not the ingest
                 logger.exception(
@@ -634,7 +701,7 @@ def mint_sections(
                 continue
             minted.append(result)
 
-        remaining = len(records) - len(minted) - reported
+        remaining = len(queue) - len(minted) - reported
         if remaining > 0 and len(minted) >= budget:
             diagnostics.append(
                 _diag(
@@ -670,6 +737,7 @@ def _mint_one(
     mark_degraded: Callable[..., dict[str, Any]] | None,
     diagnostics: list[dict[str, Any]],
     weight: PageWeight | None = None,
+    recovery_parent: SectionRecord | None = None,
 ) -> MintedSection | None:
     weight = weight if weight is not None else PageWeight()
     node = resolve_section(tree, record)
@@ -792,6 +860,14 @@ def _mint_one(
         assessment,
         preview_refused_by=preview_refused_by,
     )
+    if recovery_parent is not None:
+        provenance["recovery"] = {
+            "mode": "authored-descendant-after-refusal",
+            "parent_section_index": recovery_parent.index,
+            "parent_dom_path": list(recovery_parent.dom_path),
+            "wrapper_layout_preserved": False,
+            "fidelity_verified": False,
+        }
     if record.hidden_on_source:
         provenance["hidden_on_source"]["unhidden_selectors"] = list(unhidden_selectors)
         provenance["hidden_on_source"]["unhidden_inline"] = list(unhidden_inline)

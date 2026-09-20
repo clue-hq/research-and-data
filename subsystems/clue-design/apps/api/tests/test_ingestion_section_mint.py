@@ -1526,3 +1526,147 @@ def test_react_comment_boundaries_do_not_shift_detected_slot_targets() -> None:
     assert annotated.slot_manifest["body"]["fallback"] == "A verified customer story."
     assert annotated.slot_manifest["cta_href"]["fallback"] == "/customers"
     assert annotated.slot_manifest["cta_label"]["fallback"] == "Read the story"
+
+
+# A missing dependency in a framework page wrapper must not lose independent sections.
+RECOVERY_PAGE = """
+<html><body>
+<header><a href="/">Home</a></header>
+<c-wiz class="page-shell"><div class="layout"><div class="content">
+<section id="first"><h1>Original headline</h1><p>Original body.</p></section>
+<section id="product"><h2>Product</h2><section><h3>Nested detail</h3></section></section>
+<section id="closing"><h2>Closing</h2><video src="/missing.webm"></video></section>
+</div><div class="decoration"></div></div><c-data></c-data></c-wiz>
+<footer><p>Original footer.</p></footer>
+</body></html>
+"""
+
+
+def test_refused_framework_wrapper_recovers_independent_authored_sections():
+    outcome, recorder = _mint(RECOVERY_PAGE)
+    recovered = [call for call in recorder.created if call["provenance"].get("recovery")]
+    assert len(recovered) == 2
+    assert [call["provenance"]["element_id"] for call in recovered] == ["first", "product"]
+    assert "Nested detail" in recovered[1]["html"]
+    assert all(call["provenance"]["geometry"] is None for call in recovered)
+    assert all(call["preview"] is None for call in recovered)
+    assert all(call["provenance"]["recovery"]["fidelity_verified"] is False for call in recovered)
+    assert all(call["provenance"]["recovery"]["parent_dom_path"] for call in recovered)
+    assert any(d.get("reference") == "/missing.webm" for d in outcome.diagnostics)
+    recovery = next(d for d in outcome.diagnostics if d["code"] == "LUMI0539")
+    assert recovery["parts"] == 3
+    assert recovery["wrapper_layout_preserved"] is False
+    # Retain source handles, including comment/metadata siblings, rather than reparsing a crop.
+    from lumen_ingestion.sections.segment import recovery_sections, resolve_section
+    from selectolax.parser import HTMLParser
+    segmentation = segment_page(RECOVERY_PAGE, page_url=PAGE_URL)
+    parent = next(r for r in segmentation.sections if r.tag == "c-wiz")
+    children = recovery_sections(HTMLParser(RECOVERY_PAGE), parent, start_index=10)
+    assert [resolve_section(RECOVERY_PAGE, r).attributes.get("id") for r in children] == [
+        "first", "product", "closing"
+    ]
+
+
+def test_healthy_wrapper_is_never_replaced_or_duplicated_by_recovery():
+    html = RECOVERY_PAGE.replace('<video src="/missing.webm"></video>', '<p>Contact us</p>')
+    outcome, recorder = _mint(html)
+    assert len(outcome.minted) == 3
+    assert not any(call["provenance"].get("recovery") for call in recorder.created)
+    assert not any(d["code"] == "LUMI0539" for d in outcome.diagnostics)
+
+
+def test_recovery_respects_mint_budget_and_reserves_capacity_for_descendants():
+    from lumen_ingestion.sections.mint import visible_mint_capacity
+    segmentation = segment_page(RECOVERY_PAGE, page_url=PAGE_URL)
+    assert visible_mint_capacity(segmentation, RECOVERY_PAGE) == 5
+    outcome, recorder = _mint(RECOVERY_PAGE, limit=2)
+    assert len(recorder.created) == 2
+    assert len(outcome.minted) == 2
+    capped = next(d for d in outcome.diagnostics if d["code"] == "LUMI0532")
+    assert capped["remaining"] == 3
+
+
+def test_recovery_does_not_split_semantic_sections_or_enter_hidden_content():
+    from lumen_ingestion.sections.segment import recovery_sections
+    from selectolax.parser import HTMLParser
+    html = RECOVERY_PAGE.replace('<div class="decoration"></div>',
+        '<div hidden><section id="secret"><h2>Hidden variant</h2></section></div>'
+        '<article><section id="card"><h2>Card</h2></section></article>')
+    segmentation = segment_page(html, page_url=PAGE_URL)
+    parent = next(r for r in segmentation.sections if r.tag == "c-wiz")
+    children = recovery_sections(HTMLParser(html), parent, start_index=10)
+    assert [r.element_id for r in children] == ["first", "product", "closing"]
+    assert recovery_sections(HTMLParser(html), children[1], start_index=20) == ()
+
+
+def test_recovery_does_not_bypass_missing_shared_css_dependencies():
+    outcome, recorder = _mint(RECOVERY_PAGE, stylesheets=[_Sheet(
+        "s.css", "section { background: url(/also-missing.png) }"
+    )])
+    assert not any(call["provenance"].get("recovery") for call in recorder.created)
+    assert any(d.get("reference") == "/also-missing.png" for d in outcome.diagnostics)
+
+
+@pytest.mark.parametrize("reason", ["fragment.invalid_html", "fragment.slot_selector_unmatched"])
+def test_recovery_never_bypasses_non_dependency_refusals(reason):
+    from lumen_api.fragments import FragmentRefused
+
+    class RefusingRecorder(_Recorder):
+        def create_fragment(self, **kwargs):
+            raise FragmentRefused(reason, "original refusal")
+
+    html = RECOVERY_PAGE.replace('<video src="/missing.webm"></video>', '<p>Contact us</p>')
+    outcome, _ = _mint(html, recorder=RefusingRecorder())
+    assert not outcome.minted
+    assert not any(d["code"] == "LUMI0539" for d in outcome.diagnostics)
+    assert all(d.get("reason") != "unexpected_error" for d in outcome.diagnostics)
+
+
+def test_pipeline_reserves_recovery_slots_and_keeps_partial_capture_status(monkeypatch):
+    from types import SimpleNamespace
+
+    from lumen_ingestion.pipeline import _mint_page_fragments
+
+    recorder = _Recorder()
+    monkeypatch.setattr(mint_module, "make_asset_rehoster", lambda _: recorder.register_bytes)
+    monkeypatch.setattr(
+        mint_module, "make_fragment_writer", lambda *a, **kw: recorder.create_fragment
+    )
+    monkeypatch.setattr(mint_module, "make_degraded_marker", lambda **kw: None)
+    page = {"url": PAGE_URL, "role": "homepage", "status": "partial"}
+    outcome = SimpleNamespace(
+        snapshots=[SimpleNamespace(html=RECOVERY_PAGE, requested_url=PAGE_URL, stylesheets=[])],
+        library_capture=True,
+        page_coverage=[page],
+    )
+    refs, diagnostics = _mint_page_fragments(
+        outcome,
+        repo=SimpleNamespace(workspace_id="ws_capture_test"),
+        blobs=SimpleNamespace(storage=None),
+        brand_kit_id="brand_kit_x",
+        brand_kit_version=1,
+        snapshot_refs=[],
+    )
+    assert len(refs) == 4
+    assert page["fragments"]["visible_budget"] == 5
+    assert page["fragments"]["status"] == "partial"
+    assert any(d["code"] == "LUMI0539" for d in diagnostics)
+
+
+def test_recovery_attempts_have_a_reported_per_wrapper_backstop(monkeypatch):
+    monkeypatch.setattr(mint_module, "SECTION_MINT_CAP", 2)
+    outcome, recorder = _mint(RECOVERY_PAGE)
+    recovery = next(d for d in outcome.diagnostics if d["code"] == "LUMI0539")
+    assert recovery["parts"] == 2
+    assert recovery["omitted_parts"] == 1
+    assert len([c for c in recorder.created if c["provenance"].get("recovery")]) == 2
+    assert any(d.get("reason") == "recovery_candidate_cap" for d in outcome.diagnostics)
+
+
+def test_recovered_footer_hint_cannot_borrow_the_original_page_footer_crop():
+    from dataclasses import replace
+
+    segmentation = _banded_segmentation()
+    original_footer = segmentation.by_role("footer")[0]
+    recovered = replace(original_footer, index=20, dom_path=(1, 1, 2, 0))
+    assert crop_extent(segmentation, recovered) is None

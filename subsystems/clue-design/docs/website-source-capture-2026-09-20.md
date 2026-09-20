@@ -24,14 +24,14 @@ Google has four distinct saved video files across the selected pages. CSS keyfra
 | Clue | 8 | 8 | Original imagery survives the raw-fragment preview; source comparison and interactive verification remain open. |
 | Conduit | 12 | 10 | One empty embed/script shell is correctly refused. A customer-story band failed because comment nodes shifted slot selectors. After the fix, 11/12 admit; the empty shell remains refused. |
 | AWS | 12 | 12 | Admission does not prevent layout problems: raw staging overflows at 1440 and 375. Captured support-chat chrome also appears in the result. |
-| Google Cloud | 3 | 2 | Most page content is grouped into a single hero fragment. A real source `<source src=".../fake.webm">` returns 404 and makes that entire fragment refuse; navigation and footer remain. |
+| Google Cloud | 3 | 2 | A framework wrapper contains nine authored sections. Its missing video fallback initially rejected the whole wrapper. Bounded recovery now admits eight independent content sections plus navigation/footer (10 total); the closing video section still refuses. |
 
 Offline renders are diagnostic staging, without the app’s full theme/runtime assembly. They are not a replacement for the production renderer or a controlled screenshot-diff benchmark. Initial rendering also exposed missing inherited typography context in Conduit. The probe HTML omitted UTF-8 metadata; resulting character corruption was a probe defect, not a product finding. Offscreen lazy images were initially counted as unloaded; that metric is not evidence of broken image URLs.
 
 ## Repairs and remaining work
 
-- Shipped locally: source URL resolution, video custody, quoted SVG references, kit capture associations, bounded multipage discovery, durable coverage, fair fragment allocation, and React-comment-safe slot indexing.
-- Still needed: preserve inherited root/ancestor typography and custom-property context; distinguish source content from transient support/consent overlays; improve Google section boundaries so one missing dependency cannot discard most of a page; retain explicit provenance for any repaired responsive-media fallback.
+- Shipped locally: source URL resolution, video custody, quoted SVG references, kit capture associations, bounded multipage discovery, durable coverage, fair fragment allocation, React-comment-safe slot indexing, and bounded independent-section recovery from refused framework wrappers.
+- Still needed: preserve inherited root/ancestor typography and custom-property context; distinguish source content from transient support/consent overlays; validate recovered section context and supported responsive-media fallbacks.
 - Compare frozen source and production output at matching viewport sizes and supported interaction states. No brand has received a final fidelity pass.
 - Import through the existing workspace-scoped ingestion/storage seams as new draft versions after the isolated integration checks. Do not overwrite prior kit versions or approve fragments automatically.
 - The live generation fleet still needs the standard Docker sandbox runtime. Docker, Colima and OrbStack were not found on this Mac during this pass. A user question about providing that runtime is pending; no sandbox requirement has been disabled.
@@ -42,6 +42,8 @@ Offline renders are diagnostic staging, without the app’s full theme/runtime a
 - Multipage capture/API/snapshot/mint compatibility: 223 passed, 2 skipped.
 - Comment-slot regression: failed before the fix with `fragment.slot_selector_unmatched`; fragment/slot/artifact matrix after fix: 244 passed.
 - Frozen Conduit homepage admission: 10 → 11 fragments; no new network capture or messaging edits.
+- Wrapper recovery regression matrix: 350 passed, including a pipeline-level fair-budget/partial-status check and non-dependency refusal/backstop tests, and a guard against borrowing the original footer crop for a recovered section. New-line Ruff findings: zero after import/line-length cleanup; full touched files retain inherited findings.
+- Frozen four-brand re-probe: Clue 8, Conduit 11, AWS 12, Google Cloud 10 admitted fragments. Google raw staging rendered at 1440 and 375 pixels with matching document scroll widths (no horizontal overflow in those views). Hero, source imagery and responsive layout were visually inspected. Carousel/tab interaction and motion were not verified; lazy offscreen image counts still must not be treated as broken dependencies.
 - Library and offline probe data live under ignored `.local-setup/website-capture/`. No source media was committed, no push occurred, and the original four-instance checkout was not changed.
 
 ## Selected official pages

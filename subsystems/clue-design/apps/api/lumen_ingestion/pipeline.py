@@ -1206,7 +1206,10 @@ def _mint_page_fragments(
             )
             segmentations.append(None)
     visible = _allocate_fragment_budget(
-        [len(s.sections) if s else 0 for s in segmentations],
+        [
+            section_mint.visible_mint_capacity(s, snapshot.html) if s else 0
+            for s, snapshot in zip(segmentations, snapshots, strict=True)
+        ],
         total,
         section_mint.SECTION_MINT_CAP,
     )
@@ -1257,7 +1260,14 @@ def _mint_page_fragments(
         if page is not None:
             wanted = len(segmentation.sections) + len(segmentation.hidden_sections)
             page["fragments"] = {
-                "status": "minted" if len(result.minted) == wanted and wanted else "partial",
+                "status": (
+                    "minted"
+                    if len(result.minted) == wanted and wanted
+                    and not any(
+                        d.get("code") == section_mint.MINT_FAILED_CODE for d in result.diagnostics
+                    )
+                    else "partial"
+                ),
                 "segmented": wanted,
                 "minted": len(result.minted),
                 "visible_budget": visible[index],
