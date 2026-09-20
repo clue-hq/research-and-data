@@ -23,3 +23,11 @@
 - Registry/agent discovery now returns capture bindings; legal/footer and campaign-shell selection can recognize an associated newer kit. Cross-workspace duplicate insertion fails at composite foreign keys.
 - 152 registry/lifecycle/approval/agent-discovery tests passed; added foreign-kit-on-duplicate regression also passed. Migration up/down/up passed on separate empty `clue_website_capture_migration_20260920_1510`; exactly one head. Live DB has NOT received this migration.
 - Fresh isolated homepage captures complete for all four brands. Google original `MultiPath_2X_V2.webm` now captured (~494 KB). AWS reports ten over-limit font resources; these are visible partial-capture gaps, not a full-fidelity pass. Supporting page capture and skill/fidelity work remain pending.
+
+## Multipage coverage checkpoint
+
+- New guarded website requests default to bounded observed-link discovery (home + two products + customer index + two stories), accept up to 19 explicit supporting pages, and never exceed 20 total pages. Existing frozen jobs keep their recorded semantics. HTTP error pages are refused; individual supporting-page failures are retained.
+- Added durable per-page acquisition/mint coverage and CSS/video/canvas inventory. The existing public job outcome exposes a bounded summary, always fidelity_verified=false. Frontend coverage UI remains unimplemented; API visibility is not a UI claim.
+- New library pool 240 per visible/dormant lane, existing 40 per page; fair allocation prevents homepage starvation. Both config examples updated. First-time onboarding idempotency is unchanged; explicit Re-extract is refresh/retry.
+- Red/green regressions verified. Final focused matrix: 223 passed, 2 skipped, 3 warnings. The skips are existing live/optional checks. New-line Ruff findings: zero; full touched-file lint has inherited debt. Initial test failures traced to original-checkout editable imports; isolated PYTHONPATH now includes py-lumen-config, and subprocess import tests preserve it. No shared venv or runtime configuration changed.
+- Expanded source-only capture is running from observed official URLs in ignored local setup artifacts; no live workspace import or fidelity approval yet.

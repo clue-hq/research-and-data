@@ -612,3 +612,31 @@ def test_snapshot_keeps_unminted_media_dependencies_in_durable_custody(
     blobs = DesignBlobStore(design_storage, workspace_id)
     assert blobs.read(_sha(video)) == video
     assert asset_url(_sha(video)) == f"/asset-store/{_sha(video)}"
+
+
+def test_motion_inventory_is_durable_without_claiming_canvas_runtime(
+    workspace_id: str,
+    design_storage: FsStorage,
+) -> None:
+    snapshot = _snapshot(
+        html='<html><body><canvas></canvas><video src="/hero.webm"></video></body></html>'
+    )
+    snapshot.stylesheets.append(
+        Stylesheet(
+            url="https://insighthealth.example/motion.css", text="@keyframes fade {to {opacity: 1}}"
+        )
+    )
+    (ref,) = persist_site_snapshots(
+        [snapshot],
+        workspace_id=workspace_id,
+        job_id=_job(workspace_id),
+        storage=design_storage,
+    )
+    loaded = read_site_snapshot(
+        design_storage, workspace_id=workspace_id, snapshot_id=ref.snapshot_id
+    )
+    assert loaded.meta["motion"]["css_keyframes"] == ["fade"]
+    assert loaded.meta["motion"]["canvas_runtime_recovered"] is False
+    assert loaded.meta["motion"]["missing_video_assets"] == [
+        "https://insighthealth.example/hero.webm"
+    ]

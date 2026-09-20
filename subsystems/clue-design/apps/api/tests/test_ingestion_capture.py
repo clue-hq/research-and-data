@@ -52,7 +52,10 @@ def test_import_pulls_no_heavy_deps() -> None:
     )
     api_root = Path(__file__).resolve().parents[1]
     repo_root = Path(__file__).resolve().parents[3]
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(api_root), str(repo_root)])}
+    # Keep the selected worktree's shared-package roots. Discarding these can
+    # silently mix this API with editable packages from another checkout.
+    roots = [str(api_root), str(repo_root), *os.environ.get("PYTHONPATH", "").split(os.pathsep)]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(root for root in roots if root)}
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=str(api_root),
@@ -104,7 +107,8 @@ def test_the_rendered_tier_imports_cleanly_in_a_worker_shaped_process() -> None:
     )
     api_root = Path(__file__).resolve().parents[1]
     repo_root = Path(__file__).resolve().parents[3]
-    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(api_root), str(repo_root)])}
+    roots = [str(api_root), str(repo_root), *os.environ.get("PYTHONPATH", "").split(os.pathsep)]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(root for root in roots if root)}
     result = subprocess.run(
         [sys.executable, "-c", script],
         cwd=str(api_root),

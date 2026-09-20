@@ -103,6 +103,8 @@ class Settings(BaseSettings):
     # minting cannot be a SECOND, tighter ceiling on a page the capture layer was willing to
     # measure in full. Tripping it is reported loudly (LUMI0532), never silently truncated.
     lumen_fragment_mint_cap: int = 40
+    # New multipage library captures: total per visible/dormant pool; per-page cap still applies.
+    lumen_site_library_fragment_mint_cap: int = 240
     # Clone-fidelity F3/F4, FOUNDER RULING R-X4 (2026-08-29): what a repair lineage resolves to
     # when EVERY released member of it — the harvested original and every repair of it — is
     # marked broken. Two values, and the founder's own words for the default:

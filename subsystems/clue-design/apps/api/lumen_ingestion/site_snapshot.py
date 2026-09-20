@@ -228,6 +228,9 @@ async def _persist_one(
             "dark_scheme": download.dark_scheme,
         })
     meta = _meta(snapshot)
+    from .capture.page_plan import motion_inventory
+
+    meta["motion"] = motion_inventory(snapshot)
     meta["assets"] = assets
     meta["diagnostics"] = list(getattr(snapshot, "diagnostics", None) or [])
 

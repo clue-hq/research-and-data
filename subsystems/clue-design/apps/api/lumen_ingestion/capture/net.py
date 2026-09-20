@@ -203,6 +203,8 @@ class BoundedFetcher:
                 current = str(response.url.join(location))
                 await guard_url(current)
                 continue
+            if response.status_code >= 400:
+                raise CaptureError("LUMI0503", f"page returned HTTP {response.status_code}: {url}")
             body, capped = _read_capped(response, PAGE_MAX_BYTES)
             if capped:
                 raise CaptureError(

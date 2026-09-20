@@ -88,6 +88,7 @@ logger = logging.getLogger(__name__)
 #: Configurable as ``LUMEN_FRAGMENT_MINT_CAP``. Tripping it is reported loudly (``LUMI0532``),
 #: for the sections of a page that were skipped and for whole later pages never reached.
 SECTION_MINT_CAP = int(settings.lumen_fragment_mint_cap)
+LIBRARY_MINT_CAP = int(settings.lumen_site_library_fragment_mint_cap)
 
 #: A preview is a thumbnail in a picker, not a rendition. A 2x full-page shot of a tall hero is
 #: megabytes; nothing that reads this blob wants them.

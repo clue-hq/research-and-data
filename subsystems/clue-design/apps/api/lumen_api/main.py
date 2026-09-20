@@ -1899,10 +1899,11 @@ def create_app(
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         guard = _resolve_guard_url()
-        try:
-            await guard(payload.url)
-        except Exception as error:  # CaptureError / ValueError from the guard
-            raise ingest_url_rejected(payload.url, error) from error
+        for page_url in [payload.url, *payload.page_urls]:
+            try:
+                await guard(page_url)
+            except Exception as error:  # CaptureError / ValueError from the guard
+                raise ingest_url_rejected(page_url, error) from error
 
         # D5 Round C: the ingestion is OFFERED, not started. The route creates the job row and
         # its ``design_job`` fleet task in ONE transaction and returns; a leased worker (detached

@@ -439,8 +439,10 @@ async def fetch_rendered(
             )
             return snapshot
         except Exception as error:  # noqa: BLE001 — fallback, loudly
-            if isinstance(error, CaptureError) and error.code == "LUMI0507":
-                # A size refusal is deterministic, not a broken browser backend.
+            if isinstance(error, CaptureError) and error.code in {
+                "LUMI0501", "LUMI0503", "LUMI0507"
+            }:
+                # URL, HTTP and size refusals are not broken browser backends.
                 raise
             fallback_note = {
                 "code": "LUMI0536",
@@ -485,13 +487,15 @@ async def _fetch_rendered_stealth(
     # constant broke it — sarvam.ai's WebGL hero refused to paint for a
     # 1440x2000 "screen" (live finding, 2026-08-30). The probe records the live
     # viewport width, so the census scale never depended on the constant.
-    await StealthyFetcher.async_fetch(
+    response = await StealthyFetcher.async_fetch(
         url,
         headless=True,
         network_idle=True,
         timeout=90_000,
         page_action=_drive,
     )
+    if response.status >= 400:
+        raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
     if not harvest.get("html"):
         raise RuntimeError("stealth backend returned no page harvest")
     return await _snapshot_from_harvest(
@@ -522,8 +526,9 @@ async def _fetch_rendered_chromium(
                 # hero — we are here to see what real visitors see.
                 reduced_motion="no-preference",
             )
+            response = None
             try:
-                await page.goto(url, wait_until="networkidle", timeout=30_000)
+                response = await page.goto(url, wait_until="networkidle", timeout=30_000)
             except Exception:  # noqa: BLE001 — networkidle timeout is non-fatal
                 diagnostics.append(
                     {
@@ -532,6 +537,8 @@ async def _fetch_rendered_chromium(
                         "message": "render wait_until=networkidle timed out; proceeding",
                     }
                 )
+            if response is not None and response.status >= 400:
+                raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
             harvest = await _harvest_page(page, diagnostics)
         finally:
             await browser.close()
