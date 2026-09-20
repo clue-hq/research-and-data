@@ -149,3 +149,25 @@ killed mid-batch; a single-artifact ask byte-identical). Log lines to watch: `de
 (several worker ids), `design_leg.lane_drive_finished`, `design_leg.exit_judgment` (with
 `addressed`), `design_leg.addressing_asked`, `design_leg.waiting_for_document`;
 `SELECT run_id, status, document_id FROM design_agent_run WHERE execution_id = '<execution>' ORDER BY created_at`.
+
+## 2026-09-20 — live walk findings and rulings
+Live walk on thread `thr_91f106db…`: exit judge v3 closed the Borland leg on the three-account
+ask (correct), Head-of-ABM opened ONE leg with three documents (accounts stamped), "go" fanned
+out three runs across three processes (inline lane, fleet worker 4, the design API's embedded
+worker), all three succeeded — then the chat turn FAILED at the hand-back:
+`agent_model_call_sequence` unique violation, because `_record_design_receipts` records each
+run's calls numbered from 1 onto ONE turn. Leg left `running`, no summary. FIX OWED (Task 7 code):
+offset each run's sequence by the calls already recorded, in position order; then repair the
+stuck leg (`open_awaiting_user` + hand-back frame). Founder ordered the engine work FIRST.
+Also shipped today: Brandfetch Logo API mark on gallery cards (`4d8d6d710`, `27dfdb730`).
+
+Engine residual surfaced by the walk (freeze-on-grab, ruling C-9): the Stack solve and the Free
+solve disagree on `fill` — nested children are built with `parent_size=None` (`layout.rs:313`)
+so a cross-axis `fill` on a nested container solves as hug, while Free mode gives `fill` the
+parent's FULL outer box (padding included); `baked_container_size` keeps `fill` on containers on
+purpose. Result: containers stretch to the artboard edge at the first click. Founder rulings
+2026-09-20: **C-9 stands; items 3 (defer freeze to drag threshold) and 4 (freeze scope / telling
+the agent) are NOT changed for now; items 1 and 2 are to be fixed thoroughly, covering every
+exception** (fill containers, padded parents, nested fill under hug/fill, weighted fill, main-axis
+fill fallback, wrapped hug-width text, token dims, locked/absolute/rotated children, convert-of-one,
+the real ads as fixtures). All three new ads are now fully Free (6/6, 4/4, 7/7 containers).
