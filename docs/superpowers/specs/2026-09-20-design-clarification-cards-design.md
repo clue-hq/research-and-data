@@ -33,7 +33,9 @@ lines as today and only the asking one gets a card; nothing waits on the answer.
 
 A new transcript part kind, `clarification`, emitted by the leg runner on the leg turn's stream
 after the batch is terminal — one part per addressed document whose terminal run result has
-`status == "clarification_requested"`, in position order, before `rehydrate` / `turn_finished`.
+`status == "clarification_requested"`, in position order, AFTER the `rehydrate` (stream.reset)
+frame and before `turn_finished` — the client's reset handler clears a turn's parts, so a part
+emitted ahead of it is dropped (found live 2026-09-20, fixed the same night).
 
 Payload (`ClarificationPart`, `platform/api/clue_api/chat/turn_parts.py`; `PartKind.CLARIFICATION`;
 the `agent_turn_event_stream_part_kind` CHECK gains `'clarification'` by migration):
@@ -108,7 +110,7 @@ queue in position order with a strip above the card: "2 designs have questions".
 │  2  The Fortune 500 logo wall                                  │
 │  3  The customer quote from their CFO                          │
 │                                                                │
-│  ✎  Something else…                        [ Skip — use 1 ]    │
+│  ✎  Something else…                                 [ Skip ]   │
 └──────────────────────────────────────────────────────────────┘
    ↑↓ to navigate · Enter to select · Esc to skip
 ```
