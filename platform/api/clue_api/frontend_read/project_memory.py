@@ -232,9 +232,7 @@ def register_project_memory_routes(
         write: ProjectMemoryWriteV1,
     ) -> ProjectMemoryNoteResponseV1:
         if memory_write_factory is None:
-            raise _refuse(
-                503, "MEMORY_UNAVAILABLE", "this deployment cannot write memory"
-            )
+            raise _refuse(503, "MEMORY_UNAVAILABLE", "this deployment cannot write memory")
         if write.source_thread_id is not None:
             owned = await conn.scalar(
                 _THREAD_IN_PROJECT,
@@ -286,9 +284,7 @@ def register_project_memory_routes(
         project_id: str, workspace_id: WorkspaceDep
     ) -> ProjectMemoryListResponseV1:
         async with conn_factory() as conn:
-            await _project(
-                conn, workspace_id=workspace_id, project_id=project_id, for_write=False
-            )
+            await _project(conn, workspace_id=workspace_id, project_id=project_id, for_write=False)
             memories = await list_project_memories(
                 conn, workspace_id=workspace_id, project_id=project_id
             )

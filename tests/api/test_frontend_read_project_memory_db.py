@@ -96,9 +96,7 @@ def _app(
     with_memory: bool = True,
 ) -> FastAPI:
     resolved = settings if settings is not None else _settings()
-    judge = ScriptedJudge(
-        ReconcileJudgment(verdict=ReconcileVerdictKind.ADD, rationale="scripted")
-    )
+    judge = ScriptedJudge(ReconcileJudgment(verdict=ReconcileVerdictKind.ADD, rationale="scripted"))
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
@@ -212,9 +210,7 @@ def test_notes_list_add_edit_remove_and_honest_rejection() -> None:
                     text("UPDATE project SET status = 'active' WHERE project_id = :id"),
                     {"id": sibling.project_id},
                 )
-                sibling_base = (
-                    f"{FRONTEND_READ_PREFIX}/projects/{sibling.project_id}/memory"
-                )
+                sibling_base = f"{FRONTEND_READ_PREFIX}/projects/{sibling.project_id}/memory"
                 sibling_note = await client.post(
                     sibling_base, json={"text": "Sibling note."}, headers=headers
                 )
