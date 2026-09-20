@@ -58,3 +58,14 @@ closing summary).
 - Attachments never ride a derived turn (redelivery precedent; leg turns carry no attachment_refs).
 - Points 3 and 4 of the 2026-09-20 discussion (per-document clarification questions; routing a
   reply to the asking document) — next spec, after the founder's go.
+
+## Addendum 2026-09-21 — merged with research-streaming; catalog re-minted
+`research-streaming` had minted its OWN head-of-abm v58 / prompt v11 / recipe 29 / manual v5 for
+`run_python@1` + the attachments folder. Merge `a5a91155b` kept the base's versions verbatim and
+our two layers were re-minted on top (`bbd29f954`, `5b9037d43`): **v59** = base v58 +
+`open_design_leg@5` + prompt **v12** (the multi-artifact paragraph) + recipe **30** + manual **v6**;
+**v60** = v59 + prompt **v13** (generation starts at once) + manual **v7**. Active pins: v60 / 30 /
+v7. Two alembic heads (`5358a2422cb2` from the base, `fc9580642b71` ours) joined by `5cac3234cfb3`
+(`ac9c9e2e8`). Verified after the merge: 263 backend tests across the design-leg/turn/stream/feed
+suites, frontend 3236/3237, catalog + pin suites. The lane `.env` gained the base's 16 new keys
+at example defaults (attachments, conversation naming, sandbox).

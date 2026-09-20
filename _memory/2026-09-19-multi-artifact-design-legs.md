@@ -195,3 +195,8 @@ the real ads as fixtures). All three new ads are now fully Free (6/6, 4/4, 7/7 c
 - Also fixed today on the frontend (`e710e2d88`): a person's own edit no longer re-opens the
   active tab / drops edit mode / reloads the chat (see `2026-09-20-freeze-bake-fill-parity.md`
   addendum 2).
+
+## Addendum 2026-09-21 — versions after the research-streaming merge
+The base had its own v58/v11/29/v5 (run_python). Our layer is now head-of-abm **v59** / prompt
+**v12** / recipe **30** / manual **v6** (see `_memory/2026-09-20-derived-design-turns.md`, addendum
+2026-09-21). The v58/v11/29/v5 named above in this note are the pre-merge lane versions.
