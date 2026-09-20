@@ -1,0 +1,15 @@
+# ICP reasoning and qualification task
+
+Use completed, versioned company, selected product, commercial, integration, customer-proof and buyer-job evidence. Investigate missing material support through Exa within the assigned scope. Public research proposes an ICP; it does not discover a secretly approved company policy. Do not call a derived profile “the published ICP” unless the company actually published it.
+
+**strategy mode:** Identify distinct buying motions: the operating situation, buying unit, problem, desired outcome, relevant product, why change might be worthwhile and available proof. Distinguish firmographic fit (organization type, industry, scale where supported, geography and business model) from professional buyer roles. Do not use arbitrary minimum employee, revenue, unit or funding thresholds. Rank investigation priorities using explicit evidence and uncertainty; do not claim market attractiveness or conversion probability without data.
+
+Use as many distinct profiles as evidence supports. One is valid; no support can produce zero with specific questions. Split profiles only when buyer workflow, product fit, purchase locus or implementation needs genuinely differ. Merge redundant motions. Existing stable keys are reused where the meaning matches; backend assigns new keys and IDs, not the provider.
+
+**profile mode:** For the supplied candidate motion, define account/buying-unit scope, operating problems, product/value connection, firmographic/technographic observations, professional buying committee, positive evidence, exclusions and unresolved assumptions. Provide clearly hypothetical good-fit, needs-research and poor-fit scenarios without invented real companies. Differentiate needed capacity/process from a particular tool vendor unless product evidence makes that vendor necessary.
+
+**qualification mode:** For each criterion return dimension (fit/readiness/urgency/exclusion), strength (necessary/preference/hypothesis), rationale, a test a researcher can perform, positive/negative evidence, likely source, unknown handling, source IDs and whether owner confirmation is needed. Only logically necessary, supported conditions or approved owner policy may be hard gates. An absent web mention is not negative evidence. An integration is often readiness, timing is often prioritization, and neither automatically disqualifies a good-fit account. Never make readiness or urgency accidentally mandatory in the final decision rule.
+
+Separate proposed strategy from observable facts. Keep measurement targets as desired outcomes, not product guarantees. Psychographics refer to evidenced or clearly hypothesized buying attitudes and risk concerns; professional demographics are role, seniority, remit and team scope. Do not invent personal age, gender, income or sensitive attributes.
+
+Close with proceed/research/hold decisions tied to specific evidence and next questions. Keep a compact owner-confirmation list for commercial choices public sources cannot answer. Do not generate arbitrary scores, weights or unsupported TAM math. Preserve conflicts rather than deciding them through fluent prose.

@@ -1,0 +1,11 @@
+# Buyer jobs and professional personas task
+
+**jobs mode, before ICP:** Explain in plain language the work a buyer needs to accomplish and the change they want to measure. From product/customer evidence, map operating situation → current workaround → friction/failure → supported capability → desired result → evidence. Describe concrete before/after workflows and human handoffs. Keep product features, buyer jobs and outcomes distinct. Desired KPIs are measures to investigate, not guaranteed improvements. Add two explicitly hypothetical scenarios grounded in the operating model, without invented target companies.
+
+**personas mode, after ICP:** Use the exact supplied ICP and product versions. For each relevant economic buyer, champion, user, technical evaluator or blocker, investigate first-person accounts, interviews, job descriptions and attributable reviews through the existing Exa role-evidence search. One evidence pass per role is the baseline; missing consequential evidence becomes a bounded follow-up or a stated hypothesis. Do not invent departments or roles to fill every possible slot.
+
+Document titles/seniority/remit and where budget/implementation decisions sit; what the role owns; daily responsibilities and friction; desired results/KPIs; motivations and objections; observable buying triggers; proof required; language/channels; the product capabilities that matter; and a useful discovery question. A role suggested for search is a title hypothesis unless actual customer evidence establishes it. Org-wide roles may differ from property, department, division or regional roles.
+
+Keep an individual reviewer's experience scoped to that person and organization. Do not manufacture professional psychographics or personal demographic attributes. Separate evidence-backed buying concerns from reasonable but untested hypotheses. Validate exact quotations against their source; fabricated first-person quotations are a material failure.
+
+The overall buying-committee document may summarize role sections from per-ICP persona documents rather than repeat research. Use the host-requested headings and stable role vocabulary. A message-map task consumes these outputs later; do not claim knowledge of any real target account's private intentions.

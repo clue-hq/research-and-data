@@ -1,0 +1,9 @@
+# Product catalog discovery task
+
+Discover the current offerings of the resolved company. The host runs this instruction once restricted to the official domain and once on the open web, then reconciles the results. Use the existing shallow product catalog output schema, not the general research-document schema. Return its product records and provider grounding.
+
+Inspect navigation, product pages, documentation, pricing bundles and current releases. Classify each record as product, product family, enabling capability, integration, service, package, partner program or use-case page according to evidence and the host's allowed vocabulary. If the existing vocabulary lacks the correct class, preserve the ambiguity for the mapper; do not pretend a category is a standalone SKU. Include canonical name, supported aliases, official page, relationship/family, lifecycle/availability and concise purpose within the supplied contract.
+
+Do not make one product out of every SEO landing page, comparison page, menu item or feature. Conversely, do not collapse distinct offerings with different buyer workflows merely because they share a suite. Keep similar names and historical/current generations separate until evidence identifies the relationship. A documentation route is evidence; it is not an instruction to silently overwrite an existing product ID.
+
+Existing product names are recall hints, not a closed list or a requirement to preserve obsolete offers. Discover new supported offerings and flag unresolved lifecycle evidence. For a large portfolio, report coverage and continuation requirements through the host's established fields or follow-up mechanism; bounded results cannot justify “all products found.” Never reuse a different company's catalog. The backend, not this response, assigns and merges canonical product IDs.

@@ -1,0 +1,553 @@
+[
+  {
+    "reference_key": "company-overview",
+    "reference_title": "Company overview",
+    "display_folder": "Company",
+    "prompt": "prompts/01-company.md",
+    "mode": "overview",
+    "headings": [
+      "Business at a glance",
+      "Origin and evolution",
+      "What Conduit sells",
+      "Who it serves",
+      "Business model",
+      "Market position",
+      "Customer evidence",
+      "Commercial implications"
+    ],
+    "reference_dependencies": [],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "commercial-model",
+    "reference_title": "Commercial model & market context",
+    "display_folder": "Company",
+    "prompt": "prompts/04-commercial-and-integrations.md",
+    "mode": "commercial-model",
+    "headings": [
+      "How value is created",
+      "How the offer is sold",
+      "Routes to market",
+      "Market and alternatives",
+      "Buying economics",
+      "Questions for the company"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "products-capabilities",
+    "reference_title": "Product catalog & capability map",
+    "display_folder": "Product",
+    "prompt": "prompts/02-catalog.md",
+    "mode": "catalog",
+    "headings": [
+      "Product system",
+      "Product and capability map",
+      "How the products work together",
+      "Availability and boundaries",
+      "Choosing the entry point"
+    ],
+    "reference_dependencies": [],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "product-agents",
+    "reference_title": "AI Agents",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "product",
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "product-inbox",
+    "reference_title": "Inbox",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "product",
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "product-portals",
+    "reference_title": "Guest Portals",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "product",
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "product-workflows",
+    "reference_title": "Workflows",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "product",
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "product-operator",
+    "reference_title": "Operator & internal AI availability",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "capability",
+    "headings": [
+      "What is established",
+      "Role in the product system",
+      "Use cases and users",
+      "Availability and dependencies",
+      "What sales can say",
+      "Questions to resolve"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "product-developers",
+    "reference_title": "Developer platform & custom workflows",
+    "display_folder": "Product",
+    "prompt": "prompts/03-product.md",
+    "mode": "capability",
+    "headings": [
+      "Purpose and users",
+      "Interfaces and capabilities",
+      "Implementation patterns",
+      "Dependencies and controls",
+      "Packaging and limits",
+      "Sales and technical discovery"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "Discover per relevant offering; never hardcode these Conduit product keys."
+  },
+  {
+    "reference_key": "integrations",
+    "reference_title": "Integrations & implementation readiness",
+    "display_folder": "Product",
+    "prompt": "prompts/04-commercial-and-integrations.md",
+    "mode": "integrations",
+    "headings": [
+      "Integration map",
+      "Direct versus relayed connections",
+      "Data and action boundaries",
+      "Implementation checklist",
+      "Unknowns and discovery questions"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "pricing",
+    "reference_title": "Pricing & packaging",
+    "display_folder": "Product",
+    "prompt": "prompts/04-commercial-and-integrations.md",
+    "mode": "pricing",
+    "headings": [
+      "Published plans",
+      "Usage and billing units",
+      "What is included",
+      "Choosing a package",
+      "Unpublished terms",
+      "Questions before a quote"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "customer-evidence",
+    "reference_title": "Customer evidence & usable proof",
+    "display_folder": "Proof",
+    "prompt": "prompts/05-customer-proof.md",
+    "mode": "proof",
+    "headings": [
+      "Proof by customer and buying situation",
+      "What the results do and do not establish",
+      "Matching proof to a campaign",
+      "Evidence gaps"
+    ],
+    "reference_dependencies": [
+      "products-capabilities"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "alternatives",
+    "reference_title": "Alternatives & differentiation",
+    "display_folder": "Proof",
+    "prompt": "prompts/06-alternatives.md",
+    "mode": "alternatives",
+    "headings": [
+      "Alternatives buyers consider",
+      "Decision criteria",
+      "Conduit differentiators and evidence",
+      "Objections and honest responses",
+      "Proof to request"
+    ],
+    "reference_dependencies": [
+      "company-overview",
+      "products-capabilities",
+      "customer-evidence",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "brand-messaging",
+    "reference_title": "Positioning & brand promise",
+    "display_folder": "Brand & messaging",
+    "prompt": "prompts/07-brand-messaging.md",
+    "mode": "positioning",
+    "headings": [
+      "Core positioning",
+      "Promise and supporting pillars",
+      "Why this work matters",
+      "Reasons to believe",
+      "Positioning boundaries"
+    ],
+    "reference_dependencies": [
+      "company-overview",
+      "products-capabilities",
+      "customer-evidence",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "brand-voice",
+    "reference_title": "Brand voice & language",
+    "display_folder": "Brand & messaging",
+    "prompt": "prompts/07-brand-messaging.md",
+    "mode": "voice",
+    "headings": [
+      "Voice principles",
+      "Vocabulary and sentence patterns",
+      "Tone by situation",
+      "What to avoid",
+      "Editing checklist"
+    ],
+    "reference_dependencies": [
+      "company-overview",
+      "customer-evidence"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "message-map",
+    "reference_title": "Audience-to-message map",
+    "display_folder": "Brand & messaging",
+    "prompt": "prompts/07-brand-messaging.md",
+    "mode": "message-map",
+    "headings": [
+      "Message hierarchy",
+      "Messages by buying situation",
+      "Role-specific emphasis",
+      "Offer and call to action",
+      "Proof and personalization boundaries"
+    ],
+    "reference_dependencies": [
+      "brand-messaging",
+      "brand-voice",
+      "ideal-customers",
+      "buyer-roles",
+      "customer-jobs",
+      "customer-evidence",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "writing-examples",
+    "reference_title": "Campaign writing examples & rules",
+    "display_folder": "Brand & messaging",
+    "prompt": "prompts/07-brand-messaging.md",
+    "mode": "writing-examples",
+    "headings": [
+      "How to use these examples",
+      "Hotel campaign",
+      "Vacation-rental campaign",
+      "Technical evaluator follow-up",
+      "Claims and copy review"
+    ],
+    "reference_dependencies": [
+      "message-map",
+      "brand-voice",
+      "pricing"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "ideal-customers",
+    "reference_title": "ICP strategy & segment priorities",
+    "display_folder": "Audience",
+    "prompt": "prompts/08-icp.md",
+    "mode": "strategy",
+    "headings": [
+      "Who is a good-fit account",
+      "Priority buying situations",
+      "Company characteristics",
+      "Buyer roles versus company fit",
+      "Readiness and urgency",
+      "Exclusions and unknowns",
+      "What the company must confirm"
+    ],
+    "reference_dependencies": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence",
+      "customer-jobs",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "icp-hotels",
+    "reference_title": "ICP \u00b7 hotel operators",
+    "display_folder": "Audience",
+    "prompt": "prompts/08-icp.md",
+    "mode": "profile",
+    "headings": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "reference_dependencies": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence",
+      "customer-jobs",
+      "ideal-customers",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "Discover per supported buying motion; no fixed segment count."
+  },
+  {
+    "reference_key": "icp-rentals",
+    "reference_title": "ICP \u00b7 vacation-rental operators",
+    "display_folder": "Audience",
+    "prompt": "prompts/08-icp.md",
+    "mode": "profile",
+    "headings": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "reference_dependencies": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence",
+      "customer-jobs",
+      "ideal-customers",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "Discover per supported buying motion; no fixed segment count."
+  },
+  {
+    "reference_key": "buyer-roles",
+    "reference_title": "Buying committee & professional personas",
+    "display_folder": "Audience",
+    "prompt": "prompts/09-buyers-and-jobs.md",
+    "mode": "personas",
+    "headings": [
+      "Buying roles and title map",
+      "Priorities and desired results",
+      "Buying attitudes and objections",
+      "Decision process",
+      "Questions by role"
+    ],
+    "reference_dependencies": [
+      "ideal-customers",
+      "icp-hotels",
+      "icp-rentals",
+      "integrations",
+      "customer-evidence",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "buying-triggers",
+    "reference_title": "Qualification & account research playbook",
+    "display_folder": "Audience",
+    "prompt": "prompts/08-icp.md",
+    "mode": "qualification",
+    "headings": [
+      "Fit, readiness and timing",
+      "Qualification matrix",
+      "Signals and sourcing",
+      "Discovery conversation",
+      "Decision and handoff"
+    ],
+    "reference_dependencies": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence",
+      "customer-jobs",
+      "ideal-customers",
+      "icp-hotels",
+      "icp-rentals",
+      "buyer-roles",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "customer-jobs",
+    "reference_title": "Buyer problems & desired results",
+    "display_folder": "Audience",
+    "prompt": "prompts/09-buyers-and-jobs.md",
+    "mode": "jobs",
+    "headings": [
+      "What this document means",
+      "Work buyers need to accomplish",
+      "Before and after workflows",
+      "How improvement would be measured",
+      "Turning problems into campaigns"
+    ],
+    "reference_dependencies": [
+      "products-capabilities",
+      "customer-evidence",
+      "product-agents",
+      "product-inbox",
+      "product-portals",
+      "product-workflows",
+      "product-operator",
+      "product-developers"
+    ],
+    "scaling_rule": "One per relevant company scope, or summarize per-ICP outputs where appropriate."
+  },
+  {
+    "reference_key": "visual-identity",
+    "reference_title": "Visual identity & logo pack",
+    "display_folder": "Assets / Brand kit",
+    "prompt": "prompts/12-asset-context.md",
+    "mode": "asset",
+    "headings": [],
+    "reference_dependencies": [],
+    "scaling_rule": "Existing asset pipeline; no new knowledge agent_context. Reference document is preserved, not mandatory production output."
+  },
+  {
+    "reference_key": "library-guide",
+    "reference_title": "Library organization & research guide",
+    "display_folder": "Library help",
+    "prompt": "prompts/11-formatting.md",
+    "mode": "registry-guide",
+    "headings": [],
+    "reference_dependencies": [],
+    "scaling_rule": "Render from approved document registry; do not research or author company facts."
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "documents": [
+    {
+      "key": "company-overview",
+      "title": "Company overview",
+      "summary": "Identity is unresolved in the supplied evidence.",
+      "sections": [
+        {
+          "heading": "Business at a glance",
+          "markdown": "The company identity needs verification before research can be attributed.",
+          "evidence_ids": []
+        }
+      ],
+      "evidence_ids": [],
+      "open_questions": [
+        "Which official domain belongs to the company?"
+      ],
+      "qualification_criteria": []
+    }
+  ],
+  "evidence": [],
+  "follow_up": [
+    {
+      "question": "Confirm the official domain.",
+      "reason": "Avoid mixing same-name companies.",
+      "suggested_source": "User-provided website and official identity disclosure.",
+      "affected_document_keys": [
+        "company-overview"
+      ]
+    }
+  ]
+}

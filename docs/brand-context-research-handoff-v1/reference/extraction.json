@@ -1,0 +1,43 @@
+{
+  "reference_run": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919",
+  "documents": 25,
+  "source_records": 103,
+  "original_briefs": 23,
+  "protected_files": 1140,
+  "source_methods": {
+    "direct_html": 75,
+    "exa_search": 20,
+    "browser_dom_capture": 5,
+    "official_stylesheet_excerpts": 2,
+    "browser_dom_computed_style_observation": 1
+  },
+  "source_domains": {
+    "www.conduit.ai": 51,
+    "www.ycombinator.com": 3,
+    "pitchbook.com": 1,
+    "www.linkedin.com": 15,
+    "www.phocuswire.com": 2,
+    "ai.g2.com": 1,
+    "strspecialist.com": 1,
+    "zekaiwork.com": 1,
+    "www.stork.ai": 1,
+    "www.producthunt.com": 1,
+    "bestcre.com": 1,
+    "ersona.co": 1,
+    "www.prohost.ai": 1,
+    "hostrexa.com": 1,
+    "gostay.ai": 1,
+    "www.jurny.com": 1,
+    "www.symplehost.ai": 1,
+    "docs.conduit.ai": 19
+  },
+  "source_code_sha256": {
+    "experiments/brand-context-agent-v1/agent.py": "39ffea025d40e2172ead97e736d1748f90b2e1de410dfa0002740208a2be6870",
+    "experiments/brand-context-agent-v1/knowledge.py": "75546db141b1221142af2b16616020133e2381d88cf7208f496e4bbf1452af9e",
+    "experiments/brand-context-agent-v1/rework.py": "ab952deebf4ea8af3b67db8b528a8ed3369972de90618469ee742aaa20232b61",
+    "experiments/brand-context-agent-v1/rework_review.py": "a2213f0a00e0886ca40b4cdec1332f5e5b609dfc2c495500f4876b7c62f9af1f",
+    "experiments/brand-context-agent-v1/curation.py": "52b449b961f15f539c7360530324c71cecc20ed14145b067814f04e9898b45a2",
+    "experiments/brand-context-agent-v1/providers.py": "5c841e71e2d674ae4c4c479ac1a64a47078c864c04aa419e1dd696e50a73464a"
+  },
+  "status": "Export only. No model calls, no integration, no autonomous quality result."
+}
