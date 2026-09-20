@@ -733,11 +733,17 @@ def _defuse(representation: str) -> str:
 def _rewrite_url_function(
     token: ast.FunctionBlock, *, rehosted: Mapping[str, str], digests: set[str]
 ) -> None:
-    for argument in token.arguments:
-        if isinstance(argument, ast.StringToken):
+    arguments = [item for item in token.arguments if item.type not in ("whitespace", "comment")]
+    for argument in arguments:
+        if len(arguments) == 1 and isinstance(argument, ast.StringToken):
             digest = resolve_asset_reference(argument.value, rehosted)
             if digest is None:
                 argument.representation = _defuse(argument.representation)
+                # Only a same-document SVG paint/filter reference is successful
+                # here. External URLs still require custody above; malformed and
+                # empty quoted URLs still take the refusal below.
+                if argument.value.strip().startswith("#"):
+                    return
                 continue
             digests.add(digest)
             argument.value = asset_url(digest)
