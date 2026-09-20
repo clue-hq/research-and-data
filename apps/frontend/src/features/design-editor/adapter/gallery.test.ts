@@ -334,6 +334,20 @@ test("an item's account maps onto the card's account fields", () => {
   assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
 });
 
+test("a Brandfetch logo on the item wins over the favicon fallback", () => {
+  const logoPath =
+    "https://cdn.brandfetch.io/domain/apollo.example/w/128/h/128/fallback/lettermark/type/icon?c=cid";
+  const artifact = toProjectArtifact(
+    listItem({
+      account: { id: "acc_1", name: "Apollo Clinics", domain: "apollo.example", logoPath },
+    }),
+    { now: NOW },
+  );
+
+  assert.equal(artifact.accountLogoPath, logoPath);
+  assert.doesNotThrow(() => ProjectArtifactSchema.parse(artifact));
+});
+
 test("an item with no account keeps the account fields absent", () => {
   const artifact = toProjectArtifact(listItem(), { now: NOW });
 

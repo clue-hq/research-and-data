@@ -66,6 +66,7 @@ from clue_api.arv2.icp_confirmation import (
     current_icp_document,
     pin_project_icp,
 )
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.arv2.project_documents import ProjectDocumentRefused
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
@@ -262,7 +263,7 @@ def _framed(*parts: str) -> str:
 
 
 def _design_artifact_list_item(
-    project_id: str, document: Mapping[str, Any]
+    project_id: str, document: Mapping[str, Any], *, settings: Settings | None = None
 ) -> DesignArtifactListItemWire:
     """One gallery row, carrying only what the document itself records.
 
@@ -283,6 +284,13 @@ def _design_artifact_list_item(
             id=str(document["account_id"]),
             name=str(document["account_name"]),
             domain=document["account_domain"],
+            logo_path=(
+                brandfetch_logo_url(
+                    str(document["account_domain"]), client_id=settings.brandfetch_client_id
+                )
+                if settings is not None and document.get("account_domain")
+                else None
+            ),
             account_entity_id=(
                 None
                 if document["account_entity_id"] is None
@@ -1265,7 +1273,10 @@ def build_chat_router(
                 project_id=project_id,
             )
         return DesignArtifactListResponse(
-            data=tuple(_design_artifact_list_item(project_id, document) for document in documents)
+            data=tuple(
+                _design_artifact_list_item(project_id, document, settings=settings)
+                for document in documents
+            )
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")

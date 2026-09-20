@@ -663,6 +663,9 @@ class DesignArtifactAccountWire(_Wire):
     name: str
     domain: str | None = None
     account_entity_id: str | None = None
+    #: Brandfetch's Logo API mark for the account's domain (founder, 2026-09-20 — the
+    #: accounts screens' own rule), or ``None`` without a domain or a configured client id.
+    logo_path: str | None = None
 
 
 class DesignArtifactListItemWire(DesignArtifactWire):

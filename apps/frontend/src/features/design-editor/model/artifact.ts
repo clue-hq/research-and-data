@@ -84,6 +84,8 @@ export const DesignArtifactListItemSchema = ChatShellArtifactSchema.extend({
       name: z.string().min(1),
       domain: z.string().min(1).optional(),
       accountEntityId: z.string().min(1).optional(),
+      /** Brandfetch's Logo API mark, when the backend could build one. */
+      logoPath: z.string().min(1).optional(),
     })
     .optional(),
 });
@@ -112,6 +114,7 @@ export const DesignArtifactListWireSchema = z
             name: z.string().min(1),
             domain: z.string().min(1).nullish(),
             account_entity_id: z.string().min(1).nullish(),
+            logo_path: z.string().min(1).nullish(),
           })
           .nullish(),
       }),
@@ -145,6 +148,7 @@ export const DesignArtifactListWireSchema = z
                 ...(item.account.account_entity_id
                   ? { accountEntityId: item.account.account_entity_id }
                   : {}),
+                ...(item.account.logo_path ? { logoPath: item.account.logo_path } : {}),
               },
             }
           : {}),

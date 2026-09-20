@@ -803,12 +803,57 @@ def test_a_document_born_with_an_account_carries_it_on_the_card_wire(
 
             feed = await _feed(conn, workspace_id=workspace_id, project_id=project.project_id)
             by_id = {item["id"]: item for item in feed}
-            assert by_id["doc_acct_stamped"]["account"] == {
+            stamped = by_id["doc_acct_stamped"]["account"]
+            assert {key: stamped[key] for key in ("id", "name", "domain", "account_entity_id")} == {
                 "id": "acc_gallery_acme",
                 "name": "Acme Health",
                 "domain": "acme.example",
                 "account_entity_id": None,
             }
+            # Brandfetch's mark rides along when the deployment has a client id (the lane's
+            # `.env` does); without one the key is honestly null. Either is correct here.
+            logo = stamped["logo_path"]
+            assert logo is None or logo.startswith("https://cdn.brandfetch.io/domain/acme.example/")
             assert by_id["doc_acct_plain"]["account"] is None
 
     run_async(scenario())
+
+
+def test_the_feed_account_carries_brandfetchs_logo_when_a_client_id_is_configured() -> None:
+    """Founder 2026-09-20: the gallery card's account mark is Brandfetch's Logo API URL — the
+    accounts screens' own rule — built from the account's domain and the configured client id.
+    No client id, or no domain, means no logo path; the card then shows nothing. No DB."""
+    from types import SimpleNamespace
+
+    from clue_api.chat.router import _design_artifact_list_item
+
+    document = {
+        "id": "doc_1",
+        "title": "Apollo ad",
+        "status": "draft",
+        "doc_kind": "scene",
+        "current_version": 0,
+        "created_at": datetime(2026, 9, 20, tzinfo=UTC),
+        "updated_at": datetime(2026, 9, 20, tzinfo=UTC),
+        "origin_thread_id": "thr_1",
+        "artifact_type": None,
+        "pages_json": None,
+        "account_id": "acc_1",
+        "account_name": "Apollo Clinics",
+        "account_domain": "apollo.example",
+        "account_entity_id": None,
+    }
+    settings = SimpleNamespace(brandfetch_client_id="cid-1")
+    wire = _design_artifact_list_item("prj_1", document, settings=settings)  # type: ignore[arg-type]
+    assert wire.account is not None
+    assert wire.account.logo_path == (
+        "https://cdn.brandfetch.io/domain/apollo.example/w/128/h/128/fallback/lettermark/type/icon"
+        "?c=cid-1"
+    )
+    unconfigured = _design_artifact_list_item(
+        "prj_1",
+        document,
+        settings=SimpleNamespace(brandfetch_client_id=""),  # type: ignore[arg-type]
+    )
+    assert unconfigured.account is not None and unconfigured.account.logo_path is None
+    assert _design_artifact_list_item("prj_1", document).account.logo_path is None  # type: ignore[union-attr]

@@ -89,13 +89,16 @@ export function toProjectArtifact(
     ...(collateralType ? { collateralType } : {}),
     ...(size ? { size } : {}),
     // The account the document was made for, onto the three fields the
-    // designed card already reads. The favicon rule is the artifact library's
-    // own (`toLibraryArtifact`) so one account renders identically in both
-    // surfaces; an account with no domain names itself and claims no logo.
+    // designed card already reads. The logo is Brandfetch's Logo API mark when
+    // the backend could build one (founder, 2026-09-20 — the accounts screens'
+    // own rule), else the favicon proxy the artifact library uses; an account
+    // with no domain names itself and claims no logo.
     ...(account ? { accountId: account.id, accountName: account.name } : {}),
-    ...(account?.domain
-      ? { accountLogoPath: `/api/source-favicon?domain=${encodeURIComponent(account.domain)}` }
-      : {}),
+    ...(account?.logoPath
+      ? { accountLogoPath: account.logoPath }
+      : account?.domain
+        ? { accountLogoPath: `/api/source-favicon?domain=${encodeURIComponent(account.domain)}` }
+        : {}),
     createdAt: utcInstant(item.createdAt),
     documentId: item.documentId,
     ...(version ? { version } : {}),
