@@ -17,6 +17,7 @@ import {
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
+import { openClarification } from "@/features/projects/model/clarification";
 import { useResearchProgressController } from "@/features/projects/hooks/use-research-progress-controller";
 import type {
   ProjectArtifact,
@@ -57,6 +58,7 @@ import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-do
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
+import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
 import { WebInspector } from "./web-inspector";
@@ -467,6 +469,16 @@ export function ChatSurface({
   const annotationChipList = webAnnotationsEnabled
     ? annotationChips(session.annotations.state.items)
     : [];
+
+  // The clarification card (spec 2026-09-20 §2.5): a design document that
+  // stopped to ask before spending. Whether anything is open is derived from
+  // the transcript by a pure function — the last settled assistant turn's
+  // `clarification` parts — so answering (which appends a user message) closes
+  // the card with no server round-trip, and a reload brings it back.
+  const clarification = useMemo(
+    () => openClarification(chat.transcript),
+    [chat.transcript],
+  );
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -1051,6 +1063,15 @@ export function ChatSurface({
                 <button type="button" disabled={chat.stopPending || chat.resumingQueue}
                   onClick={() => void chat.resumeQueuedTurns()}>Resume</button>
               </div>
+            ) : null}
+            {clarification !== null && chat.runningTurn === null ? (
+              <ClarificationCard
+                key={clarification.turnId}
+                onSubmit={(text, contextRefs) => {
+                  void chat.submitMessage(text, { contextRefs });
+                }}
+                parts={clarification.parts}
+              />
             ) : null}
             <ProjectComposer
               running={chat.runningTurn !== null}

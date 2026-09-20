@@ -15,6 +15,7 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources";
 import { MessageResponse } from "@/components/ai-elements/message-response";
+import { ClarificationHistoryCard } from "@/features/chat-shell/components/clarification-card";
 import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
 import { ChatGateCard } from "./chat-gate-card";
@@ -110,6 +111,12 @@ export function ChatMessagePartView({
         />
       );
     }
+    case "clarification":
+      // The interactive card lives above the composer and is driven from the
+      // transcript's LAST turn (`openClarification`). Here — inline, in the
+      // message that asked — the part is a read-only record: the questions and
+      // their defaults, and the fact that the answer is the next message.
+      return <ClarificationHistoryCard part={part} />;
     case "sources":
       return (
         <Sources className={styles.projectSources} defaultOpen={false}>
