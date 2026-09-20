@@ -27,6 +27,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:
+  worker UID/GID + child-only umask 077, defensive-only mode repair, native Linux volume smoke
+  and Docker-to-workspace-finalize regression; 144 focused tests passed.
 - `2026-09-17-pr62-design-agent-v1-merge-context.md` — merges `origin/research-streaming` into
   `codex/design-agent-v1` (PR #62): the 37-conflict resolution under the founder's rulings, the
   semantic fixes the gates surfaced, the Alembic join, the gateway numeric-code retry follow-up,

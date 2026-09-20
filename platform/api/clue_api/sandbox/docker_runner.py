@@ -7,7 +7,7 @@ every one of them can be argued for on its own line.
 
 The shape is deliberately blunt. There is no network (``--network none``), no writable root
 (``--read-only`` plus one ``noexec`` tmpfs for ``/tmp``), no capabilities (``--cap-drop ALL``,
-``--security-opt no-new-privileges``), no privilege (``--user 65534:65534`` — ``nobody``), and a
+``--security-opt no-new-privileges``), the worker's non-root UID/GID, and a
 fork bomb hits ``--pids-limit`` before it hits the host. The *only* host state the container can
 reach is the mounts :class:`~clue_api.sandbox.workspaces.SandboxMounts` names, and the only
 environment it gets is two variables that keep Python and matplotlib from writing where they
@@ -22,6 +22,7 @@ serving while a script runs.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -86,13 +87,22 @@ def _sanitise_label(label: str) -> str:
     return _LABEL_ALLOWED.sub("", label)
 
 
+def _worker_user() -> str:
+    """Bind-mounted private files must have the same owner inside and outside Docker."""
+
+    uid, gid = os.getuid(), os.getgid()
+    if uid == 0:
+        raise PermissionError("Run the fleet worker as a non-root user to use the code sandbox.")
+    return f"{uid}:{gid}"
+
+
 def build_command(
     mounts: SandboxMounts, limits: SandboxLimits, *, label: str | None = None
 ) -> list[str]:
     """The exact ``docker run`` argv for one script.
 
     Mounts are emitted read-only first, each group sorted by name, so the argv is a pure function
-    of its inputs — two runs of the same turn produce byte-identical commands, which is what makes
+    of its inputs and worker identity — two runs of the same turn produce identical commands, making
     the command itself something a reviewer or a log line can be compared against.
     """
 
@@ -125,7 +135,7 @@ def build_command(
         "--security-opt",
         "no-new-privileges",
         "--user",
-        "65534:65534",
+        _worker_user(),
         "--workdir",
         _CONTAINER_WORKSPACE,
         "--env",
@@ -135,9 +145,11 @@ def build_command(
         *label_flags,
         *mount_flags,
         limits.image,
-        "python",
-        "-I",
-        "-",
+        # Fixed startup only: agent code stays on stdin, never interpolated into the shell.
+        # Set the mask in the child, not the multithreaded worker (umask is process-wide).
+        "sh",
+        "-c",
+        "umask 077; exec python -I -",
     ]
 
 
@@ -150,6 +162,10 @@ def docker_available(image: str) -> tuple[bool, str]:
     than stall the turn that asked.
     """
 
+    try:
+        _worker_user()
+    except PermissionError as exc:
+        return False, str(exc)
     if shutil.which("docker") is None:
         return False, "Docker is not installed on this host."
     try:

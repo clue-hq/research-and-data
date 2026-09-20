@@ -10,6 +10,8 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from clue_api.sandbox.policy_sweep import SANDBOX_OUTPUT_EXTENSIONS, snapshot, sweep
 from clue_api.sandbox.workspaces import SandboxMounts
 from tests.api.sandbox.test_workspaces import _mounts
@@ -239,12 +241,8 @@ def test_a_missing_read_write_dir_is_not_an_error(tmp_path: Path) -> None:
     assert sweep(mounts, before={}).kept == ()
 
 
-def test_container_modes_are_normalised_to_what_write_file_produces(tmp_path: Path) -> None:
-    """A container writes 0644 files in 0755 directories; the backend's walk refuses both.
-
-    Found live 2026-09-20: the first CSV a script wrote finalized as "workspace file permissions
-    are not private" and failed the whole turn. The sweep now leaves 0600 / 0700 behind.
-    """
+def test_explicitly_changed_modes_are_repaired(tmp_path: Path) -> None:
+    """A script may override its private defaults; the sweep remains a defensive fallback."""
 
     mounts = _workspace(tmp_path)
     before = snapshot(mounts)
@@ -256,6 +254,24 @@ def test_container_modes_are_normalised_to_what_write_file_produces(tmp_path: Pa
     assert result.removed == ()
     assert os.stat(nested).st_mode & 0o777 == 0o600
     assert os.stat(nested.parent).st_mode & 0o777 == 0o700
+
+
+def test_private_outputs_need_no_permission_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mounts = _workspace(tmp_path)
+    before = snapshot(mounts)
+    nested = _write(mounts, "scratch/out/table.csv", b"a,b\n1,2\n")
+    os.chmod(nested, 0o600)
+    os.chmod(nested.parent, 0o700)
+
+    def unexpected_chmod(*args: object, **kwargs: object) -> None:
+        pytest.fail("Ordinary sandbox output should not need chmod")
+
+    monkeypatch.setattr(os, "chmod", unexpected_chmod)
+    result = sweep(mounts, before=before)
+    assert result.kept == (("scratch/out/table.csv", 8),)
+    assert result.removed == ()
 
 
 def test_a_hard_linked_file_is_removed(tmp_path: Path) -> None:

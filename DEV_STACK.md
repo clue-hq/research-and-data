@@ -78,9 +78,13 @@ The **fleet workers** start those containers, so a worker host needs three thing
 The other knobs (`CLUE_SANDBOX_TIMEOUT_S`, `_CPUS`, `_MEMORY_MB`, `_MAX_RUNS_PER_TURN`,
 `_MAX_OUTPUT_BYTES`) are in `.env.example` with their defaults; workers read them at start, so a
 change needs `restart-workers`. `status` prints a `sandbox:` line. The container itself has no
-network, a read-only root, no capabilities, runs as `nobody`, and sees only the thread's own
-workspace folders plus the read-only `brand/`, `project/` and `attachments/` mounts — see
+network, a read-only root, no capabilities, runs as the worker's non-root UID/GID, and sees only
+the thread's own workspace folders plus the read-only `brand/`, `project/` and `attachments/` mounts — see
 `docker/agent-sandbox/README.md` (and the `cryptography` pin recorded there for this box's Docker VM).
+The runner sets `umask 077` inside the container, so files and directories are private from
+creation and belong to the worker on Linux too. This requires a non-root worker account and
+a local Docker daemon with compatible bind-mount ownership. Restart workers to pick up runner
+changes; this ownership/default-permissions correction does not require rebuilding the image.
 
 Quick proof the sandbox works on a host, without the app:
 ```bash

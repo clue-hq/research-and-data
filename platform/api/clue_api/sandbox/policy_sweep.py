@@ -26,13 +26,10 @@ what happened to its files:
 
 Two more things the container leaves behind that ``write_file`` never would, and the backend's
 own walk refuses (``_validate_regular_file``): a file that is not *private*, and a hard link. A
-container writes with the daemon's default umask, so every file it creates is ``0644`` and every
-directory ``0755`` — the workspace demands ``0600`` / ``0700`` — and a script can ``os.link``.
-Modes are simply normalised here (``chmod``), on every surviving file and every directory
-walked, because that is what ``write_file`` would have produced; a file whose mode cannot be
-normalised is removed as ``not_private``, and a hard-linked file as ``hard_linked``. Found live
-2026-09-20: the first CSV a script wrote finalized as ``workspace file permissions are not
-private`` and took the whole turn down.
+script normally creates private files and directories: the runner uses the worker's UID/GID and
+``umask 077``. Only modes explicitly changed by a script or copied from another file need repair
+here (``0600`` / ``0700``); ordinary outputs need no ``chmod``. A file whose mode cannot be
+normalised is removed as ``not_private``, and a hard-linked file as ``hard_linked``.
 
 One reason beyond the four is unavoidable: ``atomic_write_residue``. The workspace backend treats
 a ``.clue-tmp-*`` name as an interrupted atomic write and refuses to walk a tree containing one,
@@ -145,7 +142,8 @@ def sweep(mounts: SandboxMounts, *, before: Mapping[str, tuple[int, float]]) -> 
             removed.append((path, "hard_linked"))
             continue
         try:
-            os.chmod(host, _FILE_MODE, follow_symlinks=False)
+            if stat.S_IMODE(metadata.st_mode) != _FILE_MODE:
+                os.chmod(host, _FILE_MODE, follow_symlinks=False)
         except (OSError, NotImplementedError):
             # A mode this worker cannot set (a foreign owner on a Linux host) is a file the
             # backend's walk would refuse; the only honest state is its absence.
@@ -250,11 +248,10 @@ def _walk(mounts: SandboxMounts) -> Iterator[tuple[str, Path, os.stat_result]]:
                     # Gone between the scan and the stat: nothing left to judge or delete.
                     continue
                 if stat.S_ISDIR(metadata.st_mode):
-                    # Created by the container with the daemon's umask (0755); the backend's
-                    # walk refuses anything but 0700. Best effort — a directory that cannot be
-                    # chmod'ed surfaces on the next workspace walk, loudly, as today.
-                    with suppress(OSError):
-                        os.chmod(child.path, _DIR_MODE, follow_symlinks=False)
+                    # Normally already private; repair explicit chmod/copy operations only.
+                    if stat.S_IMODE(metadata.st_mode) != _DIR_MODE:
+                        with suppress(OSError):
+                            os.chmod(child.path, _DIR_MODE, follow_symlinks=False)
                     stack.append((Path(child.path), path))
                 else:
                     yield path, Path(child.path), metadata

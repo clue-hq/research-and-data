@@ -168,8 +168,8 @@ message` for an image. The describer no longer consults the project-document sto
   script. `parameter_policy` journals `code` and `note` verbatim (the script is the audit
   record). `pin_requirements = ("project",)`.
 - Refusals (preconditions): `sandbox_unavailable` (feature off, Docker not reachable, image
-  missing), `run_budget_exhausted` (per-turn cap), `code_too_large`, `workspace_unavailable`
-  (no lease bound for this execution). A non-zero exit or a timeout is a normal result, not a
+  missing, worker running as root), `run_budget_exhausted` (per-turn cap), `code_too_large`,
+  `workspace_unavailable` (no lease bound for this execution). A non-zero exit or a timeout is a normal result, not a
   refusal, so the model can read stderr and try again.
 
 **Execution.** The tool runs, off the event loop (`asyncio.to_thread`, the design precedent),
@@ -177,13 +177,17 @@ one `docker run --rm` of the configured image with:
 
 - `--network none`, `--cpus <CLUE_SANDBOX_CPUS>`, `--memory <CLUE_SANDBOX_MEMORY_MB>m`,
   `--pids-limit 256`, `--read-only` root filesystem, a `tmpfs` at `/tmp`, `--cap-drop ALL`,
-  `--security-opt no-new-privileges`, an unprivileged user, no environment variables from the
-  host;
+  `--security-opt no-new-privileges`, the worker's non-root UID/GID (`--user`), no environment
+  variables from the host;
 - bind mounts: the thread's `scratch/`, `work/`, `outputs/` read-write; its `inputs/`,
   `context/`, `reads/` and the `brand/`, `project/`, `attachments/` mount directories read-only,
   all at `/workspace/<name>` so the paths the agent uses elsewhere hold inside the container
   (working directory `/workspace`);
-- the script passed on stdin to `python -I -`; wall-clock enforced by the tool (kill and report
+- a fixed startup command sets `umask 077` inside the container, then execs `python -I -`;
+  the script is passed on stdin, never inserted into shell text. Files are private (`0600`)
+  and directories private (`0700`) at creation, with ownership matching the worker. The
+  worker process's umask is never changed;
+- wall-clock enforced by the tool (kill and report
   `timed_out`), stdout and stderr captured up to `CLUE_SANDBOX_MAX_OUTPUT_BYTES` each with a
   truncation marker.
 
@@ -193,6 +197,9 @@ over quota), and reports what it removed in the receipt. The allow-list for sand
 files is the profile's `allowed_extensions` plus `.csv .xlsx .docx .pptx .pdf .png`, so a
 script can leave a derived spreadsheet or a chart under `outputs/` (nothing renders those for
 the human yet; they are snapshotted to artifacts at finalize like any output).
+The sweep also removes disallowed links and repairs modes explicitly changed or copied by a
+script; ordinary outputs require no chmod. This supersedes the initial fixed `nobody` UID and
+post-run permission repair as the normal path (founder ruling, 2026-09-20).
 
 **Finding the workspace.** `ToolContext` has no workspace handle, so the tool is given a
 `SandboxWorkspaces` registry at composition: the conversation engine registers the turn's
