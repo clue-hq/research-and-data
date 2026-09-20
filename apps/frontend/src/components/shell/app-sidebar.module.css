@@ -1,21 +1,21 @@
 .sidebarItem {
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 
 .sidebarItemActive {
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 
 .sidebarRegular {
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 

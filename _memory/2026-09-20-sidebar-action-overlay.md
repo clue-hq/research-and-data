@@ -34,3 +34,17 @@
 - Design-system generation, lint and production build passed; only the two known
   canvasOperations unused-function warnings remain. Diff whitespace check passed.
   No new tests for this CSS-only preview; no remote publication.
+
+## Regular-weight sidebar follow-up
+
+- Founder requested weight 400 instead of 500 for the 14px sidebar preview.
+  Updated navigation (including selected items), project/chat names, profile name
+  and empty-chat copy to the canonical text-default regular-weight token. Section
+  labels already use weight 400. Font sizes and spacing remain as approved.
+- Live computed styles confirmed 14px/400 for navigation, heading, project/chat
+  names and profile text. Reviewed the chat page screenshot. Browser verification
+  used read-only inspection after an unnecessary tab-retention mark was rejected;
+  no tab-retention change was needed for this request.
+- Closing verification: design-system generation, lint, production build and diff
+  whitespace check passed. Lint retains the two existing canvasOperations warnings.
+  Saved locally; no remote publication.
