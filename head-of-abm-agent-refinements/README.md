@@ -2,7 +2,7 @@
 
 **Created 2026-08-31.** The complete program for turning the platform's Head of ABM deepagent from a well-governed shell into a genuinely expert ABM strategist: the audit of what exists, six deep-research briefs produced by parallel Opus agents (hundreds of live fetches, everything cited), the soft-pull feasibility verdict on every data source the founder named, the training-data acquisition plan, the proposed skill architecture, and ready-to-review draft skills.
 
-**Start here → `09-skill-architecture-proposal.md`** (the synthesis + rollout plan + the 10 founder decisions), then dip into the research files as needed.
+**Start here → `11-deep-behavioral-audit.md`** (the 2026-09-19 audit of the live v57 agent and the reset of what "success" means), then `09-skill-architecture-proposal.md` (the synthesis + rollout plan + the 10 founder decisions), then dip into the research files as needed.
 
 | File | What it is | Size |
 |---|---|---|
@@ -16,6 +16,7 @@
 | `08-training-data-acquisition-plan.md` | The fetch-fleet design: Phase 1 = one day, 6 agents, ~4,000 records, $45–75; corpus format; distillation pipeline; fine-tune rejected with reasons; legal register | 1,113 lines |
 | `09-skill-architecture-proposal.md` | **The synthesis**: target architecture, the three new skills, eval gate, rollout R1–R8, founder decisions D1–D10 | proposal |
 | `10-draft-skills/` | Ready-to-review drafts: `abm-craft`, `campaign-ideation`, `copy-voice` (all verified zero em dashes) + the prompt v5 delta + wiring caveats | drafts |
+| `11-deep-behavioral-audit.md` | **2026-09-19 deep audit of the live agent (profile v57).** Why it asks instead of acts, traced string by string (prompt v10, skill v33, the document skills, the manual, the turn contract, the tool surface); the adoption ledger of what this folder's content became; six behavior spectrums; the redefinition of success (M1–M10); fourteen levers ranked by proximity per effort | audit |
 
 ## The five headlines
 
