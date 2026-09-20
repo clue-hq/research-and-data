@@ -171,3 +171,27 @@ the agent) are NOT changed for now; items 1 and 2 are to be fixed thoroughly, co
 exception** (fill containers, padded parents, nested fill under hug/fill, weighted fill, main-axis
 fill fallback, wrapped hug-width text, token dims, locked/absolute/rotated children, convert-of-one,
 the real ads as fixtures). All three new ads are now fully Free (6/6, 4/4, 7/7 containers).
+
+## 2026-09-20 (later) — batch receipt collision FIXED, stuck leg REPAIRED
+- `0601e837c` — `_dispatch_batch` records every run's receipts at the END, in position order,
+  each run offset by the highest sequence already on the turn (`receipts_from_design_run(...,
+  sequence_offset=)`, `_record_design_receipts` returns the next offset). A one-run turn records
+  from 0 → byte-identical rows; a retry re-joining the same terminal runs recomputes the same
+  numbers and converges on the rows already written. Three tests in
+  `tests/api/test_design_leg_receipts_db.py` (red on the old wiring; 11/11 green with p32).
+- Leg `e1b29465…` repaired by a one-off script (`/tmp/legrepair/repair.py`, not committed): dry
+  run showed run 0's 31 rows agree with the recomputed numbering (0 drift); runs 1 and 2 recorded
+  as 32..66 and 67..107 (107 receipts on turn `fe8c521b…`); leg `running` → `open_awaiting_user`
+  with the `leg.awaiting_user` frame on that turn. The crashed turn itself stays unfinalized
+  (no summary was ever written — honest); the next message on the thread works as normal.
+- Fleet workers restarted via the runbook (`restart-workers`; its trailing `status` still
+  hangs — bounded with `timeout`); 4 processes × 3 slots up, logs clean. The runner is composed
+  in `fleet_main` only, so the platform APIs needed no restart.
+- Residual (NOT fixed, discuss first): a crash between `mark_leg_running` and
+  `_leg_back_to_awaiting` (any exception out of `_dispatch_batch` other than the two typed
+  refusals) leaves the leg stuck `running` — `_contain_crash` terminalizes the TURN only. Today's
+  collision is exactly that path. A containment that puts the leg back when its runs are all
+  terminal would make this self-healing.
+- Also fixed today on the frontend (`e710e2d88`): a person's own edit no longer re-opens the
+  active tab / drops edit mode / reloads the chat (see `2026-09-20-freeze-bake-fill-parity.md`
+  addendum 2).
