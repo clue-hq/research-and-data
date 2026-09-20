@@ -44,17 +44,21 @@ test("fixture project shell uses the honest pre-artifact contract", async () => 
   assert.ok(home.composerCapabilities.contextRefs);
   assert.deepEqual(project.artifacts, []);
   assert.deepEqual(Object.keys(project).sort(), [
+    "archivedAt",
     "artifacts",
     "brandId",
     "composerCapabilities",
     "createdAt",
     "defaultAgentProfileId",
+    "description",
     "entities",
     "id",
     "models",
+    "pinned",
     "productId",
     "status",
     "title",
+    "updatedAt",
   ]);
   assert.equal(home.suggestions.length, 3);
   assert.ok(home.suggestions.every((suggestion) => suggestion.length > 0));

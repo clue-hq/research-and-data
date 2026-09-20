@@ -23,6 +23,7 @@ from clue_core import (
     AssemblyRequest,
     MemoryBundle,
     MemoryBundleEntry,
+    MemoryProvenanceClass,
     MemoryScopeType,
     MemorySelectionPin,
     MemorySelectionStale,
@@ -243,3 +244,46 @@ class Assembly:
             cross_branch_pairs=json.dumps(pairs),
             bundle_hash=bundle.bundle_hash(),
         )
+
+
+# --- the human's own view of a scope's memory --------------------------------
+#
+# The assembly engine above serves *agents*; these two serve the surfaces where a human reads and
+# edits their own notes. They live here — beside the read seam, inside the package — for the
+# reason ``_store`` is private (Rule S1): a caller outside ``clue_memory`` may not query memory
+# storage, so the package exports the one shape the caller actually needs instead.
+
+
+async def list_project_memories(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> list[Memory]:
+    """Active, user-stated project-scope memories, newest first — the project home's list.
+
+    Deliberately narrower than the store's filter: the panel shows the notes a *human* stated
+    (``user_stated``) and only those currently in force (``active``). An agent-observed record and
+    a superseded one are real memories the agent still reasons over, but they are not this human's
+    list of notes, and showing them here would invite a human to "delete" something they never
+    wrote.
+    """
+    records = await _store.list_records(
+        conn,
+        workspace_id=workspace_id,
+        statuses=(MemoryStatus.ACTIVE,),
+        scope_type=MemoryScopeType.PROJECT,
+        scope_id=project_id,
+    )
+    return sorted(
+        (m for m in records if m.provenance_class is MemoryProvenanceClass.USER_STATED),
+        key=lambda m: m.created_at,
+        reverse=True,
+    )
+
+
+async def get_memory(conn: AsyncConnection, memory_id: str) -> Memory | None:
+    """One record by id, or ``None`` — the read a writer does to render what it just submitted.
+
+    Unscoped by design, exactly as the store's own read is: the caller already holds the id the
+    write seam returned for its own tenant's submission. A surface that starts from a *user*-given
+    id must check the workspace itself (:func:`clue_memory.retire` is the fail-closed example).
+    """
+    return await _store.get_memory(conn, memory_id)

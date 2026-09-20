@@ -193,6 +193,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "create_thread": ("precondition", ("project_not_found",)),
     "rename_thread": ("precondition", ("thread_not_found",)),
     "rename_project": ("precondition", ("project_not_found",)),
+    # Projects directory (2026-09-19). Same shape: the subject that does not exist in this
+    # workspace — a brand for the creator, a project for the three mutators.
+    "create_project": ("precondition", ("brand_not_found",)),
+    "update_project_details": ("precondition", ("project_not_found",)),
+    "set_project_pinned": ("precondition", ("project_not_found",)),
+    "set_project_archived": ("precondition", ("project_not_found",)),
     "set_thread_pinned": ("precondition", ("thread_not_found",)),
     "archive_thread": ("precondition", ("thread_not_found",)),
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
@@ -569,6 +575,19 @@ def _bodies() -> dict[str, dict[str, object]]:
         "create_thread": {"project_id": "prj_absent_from_this_workspace"},
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
         "rename_project": {"project_id": "project_missing", "title": "renamed"},
+        "create_project": {
+            "project_id": "prj_new",
+            "brand_id": "brand_missing",
+            "title": "t",
+            "description": "",
+        },
+        "update_project_details": {
+            "project_id": "project_missing",
+            "title": "t",
+            "description": "",
+        },
+        "set_project_pinned": {"project_id": "project_missing", "pinned": True},
+        "set_project_archived": {"project_id": "project_missing", "archived": True},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
         "finish_design_leg": {
@@ -1412,7 +1431,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # Projects directory (2026-09-19): create_project, update_project_details,
+    # set_project_pinned and set_project_archived, each at @1 only and each ungranted
+    # (136 -> 140 names / 156 -> 160 addresses).
+    assert len(registry.names()) == 140
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1449,7 +1471,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # Projects directory (2026-09-19): create_project, update_project_details,
+    # set_project_pinned and set_project_archived, each at @1 only and each ungranted
+    # (136 -> 140 names / 156 -> 160 addresses).
+    assert len(registry) == 160
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1487,7 +1512,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # Projects directory (2026-09-19): create_project, update_project_details,
+    # set_project_pinned and set_project_archived, each at @1 only and each ungranted
+    # (136 -> 140 names / 156 -> 160 addresses).
+    assert len(registry.names()) == 140
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1511,7 +1539,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # Projects directory (2026-09-19): create_project, update_project_details,
+    # set_project_pinned and set_project_archived, each at @1 only and each ungranted
+    # (136 -> 140 names / 156 -> 160 addresses).
+    assert len(registry) == 160
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

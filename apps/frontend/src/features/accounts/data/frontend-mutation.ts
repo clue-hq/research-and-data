@@ -13,12 +13,11 @@ async function readErrorEnvelope(response: Response) {
   return null;
 }
 
-/** Issue one authenticated browser mutation through the same-origin BFF. */
-export async function fetchMutation(
+async function send(
   path: string,
   init: RequestInit,
-  request: typeof fetch = fetch,
-): Promise<unknown> {
+  request: typeof fetch,
+): Promise<Response> {
   const response = await request(`${BFF_PREFIX}${path}`, {
     ...init,
     headers: {
@@ -40,5 +39,28 @@ export async function fetchMutation(
       },
     );
   }
-  return response.json();
+  return response;
+}
+
+/** Issue one authenticated browser mutation through the same-origin BFF. */
+export async function fetchMutation(
+  path: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+): Promise<unknown> {
+  return (await send(path, init, request)).json();
+}
+
+/**
+ * The same request for a route whose success is a `204 No Content`.
+ *
+ * A deletion has no body to parse, and asking for one would turn a successful
+ * refusal-free response into a JSON error.
+ */
+export async function fetchMutationVoid(
+  path: string,
+  init: RequestInit,
+  request: typeof fetch = fetch,
+): Promise<void> {
+  await send(path, init, request);
 }

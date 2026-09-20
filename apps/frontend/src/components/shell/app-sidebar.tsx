@@ -132,6 +132,7 @@ export function AppSidebar({
           name={projectsController.editProjectName}
           onCancel={projectsController.cancelEditProject}
           onChangeName={projectsController.setEditProjectName}
+          onRemove={projectsController.archiveProject}
           onSave={projectsController.saveEditProject}
         />
       ) : null}

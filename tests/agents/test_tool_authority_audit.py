@@ -149,7 +149,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Artifacts page (2026-09-15) adds the library's two curation writes, `design_rename_document`
     # and `design_set_document_archived` (134 -> 136), both UNGRANTED and human-only: renaming or
     # archiving a document is an act of the person at the library grid or the editor header.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 136
+    # Projects directory (2026-09-19) adds the four project-row writes, `create_project`,
+    # `update_project_details`, `set_project_pinned` and `set_project_archived`
+    # (136 -> 140), all UNGRANTED and human-only for the same reason the design library's
+    # curation writes are: filing a project is an act of the person looking at the list.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 140
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
@@ -276,6 +280,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_project"] == ()
+    # Projects directory (2026-09-19): the four project-row tools are human-only too.
+    assert C6_AGENT_TOOL_AUTHORITY["create_project"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["update_project_details"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_pinned"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_archived"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a

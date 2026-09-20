@@ -30,6 +30,7 @@ from clue_core import UtcDatetime, decode_jsonb, serialize_value_json
 WorkspaceStatus = Literal["active", "archived"]
 ProductStatus = Literal["active", "archived"]
 ProjectStatus = Literal["draft", "active", "archived"]
+ProjectKind = Literal["marketing", "system"]
 
 
 # --- id factories (prefixed uuid4 hex over text PKs) ------------------------
@@ -99,6 +100,11 @@ class Project(BaseModel):
     name: str
     status: ProjectStatus = "draft"
     created_at: UtcDatetime
+    description: str = ""
+    pinned: bool = False
+    kind: ProjectKind = "marketing"
+    updated_at: UtcDatetime
+    archived_at: UtcDatetime | None = None
 
 
 # --- workspace --------------------------------------------------------------
@@ -301,7 +307,10 @@ async def list_products(conn: AsyncConnection, brand_id: str) -> list[Product]:
 
 
 # --- project ----------------------------------------------------------------
-_PROJECT_COLUMNS = "project_id, workspace_id, brand_id, product_id, name, status, created_at"
+_PROJECT_COLUMNS = (
+    "project_id, workspace_id, brand_id, product_id, name, status, created_at, "
+    "description, pinned, kind, updated_at, archived_at"
+)
 
 #: The name a Home-created project is born with until the conversation namer replaces it (spec
 #: 2026-09-18-conversation-naming-design §4.5). One constant: the router births it, the namer's
@@ -318,13 +327,21 @@ async def create_project(
     product_id: str | None = None,
     project_id: str | None = None,
     status: ProjectStatus = "draft",
+    description: str = "",
+    kind: ProjectKind = "marketing",
 ) -> Project:
     """Insert a project and return it. Composite FKs pin ``brand_id`` — and ``product_id`` when
-    set — to the project's own workspace (a cross-workspace reference is an IntegrityError)."""
+    set — to the project's own workspace (a cross-workspace reference is an IntegrityError).
+
+    ``archived_at`` is born from ``status`` so ``project_archived_at_iff`` holds for every row,
+    including the system scope anchors that are born archived.
+    """
     result = await conn.execute(
         text(
-            "INSERT INTO project (project_id, workspace_id, brand_id, product_id, name, status) "
-            "VALUES (:project_id, :workspace_id, :brand_id, :product_id, :name, :status) "
+            "INSERT INTO project (project_id, workspace_id, brand_id, product_id, name, status, "
+            "description, kind, archived_at) VALUES (:project_id, :workspace_id, :brand_id, "
+            ":product_id, :name, :status, :description, :kind, "
+            "CASE WHEN :status = 'archived' THEN now() ELSE NULL END) "
             f"RETURNING {_PROJECT_COLUMNS}"
         ),
         {
@@ -334,6 +351,8 @@ async def create_project(
             "product_id": product_id,
             "name": name,
             "status": status,
+            "description": description,
+            "kind": kind,
         },
     )
     return Project(**dict(result.mappings().one()))
@@ -378,7 +397,7 @@ async def set_project_name(
     """Rename only the project owned by this workspace; preserve its identity and contents."""
     result = await conn.execute(
         text(
-            "UPDATE project SET name = :name "
+            "UPDATE project SET name = :name, updated_at = clock_timestamp() "
             "WHERE workspace_id = :workspace_id AND project_id = :project_id "
             f"RETURNING {_PROJECT_COLUMNS}"
         ),
@@ -412,6 +431,75 @@ async def set_project_name_if_untitled(
     )
     row = result.mappings().first()
     return Project(**dict(row)) if row is not None else None
+
+
+async def update_project_details(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, name: str, description: str
+) -> Project | None:
+    """Title and objective together; bumps ``updated_at`` (spec R10)."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET name = :name, description = :description, "
+            "updated_at = clock_timestamp() "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "name": name,
+            "description": description,
+        },
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
+async def set_project_pinned(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, pinned: bool
+) -> Project | None:
+    """Workspace-wide pin. Deliberately does NOT bump ``updated_at`` (the dummy's rule)."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET pinned = :pinned "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id, "pinned": pinned},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
+async def set_project_archived(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, archived: bool
+) -> Project | None:
+    """Flip ``active`` ↔ ``archived``. A ``draft`` row is left alone (``None``)."""
+    result = await conn.execute(
+        text(
+            "UPDATE project SET "
+            "status = CASE WHEN :archived THEN 'archived' ELSE 'active' END, "
+            "archived_at = CASE WHEN :archived THEN clock_timestamp() ELSE NULL END, "
+            "updated_at = clock_timestamp() "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id "
+            "AND status IN ('active', 'archived') "
+            f"RETURNING {_PROJECT_COLUMNS}"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id, "archived": archived},
+    )
+    row = result.mappings().first()
+    return Project(**dict(row)) if row is not None else None
+
+
+async def touch_project(conn: AsyncConnection, *, workspace_id: str, project_id: str) -> None:
+    """The ``updated_at`` bump the instructions and memory routes call after their own write."""
+    await conn.execute(
+        text(
+            "UPDATE project SET updated_at = clock_timestamp() "
+            "WHERE workspace_id = :workspace_id AND project_id = :project_id"
+        ),
+        {"workspace_id": workspace_id, "project_id": project_id},
+    )
 
 
 async def confirm_project_product(

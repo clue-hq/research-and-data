@@ -124,13 +124,28 @@ def _principal(workspace_id: str, *, permissions: frozenset[str] | None = None) 
 def _app(conn, *, settings: Settings, permissions: frozenset[str] | None = None):
     """The real projections app with the chat surface mounted and a real thread toolbelt."""
 
-    from clue_api.project_tools import RenameProjectTool
+    from clue_api.project_tools import (
+        CreateProjectTool,
+        RenameProjectTool,
+        SetProjectArchivedTool,
+        SetProjectPinnedTool,
+        UpdateProjectDetailsTool,
+    )
     from clue_api.thread_wiring import register_thread_tools
 
     cf = conn_session_factory(conn)
     registry = ToolRegistry()
     register_thread_tools(registry, conn_factory=cf)
-    registry.register(RenameProjectTool(conn_factory=cf), make_default=True)
+    # The same project tool set ``toolbelt_wiring`` registers, so every surface test shares one
+    # registry shape: rename plus the four project-row tools the directory routes drive.
+    for tool in (
+        RenameProjectTool(conn_factory=cf),
+        CreateProjectTool(conn_factory=cf),
+        UpdateProjectDetailsTool(conn_factory=cf),
+        SetProjectPinnedTool(conn_factory=cf),
+        SetProjectArchivedTool(conn_factory=cf),
+    ):
+        registry.register(tool, make_default=True)
     return create_projections_app(
         surface=build_surface(conn),
         tool_invoker=build_tool_invoker(

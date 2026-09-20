@@ -10,6 +10,7 @@ interface EditProjectDialogProps {
   saving: boolean;
   onCancel: () => void;
   onChangeName: (name: string) => void;
+  onRemove: () => void;
   onSave: () => void;
 }
 
@@ -20,6 +21,7 @@ export function EditProjectDialog({
   saving,
   onCancel,
   onChangeName,
+  onRemove,
   onSave,
 }: EditProjectDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -40,7 +42,7 @@ export function EditProjectDialog({
             }} />}
           >
             <div className={styles.dialogHeader}>
-              <Dialog.Title render={<h2 />}>Rename project</Dialog.Title>
+              <Dialog.Title render={<h2 />}>Edit project</Dialog.Title>
               <Dialog.Close
                 aria-label="Close"
                 disabled={saving}
@@ -73,6 +75,14 @@ export function EditProjectDialog({
             ) : null}
 
             <div className={styles.dialogActions}>
+              <button
+                className={`${styles.dialogButton} ${styles.removeButton}`}
+                onClick={onRemove}
+                disabled={saving}
+                type="button"
+              >
+                Archive project
+              </button>
               <div className={styles.dialogActionsRight}>
                 <button
                   className={`${styles.dialogButton} ${styles.cancelButton}`}

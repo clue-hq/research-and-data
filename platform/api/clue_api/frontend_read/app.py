@@ -62,6 +62,7 @@ from clue_obs.otel import bind_and_annotate
 from clue_storage import StorageBackend
 
 if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.frontend_read.project_memory import MemoryWriteFactory
     from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.frontend_read")
@@ -216,12 +217,17 @@ def build_frontend_read_router(
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
     Every slice-1 endpoint (Tasks 2–4) registers here and inherits the workspace dependency, so
     tenant scoping cannot be forgotten route-by-route. ``conn_factory`` is the connection seam those
     readers bind to.
+
+    ``memory_write_factory`` reaches exactly one place too: the project home's memory panel. It
+    is ``None`` on a deployment with no model gateway (the scoped-memory seam's reconciliation
+    needs a judge), and the memory writes then refuse loudly while their list still serves.
 
     ``secrets`` reaches exactly one place: the D3 display seam. **One**
     :class:`~clue_api.frontend_read.display_pages.DisplayPages` is built here and shared by every
@@ -252,6 +258,10 @@ def build_frontend_read_router(
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.project_documents import register_project_document_routes
+    from clue_api.frontend_read.project_instructions import (
+        register_project_instructions_routes,
+    )
+    from clue_api.frontend_read.project_memory import register_project_memory_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
     from clue_api.frontend_read.settings import register_settings_routes
     from clue_api.frontend_read.uploads import register_upload_routes
@@ -307,6 +317,23 @@ def build_frontend_read_router(
         allow_local_mutations=allow_local_mutations,
         # The human's PUT refreshes the project library it just moved (2026-09-14).
         library=project_library,
+    )
+    # The project home's Instructions panel, which is one of those documents (spec 2026-09-19).
+    register_project_instructions_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+        library=project_library,
+    )
+    # The project home's Memory panel — the human's own notes, written through the scoped-memory
+    # write seam rather than a table this surface owns (spec 2026-09-19 §2.7).
+    register_project_memory_routes(
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        memory_write_factory=memory_write_factory,
+        allow_local_mutations=allow_local_mutations,
     )
     # Chat attachments: the upload receipt and the bytes behind a transcript chip (spec
     # 2026-09-18).
@@ -368,6 +395,7 @@ def install_frontend_read_surface(
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -387,6 +415,7 @@ def install_frontend_read_surface(
                 contact_email_lookup=contact_email_lookup,
                 secrets=secrets,
                 project_library=project_library,
+                memory_write_factory=memory_write_factory,
             )
         )
 

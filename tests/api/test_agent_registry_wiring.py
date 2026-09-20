@@ -274,7 +274,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (154 -> 156).
-    assert len(by_address) == 156
+    # Projects directory (2026-09-19): four project-row tools, ungranted (156 -> 160).
+    assert len(by_address) == 160
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -382,13 +383,18 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (154 -> 156).
-    assert len(by_address) == 156
+    # Projects directory (2026-09-19): four project-row tools, ungranted (156 -> 160).
+    assert len(by_address) == 160
     for address in (
         "create_thread@1",
         "rename_thread@1",
         "rename_project@1",
         "set_thread_pinned@1",
         "archive_thread@1",
+        "create_project@1",
+        "update_project_details@1",
+        "set_project_pinned@1",
+        "set_project_archived@1",
     ):
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
