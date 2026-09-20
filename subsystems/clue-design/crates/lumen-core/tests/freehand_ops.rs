@@ -1019,13 +1019,10 @@ fn size_of(scene: &Scene, id: &str) -> SizeSpec {
     scene.nodes[&NodeId::from(id)].size.clone()
 }
 
-/// The 2026-09-20 defect, in the shape it shipped in: the harvested ad's pill
-/// rows are `fill × hug` containers under a `fill × hug` column, and the Stack
-/// solve hugged them (617) because their parent has no definite cross-axis
-/// size. Keeping `fill` through the freeze let Free mode re-resolve them
-/// against the artboard content box (976) on the very first click.
-#[test]
-fn freeze_layout_bakes_a_fill_containers_solved_width() {
+/// The harvested ad's pill fixture: a padded 1080×1080 artboard, a `fill × hug`
+/// products column, and three `fill × hug` padded rows each hugging a 577-wide
+/// label. Returns the scene UNLAID — callers `apply_layout` themselves.
+fn pills_scene() -> Scene {
     let mut scene = scene_with_page(1080.0, 1080.0);
     let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 18.0);
     artboard.layout = Some(AutoLayoutProps {
@@ -1063,6 +1060,17 @@ fn freeze_layout_bakes_a_fill_containers_solved_width() {
             rect(&format!("{id}_label"), 577.0, 41.0),
         );
     }
+    scene
+}
+
+/// The 2026-09-20 defect, in the shape it shipped in: the harvested ad's pill
+/// rows are `fill × hug` containers under a `fill × hug` column, and the Stack
+/// solve hugged them (617) because their parent has no definite cross-axis
+/// size. Keeping `fill` through the freeze let Free mode re-resolve them
+/// against the artboard content box (976) on the very first click.
+#[test]
+fn freeze_layout_bakes_a_fill_containers_solved_width() {
+    let mut scene = pills_scene();
     apply_layout(&mut scene);
 
     assert_eq!(
@@ -1407,5 +1415,83 @@ fn convert_container_layout_bakes_the_containers_own_fill() {
             .layout_mode,
         LayoutMode::Stack,
         "the parent stays in the solve"
+    );
+}
+
+/// Item 2 (2026-09-20): a `fill` child of a FREE container is the container's padded
+/// content box, exactly as it would be in Stack mode — never the outer box.
+#[test]
+fn free_container_fill_children_resolve_against_the_content_box() {
+    let mut scene = scene_with_page(1080.0, 1080.0);
+    let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 0.0);
+    artboard.layout = Some(AutoLayoutProps {
+        padding: [48.0, 52.0, 48.0, 52.0],
+        layout_mode: LayoutMode::Free,
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), artboard);
+    let mut band = rect("band", 0.0, 60.0);
+    band.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(60.0),
+    };
+    band.transform.x = 52.0;
+    band.transform.y = 48.0;
+    insert(&mut scene, ParentRef::Node(NodeId::from("artboard")), band);
+    apply_layout(&mut scene);
+    let solved_band = solved(&scene, "band");
+    assert_eq!(solved_band.width, 976.0, "fill = outer 1080 − 52 − 52");
+    assert_eq!(
+        (solved_band.x, solved_band.y),
+        (52.0, 48.0),
+        "position is the author's transform, outer-relative"
+    );
+}
+
+/// Stack/Free parity on the Task 1 pills fixture: freeze the padded artboard,
+/// then drop a NEW `fill × fixed` band into the frozen (Free) container. The
+/// width it resolves to must be the same 976 the Stack solve hands a `fill`
+/// child — a human editing after the handoff gets the same geometry rules.
+#[test]
+fn a_fill_child_added_after_the_freeze_matches_the_stack_solves_width() {
+    let mut scene = pills_scene();
+    apply_layout(&mut scene);
+    assert_eq!(
+        solved(&scene, "products").width,
+        976.0,
+        "fixture sanity: the Stack solve fills the 1080-52-52 content box"
+    );
+
+    let mut frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        frozen.nodes[&NodeId::from("artboard")]
+            .layout
+            .as_ref()
+            .unwrap()
+            .layout_mode,
+        LayoutMode::Free,
+        "the freeze puts the artboard in Free mode"
+    );
+
+    let mut band = rect("band", 0.0, 60.0);
+    band.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(60.0),
+    };
+    band.transform.x = 52.0;
+    band.transform.y = 900.0;
+    insert(&mut frozen, ParentRef::Node(NodeId::from("artboard")), band);
+    apply_layout(&mut frozen);
+
+    let solved_band = solved(&frozen, "band");
+    assert_eq!(
+        solved_band.width,
+        solved(&scene, "products").width,
+        "Free-mode fill matches the Stack solve's fill: the padded content box"
+    );
+    assert_eq!(
+        (solved_band.x, solved_band.y),
+        (52.0, 900.0),
+        "the new child keeps the author's outer-relative transform"
     );
 }

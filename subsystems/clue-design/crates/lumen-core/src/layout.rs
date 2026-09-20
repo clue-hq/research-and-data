@@ -197,6 +197,24 @@ impl<'a> LayoutEngine<'a> {
         let size = pinned_size.unwrap_or_else(|| self.resolve_manual_size(node, parent_size));
         self.write_geometry(node, origin, size);
 
+        // Free mode: `fill` = the padded CONTENT box, positions = the author's
+        // transform relative to the OUTER origin (the freeze bakes them that
+        // way). Resolving a child's fill against the outer box was the other
+        // half of the 2026-09-20 defect: the same `fill × hug` row the Stack
+        // solve gave the content width (976) jumped to the outer width (1080)
+        // the moment its container was frozen to Free. Only an auto-layout
+        // node carries `layout`, so a plain group/frame pads by zero and its
+        // children see exactly what they saw before.
+        let padding = node
+            .layout
+            .as_ref()
+            .map(|layout| layout.padding)
+            .unwrap_or([0.0; 4]);
+        let content = Size2 {
+            width: (size.width - padding[1] - padding[3]).max(0.0),
+            height: (size.height - padding[0] - padding[2]).max(0.0),
+        };
+
         for child_id in &node.children {
             let Some(child) = self.scene.nodes.get(child_id) else {
                 continue;
@@ -207,7 +225,7 @@ impl<'a> LayoutEngine<'a> {
                     x: origin.x + child.transform.x,
                     y: origin.y + child.transform.y,
                 },
-                size,
+                content,
                 page_id,
             );
         }
