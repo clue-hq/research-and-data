@@ -1,5 +1,18 @@
 # Chat appearance review documented
 
+## Follow-up: buying committee table parity
+
+- Founder expected buying committee formatting to match the accounts table. It still
+  used 13px/18px; switched its shared CSS to canonical 14px/20px text-default tokens.
+  Account preview and full account overview share BuyingCommitteeTable. Existing
+  header/name emphasis and layout remain.
+- Browser verified expanded committee headers and cells at 14px/20px in both account
+  preview and full account detail; temporary tab closed. Playwright's button role did
+  not match the native summary despite the AX label; using the observed summary worked.
+- Design-system generation, lint and production build passed with the same two existing
+  canvasOperations warnings. CSS-only change; no new tests. Closing state: saved locally,
+  no remote publication. The separate Contacts-tab grid was outside this change.
+
 ## Correction: 14px/20px applies to accounts table
 
 - Founder clarified the prior request meant accounts table typography, not chat.
