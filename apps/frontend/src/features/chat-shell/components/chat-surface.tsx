@@ -591,6 +591,7 @@ export function ChatSurface({
   const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
   const activateArtifact = shell.activateArtifact;
+  const openArtifacts = shell.openArtifacts;
   useEffect(() => {
     const known = knownArtifactIds.current;
     if (known === null) {
@@ -609,6 +610,9 @@ export function ChatSurface({
       artifacts: feedArtifacts,
       knownArtifactIds: known,
       knownUpdates: knownArtifactUpdates.current,
+      // A tab change re-runs this effect too, harmlessly: by then every id
+      // of the current feed is banked below, so nothing is left to open.
+      openArtifactIds: new Set(openArtifacts.map((artifact) => artifact.id)),
     });
     // Bank everything this delivery carried — including the one being opened —
     // before acting on the decision. That is what makes a document open at
@@ -622,7 +626,7 @@ export function ChatSurface({
     // rather than landing on whichever document happened to finish last.
     for (const artifact of opening) openArtifact(artifact);
     activateArtifact(opening[0].id);
-  }, [activateArtifact, chat.activeThreadId, feedArtifacts, openArtifact]);
+  }, [activateArtifact, chat.activeThreadId, feedArtifacts, openArtifact, openArtifacts]);
 
   // The composer's Files and Microsites come from the same feeds the Gallery draws. The
   // document list is fetched here unconditionally (the tabs hook fetches only while a

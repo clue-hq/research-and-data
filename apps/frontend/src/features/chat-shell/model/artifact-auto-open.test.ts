@@ -227,3 +227,33 @@ test("a newly updated design file reopens once; replay and another thread never 
   knownUpdates.set(artifact.id, artifact.updatedAt);
   assert.deepEqual(artifactsToAutoOpen(args), []);
 });
+
+test("an updated document whose tab is already open is not re-opened — the person's own edit stays an edit", () => {
+  // A manual edit bumps the document's version, so the next feed delivery
+  // lists the document as "updated". Its tab is already in front; re-opening
+  // it would reset edit mode and the selection on every change (2026-09-20).
+  const args = {
+    activeThreadId: ACTIVE,
+    artifacts: [card("editing", { updatedAt: "2026-09-20T12:01:00Z" })],
+    knownArtifactIds: new Set(["editing"]),
+    knownUpdates: new Map([["editing", "2026-09-20T12:00:00Z"]]),
+  };
+  assert.deepEqual(artifactsToAutoOpen({ ...args, openArtifactIds: new Set(["editing"]) }), []);
+  // The same update with the tab CLOSED still opens it, exactly as before.
+  assert.deepEqual(
+    artifactsToAutoOpen({ ...args, openArtifactIds: new Set(["other"]) }).map((opened) => opened.id),
+    ["editing"],
+  );
+});
+
+test("a NEW document is never in the open set, so births open exactly as before", () => {
+  assert.deepEqual(
+    artifactsToAutoOpen({
+      activeThreadId: ACTIVE,
+      artifacts: [card("born"), card("open-already")],
+      knownArtifactIds: new Set(["open-already"]),
+      openArtifactIds: new Set(["open-already"]),
+    }).map((opened) => opened.id),
+    ["born"],
+  );
+});

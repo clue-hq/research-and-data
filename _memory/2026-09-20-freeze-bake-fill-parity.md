@@ -63,3 +63,19 @@ spawned per call, so engine calls were already new; only the cached stamp lagged
 restarts the PLATFORM APIs only — the design API is restarted by reproducing `up`'s design-API
 command (done by hand 2026-09-20; stamp now bb1aaeea610a on both sides). Follow-up for the runbook:
 a `restart-design-api` command.
+
+## Addendum 2 — "every edit drops edit mode and reloads the chat" (frontend, fixed 2026-09-20)
+Diagnosed first-hand from the recording + logs (zero stream frames; design API only applied ops):
+a manual edit bumps the document version → the URL write-back's `router.replace` re-renders the
+page → the server-fetched feed lists the active document as UPDATED → `artifactsToAutoOpen`
+re-opened it → the shell's `open-artifact` reset `editing:false` + selection → write-back to
+`?surface=ad` → `routeQuery` change → `replaceThreadInRoute` identity change → the thread-resolution
+effect re-ran `loadThreads`/`loadConversation` (the "chat reopens"). Pre-dates this week's work
+(open-on-update from `248ced412`, 2026-09-14). Two fixes, both pinned red→green:
+- `artifactsToAutoOpen` takes `openArtifactIds` (the shell's open tabs) and skips an updated
+  document whose tab is already open; a NEW document is never in that set, so births open as before.
+- the shell reducer's `open-artifact` is a no-op when the artifact is already active on the
+  artifact surface with the rail open (from the gallery or a closed rail it still brings it forward).
+Deferred (separate change): the thread-resolution effect in `use-project-chat-controller.ts`
+depends on `replaceThreadInRoute`, whose identity follows `routeQuery`, so ANY URL param change
+still reloads threads/conversation; with the two fixes above the loop no longer triggers it.

@@ -36,17 +36,29 @@ export function artifactsToAutoOpen({
   artifacts,
   knownArtifactIds,
   knownUpdates,
+  openArtifactIds,
 }: {
   activeThreadId: string | null;
   artifacts: readonly AutoOpenFeedArtifact[];
   knownArtifactIds: ReadonlySet<string>;
   knownUpdates?: ReadonlyMap<string, string | undefined>;
+  /**
+   * The tabs already open. An UPDATED document that is already open needs no
+   * opening — its canvas reloads on its own — and opening it again is not
+   * harmless: the shell's `open-artifact` resets edit mode and the inspector
+   * selection, so a person's own edit (which bumps the document's version and
+   * therefore re-lists it as "updated") threw them out of edit mode on every
+   * change (2026-09-20). A NEW document is never in this set, so births open
+   * exactly as before.
+   */
+  openArtifactIds?: ReadonlySet<string>;
 }): ChatShellOpenArtifact[] {
   if (activeThreadId === null) return [];
   const opening: AutoOpenFeedArtifact[] = [];
   for (const artifact of artifacts) {
     if (knownArtifactIds.has(artifact.id) && (!artifact.updatedAt || !knownUpdates?.has(artifact.id) || knownUpdates.get(artifact.id) === artifact.updatedAt)) continue;
     if (artifact.originThreadId !== activeThreadId) continue;
+    if (openArtifactIds?.has(artifact.id)) continue;
     opening.push(artifact);
   }
   return opening
