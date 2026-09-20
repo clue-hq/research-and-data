@@ -63,6 +63,7 @@ from clue_api.agent_turn_submission import (
     agent_turn_dedup_key,
     dispatch_next_thread_turn,
     get_submission,
+    insert_submission,
     submission_context_refs,
     thread_work_id,
     turn_id_for_submission,
@@ -650,6 +651,90 @@ def test_duplicate_submission_replays_one_turn_and_enqueues_nothing_new(tmp_path
                 )
             ).scalar_one()
             assert int(count) == 1
+
+    run_async(scenario())
+
+
+def test_a_derived_submission_names_both_halves_or_neither(tmp_path: Path) -> None:
+    """Spec 2026-09-20 §2.1: ``derivation`` and ``derived_from_turn_id`` travel together."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-derived", name="D2 derived")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="derived",
+            )
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Which accounts should get this campaign?",
+                    key="key-derived-source",
+                )
+            assert accepted.status_code == 202, accepted.text
+            source = await get_submission(
+                conn,
+                workspace_id=project.workspace_id,
+                turn_id=UUID(accepted.json()["data"]["turn_id"]),
+            )
+            assert source is not None
+
+            # Half a derivation is not a derivation: the row model refuses before the CHECK does.
+            with pytest.raises(ValueError, match="both its derivation"):
+                await insert_submission(
+                    conn,
+                    turn_id=uuid4(),
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    submitted_by_user_id=USER_ID,
+                    submitted_via_membership_id=source.submitted_via_membership_id,
+                    onboarding_input_id=source.onboarding_input_id,
+                    message_artifact_key=source.message_artifact_key,
+                    message_sha256=source.message_sha256,
+                    idempotency_key=None,
+                    derivation="design_leg_first_turn",
+                )
+
+            derived_turn_id = turn_id_for_submission(
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                idempotency_key="derived:1",
+            )
+            derived, created = await insert_submission(
+                conn,
+                turn_id=derived_turn_id,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+                submitted_by_user_id=USER_ID,
+                submitted_via_membership_id=source.submitted_via_membership_id,
+                onboarding_input_id=source.onboarding_input_id,
+                message_artifact_key=source.message_artifact_key,
+                message_sha256=source.message_sha256,
+                idempotency_key="derived:1",
+                derivation="design_leg_first_turn",
+                derived_from_turn_id=source.turn_id,
+            )
+            assert created is True
+            assert derived.derivation == "design_leg_first_turn"
+            assert derived.derived_from_turn_id == source.turn_id
+            # And it reads back the same way the worker will read it.
+            again = await get_submission(
+                conn,
+                workspace_id=project.workspace_id,
+                turn_id=derived.turn_id,
+            )
+            assert again is not None and again.derivation == "design_leg_first_turn"
+            assert again.derived_from_turn_id == source.turn_id
+            # The human's own submission is derived from nothing.
+            assert source.derivation is None and source.derived_from_turn_id is None
 
     run_async(scenario())
 

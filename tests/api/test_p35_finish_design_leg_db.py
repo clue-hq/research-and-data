@@ -302,6 +302,10 @@ def test_out_of_scope_re_delivers_the_users_own_message(
             assert redelivered.message_artifact_key == closing.message_artifact_key
             assert redelivered.submitted_by_user_id == closing.submitted_by_user_id
             assert redelivered.turn_id != closing.turn_id
+            assert redelivered.derivation == "design_leg_redelivery"
+            assert redelivered.derived_from_turn_id == closing.turn_id
+            # The user's own submission is not derived from anything.
+            assert closing.derivation is None and closing.derived_from_turn_id is None
             # The leg is closed, so the redelivered turn routes to head-of-abm.
             assert (
                 await design_legs.get_open_leg_for_thread(

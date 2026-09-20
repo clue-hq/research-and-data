@@ -1492,6 +1492,7 @@ class FinishDesignLegTool(Tool):
         assert isinstance(inputs, FinishDesignLegInput)
         self._require_runtime()
         from clue_api.agent_turn_submission import (
+            DERIVATION_DESIGN_LEG_REDELIVERY,
             dispatch_next_thread_turn,
             insert_submission,
             submission_context_refs,
@@ -1576,6 +1577,8 @@ class FinishDesignLegTool(Tool):
                     message_sha256=submission.message_sha256,
                     idempotency_key=redelivery_key,
                     context_refs=context_refs,
+                    derivation=DERIVATION_DESIGN_LEG_REDELIVERY,
+                    derived_from_turn_id=turn.turn_id,
                 )
                 redelivered_turn_id = str(redelivered)
                 pending_ref = submission.message_artifact_key
