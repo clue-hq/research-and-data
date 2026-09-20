@@ -1000,6 +1000,95 @@ def test_tool_parts_carry_the_lifecycle_and_the_durable_receipt(tmp_path: Path) 
     run_async(scenario())
 
 
+# --- the clarification card (spec 2026-09-20 §2.1) ----------------------------------------------
+
+
+def test_a_clarification_part_lands_on_the_outbox_with_its_questions(tmp_path: Path) -> None:
+    """A design document's opening questions reach the transcript field for field.
+
+    The part id derives from the document, so a re-emission replaces the same card; the payload
+    carries exactly what ``request_clarification`` asked, including a question with no options at
+    all — an open question is a legal question, not a malformed one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-clarify", name="D3 clarify")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="clr"
+            )
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="make me an ad",
+                key="k-clarify",
+                storage=FsStorage(tmp_path / "artifacts"),
+            )
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            run_id = str(uuid4())
+            await emitter.emit_clarification_part(
+                document_id="doc_x",
+                document_title="Acme launch ad",
+                doc_kind="ad",
+                account_name="Acme",
+                run_id=run_id,
+                questions=[
+                    {
+                        "id": "q1",
+                        "question": "Which offer should lead?",
+                        "why_it_matters": "It sets the headline.",
+                        "options": ["Free trial", "Demo"],
+                        "default": "Free trial",
+                        "allow_freeform": False,
+                    },
+                    {
+                        "id": "q2",
+                        "question": "Any proof point to feature?",
+                        "default": "the 40% figure",
+                    },
+                ],
+            )
+
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            cards = [frame for frame in frames if frame.part_kind == PartKind.CLARIFICATION.value]
+            assert len(cards) == 1
+            card = cards[0]
+            assert card.event_type == TurnEventType.PART_CREATED.value
+            assert card.part_kind == "clarification"
+            assert card.part_id == "clarification:doc_x"
+
+            part = card.payload["part"]
+            assert isinstance(part, dict)
+            assert part["document_id"] == "doc_x"
+            assert part["document_title"] == "Acme launch ad"
+            assert part["doc_kind"] == "ad"
+            assert part["account_name"] == "Acme"
+            assert part["run_id"] == run_id
+            questions = part["questions"]
+            assert isinstance(questions, list)
+            assert questions == [
+                {
+                    "id": "q1",
+                    "question": "Which offer should lead?",
+                    "why_it_matters": "It sets the headline.",
+                    "options": ["Free trial", "Demo"],
+                    "default": "Free trial",
+                    "allow_freeform": False,
+                },
+                {
+                    "id": "q2",
+                    "question": "Any proof point to feature?",
+                    "why_it_matters": "",
+                    "options": [],
+                    "default": "the 40% figure",
+                    "allow_freeform": True,
+                },
+            ]
+
+    run_async(scenario())
+
+
 # --- the SSE surface: attach, replay, dedup, reset (§3.6) ---------------------------------------
 
 
