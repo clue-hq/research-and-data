@@ -90,9 +90,9 @@ export function designLegNotice({
 }): string | null {
   switch (type) {
     case "leg.opened":
-      return "Design session opened — your next message goes to Design.";
+      return "Design session opened — generating now.";
     case "leg.reopened":
-      return "Design session reopened — your next message goes to Design.";
+      return "Design session reopened — generating now.";
     case "leg.awaiting_user":
       return "Design is ready for your next message.";
     case "leg.closed":

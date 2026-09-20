@@ -134,6 +134,9 @@ class ThreadTurnView(_View):
     #: The stream cursor a client should attach after, when frames for this turn still exist.
     last_event_id: int | None = None
     generation_attempts: int = 0
+    #: Spec 2026-09-20 §2.2: set when the server made this turn from the user's own bytes; the
+    #: client renders no user bubble for it.
+    derivation: str | None = None
 
 
 class ThreadMessageSummary(_View):
@@ -379,6 +382,7 @@ _TURN_UNION_SELECT = """
         s.submitted_by_user_id,
         s.message_artifact_key,
         s.message_sha256,
+        s.derivation,
         e.terminal_event,
         e.started,
         e.last_event_id,
@@ -487,6 +491,7 @@ def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
         message_sha256=str(row["message_sha256"]),
         last_event_id=(None if row["last_event_id"] is None else int(str(row["last_event_id"]))),
         generation_attempts=int(str(row["attempts"] or 0)),
+        derivation=(None if row.get("derivation") is None else str(row["derivation"])),
     )
 
 

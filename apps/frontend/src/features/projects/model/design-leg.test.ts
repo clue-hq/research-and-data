@@ -48,14 +48,14 @@ test("the close line names the exit the agent recorded", () => {
   );
 });
 
-test("opening and reopening both say the thread now talks to Design", () => {
+test("opening and reopening both say generation is already underway", () => {
   assert.equal(
     designLegNotice({ type: "leg.opened", reason: null }),
-    "Design session opened — your next message goes to Design.",
+    "Design session opened — generating now.",
   );
   assert.equal(
     designLegNotice({ type: "leg.reopened", reason: null }),
-    "Design session reopened — your next message goes to Design.",
+    "Design session reopened — generating now.",
   );
   assert.equal(
     designLegNotice({ type: "leg.awaiting_user", reason: null }),
