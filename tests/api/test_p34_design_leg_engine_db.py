@@ -1321,8 +1321,13 @@ def test_a_clarifying_run_rides_the_turn_as_a_part_and_arms_the_next_turns_guard
             assert "account_name" not in part
             resets = [frame for frame in frames if frame.event_type == "stream.reset"]
             assert resets, "the design hand-back always rehydrates"
-            # The card is on the turn BEFORE the client is told to refetch.
-            assert cards[0].sequence < resets[-1].sequence
+            terminals = [frame for frame in frames if frame.event_type == "turn.awaiting_input"]
+            assert terminals, "the design hand-back always closes the turn"
+            # The card lands AFTER the reset that would otherwise drop it — the client clears
+            # the turn's parts on a reset — and before the terminal frame, so the turn closes
+            # with the card already in hand.
+            assert cards[0].sequence > resets[-1].sequence
+            assert cards[0].sequence < terminals[-1].sequence
 
             # --- the next turn: the guard is derived, never echoed ---------------------------
             async def judge(**kwargs: Any) -> ExitJudgment:

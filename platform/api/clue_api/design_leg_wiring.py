@@ -1720,10 +1720,12 @@ class DesignLegTurnRunner:
 
         ``clarifications`` are the kwargs of
         :meth:`TurnStreamEmitter.emit_clarification_part`, one item per document whose run
-        stopped to ask (spec 2026-09-20 §2.1). They land BEFORE the rehydrate frame so the
-        card is on the turn by the time the client refetches the canonical message. A
-        malformed question payload may never fail the hand-back — the design work is done and
-        durable either way — so each part is emitted under its own guard.
+        stopped to ask (spec 2026-09-20 §2.1). They land AFTER the rehydrate frame and before
+        the terminal one, because a reset DROPS every part that preceded it: the canonical
+        message the client refetches carries the turn's text, and the parts that follow the
+        reset carry the card. A malformed question payload may never fail the hand-back — the
+        design work is done and durable either way — so each part is emitted under its own
+        guard.
         """
 
         workspace_id = submission.workspace_id
@@ -1774,6 +1776,15 @@ class DesignLegTurnRunner:
             body_ref=assistant_ref,
         )
         if stream is not None:
+            # No platform text was streamed (design progress rides the design_run subject,
+            # D3); the honest instruction is to fetch the canonical message.
+            await stream.rehydrate(reason="design_turn_summary")
+            # The cards land AFTER the reset, never before it: the client's reset handler
+            # CLEARS the turn's parts (``chat-transcript.ts``), so a part emitted ahead of the
+            # rehydrate frame is dropped on arrival and again on replay — which is exactly what
+            # a live thread showed. The division of labour is therefore: the refetched
+            # canonical message carries the turn's TEXT, and the frames after the reset carry
+            # the CARD. Still before the terminal frame, so the turn closes with it in hand.
             for item in clarifications:
                 try:
                     await stream.emit_clarification_part(**item)
@@ -1784,9 +1795,6 @@ class DesignLegTurnRunner:
                         document_id=str(item.get("document_id")),
                         exc_info=True,
                     )
-            # No platform text was streamed (design progress rides the design_run subject,
-            # D3); the honest instruction is to fetch the canonical message.
-            await stream.rehydrate(reason="design_turn_summary")
             await stream.turn_finished(status="awaiting_input")
         return DesignLegTurnResult(
             outcome=AgentTurnOutcome(
