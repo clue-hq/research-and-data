@@ -154,9 +154,13 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # two reasons: one granted address changes version (`open_design_leg@4` -> `@5`, whose
         # input carries an `artifacts` list instead of one `title`, a different input digest), and
         # the prompt and the manual bodies in the manifest are new — prompt head-of-abm v11 and
-        # the re-minted `manual-*@v5`, whose generated `tools` chapter renders that grant. Digest
-        # measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("043d3932193fef6183b2af5051b1ac8f20fc9790cee4b30c76bda74251a59eff"),
+        # the re-minted `manual-*@v5`, whose generated `tools` chapter renders that grant. v59
+        # moves it for one reason: the prompt body in the manifest is new — head-of-abm v12, which
+        # says a design leg starts generating at once instead of waiting for the user's next
+        # message. No granted address moves. The manual bodies are in the manifest too and they
+        # re-mint at `manual-*@v6`, but only because a generated chapter's title names the profile
+        # version; every v6 body is otherwise its v5 sibling. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("1f4e9a90fa6dc550739b71f1622a9f06a4199f5a81251dfd3c2dfae0dac8dd97"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -546,7 +550,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v58"
+    assert production.profile_ref.address == "profile:head-of-abm@v59"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v33"
     )
@@ -658,7 +662,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v5" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v6" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -836,7 +840,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         "skill:icp-authoring@v2",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
-        *(f"skill:manual-{name}@v5" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v6" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -866,7 +870,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v11/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v12/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

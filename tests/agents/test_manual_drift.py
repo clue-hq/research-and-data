@@ -68,6 +68,9 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: Unmoved a third time at `head-of-abm@v58`: it moves ONE tool address (`open_design_leg@5`) and
 #: the prompt, and re-mints the manual at `manual-*@v5`. A tool is not disclosed on this block and
 #: a chapter's version lives in its path, so the same 4427 bytes stand.
+#: Unmoved a fourth time at `head-of-abm@v59`: it changes only the prompt, and re-mints the manual
+#: at `manual-*@v6` because the generated chapters carry the profile version in their title. A
+#: chapter's version lives in its path, so the same 4427 bytes stand once more.
 SKILLS_BLOCK_MAX_BYTES = 4608
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.

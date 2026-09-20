@@ -56,9 +56,9 @@ __all__ = [
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-# v58 moves the design delegation entry to `open_design_leg@5` and the prompt to v11: one message
-# can ask for many artifacts, and the agent lists one item per artifact instead of naming one.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v58"
+# v59 keeps v58's surface and moves only the prompt, to v12: opening a design leg now starts
+# generation at once, so the agent no longer tells the user to speak before anything begins.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v59"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

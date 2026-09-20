@@ -188,7 +188,17 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # give each item its own note. The conversation recipe moves 28 → 29 (the interaction slot
     # re-pins the delegation entry; @4 leaves rather than stand beside @5), and the manual
     # re-mints at `manual-*@v5` because its generated `tools` chapter renders the grant.
-    AgentRole.HEAD_OF_ABM: "v58",
+    # v59 (the leg's first turn starts itself, 2026-09-20): v58's surface exactly, prompt only.
+    # `open_design_leg@5` now queues the leg's first design turn from the user's own message,
+    # inside the transaction that opens the leg, so the leg starts generating without the user
+    # saying "go". Prompt v11 → v12 changes one sentence: "Opening a leg starts nothing: the
+    # user's next message begins generation" becomes "Opening a leg starts generation at once".
+    # No address moves, so the conversation recipe stays at 29, but the manual re-mints at
+    # `manual-*@v6`: its generated `tools` and `limits` chapters render THIS profile's version
+    # into their title line, so a chapter that still said `@v58` would name a profile nobody
+    # holds. Every v6 body is byte-identical to its v5 sibling but for that line and the
+    # cross-reference paths, which is the proof the grant and the caps did not move.
+    AgentRole.HEAD_OF_ABM: "v59",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
