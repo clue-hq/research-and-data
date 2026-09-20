@@ -19,3 +19,18 @@
 - Design-system generation, lint and final production build passed. The two pre-existing
   canvasOperations unused-function warnings remain. No new tests for this CSS-only change.
   Closing state: complete, saved locally, no remote publication.
+
+## 14px sidebar preview
+
+- Founder requested a live preview of all primary sidebar text at 14px after
+  reviewing the existing 13px items and 12px section labels. Applied the canonical
+  text-default font-size token to navigation items, project/chat names, profile
+  name, section labels and empty-chat copy. Preserved existing weights, line
+  heights (18px items, 16px labels), row heights and opaque action overlays.
+- Live accounts page confirmed 14px computed font size across the requested roles;
+  expanded a project to verify its chat label also renders at 14px/18px in a 32px
+  row. Left it expanded so the preview includes a chat name. Reviewed screenshots
+  and showed the browser. The preview is implemented locally pending visual feedback.
+- Design-system generation, lint and production build passed; only the two known
+  canvasOperations unused-function warnings remain. Diff whitespace check passed.
+  No new tests for this CSS-only preview; no remote publication.

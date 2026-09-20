@@ -10,7 +10,7 @@
   padding: 0 8px;
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-sidebar-section-label-font-family);
-  font-size: var(--clue-ds-product-typography-sidebar-section-label-font-size);
+  font-size: var(--clue-ds-typography-text-default-font-size);
   font-weight: var(--clue-ds-product-typography-sidebar-section-label-font-weight);
   line-height: var(--clue-ds-product-typography-sidebar-section-label-line-height);
 }
@@ -26,7 +26,7 @@
   border-radius: 4px;
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-size: var(--clue-ds-typography-text-default-font-size);
   font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
@@ -148,7 +148,7 @@
   padding: 0 8px 0 32px;
   color: var(--clue-ds-color-content-disabled);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
-  font-size: var(--clue-ds-product-typography-ui-medium-font-size);
+  font-size: var(--clue-ds-typography-text-default-font-size);
   font-weight: var(--clue-ds-product-typography-ui-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
