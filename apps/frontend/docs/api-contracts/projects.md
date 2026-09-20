@@ -281,6 +281,12 @@ answer lifecycle; rendering and remaining UI changes stay owned by Slices 3-6.
   those details remain available through the developer inspector API. As of
   2026-09-20, chat no longer renders the Inspect action or drawer and does not
   probe inspector availability.
+- As of 2026-09-20, the shared chat renderer also omits `tool` parts in every
+  state. Per-call activity rows such as **Complete a project step** and **Save
+  your answer** are absent across all conversations, including replayed history
+  and live updates. Tool execution, event persistence and wire payloads are
+  unchanged; reasoning, response text, research tasks, plans and approval cards
+  retain their own presentation.
 - The composer height is content-driven and bounded. The editor scrolls
   internally before it can overlap the mention/model/send footer.
 - Every split-pane and transcript flex boundary may shrink (`min-width: 0`),

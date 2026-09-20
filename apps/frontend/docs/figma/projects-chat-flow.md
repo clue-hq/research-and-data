@@ -10,6 +10,12 @@ fixtures only when no API base URL is configured.
 
 ## Chat appearance inconsistency register (2026-09-20)
 
+**Subsequent release cleanup:** per-tool activity rows (for example, “Complete a
+project step” and “Save your answer”) are omitted by the shared chat part renderer
+for all conversations and tool states. The typography measurements below describe
+the preceding parity review; the activity rows are no longer shown. Reasoning and
+response text remain separate from this removal.
+
 **Status: CHAT-VIS-01 through CHAT-VIS-03 implemented and browser-verified
 on 2026-09-20.** This section is the living record for
 the main platform's composer/transcript appearance review. Update these entries

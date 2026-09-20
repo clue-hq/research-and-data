@@ -27,6 +27,8 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-20-remove-chat-tool-activity.md` — release cleanup: removed per-tool step
+  activity rows from the shared chat renderer across all conversations and states.
 - `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
   chat fidelity map: shared 15/22 body tokens, mention identity and attachment geometry now
   implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
