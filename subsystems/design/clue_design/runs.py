@@ -539,6 +539,34 @@ async def active_run_for_document(
     return None if row is None else str(row.run_id)
 
 
+async def latest_terminal_run_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> JsonObject | None:
+    """The newest TERMINAL run whose frozen envelope targets ``document_id``, else ``None``.
+
+    Spec 2026-09-20 (clarification cards) §2.3: "this document has an open question" is derived
+    — its latest terminal run's result status is ``clarification_requested`` — never stored.
+    Same predicate as :func:`active_run_for_document` (the payload, not the nullable column).
+
+    Terminal means ``succeeded`` or ``failed``: a ``queued`` or ``running`` run has not said
+    anything yet, so letting one answer this read would report a stale question (or none) while
+    the current turn is still deciding.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_agent_run"
+                " WHERE workspace_id = :w AND status IN ('succeeded', 'failed')"
+                "   AND payload ->> 'document_id' = :d"
+                " ORDER BY created_at DESC, run_id DESC"
+                " LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else _agent_run_from_row(row)
+
+
 # --- the stranded-work surface (D5 Round C) ----------------------------------------------------
 #
 # S4 boundary: these three read and write the DESIGN row only. Whether a stranded-looking run's

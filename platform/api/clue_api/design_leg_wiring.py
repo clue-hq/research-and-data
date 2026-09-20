@@ -825,6 +825,23 @@ def _canonical_json(value: object) -> bytes:
     ).encode()
 
 
+def clarification_sentence(result: Mapping[str, Any]) -> str | None:
+    """Spec 2026-09-20 §2.2: the durable record of an opening-move clarification, or ``None``.
+
+    A run that ended ``clarification_requested`` wrote no scene and no version — it stopped to
+    ask. The thread record therefore says exactly that, in the agent's own questions, rather
+    than borrowing the draft-saved language of a run that actually designed something.
+    """
+
+    if str(result.get("status") or "") != "clarification_requested":
+        return None
+    questions = (result.get("clarification") or {}).get("questions") or []
+    texts = [str(q.get("question") or "").strip() for q in questions if q.get("question")]
+    n = len(texts)
+    noun = "question" if n == 1 else "questions"
+    return f"Asked you {n} {noun} before designing: {'; '.join(texts)}."
+
+
 def _assistant_summary(run: dict[str, Any]) -> str:
     """A truthful one-paragraph thread record of what the design turn did.
 
@@ -834,12 +851,19 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     Scene acceptance comes from ``acceptance_scope``, not the operational status or
     ``stop_reason``: an accepted design and an unaccepted draft can both exceed the
     time target. Web turns keep their own summary and document/version semantics.
+
+    A run that stopped to ask (``clarification_requested``) is answered by
+    :func:`clarification_sentence` before any of the design branches, because it designed
+    nothing at all.
     """
 
     result = run.get("result") or {}
     if str(result.get("doc_kind") or "") == "web":
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
+    sentence = clarification_sentence(result)
+    if sentence is not None:
+        return sentence
     if status == "proposed":
         scope = result.get("acceptance_scope")
         if scope == "design":

@@ -45,6 +45,7 @@ from clue_api.design_leg_tools import DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE
 from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
     _assistant_summary,
+    clarification_sentence,
     design_leg_run_id,
     load_design_leg_history,
     load_head_of_abm_history,
@@ -480,6 +481,64 @@ def test_scene_summary_distinguishes_acceptance_from_execution_success(
     assert expected_outcome in summary
     assert "time target" in summary
     assert "Supporting copy still needs a readability check." in summary
+
+
+def test_clarification_sentence_reads_back_the_questions_the_agent_asked() -> None:
+    """Spec 2026-09-20 §2.2: the durable thread record of a run that stopped to ask is the
+    agent's own questions, verbatim and in order — nothing about drafts or acceptance."""
+
+    assert (
+        clarification_sentence(
+            {
+                "status": "clarification_requested",
+                "clarification": {
+                    "questions": [{"question": "Which proof point?"}, {"question": "Which tone?"}],
+                },
+            }
+        )
+        == "Asked you 2 questions before designing: Which proof point?; Which tone?."
+    )
+
+
+def test_clarification_sentence_says_question_in_the_singular() -> None:
+    assert (
+        clarification_sentence(
+            {
+                "status": "clarification_requested",
+                "clarification": {"questions": [{"question": "Which proof point?"}]},
+            }
+        )
+        == "Asked you 1 question before designing: Which proof point?."
+    )
+
+
+def test_clarification_sentence_is_none_for_a_run_that_actually_designed() -> None:
+    """The branch must not claim a question was asked on an ordinary proposal."""
+
+    assert clarification_sentence({"status": "proposed", "acceptance_scope": "design"}) is None
+
+
+def test_scene_summary_of_a_clarification_run_asks_rather_than_claiming_a_draft() -> None:
+    """A clarification run's design-runtime status is ``clarification_requested`` while the RUN
+    row succeeded, so the summarizer must branch on the result — otherwise the thread would
+    record "Design saved as a draft" for a turn that saved nothing."""
+
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "clarification_requested",
+                "clarification": {
+                    "questions": [
+                        {"question": "Which proof point?"},
+                        {"question": "Which tone?"},
+                    ],
+                },
+            },
+        }
+    )
+    assert summary == "Asked you 2 questions before designing: Which proof point?; Which tone?."
+    assert "draft" not in summary
 
 
 @pytest.mark.parametrize(
