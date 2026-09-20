@@ -48,3 +48,17 @@
 - Closing verification: design-system generation, lint, production build and diff
   whitespace check passed. Lint retains the two existing canvasOperations warnings.
   Saved locally; no remote publication.
+
+## Medium-weight sidebar final preference
+
+- Founder changed the sidebar preference back to weight 500. Applied the canonical
+  text-default-medium weight to primary navigation, project/chat names, section
+  labels, profile name and empty-chat copy, retaining the approved 14px size and
+  existing spacing. This supersedes the regular-weight preference above.
+- Live chat page computed styles and screenshot confirm 14px/500 throughout these
+  sidebar roles, including the selected chat. Changes remain on
+  `rebase-and-expand-attachment-types`.
+- Closing verification: token generation, lint, production build and diff whitespace
+  check passed. Only the two existing canvasOperations lint warnings remain. Founder
+  explicitly requested committing and pushing all pending visual work on this branch;
+  unrelated untracked attachments and samples are excluded from the commit.

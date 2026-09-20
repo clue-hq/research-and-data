@@ -11,7 +11,7 @@
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-sidebar-section-label-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-product-typography-sidebar-section-label-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-sidebar-section-label-line-height);
 }
 
@@ -27,7 +27,7 @@
   color: var(--clue-ds-color-content-subtle);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 
@@ -149,7 +149,7 @@
   color: var(--clue-ds-color-content-disabled);
   font-family: var(--clue-ds-product-typography-ui-medium-font-family);
   font-size: var(--clue-ds-typography-text-default-font-size);
-  font-weight: var(--clue-ds-typography-text-default-font-weight);
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
   line-height: var(--clue-ds-product-typography-ui-medium-line-height);
 }
 
