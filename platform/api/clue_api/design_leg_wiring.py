@@ -1004,7 +1004,7 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
 
 
 def receipts_from_design_run(
-    run_result: Mapping[str, Any], *, request: AgentTurnRequest
+    run_result: Mapping[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
 ) -> tuple[AgentModelCallReceipt, ...]:
     """The design run's collected model calls as receipts on the leg's own turn.
 
@@ -1015,6 +1015,11 @@ def receipts_from_design_run(
     ``cost_cents`` arrives as a STRING (the collector's ``as_json``, so the Decimal survives the
     jsonb round trip) and becomes USD here; ``None`` stays ``None`` — an unpriced call is never a
     measured zero.
+
+    ``sequence_offset`` is added to every call's own number. Each design run numbers its calls
+    from 1, and the ledger requires ``(turn_id, sequence)`` unique — so a BATCH (several runs on
+    one turn, spec §3.3) lands each run after the calls of the runs before it. A one-run turn
+    passes 0 and is byte-identical to what shipped.
     """
 
     receipts: list[AgentModelCallReceipt] = []
@@ -1031,7 +1036,7 @@ def receipts_from_design_run(
                 turn_id=request.turn_id,
                 execution_id=request.constitution.execution_id,
                 workspace_id=request.constitution.workspace_id,
-                sequence=int(item["sequence"]),
+                sequence=int(item["sequence"]) + sequence_offset,
                 requested_model=str(item["requested_model"]),
                 answering_model=item.get("answering_model"),
                 status=AgentModelCallStatus(item["status"]),
@@ -2033,11 +2038,11 @@ class DesignLegTurnRunner:
     # -- dispatch ------------------------------------------------------------------------------
 
     async def _record_design_receipts(
-        self, run: dict[str, Any], *, request: AgentTurnRequest
-    ) -> None:
+        self, run: dict[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
+    ) -> int:
         """Land a terminal design run's collected model calls on the leg's own turn.
 
-        Called before EVERY terminal return of :meth:`_dispatch`, not only after a drive
+        Called for EVERY terminal run of :meth:`_dispatch_batch`, not only the driven ones
         (ruling T5-1): the run's money is real whichever worker drove it, so a run this
         dispatch merely re-joins must still put its calls on ``agent_model_call``. Safe to
         repeat — ``record_model_call`` is idempotent on the model-call id and refuses only a
@@ -2045,10 +2050,21 @@ class DesignLegTurnRunner:
 
         ``get_run`` serves the design API's shipped DTO, whose ``result`` key IS the row's
         ``result_json`` — the column the design executor stamped ``model_calls`` onto.
+
+        Returns the highest sequence now on the turn from this run (``sequence_offset`` when
+        the run made no calls), which is the offset the NEXT run of the batch records from.
+        The offset is derived from the runs' own results in position order, so a retry that
+        re-joins the same terminal runs computes the same numbers and converges on the rows
+        already written (2026-09-20: the first live batch recorded run 0's calls 1..31, then
+        run 1's call 1 collided on ``(turn_id, sequence)`` and the whole turn crashed).
         """
 
-        for call in receipts_from_design_run(run.get("result") or {}, request=request):
+        receipts = receipts_from_design_run(
+            run.get("result") or {}, request=request, sequence_offset=sequence_offset
+        )
+        for call in receipts:
             await self._turns.record_model_call(receipt=call)
+        return max((call.sequence for call in receipts), default=sequence_offset)
 
     async def _dispatch_batch(
         self,
@@ -2106,9 +2122,9 @@ class DesignLegTurnRunner:
                 if run["status"] in _TERMINAL_RUN_STATUSES and "design_memory" not in job[
                     "payload"
                 ].get("config", {}):
-                    # Preserve terminal legacy re-join without inventing new context — but
-                    # record the run's receipts: its money is real whichever worker drove it.
-                    await self._record_design_receipts(run, request=turn_request)
+                    # Preserve terminal legacy re-join without inventing new context. Its
+                    # receipts are recorded with everyone else's at the end of the batch: its
+                    # money is real whichever worker drove it.
                     prepared.append(
                         _PreparedDesignRun(document=document, run_id=run_id, run=run, envelope=None)
                     )
@@ -2232,12 +2248,8 @@ class DesignLegTurnRunner:
         for item in prepared:
             if item.run is not None and item.terminal:
                 # A separately claimed queued run may have completed before a crashed producer
-                # wrote its selection dependencies. Repair that receipt, but never rerun the
-                # design. Its model calls are recorded here too: the run's money is real
-                # whichever worker drove it, and this is the only dispatch that owns the
-                # platform turn they belong to.
-                if item.envelope is not None:
-                    await self._record_design_receipts(item.run, request=turn_request)
+                # wrote its selection dependencies. That receipt was repaired above; never
+                # rerun the design. Its model calls are recorded below with the batch's.
                 results[item.run_id] = item.run
 
         if driving:
@@ -2291,8 +2303,17 @@ class DesignLegTurnRunner:
                     )
                 if run is None or run["status"] not in _TERMINAL_RUN_STATUSES:
                     raise RuntimeError("the design lane returned without a terminal design run")
-                await self._record_design_receipts(run, request=turn_request)
                 results[item.run_id] = run
+
+        # Every run's model calls land on this ONE platform turn (the only turn they belong
+        # to), in position order, each run numbered after the calls of the runs before it —
+        # the ledger keys receipts on (turn_id, sequence). Position 0 records from 0, so a
+        # one-run turn writes exactly the rows it always did.
+        sequence_offset = 0
+        for item in prepared:
+            sequence_offset = await self._record_design_receipts(
+                results[item.run_id], request=turn_request, sequence_offset=sequence_offset
+            )
 
         return [(item.document, results[item.run_id]) for item in prepared]
 
