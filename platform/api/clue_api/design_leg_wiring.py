@@ -299,11 +299,17 @@ async def _exit_judge_artifact_lines(
     runner maps straight back to a document. A row with no document (the document-less
     legacy leg the runner synthesises) contributes no line, so that leg reaches the prompt's
     honest "(unknown — treat the brief as the artifact)" exactly as it did under v2.
+
+    Spec 2026-09-20 §2.5: an artifact whose latest terminal run stopped to ask carries its
+    open questions as ``[asked: "…" | "…"]``. Without it the judge reads a bare answer
+    ("the 40% stat") as naming nothing and asks which artifact it is for — a question the
+    user already answered.
     """
 
     lines: list[str] = []
     for document in leg_documents:
-        if not document.get("document_id"):
+        document_id = document.get("document_id")
+        if not document_id:
             continue
         kind = "web page" if document.get("doc_kind") == "web" else "scene ad"
         title = str(document.get("title") or "Untitled design")
@@ -315,6 +321,19 @@ async def _exit_judge_artifact_lines(
             )
             if account is not None:
                 line += f" [account: {account['name']}]"
+        latest = await design_runs.latest_terminal_run_for_document(
+            conn, workspace_id=workspace_id, document_id=str(document_id)
+        )
+        result = (latest or {}).get("result") or {}
+        if str(result.get("status") or "") == "clarification_requested":
+            asked = [
+                str(question.get("question") or "").strip()
+                for question in ((result.get("clarification") or {}).get("questions") or [])
+                if question.get("question")
+            ]
+            if asked:
+                joined = " | ".join(f'"{question}"' for question in asked)
+                line += f" [asked: {joined}]"
         lines.append(line)
     return tuple(lines)
 
@@ -1601,6 +1620,34 @@ class DesignLegTurnRunner:
                 if len(dispatched) == 1
                 else batch_summary(dispatched)
             )
+            # Spec 2026-09-20 §2.1: a document whose run stopped to ask rides the turn as its
+            # OWN clarification part — one per document, derived from the run's terminal
+            # result, never from anything the client echoed back.
+            clarifications: list[dict[str, Any]] = []
+            for document, run in dispatched:
+                result = run.get("result") or {}
+                if str(result.get("status") or "") != "clarification_requested":
+                    continue
+                key = str(document.get("document_id") or "")
+                clarifications.append(
+                    {
+                        "document_id": document["document_id"],
+                        "document_title": _document_title(document),
+                        "doc_kind": str(
+                            result.get("doc_kind") or document.get("doc_kind") or "scene"
+                        ),
+                        "account_name": (account_cards.get(key) or {}).get("name"),
+                        "run_id": str(run["run_id"]),
+                        "questions": (result.get("clarification") or {}).get("questions") or [],
+                    }
+                )
+            if clarifications:
+                log.info(
+                    "design_leg.clarifications_emitted",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    documents=len(clarifications),
+                )
             return await self._finalize_awaiting_input(
                 submission=submission,
                 execution_id=execution_id,
@@ -1616,6 +1663,7 @@ class DesignLegTurnRunner:
                 ),
                 leg_ref=leg_ref,
                 stream=stream,
+                clarifications=clarifications,
             )
         except asyncio.CancelledError:
             # The watched-turn owner distinguishes user Stop from process/lease
@@ -1641,6 +1689,7 @@ class DesignLegTurnRunner:
         domain_refs: tuple[DomainObjectRef, ...],
         leg_ref: DomainObjectRef,
         stream: TurnStreamEmitter | None,
+        clarifications: Sequence[Mapping[str, Any]] = (),
     ) -> DesignLegTurnResult:
         """The dispatched turn's one honest hand-back: assistant record, committed
         finalization, history append, terminal frame.
@@ -1649,6 +1698,13 @@ class DesignLegTurnRunner:
         turn in ``domain_refs`` while a one-document turn produces a byte-identical envelope
         to the one that shipped (same derived finalization id, the same single
         ``design_agent_run`` ref, the same derived ``finalized_at``).
+
+        ``clarifications`` are the kwargs of
+        :meth:`TurnStreamEmitter.emit_clarification_part`, one item per document whose run
+        stopped to ask (spec 2026-09-20 §2.1). They land BEFORE the rehydrate frame so the
+        card is on the turn by the time the client refetches the canonical message. A
+        malformed question payload may never fail the hand-back — the design work is done and
+        durable either way — so each part is emitted under its own guard.
         """
 
         workspace_id = submission.workspace_id
@@ -1699,6 +1755,16 @@ class DesignLegTurnRunner:
             body_ref=assistant_ref,
         )
         if stream is not None:
+            for item in clarifications:
+                try:
+                    await stream.emit_clarification_part(**item)
+                except Exception:  # noqa: BLE001 — a card may never fail the hand-back
+                    log.warning(
+                        "design_leg.clarification_emit_failed",
+                        leg_id=str(leg_ref.object_id),
+                        document_id=str(item.get("document_id")),
+                        exc_info=True,
+                    )
             # No platform text was streamed (design progress rides the design_run subject,
             # D3); the honest instruction is to fetch the canonical message.
             await stream.rehydrate(reason="design_turn_summary")
@@ -2497,6 +2563,24 @@ class DesignLegTurnRunner:
             else None
         )
         web_targets = resolve_web_targets(focus_refs) if kind == "web_turn" else None
+        # Spec 2026-09-20 §2.4: the one-round guard is per document and derived here,
+        # never echoed by the client. A document whose latest terminal run stopped to ask
+        # is the one that must not ask again; a sibling in the same batch is untouched.
+        # Read only on the scene path: the web request carries no ``previous_turn_outcome``
+        # field at all (the documented residual below), so deriving one there would be a
+        # query whose answer nothing reads.
+        previous_outcome = submission.previous_turn_outcome
+        if kind == "agent_turn" and document_id is not None:
+            async with self._conn_factory() as conn:
+                latest = await design_runs.latest_terminal_run_for_document(
+                    conn, workspace_id=workspace_id, document_id=str(document_id)
+                )
+            if (
+                latest is not None
+                and str((latest.get("result") or {}).get("status") or "")
+                == "clarification_requested"
+            ):
+                previous_outcome = "clarification_requested"
         request: dict[str, JsonValue]
         if kind == "web_turn":
             request = {
@@ -2530,7 +2614,7 @@ class DesignLegTurnRunner:
                 "prompt": message_text,
                 "scene": document.get("scene") or {},
                 "document_id": document_id,
-                "previous_turn_outcome": submission.previous_turn_outcome,
+                "previous_turn_outcome": previous_outcome,
                 # Only when references actually ride: the scene ``agent_turn``
                 # request is a frozen byte-for-byte contract (B1), and the
                 # design request model defaults the absent key — an

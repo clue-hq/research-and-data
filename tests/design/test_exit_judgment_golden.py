@@ -262,7 +262,7 @@ def test_v3_prompt_numbers_the_artifacts_and_marks_a_tagged_one() -> None:
     assert '2. "Mercy ad" (scene ad)\nARTIFACTS>>>' in prompt
     assert "(artifact 1)" in prompt
     assert "addressed_artifacts" in prompt and "clarifying_question" in prompt
-    assert prompt.rstrip().endswith("prompt_version: v3")
+    assert prompt.rstrip().endswith("prompt_version: v4")
 
 
 def test_a_prompt_with_no_artifact_at_all_still_says_so_honestly() -> None:

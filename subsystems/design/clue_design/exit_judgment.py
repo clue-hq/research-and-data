@@ -58,7 +58,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 #: Bumped whenever the instruction block below changes meaning; scored reports carry it so
 #: a regression is attributable to a prompt revision vs a model swap.
-EXIT_JUDGMENT_PROMPT_VERSION = "v3"
+EXIT_JUDGMENT_PROMPT_VERSION = "v4"
 
 ExitAction = Literal["continue", "finish"]
 ExitReason = Literal["locked", "out_of_scope", "abandoned"]
@@ -290,6 +290,8 @@ def render_exit_judgment_prompt(
         "  them keep the session open, however they are phrased: a shorter headline, a\n"
         "  different photo, a bolder colour, 'will this land with CFOs?', 'try two options for\n"
         "  the footer'. Tagging one of them, or selecting elements on one, is still about it.\n"
+        "- An artifact marked [asked: …] is waiting for an answer; a message that answers one of\n"
+        "  those questions is work on THAT artifact, even when it names nothing.\n"
         "- Design work on a DIFFERENT artifact — one that is not in the list — closes this\n"
         "  session and hands the message on. The user will not always say so plainly. Signs\n"
         "  that the work has moved: another ad, another draft as its own design, a design for\n"

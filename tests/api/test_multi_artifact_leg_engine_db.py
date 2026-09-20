@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -739,6 +739,44 @@ def test_a_tagged_leg_document_is_marked_with_its_artifact_number(
             ) == (
                 '1. "Apollo ad" (scene ad)',
                 '2. "Mercy ad" (scene ad)',
+                '3. "Vertex ad" (scene ad)',
+            )
+
+            # Spec 2026-09-20 §2.5: the artifact that stopped to ask carries its open question,
+            # so a bare answer ("the 40% stat") reads as work on THAT one. Only that line
+            # changes — an artifact with no open question is untouched.
+            mercy = seeds["document_ids"][1]
+            run_id = str(uuid5(NAMESPACE_URL, f"p34e:tagnum:asked:{mercy}"))
+            await design_runs.create_run(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                run_id=run_id,
+                document_id=mercy,
+                payload={"document_id": mercy},
+            )
+            await design_runs.set_run_result(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                run_id=run_id,
+                status="succeeded",
+                result={
+                    "status": "clarification_requested",
+                    "clarification": {
+                        "questions": [
+                            {
+                                "id": "proof",
+                                "question": "Which proof point should lead the ad?",
+                                "default": "The 40% stat",
+                            }
+                        ]
+                    },
+                },
+            )
+            assert await _exit_judge_artifact_lines(
+                conn, workspace_id=seeds["workspace_id"], leg_documents=documents
+            ) == (
+                '1. "Apollo ad" (scene ad)',
+                '2. "Mercy ad" (scene ad) [asked: "Which proof point should lead the ad?"]',
                 '3. "Vertex ad" (scene ad)',
             )
 

@@ -192,6 +192,32 @@ def test_v3_the_judge_is_shown_the_legs_numbered_artifacts() -> None:
     assert "addressed_artifacts" in prompt and "clarifying_question" in prompt
 
 
+def test_v4_the_judge_is_told_an_asked_artifact_is_waiting_for_an_answer() -> None:
+    """Spec 2026-09-20 §2.5: a bare answer ("the 40% stat") names no artifact, so without
+    this instruction the judge asks which one the user already answered for."""
+
+    judge, model = _judge_with(AIMessage(content=_VERDICT))
+    verdict = run_async(
+        judge(
+            brief="Three launch ads.",
+            history=(),
+            message="the 40% stat",
+            artifacts=(
+                '1. "Apollo ad" (scene ad)',
+                '2. "Mercy ad" (scene ad) [asked: "Which proof point should lead the ad?"]',
+            ),
+        )
+    )
+    assert verdict is not None
+    prompt = model.prompts[0]
+    assert (
+        "- An artifact marked [asked: …] is waiting for an answer; a message that answers one of\n"
+        "  those questions is work on THAT artifact, even when it names nothing.\n"
+    ) in prompt
+    assert '[asked: "Which proof point should lead the ad?"]' in prompt
+    assert prompt.rstrip().endswith("prompt_version: v4")
+
+
 def test_the_judges_output_budget_leaves_room_for_a_question() -> None:
     """v3's answer can carry a clarifying question on top of the reasoning; a truncated
     verdict is an unparseable one, which costs a whole fail-safe turn."""
