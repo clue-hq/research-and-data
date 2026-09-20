@@ -10,6 +10,13 @@ fixtures only when no API base URL is configured.
 
 ## Chat appearance inconsistency register (2026-09-20)
 
+**User message background:** sent-user message boxes use the founder-selected
+`#eff0f3`, provided by the product chat `user-message-background` token. The shared
+user-role rule applies across conversations and to optimistic/persisted messages.
+Project and design conversations, including artifact split views, all mount the
+same `ChatSurface` → `ConversationContent` → `ChatTranscript` renderer. The older
+`.userMessage` style also references this token rather than retaining a white fill.
+
 **Subsequent release cleanup:** per-tool activity rows (for example, “Complete a
 project step” and “Save your answer”) are omitted by the shared chat part renderer
 for all conversations and tool states. The typography measurements below describe

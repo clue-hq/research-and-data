@@ -1,5 +1,19 @@
 # Chat appearance review documented
 
+## Follow-up: sent-user background
+
+- Founder selected `#eff0f3` for all sent-user message boxes. Added the product chat
+  background token and applied it to the shared user-role message-parts rule.
+- Checked all main-frontend user-message renderers: project/design and artifact split
+  views mount ChatSurface → ConversationContent → ChatTranscript. The older unused
+  `.userMessage` style now shares the same background token as the active user-role rule.
+- Browser measured both loaded user bubbles as rgb(239, 240, 243), exactly #eff0f3;
+  assistant containers stay transparent. Used a temporary background tab because the
+  user had moved their original tab to Accounts; closed the review tab afterwards.
+- Token generation, lint and production build passed (two pre-existing lint warnings);
+  final build repeated after aligning the older user-message style. No functional tests
+  added for this color-only change.
+
 - Founder asked to record the preceding read-only visual review for later frontend work.
 - Canonical record: `apps/frontend/docs/figma/projects-chat-flow.md`, section
   `Chat appearance inconsistency register (2026-09-20)`; linked from the frontend docs index.
@@ -46,3 +60,5 @@
   resolve. No new backend contract or migration. No remote publication.
 - Final post-review token generation, lint and production build passed again; only the two
   pre-existing canvasOperations warnings remain. Whitespace and documentation links checked.
+- Final follow-up build passed; scoped color change complete, documentation updated,
+  and saved locally without remote publication.

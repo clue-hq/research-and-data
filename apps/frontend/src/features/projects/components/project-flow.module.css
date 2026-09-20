@@ -963,7 +963,7 @@
   max-width: 100%;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 
@@ -2845,7 +2845,7 @@
   align-items: flex-end;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 

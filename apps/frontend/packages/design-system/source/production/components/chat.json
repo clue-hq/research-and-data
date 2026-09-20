@@ -8,6 +8,7 @@
   },
   "tokens": [
     { "name": "component/chat/body-font-size", "unit": "px", "value": 15 },
-    { "name": "component/chat/body-line-height", "unit": "px", "value": 22 }
+    { "name": "component/chat/body-line-height", "unit": "px", "value": 22 },
+    { "name": "component/chat/user-message-background", "kind": "raw", "value": "#eff0f3" }
   ]
 }
