@@ -4,7 +4,7 @@
 
 **Goal:** A message the exit judge closes and routes on renders once, and a design session starts generating the moment it opens — no "go".
 
-**Architecture:** Both are one mechanism: a **derived turn**, a submission the server makes from the user's own bytes, marked by two nullable columns on `agent_turn_submission` (`derivation`, `derived_from_turn_id`). A derived turn appends no user row in either runner and renders no user bubble in the transcript. `open_design_leg` queues a derived first turn in the transaction that opens the leg; the leg runner runs it without the exit judge, addressing every document. Prompt v12 / profile v59 say generation starts at once.
+**Architecture:** Both are one mechanism: a **derived turn**, a submission the server makes from the user's own bytes, marked by two nullable columns on `agent_turn_submission` (`derivation`, `derived_from_turn_id`). A derived turn keeps its durable user row (role-scoped history needs it) and renders no user bubble in the transcript. `open_design_leg` queues a derived first turn in the transaction that opens the leg; the leg runner runs it without the exit judge, addressing every document. Prompt v12 / profile v59 say generation starts at once.
 
 **Tech Stack:** Python 3.12 (FastAPI, SQLAlchemy async, Alembic, pydantic), Postgres, TypeScript (Next.js, node:test via tsx), the agent catalog (immutable versioned prompts/profiles).
 
