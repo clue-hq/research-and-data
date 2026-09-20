@@ -24,6 +24,16 @@ what happened to its files:
     The tree is over ``policy.max_total_bytes`` or ``policy.max_file_count``; the newest-written
     files go first, and only files this run wrote or changed are ever candidates.
 
+Two more things the container leaves behind that ``write_file`` never would, and the backend's
+own walk refuses (``_validate_regular_file``): a file that is not *private*, and a hard link. A
+container writes with the daemon's default umask, so every file it creates is ``0644`` and every
+directory ``0755`` — the workspace demands ``0600`` / ``0700`` — and a script can ``os.link``.
+Modes are simply normalised here (``chmod``), on every surviving file and every directory
+walked, because that is what ``write_file`` would have produced; a file whose mode cannot be
+normalised is removed as ``not_private``, and a hard-linked file as ``hard_linked``. Found live
+2026-09-20: the first CSV a script wrote finalized as ``workspace file permissions are not
+private`` and took the whole turn down.
+
 One reason beyond the four is unavoidable: ``atomic_write_residue``. The workspace backend treats
 a ``.clue-tmp-*`` name as an interrupted atomic write and refuses to walk a tree containing one,
 so a script that writes that name — deliberately or by copying the convention — would brick the
@@ -48,6 +58,7 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Iterator, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
@@ -66,6 +77,11 @@ __all__ = [
 #: of the sandbox — "make me a spreadsheet", "plot this" — and they are all inert data: no
 #: executable, archive or source extension is on the list.
 SANDBOX_OUTPUT_EXTENSIONS: Final = (".csv", ".xlsx", ".docx", ".pptx", ".pdf", ".png")
+
+#: What the workspace backend demands of everything under the thread (``_validate_regular_file``
+#: / ``_validate_private_directory``): private to the owner, never executable.
+_FILE_MODE: Final = 0o600
+_DIR_MODE: Final = 0o700
 
 #: :meth:`clue_agents.workspace.AgentWorkspace._walk_files` raises on any name with this prefix,
 #: reading it as an interrupted atomic write. A sandbox-written one would poison the tree.
@@ -123,6 +139,18 @@ def sweep(mounts: SandboxMounts, *, before: Mapping[str, tuple[int, float]]) -> 
         if reason is not None:
             os.unlink(host)
             removed.append((path, reason))
+            continue
+        if metadata.st_nlink != 1:
+            os.unlink(host)
+            removed.append((path, "hard_linked"))
+            continue
+        try:
+            os.chmod(host, _FILE_MODE, follow_symlinks=False)
+        except (OSError, NotImplementedError):
+            # A mode this worker cannot set (a foreign owner on a Linux host) is a file the
+            # backend's walk would refuse; the only honest state is its absence.
+            os.unlink(host)
+            removed.append((path, "not_private"))
             continue
         survivors.append(
             _Entry(
@@ -222,6 +250,11 @@ def _walk(mounts: SandboxMounts) -> Iterator[tuple[str, Path, os.stat_result]]:
                     # Gone between the scan and the stat: nothing left to judge or delete.
                     continue
                 if stat.S_ISDIR(metadata.st_mode):
+                    # Created by the container with the daemon's umask (0755); the backend's
+                    # walk refuses anything but 0700. Best effort — a directory that cannot be
+                    # chmod'ed surfaces on the next workspace walk, loudly, as today.
+                    with suppress(OSError):
+                        os.chmod(child.path, _DIR_MODE, follow_symlinks=False)
                     stack.append((Path(child.path), path))
                 else:
                     yield path, Path(child.path), metadata

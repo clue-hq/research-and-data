@@ -237,3 +237,36 @@ def test_a_missing_read_write_dir_is_not_an_error(tmp_path: Path) -> None:
     assert snapshot(mounts) == {}
     assert sweep(mounts, before={}) == sweep(mounts, before={})
     assert sweep(mounts, before={}).kept == ()
+
+
+def test_container_modes_are_normalised_to_what_write_file_produces(tmp_path: Path) -> None:
+    """A container writes 0644 files in 0755 directories; the backend's walk refuses both.
+
+    Found live 2026-09-20: the first CSV a script wrote finalized as "workspace file permissions
+    are not private" and failed the whole turn. The sweep now leaves 0600 / 0700 behind.
+    """
+
+    mounts = _workspace(tmp_path)
+    before = snapshot(mounts)
+    nested = _write(mounts, "scratch/out/table.csv", b"a,b\n1,2\n")
+    os.chmod(nested, 0o644)
+    os.chmod(nested.parent, 0o755)
+    result = sweep(mounts, before=before)
+    assert result.kept == (("scratch/out/table.csv", 8),)
+    assert result.removed == ()
+    assert os.stat(nested).st_mode & 0o777 == 0o600
+    assert os.stat(nested.parent).st_mode & 0o777 == 0o700
+
+
+def test_a_hard_linked_file_is_removed(tmp_path: Path) -> None:
+    mounts = _workspace(tmp_path)
+    before = snapshot(mounts)
+    original = _write(mounts, "scratch/one.md", b"x")
+    os.link(original, mounts.read_write["scratch"] / "two.md")
+    result = sweep(mounts, before=before)
+    # Whichever name the walk meets first is the hard link and goes; the other is then an
+    # ordinary single-link file and stays.
+    assert [reason for _, reason in result.removed] == ["hard_linked"]
+    assert len(result.kept) == 1
+    survivor = mounts.read_write["scratch"] / result.kept[0][0].split("/", 1)[1]
+    assert os.stat(survivor).st_nlink == 1
