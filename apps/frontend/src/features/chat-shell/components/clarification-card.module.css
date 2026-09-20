@@ -211,7 +211,9 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  max-width: 50%;
+  /* A long default must not turn Skip into a second row-wide control: the
+   * button stays compact and the full default rides its title on hover. */
+  max-width: 11rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

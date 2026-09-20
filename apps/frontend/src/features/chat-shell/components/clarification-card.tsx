@@ -300,7 +300,12 @@ export function ClarificationCard({
             placeholder="Something else…"
             value={freeform}
           />
-          <button className={styles.skip} onClick={skip} type="button">
+          <button
+            className={styles.skip}
+            onClick={skip}
+            title={`Skip — use ${question.default}`}
+            type="button"
+          >
             {`Skip — use ${question.default}`}
           </button>
         </div>
