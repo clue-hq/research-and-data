@@ -612,3 +612,38 @@ the sandbox README, spec §3.4, the `[chat×sandbox]` CLAUDE.md bullet, the fron
 Consequence accepted: a worker host without the image gets `sandbox_unavailable` refusals rather
 than a silently-off feature; `make sandbox-image` is part of bringing up a worker host. Earlier
 lines in this note that say "ships off" describe the draft, not the current default.
+
+## 2026-09-20 — the document/sandbox live walk (DONE) and what it found
+
+Stack: `./scripts/dev_stack_damascus.sh down && up` on `04f646611` with the new sandbox preflight
+(`sandbox: enabled, image clue-agent-sandbox:latest present`). The dev Clerk login
+(`user_3IKQVDrelC8L14jV0dQ5KaIbgqF`) had no `auth_identity` row in `clue_damascus` (API answered
+`IDENTITY_NOT_PROVISIONED`, app looped to /onboarding/profile); mapped it by hand to
+`usr_f73d28c95a32407ca0c4beaae8f5623a` (workspace "Insight Health AI", 5 projects) — same
+treatment as hangzhou. Fixtures generated inside the sandbox image (`/tmp/damascus_walk`).
+Walk in one new Home-composer project ("Q3 pipeline acceleration", thread thr_0a861a54…):
+
+1. `q3-pipeline.xlsx` + "total ACV?" → one `run_python` (507 ms), answered 509,000 USD from sheet
+   Pipeline C2:C6 and correctly said C8's `=SUM` had no cached value. PASS.
+2. `review.pdf` + "figure on page 3?" → quoted the page-3 sentence verbatim from the text layer. PASS.
+3. `scanned-invoice.pdf` (no text layer) → OCR'd inside the run (rendered 1667×556, tesseract),
+   returned invoice 7731 / 4,250 USD / 30 Sep 2026 with the "OCR can misread" caveat. PASS.
+4. `brief.md` → answered from the file with NO sandbox run (run_python count unchanged). PASS.
+   One "Complete a project step: Failed" chip on this turn = `agent.tool_repair` (a mis-argued
+   tool call the runtime repaired), not an attachment issue.
+5. "write a CSV under outputs/" → FIRST ATTEMPT FAILED THE TURN: the script wrote
+   `outputs/q3-pipeline-accounts-by-acv.csv` correctly but finalize's `snapshot_outputs` walk
+   raised `WorkspaceSecurityError: workspace file permissions are not private` — the container
+   writes 0644 files / 0755 dirs (daemon umask; Docker Desktop maps the owner to the host user)
+   and the backend demands 0600/0700. Fix `04f646611`: the sweep now chmods every surviving file
+   to 0600 and every walked directory to 0700, removes hard links (`hard_linked`) and un-chmod-able
+   files (`not_private`); two tests. Re-run after `restart-workers`: turn finalized, outputs/
+   snapshotted and emptied, agent reported path + 5 rows. PASS.
+6. `not-really.pdf` (text bytes) → API 422 `UPLOAD_NOT_A_DOCUMENT`, chip rendered red, send
+   disabled. PASS.
+
+Residuals seen: (a) on a LINUX worker host the container's files are owned by uid 65534, the
+worker cannot chmod them, and the sweep will delete them as `not_private` — pass `--user <host
+uid>` there or add a userns remap before relying on outputs; (b) `outputs/` reaches the human only
+as artifacts at finalize, nothing renders it; (c) the runbook preflight is in `dev_stack.sh`, so
+every lane wrapper on THIS branch inherits it — other worktrees' copies get it when they merge.

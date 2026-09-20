@@ -106,3 +106,12 @@ them.
 
 The image is never pulled at run time either. `docker_runner.docker_available` only inspects the
 local image; a missing image is an operator's one-command build, not a silent download.
+
+## File ownership on Linux hosts (residual, 2026-09-20)
+
+The container runs as uid 65534. On Docker Desktop (macOS) bind-mounted files it writes appear
+owned by the host user, and the post-run sweep normalises their modes to 0600/0700 (the
+workspace backend refuses anything else). On a Linux host the files are really owned by 65534,
+the worker cannot `chmod` them, and the sweep removes them as `not_private`. Before relying on
+`outputs/` there, run the container as the host uid (`--user $(id -u):$(id -g)` in
+`docker_runner.py`) or configure userns-remap.
