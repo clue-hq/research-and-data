@@ -87,8 +87,10 @@ The design agent's prompt for that turn is the user's real message rather than "
   need not say anything to begin. Say the design session is open and what is being made, and end
   your turn." Nothing else in the prompt moves.
 - Profile `head-of-abm` v58 → **v59**: v58's surface exactly, prompt pin v12. No tool address
-  moves, so the conversation recipe stays at 29 and the manual stays at `manual-*@v5`. The
-  registry default and every test that pins the active version move to v59.
+  moves, so the conversation recipe stays at 29. The manual re-mints at `manual-*@v6` (ruling
+  2026-09-20, the v57 precedent): the generated chapters render the profile version into their
+  title, so a profile bump cannot leave them at v5 — bodies byte-identical, one header line
+  moves. The registry default and every test that pins the active version move to v59.
 - Frontend notices: `leg.opened` → "Design session opened — generating now."; `leg.reopened` →
   "Design session reopened — generating now."; `leg.awaiting_user` unchanged.
 

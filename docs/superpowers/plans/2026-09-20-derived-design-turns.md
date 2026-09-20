@@ -18,7 +18,7 @@
 - Python: `uv run ruff check <files>` and `uv run ruff format <files>` on every touched file. Frontend: `cd apps/frontend && npx tsx --test <files>` for the touched tests and `npx eslint <files>`.
 - Derivation values are exactly `design_leg_redelivery` and `design_leg_first_turn`.
 - Idempotency key of the first turn: `design-leg-first-turn:<leg_id>:<opening turn_id>`.
-- Catalog versions are immutable: a new prompt is a new directory `v12`; a new profile is a new directory `v59`; never edit v11/v58 in place. The conversation recipe stays at 29; the manual stays at `manual-*@v5`.
+- Catalog versions are immutable: a new prompt is a new directory `v12`; a new profile is a new directory `v59`; never edit v11/v58 in place. The conversation recipe stays at 29; the manual re-mints at `manual-*@v6` (ruling 2026-09-20: the generated chapters carry the profile version in their title, so a profile bump re-mints them — the v57 precedent).
 - Every commit's tests must be green before the commit; each task is its own commit.
 
 ---
@@ -420,7 +420,8 @@ git commit -m "feat(design-legs): the leg's first turn skips the exit judge and 
 
 **Files:**
 - Create: `platform/agents/catalog/prompts/head-of-abm/v12/SYSTEM.md` (copy of v11 with one sentence changed)
-- Create: `platform/agents/catalog/profiles/head-of-abm/v59/profile.yaml` (copy of v58: `version: v59`, prompt pin `v12` + its sha256, a new leading header comment)
+- Create: `platform/agents/catalog/profiles/head-of-abm/v59/profile.yaml` (copy of v58: `version: v59`, prompt pin `v12` + its sha256, the manual chapters re-pinned at `v6`, a new leading header comment)
+- Create: `platform/agents/catalog/skills/manual-*/v6/SKILL.md` — re-minted by the manual builder (`platform/agents/clue_agents/manual/build.py::PROFILE_VERSION` → `"v59"`, then `make manual` or the builder's own command) so every chapter's body is byte-identical to v5 except the header line naming the profile version
 - Modify: `platform/api/clue_api/agent_registry_wiring.py` (`C6_ACTIVE_PROFILE_VERSIONS[HEAD_OF_ABM]` → `"v59"` with a comment in the house style)
 - Modify: every pin the tests hold — find them all with `rg -n '"v58"|head-of-abm@v58' platform tests` and move each to v59 where it names the ACTIVE version (the historical lists that enumerate every registered version, e.g. `tests/agents/test_catalog.py` ~line 330–345, gain a `"profile:head-of-abm@v59"` entry with a one-line comment; `tests/agents/test_manual_drift.py`'s comment block gains "Unmoved a fourth time at `head-of-abm@v59`: it changes only the prompt.")
 
@@ -458,7 +459,9 @@ Copy `v58/profile.yaml` to `v59/profile.yaml`; set `version: v59`; set `prompt.v
 # design turn from the user's own message in the transaction that opens the leg, so prompt
 # v11 -> v12 changes one sentence: "Opening a leg starts nothing: the user's next message begins
 # generation" becomes "Opening a leg starts generation at once". No tool address moves, so the
-# conversation recipe stays at 29 and the manual stays at `manual-*@v5`.
+# conversation recipe stays at 29. The manual re-mints at `manual-*@v6` because its generated
+# chapters render THIS profile's version into their title (the v57 precedent); every body is
+# byte-identical to v5.
 ```
 
 - [ ] **Step 3: Pins**
