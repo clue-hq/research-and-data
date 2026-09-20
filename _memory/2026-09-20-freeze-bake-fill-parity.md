@@ -53,3 +53,13 @@ old wrong widths); regenerate or undo them.
 Still queued behind this (founder's order): the multi-artifact batch turn failure
 (`agent_model_call_sequence` collision in `_record_design_receipts`) and the stuck leg
 `e1b29465…` on `thr_91f106db…`.
+
+## Addendum — the handshake needs a design-API restart after a helper rebuild
+`GET /build-info` on the design API is CACHED per process (`app.state.build_info`), so after
+`cargo build -p lumen-api-helper --release` the still-running 8010 process reports the OLD engine
+stamp and the editor disables canvas editing ("in-browser engine is a different build than the
+API": editor bb1aaeea610a vs API 62c7de8b022e, seen 2026-09-20 17:37). The helper itself is
+spawned per call, so engine calls were already new; only the cached stamp lagged. `restart-api`
+restarts the PLATFORM APIs only — the design API is restarted by reproducing `up`'s design-API
+command (done by hand 2026-09-20; stamp now bb1aaeea610a on both sides). Follow-up for the runbook:
+a `restart-design-api` command.
