@@ -33,6 +33,8 @@ import styles from "./project-flow.module.css";
  */
 export interface ChatPartActions {
   busy: boolean;
+  /** The turn whose clarification parts the card above the composer is showing; its inline record is suppressed. */
+  openClarificationTurnId?: string | null;
   onOpenPlan?: (documentId: string) => void;
   gateFor(part: ChatGatePart): GateCardModel | null;
   onGateDecision(

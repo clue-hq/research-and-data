@@ -5,6 +5,7 @@ import type { ProjectChatController } from "../hooks/use-project-chat-controller
 import type { ProjectEntity } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
 import { useTurnInspector } from "../hooks/use-turn-inspector";
+import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
 import { ChatTurnInspector } from "./chat-turn-inspector";
 import styles from "./project-flow.module.css";
@@ -67,10 +68,19 @@ export function ConversationContent({
     ),
   });
 
+  // The asking turn's questions are shown ONCE. While the interactive card is
+  // up above the composer, that turn's inline read-only record would be the
+  // same questions a second time; older asking turns keep theirs.
+  const openClarificationTurnId = useMemo(
+    () => openClarification(chat.transcript)?.turnId ?? null,
+    [chat.transcript],
+  );
+
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
       onOpenPlan,
+      openClarificationTurnId,
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
@@ -82,7 +92,7 @@ export function ConversationContent({
         void chat.recoverGate(card);
       },
     }),
-    [chat, onOpenPlan],
+    [chat, onOpenPlan, openClarificationTurnId],
   );
 
   return (

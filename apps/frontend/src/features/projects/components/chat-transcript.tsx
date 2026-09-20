@@ -23,6 +23,23 @@ import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
 /**
+ * The parts a message actually renders inline.
+ *
+ * One rule, and only one: the turn whose questions the clarification card is
+ * asking right now does not ALSO print them read-only in its own bubble (spec
+ * 2026-09-20 §2.5 scopes the inline record to turns that are not the latest).
+ * Every other part of every other turn is rendered exactly as it arrived.
+ */
+function visibleParts(
+  message: TranscriptMessage,
+  actions: ChatPartActions,
+): readonly TranscriptMessage["parts"][number][] {
+  if (!actions.openClarificationTurnId) return message.parts;
+  if (message.turnId !== actions.openClarificationTurnId) return message.parts;
+  return message.parts.filter((part) => part.kind !== "clarification");
+}
+
+/**
  * The transcript: durable messages and live projections, in one ordered log.
  *
  * Nothing here manufactures a message. Every entry came from a durable read, a
@@ -216,7 +233,7 @@ export function ChatTranscript({
                 {unavailableMessageBody(message.bodyUnavailableReason)}
               </p>
             ) : null}
-            {message.parts.map((part) => (
+            {visibleParts(message, actions).map((part) => (
               <ChatMessagePartView
                 actions={actions}
                 key={part.partId}
