@@ -181,3 +181,28 @@
   written-spec review is pending before implementation planning/product changes.
   Existing goal remains active. This is the first pending-review turn, not a
   repeated blocked condition. No new native prompts or automatic retries.
+
+## Isolated capture-custody verification
+
+- Honored the user's wait-and-watch instruction: no new prompt, ingestion,
+  research, runtime restart, or live-data mutation. A read-only run lookup again
+  confirmed the ordinary-prompt attempt is terminal with cancellation recorded;
+  the chat's earlier generating message is stale, not a live-process signal.
+- Completed independent verification while the responsive architecture review
+  remains pending. Created a unique disposable local database, migrated from empty
+  to the current head, and ran four API suites: clone-review registry, fragment
+  isolation preview, ingestion site snapshots, and source-flow registry.
+- All 41 tests passed (pytest exit 0). This covers durable reference provenance,
+  snapshot/media/motion custody, workspace isolation, immutable preview attachment,
+  explicit missing-reference handling and source-flow reads. It does not establish
+  responsive source reproduction or live visual quality.
+- Provider credentials were blanked only in the child environment; Python external
+  connections were denied. Storage, engine cache and agent scratch paths were
+  disposable. The test database was removed after completion; no live database
+  was migrated and no product files or environment files changed.
+- Setup failure: the first runner redacted every setting containing TOKEN, which
+  also blanked numeric TTL/budget settings. Corrected that temporary runner to match
+  credential names precisely. Its first database was cleaned up before retrying.
+- Evidence: /private/tmp/clue-capture-db-check-joos4qg6/{migrate.log,tests.log,result.json}.
+  This is additional verification of committed changes, not permission to execute
+  the pending responsive-capture proposal. Goal remains incomplete; no push.
