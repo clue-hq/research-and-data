@@ -27,6 +27,8 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-onboarding-role-select.md` — onboarding Role field reuses the branded
+  shared select; browser-checked without disturbing the user's live ingestion.
 - `2026-09-21-brand-context-controls.md` — shared branded asset selectors, aligned
   toolbar, simplified header, and automatic brand-kit plus ICP/product approval.
 - `2026-09-21-san-diego-stack-startup.md` — isolated live San Diego stack on
