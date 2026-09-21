@@ -1,16 +1,16 @@
 # Website capture fidelity and skill foundation
 
 **Goal:** Improve the shared onboarding capture and website-design pipeline for any customer, using Clue, AWS, Google Cloud and Conduit as regression cases. Prove faithful reproduction, then ground account-personalized pages in the captured library.
-**Authority / Spec:** The active user goal and the 2026-09-20 capture audit. Latest steering authorizes parallel skill implementation during capture work; source reproduction remains an acceptance prerequisite for personalized quality. This plan is the implementation record, not a claim of completed fidelity.
+**Authority / Spec:** The active user goal and the 2026-09-20 capture audit. On 2026-09-21 the user confirmed that capture/reproduction and account-specific skill work continue under the existing goal, directly in Clue. Source reproduction remains an acceptance prerequisite for personalized quality. This plan is the implementation record, not a claim of completed fidelity.
 **Architecture:** Extend the existing capture -> snapshot -> fragment -> brand-kit -> web-design seams. Preserve original bytes and capture provenance. Keep original captures distinct from derived React compositions and generated media.
 **Stack:** Python capture/API, Playwright, Postgres registry, React website artifacts, existing application skills.
 
 ## Global constraints
-- Work only in `codex/website-capture-v1`; preserve the original running checkout and four workspaces. No remote push.
+- Work directly in `/Users/shashank/Documents/clue-latest-pull-sept7` on `codex/design-agent-v1`, through Clue's existing design runtime and native UI. The earlier isolated `codex/website-capture-v1` checkpoint was brought into this checkout on 2026-09-20. Do not build a standalone replacement or create another worktree for this implementation. Preserve the four original workspaces and Conduit Fresh. No remote push.
 - No secret values in artifacts/logs. No unbounded crawling or arbitrary third-party script execution in generated pages.
 - Frozen originals and prior drafts remain intact. All capture gaps and unsupported motion are reported, not silently replaced.
 - Keep exact asset references and workspace/kit ownership. Do not weaken SSRF, asset-custody, approval, or contact-use gates.
-- Tests using a database run against an isolated disposable database. Live ingestion writes are additive and scoped to the four authorized workspaces.
+- Tests using a database run against an isolated disposable database. Live ingestion writes are additive and scoped to the four authorized workspaces or the explicitly authorized Conduit Fresh workspace.
 - Generated artwork can support brand aesthetics, but cannot count as source-fidelity evidence.
 - Every new environment setting is documented in root and subsystem examples; existing operator values win.
 
@@ -56,9 +56,16 @@ Reference-resolution security; deduplicated fragment lineage across kit ingestio
 **Interface:** Tasks 1-4 outputs consumed by the normal web design library/runtime.
 - [ ] Discover current official homepage, 1-2 product pages, one customer page, and 1-2 customer review/case-study pages per brand where available.
 - [ ] Capture source references and dependencies, with separate per-brand manifests; store in their respective authorized workspaces.
-- [ ] Restore standard sandbox prerequisites before fleet generation; do not bypass sandbox enforcement.
+- [x] Restore standard sandbox prerequisites before fleet generation; do not bypass sandbox enforcement. Docker Desktop and the standard sandbox now run native design jobs; see the native baseline report below.
 - [ ] Reproduce representative pages without messaging changes; inspect desktop/mobile and supported motion against frozen source captures.
 - [ ] Report pass/fail by layout, typography, media, interaction and provenance; retain all failure evidence.
+
+**Partial live evidence, 2026-09-21:** four native baseline pages were saved on
+September 20, but their older libraries did not prove fresh source reproduction.
+Conduit Fresh subsequently ingested six pages through normal onboarding, released
+40 captured sections through the UI, and created a native page using six captured
+bands. This is one-brand evidence, not completion of the four-brand reproduction
+and motion benchmark. The other Task 5 checkboxes stay open at that boundary.
 
 ## Task 6: Skill families and grounded account personalization
 **Files:** Existing application skills under `subsystems/clue-design/apps/agent_runtime/knowledge_docs/skills`, registry/harness tests where exposed.
@@ -70,7 +77,16 @@ Reference-resolution security; deduplicated fragment lineage across kit ingestio
 - [ ] Verify repeatability, account isolation, responsive rendering and absence of invented proof.
 - [ ] Final independent branch review; resolve important findings, run relevant checks, commit. Goal complete only after live acceptance criteria pass.
 
-## 2026-09-20 parallel skill checkpoint
+**Implementation versus qualification, 2026-09-21:** all seven families / 24
+responsibilities are written and routed in the main Clue checkout: 11 entry skills
+and 15 detailed references after the account-argument addition. The initial four native runs and subsequent Conduit
+corrections exercised 10 of 11 entrypoints; motion has not been exercised. The
+audited original four runs plus Conduit Fresh's three runs read only six of the
+14 detailed references. Materialization and entry reads do not prove full skill
+execution or output quality. Account-grounded copy, real account bindings,
+contact/segment/event variants and repeatability remain unqualified.
+
+## Historical 2026-09-20 parallel skill checkpoint
 
 User explicitly requested supervised parallel implementation now, not four-brand
 special cases. Three bounded specialists owned source/composition, media/motion,
@@ -84,8 +100,65 @@ Peer scenario walkthroughs are explicitly unblinded reasoning checks, not live
 model runs. They found and corrected tool availability, stale node-state reads,
 logo/evidence, release-lifecycle and prompt/rubric contradictions.
 
-Still required: live ingestion/reproduction, current rendered/behavioral evidence,
+At this checkpoint, still required: live ingestion/reproduction, current rendered/behavioral evidence,
 standard Docker generation runtime, unseeded fresh-brand onboarding and at least
 one held-out-brand case. Full source/node readers, capture-refresh handoff and
 remaining source-capture fidelity gaps are explicit. Do not call this complete
 because skills are written or contract checks pass.
+
+## 2026-09-21 native platform checkpoint and next gates
+
+The prior standalone gallery is not the delivery surface. Continue through the
+normal Head of ABM handoff and Clue design agent in the four workspaces. Preserve
+the existing pages and test new changes as native artifacts/versions.
+
+- **Deployed and observed:** the seven families are in the main runtime; Docker
+  is working. The four native baseline runs completed with warnings. See
+  `subsystems/clue-design/docs/website-native-platform-baseline-2026-09-20.md`.
+- **Conduit Fresh bounded proof:** normal company-URL onboarding captured six
+  pages and 40 original sections. The native design agent reused six bands,
+  obtained the corporate Hyatt wordmark through the logo tool, and saved version
+  3 after one exact-href correction. Desktop/mobile inspection and all nine
+  rendered CTA destinations were checked. No source assets or completed page
+  were manually seeded. Receipts: `.local-setup/conduit-fresh-native/` and
+  `_memory/2026-09-21-conduit-fresh-native.md`.
+- **Editing capability repaired:** exact active-node reads, independent bounded
+  HTML/CSS pagination, and the exact-anchor repair lane now exist. The final
+  Conduit correction took 102.8 seconds; this is one successful scoped edit,
+  not a general latency or preservation guarantee.
+- **Still partial:** Conduit's onboarding research aggregate failed on duplicate
+  product aliases. The deduplication fix is tested, but a complete live rerun is
+  not verified. Its page has no researched Hyatt account in the project and
+  therefore remains a supported named-account invitation.
+- **Remaining source capabilities:** design sees selected fragment provenance,
+  not a complete capture-time/dependency/motion/coverage manifest or a callable
+  ingestion refresh. Keep these gaps explicit and use the governed ingestion
+  handoff. Captured HTML/CSS in React output does not recover original React or
+  WebGL code.
+- **Next qualification:** strengthen account evidence-to-copy use in the existing
+  skills, then run native four-workspace tests against their actual source and
+  account context. Test detailed media/review references, a source-supported
+  motion case with temporal evidence, scoped edits and missing-evidence cases.
+  Keep written, loaded, executed and visually accepted status separate.
+
+### Account skill/runtime checkpoint — 2026-09-21
+
+- Added the account-argument reference to the existing personalization family;
+  grounded relevance now maps evidence to message, proof, offer and source sections.
+- Corrected role-prompt contradictions and exposed the existing governed account
+  reads to the delegated web author. Missing cards no longer suppress reads;
+  named drafts are distinct from reusable templates; logo binding needs a real ID.
+- 112 integrated checks and a later overlapping 35-check final regression passed.
+  Final independent source review passed. Native quality remains separately assessed.
+- All four normal preparation chats confirmed absent target membership/research.
+  Durable account create/import is missing from the current normal UI/API flow;
+  do not use browser-only drafts or seed rows as a substitute. Stale zero-budget
+  context is not the actual research-launch blocker.
+- Completed scoped relevance edits through all four existing native design sessions:
+  Clue/AWS/Google saved v2, original Conduit saved v3, each with explicit warnings.
+  Durations 215.4–410.5 seconds. Native traces confirm scoped account checks in all
+  four and the new account-argument read in three. Corrected tagged-slot guidance
+  after native retries (nine Rust contract checks passed; no further paid rerun).
+  Account-researched, contact, event, scaling and motion qualification remain open.
+  Google recovered a transient CSS namespace defect during raw variant/repair;
+  general raw-repair correctness remains a separate reliability follow-up.

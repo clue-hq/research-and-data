@@ -148,6 +148,33 @@ Its verbs, smallest blast radius first:
    (`insert_cloned_section` + `remove_node`), or the library lacks the job
    and you compose a new band (see "Composing a new section" below).
 
+### Slot JSON for an existing fragment
+
+For `web_ops` → `set_node_props`, build `props` from the complete current
+fragment kind payload returned by `view("node:<id>")`: `kind: "fragment"`,
+the unchanged `fragment_id`, the full `slots` map and any `text_overrides`.
+Keep its serialized structure and every untouched value/marker; change only
+the requested slot's value. The `slots` map replaces the previous map, so
+omitting a sibling slot removes that binding. A props write preserves human
+text overrides; changing those requires their dedicated operation.
+
+Each slot value is an **externally tagged object with exactly one key**:
+
+| Inspected slot kind | Value inside `props.slots[existing_slot_key]` |
+|---|---|
+| Text or href | `{"text": "replacement text or supported URL"}` |
+| Image | `{"asset": "existing_registered_asset_id"}` |
+| Visibility | `{"visible": false}` (or `true`) |
+
+Use the inspected slot keys and types. These are value shapes, not new slots
+to add. A plain string, `{"type":"text","value":"..."}` or
+`{"asset_id":"..."}` is not this schema; an href still uses the `text` tag.
+
+The pinning tools' `slot_values_json` is a different input: `insert_cloned_section`
+accepts plain `{slot_key: value}`, while `assemble_cloned_sections` groups those
+maps by fragment ID. Those tools add the tags from the section's slot manifest.
+`web_ops` expects the already-tagged canonical values and does not do that conversion.
+
 **Never retype a healthy clone's markup as ordinary authored content.**
 Reauthoring a working cloned band by hand is not an edit — it forges the
 seller's work and silently loses the spacing, responsive edge cases, and

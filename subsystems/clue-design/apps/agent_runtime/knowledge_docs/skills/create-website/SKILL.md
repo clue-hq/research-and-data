@@ -32,7 +32,9 @@ a full-source remix from the visible prefix.
 | Missing band, inspected sources establish its grammar | `compose_web_section(html, css, section_role="other", label=None, note="...")`, then explicitly pin the returned id. This is new composition, not captured source. |
 | Deep node editing, typed components or attribute-level derivation are required | Use the [typed authoring reference](../web-source-readiness/references/authoring-vocabulary.md) before `author_web_page` / `author_web_subtree`. |
 
-Raw slot values can carry `{{account.*}}` markers. Personalization alone is
+Pinning tools accept plain slot values; existing-pin `web_ops` requires the
+externally tagged values in the [slot JSON reference](../edit-website/references/scoped-editing.md#slot-json-for-an-existing-fragment).
+Preserve `{{account.*}}` markers inside their existing values. Personalization alone is
 not a reason to discard source fragments. A whole-page `author_web_page`
 replaces its page: do not use it after pinning a source skeleton or campaign
 chrome, or for a local correction. Keep atomic validation, diagnostic patching,
