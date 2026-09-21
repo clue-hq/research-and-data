@@ -163,3 +163,21 @@
   must not overwrite the desktop original. Capture-state custody and selection
   need an explicit implementation before recapture; no native rerun is authorized
   by the user's latest wait-and-watch instruction.
+
+## Responsive capture design audit
+
+- Capture readiness committed locally as b5b4837f; no runtime reload or push.
+- Rechecked the actual ingestion entrypoint: it already forces rendered capture
+  universally. Do not "fix" this by altering static-tier quality escalation.
+- Additional state identity crosses capture, custody, section provenance and
+  source-flow reads. A same-URL snapshot list append would overwrite desktop;
+  a DOM path without its immutable state reference could read the wrong source.
+- Prepared proposed architecture in
+  docs/superpowers/specs/2026-09-21-responsive-source-capture-design.md. It retains
+  page identity and uses immutable state manifests in the existing design storage
+  seam; no migration or new live capture was executed. Includes bounded acquisition,
+  conservative source-branch reuse, exact state-aware reads and acceptance gates.
+- Brainstorming architectural review gate applies to this newly specified change: a
+  written-spec review is pending before implementation planning/product changes.
+  Existing goal remains active. This is the first pending-review turn, not a
+  repeated blocked condition. No new native prompts or automatic retries.
