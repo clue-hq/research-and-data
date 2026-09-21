@@ -833,8 +833,9 @@ def _search_result(
     raw_ref: str | None = None,
     ledger_row_id: str = "",
 ) -> ExaSearchResult:
-    """Shape a ``/search`` body. ``output`` is present only for a deep-lite search that sent an
-    ``outputSchema``; an empty string is reported as ``None`` so callers test one thing.
+    """Shape an :class:`ExaSearchResult` from a ``/search`` body. ``output`` is present only for a
+    deep-lite search that sent an ``outputSchema``; an empty string is reported as ``None`` so
+    callers test one thing.
 
     ``cost_usd`` is the provider's *own reading* — ``CallResult.cost.cost_usd``, which is ``None``
     when Exa reported no total — and is deliberately not taken from ``cost``, whose ``cost_usd``

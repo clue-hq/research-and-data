@@ -1,6 +1,6 @@
 # `web_search@1`: an open-web search for Head-of-ABM and the design agents
 
-**Date:** 2026-09-22 · **Branch:** `research-streaming-v3` (lome lane) · **Status:** implemented on `research-streaming-v3` (2026-09-22; live proofs §4.5–4.6 owed, founder-triggered)
+**Date:** 2026-09-22 · **Branch:** `research-streaming-v3` (lome lane) · **Status:** implemented on `feat/add-general-purpose-web-search-exa` (cut from `research-streaming-v3`, 2026-09-22; live proofs §4.5–4.6 owed, founder-triggered)
 
 ## 1. What this is, and what it is not
 
