@@ -30,6 +30,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-asset-description-mapping-audit.md` — identity/fingerprint checks and
+  concurrent replay pass, but multiple captions are visually wrong; validation,
+  transparent-preview, provider-evidence and library-polling gaps remain open.
 - `2026-09-22-asset-details-height.md` — asset Details column fills the modal height;
   removed a conflicting viewport-height cap and verified internal scrolling live.
 - `2026-09-22-onboarding-role-select.md` — onboarding Role field reuses the branded
