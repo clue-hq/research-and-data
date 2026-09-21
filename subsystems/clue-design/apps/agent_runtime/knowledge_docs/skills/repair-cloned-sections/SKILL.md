@@ -15,10 +15,12 @@ fallback and release consequences, read the
 
 1. Read `view("doc")` for the active page, top-level section ids and asset
    summary; it does **not** expose the full node tree or pinned fragment ids.
-   Obtain the actual fragment id from current supplied pin state or a
-   successful pin/assembly result that has not since been changed. If neither
-   is available, report the pin-state read gap instead of guessing a library
-   candidate is on the page. `repair_cloned_section` enforces current pinning.
+   Follow `view("node:<section_id>")` and its returned child ids to the exact
+   fragment node. A `complete=true` read includes its current `fragment_id`,
+   slots and text overrides. This is the active turn's in-memory state, not a
+   check of the latest persisted revision. Missing, ambiguous or oversized
+   node reads refuse without partial props; preserve the node and report that
+   gap. `repair_cloned_section` still enforces current pinning.
 2. Read the candidate's search row for lineage, `superseded_by`, repairs and
    degradation. Prefer an appropriate released repair already present. An
    existing draft is not silently disposable or a released replacement;

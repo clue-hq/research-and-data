@@ -375,10 +375,10 @@ not for classes, copy, attributes, or ids.
 | WRONG | CORRECT | Why |
 |---|---|---|
 | `text-secondary`, `bg-brand` assumed | only the tokens in THEME TOKENS / your brand card | 153 live rejections came from two invented names (`secondary`, `brand`) — the token set is per-kit; when the lint's hint lists the real tokens, use one, don't retry the invented name |
-| `web_ops` against a guessed id (`n1`, `hero-2`) | `view("doc")` for top-level section ids; current supplied node state or unchanged operation receipts for interior ids; name any missing read | 50 live rejections were ops on ids that don't exist |
+| `web_ops` against a guessed id (`n1`, `hero-2`) | `view("doc")` for top-level section ids; `view("node:<id>")` for complete current-turn fields and child ids; follow exact ids and name a refused read | 50 live rejections were ops on ids that don't exist |
 | `<a href="…">See more</a>` at block level | `<a data-button="link" href="…">See more</a>`, or the link inside a `<p>` | bare block-level `<a>` is outside the vocabulary (20 rejections) |
 | copy dropped between tags | every word inside `<p>`/`<h1>`–`<h4>`/`<span>` | loose text is an error, not autowrapped (20 rejections) |
-| `set_text` on a section/button/component | `set_text` on an actual Text node id from supplied current node state or an unchanged operation receipt; the doc summary does not expose interior ids | 15 rejections targeted non-text nodes |
+| `set_text` on a section/button/component | `view("node:<id>")` to confirm an actual Text node, then the appropriate text operation; preserve rich-text structure using its complete content; the doc summary alone does not expose interior ids | 15 rejections targeted non-text nodes |
 | `<img data-asset="hero">` before generating | `asset` tool first → use the RETURNED id | referencing unknown assets voids the batch (10 rejections) |
 | image inside `flex flex-col` stretching full-width | `self-start` (or an explicit `w-…`) on the image | flex stretch distorts imagery on mobile |
 | icon with no size class | explicit `size-5`/`size-6` + a color token | unsized icons render at unpredictable glyph sizes |

@@ -6,10 +6,11 @@ description: Use when changing an existing website page, selected element, compo
 # Edit the current artifact, at the requested scope
 
 1. Resolve the request's artifact/version/page/element against fresh session
-   context and `list_pages()`. `view("doc")` gives section/count/asset summary,
-   not node props or rich text. Use an actually supplied current node snapshot;
-   if unavailable, preserve the node and report the missing read capability.
-   Switch only to the intended page. An old screenshot is not editable state.
+   context and `list_pages()`. Switch only to the intended page. `view("doc")`
+   gives the section/count/asset summary; `view("node:<id>")` reads one exact
+   active-page node with current props/rich text and parent/child IDs. Require
+   `complete: true` before a full-payload edit. This is turn-local state, not a
+   checked persisted revision. On refusal, preserve the node and report the gap.
 2. Read [scoped editing](references/scoped-editing.md), using the relevant ladder:
    `web_ops` for a few existing-node changes; clone slots for supported content;
    a campaign variant for healthy cloned structure; repair for a real defect;

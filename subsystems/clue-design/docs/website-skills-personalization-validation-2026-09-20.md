@@ -172,3 +172,17 @@ claim is made. The broader runtime suite is outside this documentation-only slic
 and includes forbidden live/provider paths; root owns focused loader/harness checks.
 No paid generation, network acquisition, live DB/environment/service writes,
 commit or push occurred in this slice.
+
+
+## Follow-up: current-node read implemented
+
+The missing scoped-node tool recorded above was resolved after checkpoint
+`3cf57bf1`. `view("node:<id>")` now returns one complete canonical active-page
+node plus parent/child ids, document/page/run identity and an explicitly local
+document version. It does not check the latest persisted revision. Missing,
+ambiguous or over-64-KiB UTF-8 responses refuse without partial props.
+
+Engine-backed read/edit regressions cover button properties, rich text and
+account markers, fragment/component pins, active-page isolation and read locking.
+This closes the inspection prerequisite for safe small edits; it does not by
+itself establish live model edit latency or final-page visual quality.

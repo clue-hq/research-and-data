@@ -947,6 +947,11 @@ def _fetch_grounded_page(url: str) -> JsonObject:
     return asyncio.run(fetch())
 
 
+# A node read is exact or refused, never a truncated edit payload. This bounds
+# UTF-8 tool output rather than node count; rich text/slot strings may be large.
+_WEB_NODE_VIEW_MAX_BYTES = 64 * 1024
+
+
 class LumenWebTools:
     def __init__(
         self,
@@ -2687,9 +2692,10 @@ class LumenWebTools:
             INLINE is {type:"text",text,marks?,classes?,link?},
             {type:"variable",key,fallback,marks?,classes?,link?}, or
             {type:"line_break",link?}. This needs the actual current content;
-            view("doc") is only a summary, not a full node reader. Without a
-            supplied current payload, report the missing read capability rather
-            than reconstructing it. Preserve every unaffected block/list/mark/variable
+            read view("node:<id>") and require complete=true. This is turn-local
+            state, not a checked persisted revision; view("doc") is only a summary.
+            On refusal, leave the node intact instead of reconstructing its payload.
+            For edits, preserve every unaffected block/list/mark/variable
             and use this operation whenever a human-authored structured body
             must survive the edit. Body and Small variants allow paragraphs
             and lists; heading variants accept exactly one paragraph.
@@ -9717,6 +9723,96 @@ class LumenWebTools:
             )
         return {"dialogs": omitted_dialogs, "tabs": omitted_tabs}
 
+    def _view_node(self, node_id: str) -> list:
+        """Read exactly one active-page node from this turn, never durable state."""
+        # BaseTool views bypass the harness's callable serialization. Take the
+        # same reentrant lock as writers so page, document and local version
+        # belong to one snapshot, including when called from an existing lock.
+        with self.tool_lock:
+            def reply(payload: JsonObject) -> list:
+                serialized = json.dumps(payload, ensure_ascii=False)
+                required_bytes = len(serialized.encode("utf-8"))
+                if required_bytes > _WEB_NODE_VIEW_MAX_BYTES:
+                    payload = {
+                        "status": "error",
+                        "complete": False,
+                        "scope": "current_turn_in_memory",
+                        "code": "web_node.too_large",
+                        "message": (
+                            "The complete node snapshot exceeds the response limit. "
+                            "No partial node was returned; preserve it rather than "
+                            "reconstructing an edit payload from incomplete content."
+                        ),
+                        "limit_bytes": _WEB_NODE_VIEW_MAX_BYTES,
+                        "required_bytes": required_bytes,
+                    }
+                    serialized = json.dumps(payload, ensure_ascii=False)
+                self.record(
+                    "agent", "web_view_called",
+                    input_summary=f"node:{node_id[:200]}",
+                    output_summary=str(payload.get("code") or "node"),
+                )
+                return [_text_block(serialized)]
+
+            def refuse(code: str, message: str) -> list:
+                return reply({
+                    "status": "error", "complete": False,
+                    "scope": "current_turn_in_memory", "code": code,
+                    "message": message,
+                })
+
+            doc = self.web_doc
+            page_id = self.page_id
+            pages = [
+                page for page in doc.get("pages") or []
+                if isinstance(page, dict) and page.get("id") == page_id
+            ]
+            if len(pages) != 1:
+                return refuse(
+                    "web_node.ambiguous_page" if pages else "web_node.unknown_page",
+                    "The active page does not identify one page in this turn's document.",
+                )
+            nodes = pages[0].get("nodes") or {}
+            node = nodes.get(node_id)
+            if not node_id or not isinstance(node, dict):
+                return refuse(
+                    "web_node.unknown_node",
+                    "No node with that exact ID exists on the active page. "
+                    "Use its section/child IDs or a current selection; other pages "
+                    "and documents were not searched.",
+                )
+            matching_ids = [
+                key for key, value in nodes.items()
+                if isinstance(value, dict) and value.get("id") == node_id
+            ]
+            if matching_ids != [node_id]:
+                return refuse(
+                    "web_node.ambiguous_node",
+                    "The requested node ID is inconsistent or duplicated on the active page.",
+                )
+            parent_ids = [
+                key for key, value in nodes.items() if isinstance(value, dict)
+                for child_id in value.get("children") or [] if child_id == node_id
+            ]
+            if len(parent_ids) > 1:
+                return refuse(
+                    "web_node.ambiguous_node",
+                    "The requested node has multiple parent references on the active page.",
+                )
+            return reply({
+                "status": "ok",
+                "complete": True,
+                "scope": "current_turn_in_memory",
+                "document_id": doc.get("id"),
+                "page_id": page_id,
+                "run_id": self.run_id,
+                "local_document_version": self._doc_version,
+                "persisted_revision_checked": False,
+                "node": node,
+                "parent_id": parent_ids[0] if parent_ids else None,
+                "child_ids": node.get("children") or [],
+            })
+
     def _view_content(self, target: str, can_render: bool = True) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool.
 
@@ -9725,6 +9821,8 @@ class LumenWebTools:
         refusals must never instruct a role to call a tool it does not have —
         live failure 2026-07-29: an author churned blind for 14 minutes retrying
         stale views because the refusal said "call render_web_preview() first"."""
+        if target.startswith("node:"):
+            return self._view_node(target[len("node:") :])
         if target == "brand":
             self.record("agent", "web_view_called", input_summary=target, output_summary="brand")
             return [_text_block(self.brand_card_text)]
@@ -9812,7 +9910,7 @@ class LumenWebTools:
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
                 '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
-                '"cloned_section:<fragment_id>", "doc", "brand", or "account".'
+                '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
             )
         ]
 
@@ -10119,8 +10217,11 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     the document's own registry, the kit manifest, or the workspace library);
     "cloned_section:<fragment_id>" returns the picture of a cloned section
     `search_cloned_sections` returned (F2.3); "doc" returns a compact
-    section/asset summary; "brand" returns the brand card; "account" returns the
-    target account card (P5).
+    section/asset summary; "node:<node_id>" returns one complete canonical node,
+    parent/child IDs and explicitly local snapshot identity from the active page.
+    It reads this turn's in-memory document, not the latest persisted revision;
+    oversized/ambiguous/missing nodes return a refusal, never partial props.
+    "brand" returns the brand card; "account" returns the target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -10137,10 +10238,17 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         one already registered in the document);
         "cloned_section:<fragment_id>" returns the picture of a cloned section
         `search_cloned_sections` returned, so you can see the band before
-        reusing it; "doc" returns a section + asset
-        summary; "brand" returns the brand card; "account" returns the target
-        account card. Returns image content so you judge by looking, not
-        guessing."""
+        reusing it; "doc" returns a section/count/asset summary.
+        "node:<node_id>" returns JSON for ONE exact active-page node: its full
+        flattened canonical fields (including rich text, slots and overrides),
+        parent/child IDs, document/page/run IDs and local_document_version.
+        This is current_turn_in_memory, never a checked persisted revision.
+        A successful result has complete=true; missing/ambiguous or oversized
+        snapshots return complete=false with no partial node. The JSON response
+        is bounded to 64 KiB UTF-8. Follow child IDs to inspect another node;
+        subtrees, asset bytes and library source are not expanded.
+        "brand" returns the brand card; "account" returns the target account
+        card. Images return image content so you judge by looking, not guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target, can_render=can_render)

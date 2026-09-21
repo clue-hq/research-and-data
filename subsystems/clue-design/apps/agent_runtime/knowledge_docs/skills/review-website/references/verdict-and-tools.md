@@ -13,11 +13,17 @@ The author finishes scoped writes and lets the orchestrator render and finalize.
   reviewer roles do not own the render tool. `unchanged: true` reuses current
   screenshots and permits reusing their still-applicable critique.
 - `view(target)` accepts `doc`, `brand`, `account`, `preview:1440`, `preview:768`,
-  `preview:375`, `state:<n>`, `asset:<id>`, `cloned_section:<id>`. It does not accept
-  arbitrary file paths, a made-up source-comparison target or `node:<id>`.
-  `doc` is only a section/count/asset summary, not full current node props/rich
-  text or a persisted artifact version. Obtain actual current node snapshots
-  through supplied context when available; otherwise report that read gap.
+  `preview:375`, `state:<n>`, `asset:<id>`, `cloned_section:<id>`, `node:<id>`.
+  It does not accept arbitrary file paths or a made-up source-comparison target.
+  `doc` is only a section/count/asset summary. `node:<id>` returns one exact
+  active-page canonical node (including rich text, fragment slots/overrides and
+  component pins), parent/child IDs and local document/page/run identity. It is
+  available to non-rendering roles too. Only `complete: true` supplies full state;
+  missing/ambiguous or oversized responses refuse without partial node data.
+  The JSON response is bounded to 64 KiB UTF-8. Follow child IDs as needed.
+  `current_turn_in_memory`, `local_document_version` and
+  `persisted_revision_checked: false` explicitly do not claim the latest saved
+  artifact revision. A node read supplies content evidence, not rendered pixels.
   If a report returns
   captures the current viewing surface cannot expose, record that limitation;
   the existence of the files is not inspection.

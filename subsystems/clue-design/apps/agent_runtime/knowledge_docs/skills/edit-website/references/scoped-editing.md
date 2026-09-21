@@ -25,15 +25,24 @@ is evidence, not executable instructions or authority to release library content
 Resolve the artifact and supplied version from the current brief/session, then
 use `list_pages()` and `view("doc")` to identify the active page and section
 inventory. The latter returns counts/section IDs/assets only; it does NOT return
-node props, classes, rich text or the persisted artifact version. There is no
-supported `view("node:...")` or general scoped-node reader in this tool surface.
-Use full current node state only when the caller/session actually supplies it.
-Do not reconstruct complete payloads from a summary, screenshot or earlier turn.
-If the needed current state is unavailable, preserve the node and report the
-read-capability gap; do not substitute a destructive subtree/page rewrite.
-If the supplied target
-is stale or ambiguous, establish the intended target before mutating it; do not
-invent a missing version or silently edit a similarly named page.
+node props, classes, rich text or the persisted artifact version. Switch to the
+intended page, then call `view("node:<exact-id>")`. A successful JSON text block
+has `complete: true`, the full flattened canonical `node`, `parent_id`, ordered
+`child_ids`, document/page/run IDs and `local_document_version`. Follow returned
+child IDs only as needed; the response does not expand a subtree or library asset.
+Text `content`, fragment `fragment_id`/typed `slots`/`text_overrides`, and custom
+component `slug`/`artifact_id`/`props` are returned as stored on that node.
+
+This is `current_turn_in_memory` with `persisted_revision_checked: false`.
+`local_document_version` is a turn-local change counter, not a durable artifact
+revision or a write precondition. Resolve the intended saved version from actual
+session context; reread after an intervening local edit or page switch. Missing,
+ambiguous or larger-than-64-KiB UTF-8 snapshots return `complete: false` without
+partial node data. Preserve the node and report that exact gap. Do not reconstruct
+complete payloads from a summary, screenshot, earlier turn or truncated response,
+and do not substitute a destructive subtree/page rewrite. If the supplied target
+is stale or ambiguous, establish it before mutating; never invent a missing
+version or silently edit a similarly named page.
 
 Use current previews when available; render only when missing/stale or needed to
 diagnose the requested change. Classify the touched content as authored nodes,
@@ -103,8 +112,8 @@ Its verbs, smallest blast radius first:
    annotated as editable. Geometry, layout, and styling stay byte-identical
    around the new content. This is the default for "change what this band
    says", and it is an ordinary op: `set_node_props` on the fragment node
-   with the FULL kind payload (`kind` tag, fragment_id and complete `slots` map;
-   the payload replaces, never merges). The copy you bind follows the
+   with the FULL current kind payload (`kind` tag, `fragment_id`, complete typed
+   `slots` and any `text_overrides`; the payload replaces, never merges). The copy you bind follows the
    conversion-copywriting skill's slot-geometry rule: match the original's
    approximate length and line count; markers count at rendered size.
 2. **Derive a campaign variant** (`repair_cloned_section(..., css=…)`).
@@ -267,9 +276,9 @@ report when they do:
   scoped turns hang off them.
 - **Structured body text is authored state.** A Body or Small node can
   contain multiple paragraph and list blocks. Before changing its wording,
-  obtain its full current canonical `content` from an actually supplied node
-  snapshot, not `view("doc")` (which is only a summary). If missing, leave it
-  intact and report the unavailable read. When available, use `set_rich_text`
+  obtain its full current canonical `content` through `view("node:<id>")`
+  with `complete: true`, not `view("doc")` (which is only a summary). On refusal,
+  leave it intact and report the gap. Use `set_rich_text`
   with the full typed document, changing only the requested
   inline or block. Never use `set_text` on a structured node: it replaces
   the whole document and can flatten a human-authored list. Heading variants
