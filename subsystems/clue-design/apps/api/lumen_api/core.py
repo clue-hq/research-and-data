@@ -483,7 +483,7 @@ class CoreClient:
         # `fragments` / `fragment_css` (clone-fidelity F1.3): API-resolved cloned-section
         # artifacts keyed by `frag_<16 hex>` id, and their concatenated already-scoped CSS.
         # The engine resolves neither — an id absent from the map renders the placeholder.
-        return self._run(
+        response = self._run(
             {
                 "action": "web_render",
                 "doc": doc,
@@ -499,6 +499,15 @@ class CoreClient:
                 "fragment_css": fragment_css,
             }
         )
+
+        if mode == "editor" and isinstance(response.get("html"), str):
+            from .fragments.editor_candidates import isolate_fragment_candidates
+
+            html, diagnostics = isolate_fragment_candidates(response["html"])
+            response = {**response, "html": html}
+            if diagnostics:
+                response["diagnostics"] = list(response.get("diagnostics") or []) + diagnostics
+        return response
 
     def web_derive(
         self,
