@@ -258,3 +258,12 @@ def test_scaffold_writes_the_seller_tree_only_when_the_platform_injected_reads(
     without = _tools(tmp_path / "without", monkeypatch)
     scaffold_workspace(without, "Make a square ad")
     assert not (workspace_root(without) / "seller").exists()
+
+
+def test_the_scene_tools_skill_and_the_web_prompt_teach_web_search_as_the_last_resort() -> None:
+    root = Path(__file__).resolve().parents[1]
+    skill = (root / "knowledge_docs/views/scene/skills/tools/SKILL.md").read_text(encoding="utf-8")
+    prompts = (root / "lumen_agent/prompts.py").read_text(encoding="utf-8")
+    assert "## Web search" in skill
+    assert "`web_search`" in skill and "comes after the account reads" in skill
+    assert prompts.count("web_search is the last resort") == 2
