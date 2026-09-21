@@ -19,21 +19,23 @@ body byte-identical to the jerusalem wrapper, header re-labelled). It exports th
 block from `.env` and refuses on a mismatch with `.env` / `apps/frontend/.env.local`. Logs
 `/tmp/lome_*.log`, agent workspaces `/private/tmp/clue-agent-workspaces-lome`. Never `up | tail`.
 
-## Database — founder instruction 2026-09-22: use `clue_san-salvador`
-`CLUE_DATABASE_URL` / `DEV_STACK_DB_URL` → `postgresql+asyncpg://clue:clue@localhost:55040/clue_san-salvador`
-(the istanbul container). Verified: its `alembic_version` = `5cac3234cfb3` = this branch's single
-head, so no migration is needed.
+## Database — `clue_lome`, a clone of `clue_san-salvador` (founder ruling 2026-09-22, second pass)
+The first instruction ("use `clue_san-salvador`") was superseded the same day once the hazard below
+was raised: `clue_lome` was created inside `clue-pg-istanbul` (55040) as a `pg_dump | psql` clone
+of the LIVE `clue_san-salvador` (dump inside the container — host pg_dump is v15 vs the v16 server).
+Verified: 0 errors in `/tmp/lome_db_clone.log`, 345 tables both sides, row parity on workspace /
+project / agent_turn / claim / account_entity / design_document / provider_call_ledger,
+`alembic_version` = `5cac3234cfb3` = this branch's single head. Both DSN lines in `.env` point at
+`postgresql+asyncpg://clue:clue@localhost:55040/clue_lome`.
 
-**Hazard, recorded not resolved:** the san-salvador lane's stack was RUNNING on 3020/8010/8020/8030
-at the time, on the SAME database. Two stacks over one DB means two fleets claiming the same jobs
-and design runs, and every turn made from either UI lands in the other's history. Either stop the
-san-salvador stack before `up` here, or clone (`pg_dump | psql` inside `clue-pg-istanbul`, per the
-jerusalem note) and repoint both DSN lines. A DB clone WITHOUT the source's `.artifacts` fails every
-turn on a missing blob (damascus/jerusalem notes).
+**Hazard that drove the clone:** the san-salvador lane's stack was RUNNING on 3020/8010/8020/8030
+on `clue_san-salvador`; two stacks over one DB means two fleets claiming the same jobs and every
+turn from either UI landing in the other's history. A DB clone WITHOUT the source's `.artifacts`
+fails every turn on a missing blob (damascus/jerusalem notes) — hence the rsync below.
 
 ## Owed before `up` works
-- `.artifacts/` (`CLUE_STORAGE_FS_ROOT`) is absent → rsync san-salvador's (~1 GB) — it holds the
-  blobs the shared DB's rows cite.
+- `.artifacts/` (`CLUE_STORAGE_FS_ROOT`): rsync from `../san-salvador/.artifacts/` STARTED 2026-09-22
+  (log `/tmp/lome_artifacts_rsync.log`); confirm it finished before `up`.
 - `subsystems/clue-design/target/release/lumen-api-helper` not built → `cargo build --release -p
   lumen-api-helper` in `subsystems/clue-design` (lumen-core changed at PR #72; copying an older
   binary mismatches `/build-info`).

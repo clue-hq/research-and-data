@@ -109,10 +109,14 @@ siblings; a governed refusal comes back as `{"error": "refused", "reasons": [...
 failure as `{"error": "<code>"}`, recorded, never raised. The module keeps its name; its
 docstring gains a paragraph saying this is the first spend tool riding the reads seam.
 
-**Identity and spend attribution.** On Head-of-ABM the ledger row carries the turn's workspace
-and thread as every tool call does. On design it carries the leg's project id, which the design
-turn envelope already stamps on ledger rows; that is the whole scoping for the role (it has no
-skill-pin guard for spend tools, and this spec adds none).
+**Identity and spend attribution.** The ledger row is stamped with the workspace only, on both
+roles — `LedgerStamp(workspace_id=ctx.workspace_id)`, exactly as `exa_search_evidence@1` stamps —
+because the journaled invoker's `ToolContext` carries no project id (corrected 2026-09-22 while
+planning; the earlier draft of this paragraph said the design row would carry the leg's project id,
+which the design lane's OWN drain does but this seam cannot). Project attribution lives in the
+journal: on Head-of-ABM the call is bound to the execution's `project` pin like every sibling tool,
+and on design the `tool_invocation` row sits under the leg's turn. The design role has no skill-pin
+guard for spend tools, and this spec adds none.
 
 ### 2.3 The words the agents read
 

@@ -28,6 +28,31 @@ section in chat; written spec awaiting the founder's read before the implementat
   (runtime) → both `harness.py` and `harness_web.py` call `make_platform_read_tools`.
 - `CLUE_EXA_API_KEY` present in `.env.example` and this lane's `.env`; no new flag.
 
+## Plan (written 2026-09-22, after the founder approved the spec)
+`docs/superpowers/plans/2026-09-22-web-search-tool.md` — eight tasks: (1) `excludeDomains` +
+`outputSchema` on the client's `/search` body and `output_text` on the result; (2) the tool module
+`clue_api/web_search_tool.py`, registered UNGRANTED (counts 141→142 / 161→162); (3) recipe0-stage0@31;
+(4) `head-of-abm@v61` = prompt v14 (the "Look things up in this order" paragraph) + the pin +
+`manual-*@v8` (`make manual`; 11 hand-written chapters re-minted by version line + paths only) +
+`tool_notes.yaml` entry + frontend label `Search the web` + composer pin; (5) `design@v3`;
+(6) `DesignPlatformReads.web_search` + the fourth LangChain tool in `make_platform_read_tools`
+(both harnesses already call it); (7) scene tools skill "Web search" section + the two web-lane
+prompt sentences; (8) M8B item 15 line, master-plan Track O note, spec status, memory.
+
+**Correction found while planning:** the journaled invoker's `ToolContext` carries NO project id,
+so the tool's ledger row is workspace-stamped on both roles (as `exa_search_evidence@1` is);
+spec §2.2 rewritten to say so. Project attribution lives in the journal (the execution's `project`
+pin on Head-of-ABM; the leg's turn on design).
+
+**Facts the plan relies on (verified):** a catalog `sha256` is `shasum -a 256` of the file bytes;
+tool pin digests come off `build_toolbelt(storage=None).descriptor('web_search','1')`; every
+Head-of-ABM tool declares `pin_requirements=("project",)` and `Stage0StepPinProvider` adds the
+execution's project pin for tools whose body names none (`run_python` precedent) — `web_search`
+joins that set; the manual's four generated chapters are the builder's alone
+(`MANUAL_VERSION`/`PROFILE_VERSION` in `clue_agents/manual/build.py`); the frontend `TOOL_LABELS`
+map is what "The human sees" renders from; `test_recipe_contracts.py::test_operation_id_requirements_are_explicit`
+enumerates every operation-bound address, so the tool must be added there.
+
 ## Next
-Founder reads the spec → `superpowers:writing-plans` → implementation (Opus subagents, Fable
-reviews). Live proofs (spec §4 items 5–6) are founder-triggered and spend Exa cents.
+Founder picks the execution mode (subagent-driven, Opus implementers, Fable reviews — or inline).
+Live proofs (spec §4 items 5–6) are founder-triggered and spend Exa cents.
