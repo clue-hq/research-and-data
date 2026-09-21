@@ -180,3 +180,23 @@ def test_real_output_can_be_snapshotted_without_permission_repair(tmp_path: Path
         assert not output.exists()
     finally:
         workspace.close()
+
+
+def test_run_resolves_docker_before_sanitizing_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    executable = "/Applications/Docker.app/Contents/Resources/bin/docker"
+    monkeypatch.setattr(shutil, "which", lambda name: executable if name == "docker" else None)
+    monkeypatch.setenv("CLUE_TEST_SECRET", "must-not-reach-docker")
+    observed = {}
+
+    def execute(command, **kwargs):
+        observed["command"] = command
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, b"ok", b"")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_script("print('ok')", mounts=_mounts(tmp_path), limits=LIMITS, timeout_s=5)
+    assert result.exit_code == 0
+    assert observed["command"][0] == executable
+    assert observed["environment"] == {"PATH": "/usr/bin:/bin:/usr/local/bin"}

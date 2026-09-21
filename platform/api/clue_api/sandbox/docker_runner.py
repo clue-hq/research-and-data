@@ -244,6 +244,9 @@ def run_script(
         # root-owned.
         host_path.mkdir(parents=True, exist_ok=True, mode=0o700)
     command = build_command(mounts, limits, label=label)
+    # Resolve with the worker's installation path before removing its environment.
+    # Docker Desktop/Homebrew may live outside the restricted child PATH.
+    command[0] = shutil.which(command[0]) or command[0]
     started = time.monotonic()
     try:
         completed = subprocess.run(
