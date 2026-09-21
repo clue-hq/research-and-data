@@ -58,3 +58,18 @@
   was refused as identical markup, then another raw repair restored it. Independent
   audit requested; do not count the recovery as a generic engine fix.
 - Main runtime/argument change committed locally as f080942c. No remote push.
+
+## Shared CSS repair checkpoint
+
+- Local documentation/slot guidance checkpoint: 3a012421.
+- Fixed raw repair rejecting real CSS-only edits and nesting old/new fragment
+  scopes. Normalization covers known source selectors, media rules, keyframes and
+  @scope while retaining sanitizer/reference gates, immutable source and lineage.
+- Parent reran 178 pure checks green; one existing browser test excluded after
+  sandbox Chromium launch denial. Independent review found no remaining issue.
+  No database or provider calls in these tests.
+- Parent completed mobile inspection for Clue/AWS/Google as well. Google still
+  has excessive capabilities-band whitespace despite the model self-review;
+  this remains a quality failure. All four tabs restored to desktop and retained.
+- Before native spacing-only test, auditing raw replacement preserving current
+  personalized slot values. No native uptake claim for the repair yet.

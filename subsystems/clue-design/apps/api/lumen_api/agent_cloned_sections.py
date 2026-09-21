@@ -79,7 +79,7 @@ from .fragments import (
     set_web_fragment_degraded,
     set_web_fragment_status,
 )
-from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
+from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
 from .fragments.render import slot_kinds
 from .fragments.registry import create_href_repaired_fragment
 from .fragments.sanitize import sanitize_fragment_html
@@ -1184,16 +1184,16 @@ class DurableAgentClonedSectionRegistry:
         else:
             slot_specs = list(detect_slots(sanitized.html).specs)
 
-        # What the original's markup literally is, for the "did this repair anything?" check
+        # The original's markup AND CSS, for the "did this repair anything?" check
         # below. Fail-SOFT on an unreadable original: a purged payload must not block repairing
         # the very fragment most in need of it, and nothing about preserving the original
         # depends on this read.
         try:
-            existing_html = read_web_fragment(
+            existing = read_web_fragment(
                 self.blobs.storage, workspace_id=self.workspace_id, fragment_id=replaces
-            ).html
+            )
         except (NotFoundError, FragmentRefused):
-            existing_html = None
+            existing = None
 
         probe = build_fragment_artifact(
             html=sanitized.html,
@@ -1202,23 +1202,36 @@ class DurableAgentClonedSectionRegistry:
             slots=slot_specs,
             preview_digest=None,
             prelude_reference=PRELUDE_REFERENCE_STRIP,
+            source_fragment_id=replaces,
         )
         already = repository.find_web_fragment(probe.fragment_id)
-        if existing_html is not None and probe.payload["html"] == existing_html:
+        original_css = None
+        if existing is not None:
+            original_css = scope_fragment_css(
+                existing.css, fragment_id=probe.fragment_id, source_fragment_id=replaces,
+                rehosted={}, prelude_reference=PRELUDE_REFERENCE_STRIP,
+            ).css
+        if (
+            existing is not None and probe.payload["html"] == existing.html
+            and probe.payload["css"] == original_css
+            and probe.payload["slot_manifest"] == existing.slot_manifest
+        ):
             # A "repair" that reproduces the broken band is not one. Without this it would mint
             # as a NEW fragment holding the same markup — and NOT degraded, because the marker is
             # a row-level judgement rather than part of the content, so it does not follow the
             # bytes. A clean-looking duplicate of a band the pipeline has already measured as
             # broken is the one outcome D-F6 exists to prevent.
             #
-            # Compared on the STORED form (sanitized and slot-annotated), because that is what a
-            # fragment's markup literally is. The error direction is toward allowing a mint: an
+            # Compare stored markup and CSS under one namespace: changing CSS alone can repair
+            # real geometry, while an identical band with a new namespace is still a no-op.
+            # The error direction is toward allowing a mint: an
             # original whose slots were stamped by something other than this detector annotates
             # differently and is not caught. That is the safe way round — the original survives
             # either way, and refusing a genuine repair would be the worse mistake.
             raise FragmentRefused(
                 "fragment.repair_unchanged",
-                f"this repair's markup is identical to {replaces}, so it repairs nothing. Walk "
+                f"this repair's markup and effective CSS are identical to {replaces}, "
+                "so it repairs nothing. Walk "
                 "the ladder: reproduce the experience with supported primitives, build an "
                 "equivalent interaction, or compose a compact static fallback with the "
                 "artificial height removed.",
@@ -1249,6 +1262,7 @@ class DurableAgentClonedSectionRegistry:
             prelude_reference=PRELUDE_REFERENCE_STRIP,
             derived_from=replaces,
             derived_reason=reason,
+            source_fragment_id=replaces,
         )
         converged = already is not None
         status = str(row.get("status") or "")

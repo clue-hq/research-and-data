@@ -119,6 +119,7 @@ def create_web_fragment(
     degraded_reason: str | None = None,
     derived_from: str | None = None,
     derived_reason: str | None = None,
+    source_fragment_id: str | None = None,
 ) -> tuple[dict[str, Any], FragmentArtifact]:
     """Mint one fragment and give it durable custody. Returns ``(row, artifact)``.
 
@@ -138,6 +139,10 @@ def create_web_fragment(
     The rules those three obey are the DAL's, imported rather than restated: this seam only
     translates them into the fragment refusal taxonomy the mint pipeline already reports on, so a
     producer gets ``fragment.*`` codes instead of a raw ``ValueError`` from two layers down.
+
+    ``source_fragment_id`` is an internal hint from a repair's workspace-resolved original,
+    allowing the normal scoper to retarget inspected CSS. It does not change custody, release,
+    lineage validation, or expose a new tool argument.
     """
     if (source_kit_id is None) != (source_kit_version is None):
         raise FragmentRefused(
@@ -160,6 +165,7 @@ def create_web_fragment(
         slots=slots,
         preview_digest=preview_digest,
         prelude_reference=prelude_reference,
+        source_fragment_id=source_fragment_id,
     )
 
     return _persist_fragment_artifact(

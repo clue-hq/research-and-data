@@ -202,5 +202,17 @@ The failed slot writes led to a generic editing-reference correction: pinning
 inputs are plain values, but `web_ops` fragment slots are one-key tagged objects
 (`text`, `asset`, `visible`). Nine existing Rust schema/override tests passed.
 This documentation correction was not re-exercised in another paid native run.
-The general raw-repair CSS/no-op behavior remains a separate reliability follow-up.
+The raw-repair CSS defect is now corrected: effective HTML/CSS/slot comparison
+accepts CSS-only geometry repairs and still refuses true no-ops. Copied inspected
+CSS retargets the declared source wrapper, keyframes and nested `@scope` selectors
+through the normal sanitizer and asset-custody gates. Originals stay immutable.
+178 focused pure checks passed; independent review found no remaining issue in
+that patch. One existing Chromium test was excluded after sandbox launch denial.
+Native uptake of this repair is not yet verified at this checkpoint.
+
+Parent subsequently inspected all four mobile previews. Clue/AWS/Conduit remain
+readable with intact identities. Google Cloud's capabilities band has excessive
+mobile whitespace despite its native self-review reporting no unusable empty
+height. This is a quality finding, not a passed fidelity check. A scoped native
+spacing repair is the next behavioral verification.
 Receipts: `.local-setup/native-account-skills/`.

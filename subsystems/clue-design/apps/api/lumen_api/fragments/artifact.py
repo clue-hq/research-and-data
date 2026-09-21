@@ -78,6 +78,7 @@ def build_fragment_artifact(
     slots: Sequence[SlotSpec] = (),
     preview_digest: str | None = None,
     prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
+    source_fragment_id: str | None = None,
 ) -> FragmentArtifact:
     """Sanitize, annotate, scope and address one section, in that order.
 
@@ -92,6 +93,8 @@ def build_fragment_artifact(
     ``prelude_reference`` is forwarded verbatim to :func:`~lumen_api.fragments.cssscope
     .scope_fragment_css` — including to the throwaway probe pass below, so the two passes cannot
     disagree about which rules exist and the identity bytes describe the CSS that will be stored.
+    ``source_fragment_id`` is the repair path's internal scoping hint, not permission to skip
+    sanitization or reference validation. Ordinary captures retain their existing identity.
     """
     sanitized = sanitize_fragment_html(html, rehosted=rehosted)
     annotated = annotate_fragment_slots(sanitized.html, slots)
@@ -100,7 +103,8 @@ def build_fragment_artifact(
     # exists (they are part of the identity). Scoping under a throwaway id resolves and records
     # them; the real scope pass below re-runs over the same source with the minted id.
     probe = scope_fragment_css(
-        css, fragment_id=_PROBE_ID, rehosted=rehosted, prelude_reference=prelude_reference
+        css, fragment_id=_PROBE_ID, rehosted=rehosted, prelude_reference=prelude_reference,
+        source_fragment_id=source_fragment_id,
     )
 
     digests = tuple(sorted(set(sanitized.asset_digests) | set(probe.asset_digests)))
@@ -112,10 +116,16 @@ def build_fragment_artifact(
         "slot_manifest": annotated.slot_manifest,
         "preview_digest": preview_digest,
     }
+    if source_fragment_id is not None:
+        # The same input bytes can mean different selectors depending on which source scope
+        # is being replaced. Address the normalized output, not that caller-local namespace.
+        identity["source_css"] = probe.css
+        identity["source_css_normalized"] = True
     fragment_id = "frag_" + hashlib.sha256(canonical_bytes(identity)).hexdigest()[:16]
 
     scoped = scope_fragment_css(
-        css, fragment_id=fragment_id, rehosted=rehosted, prelude_reference=prelude_reference
+        css, fragment_id=fragment_id, rehosted=rehosted, prelude_reference=prelude_reference,
+        source_fragment_id=source_fragment_id,
     )
     payload = {
         "schema_version": FRAGMENT_PAYLOAD_SCHEMA_VERSION,

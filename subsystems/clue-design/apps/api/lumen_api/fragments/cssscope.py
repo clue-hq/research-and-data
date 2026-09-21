@@ -151,12 +151,17 @@ def scope_fragment_css(
     fragment_id: str,
     rehosted: Mapping[str, str],
     prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
+    source_fragment_id: str | None = None,
 ) -> ScopedCss:
     """Scope one fragment's source CSS under its wrapper class. Refuses on a bad reference.
 
     ``prelude_reference`` decides what a READABLE url in an at-rule prelude costs — see
     :data:`PRELUDE_REFERENCE_MODES`. The default refuses, which is what every hand-authored
     caller wants; F2's minting path passes ``"strip"``.
+
+    Repairs may name their resolved ``source_fragment_id`` so inspected wrapper selectors and
+    keyframes move to the new scope exactly once. Unscoped additions still get the normal
+    prefix, and every declaration/reference still passes this parser's ordinary gates.
     """
     if prelude_reference not in PRELUDE_REFERENCE_MODES:
         raise FragmentRefused(
@@ -166,13 +171,18 @@ def scope_fragment_css(
         )
     rehosted = indexed_references(rehosted)
     wrapper = fragment_wrapper_class(fragment_id)
+    source_wrapper = fragment_wrapper_class(source_fragment_id) if source_fragment_id else None
     notes: list[str] = []
     digests: set[str] = set()
     rules = tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True)
     keyframe_names = _declared_keyframe_names(rules)
-    renames = {name: f"{name}--{wrapper}" for name in keyframe_names}
+    renames = {
+        name: f"{name.removesuffix('--' + source_wrapper) if source_wrapper else name}--{wrapper}"
+        for name in keyframe_names
+    }
     body = _scope_rules(rules, wrapper=wrapper, renames=renames, rehosted=rehosted,
-                        digests=digests, notes=notes, prelude_reference=prelude_reference)
+                        digests=digests, notes=notes, prelude_reference=prelude_reference,
+                        source_wrapper=source_wrapper)
     # AFTER scoping, so the flattener reorders exactly the rules that will be stored — and
     # BEFORE the breakout gate, which must run on the final text (2026-08-29 ruling; see
     # cssflatten's module docstring for why stored css may not carry cascade layers).
@@ -231,12 +241,14 @@ def _scope_rules(
     digests: set[str],
     notes: list[str],
     prelude_reference: str,
+    source_wrapper: str | None = None,
 ) -> str:
     out: list[str] = []
     for rule in rules:
         rendered = _scope_rule(
             rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests,
             notes=notes, prelude_reference=prelude_reference,
+            source_wrapper=source_wrapper,
         )
         if rendered:
             out.append(rendered)
@@ -252,9 +264,12 @@ def _scope_rule(
     digests: set[str],
     notes: list[str],
     prelude_reference: str,
+    source_wrapper: str | None = None,
 ) -> str:
     if isinstance(rule, ast.QualifiedRule):
-        selector = _scope_selector(rule.prelude, wrapper=wrapper, notes=notes)
+        selector = _scope_selector(
+            rule.prelude, wrapper=wrapper, notes=notes, source_wrapper=source_wrapper,
+        )
         if not selector:
             return ""
         content = _declaration_block(
@@ -266,6 +281,7 @@ def _scope_rule(
         return _scope_at_rule(
             rule, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests,
             notes=notes, prelude_reference=prelude_reference,
+            source_wrapper=source_wrapper,
         )
 
     if isinstance(rule, ast.ParseError):
@@ -283,6 +299,7 @@ def _scope_at_rule(
     digests: set[str],
     notes: list[str],
     prelude_reference: str,
+    source_wrapper: str | None = None,
 ) -> str:
     keyword = rule.lower_at_keyword
 
@@ -300,6 +317,8 @@ def _scope_at_rule(
         notes=notes,
     ):
         return ""
+    if keyword == "scope" and source_wrapper is not None:
+        _retarget_scope_prelude(rule.prelude, source_wrapper=source_wrapper, wrapper=wrapper)
     prelude = tinycss2.serialize(rule.prelude).strip()
 
     if rule.content is None:
@@ -351,6 +370,7 @@ def _scope_at_rule(
     body = _scope_rules(
         inner, wrapper=wrapper, renames=renames, rehosted=rehosted, digests=digests, notes=notes,
         prelude_reference=prelude_reference,
+        source_wrapper=source_wrapper,
     )
     head = f"@{keyword} {prelude}".rstrip()
     return f"{head} {{ {body} }}"
@@ -506,12 +526,27 @@ def _refuse_references_in_prelude(tokens: Sequence[object], *, where: str) -> No
             _refuse_references_in_prelude(token.content, where=where)
 
 
-def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]) -> str:
+def _scope_selector(
+    prelude: Sequence[object], *, wrapper: str, notes: list[str],
+    source_wrapper: str | None = None,
+) -> str:
     _refuse_references_in_prelude(prelude, where="a selector")
     parts: list[str] = []
     for group in _split_on_commas(prelude):
         text = tinycss2.serialize(group).strip()
         if not text:
+            continue
+        leading, remainder = _split_root_prefix(text)
+        # Inspected source CSS already has a scope. Retarget that exact leading class rather
+        # than inventing an impossible `.new .old` nesting. The remainder still goes through
+        # the ordinary reference/declaration gates; this is not the trusted href-derivative
+        # shortcut. A sibling of the wrapper is outside custody and cannot be retargeted.
+        retargeted = _retarget_source_selector(
+            remainder if leading and remainder else text,
+            source_wrapper=source_wrapper, wrapper=wrapper,
+        )
+        if retargeted is not None:
+            parts.append(f"{leading} {retargeted}" if leading and remainder else retargeted)
             continue
         if text.lower() in _DOCUMENT_SELECTORS:
             notes.append(
@@ -520,7 +555,6 @@ def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]
             )
             parts.append(f".{wrapper}")
             continue
-        leading, remainder = _split_root_prefix(text)
         if leading and remainder:
             # `html.dark .btn` is a THEME rule: the leading compound qualifies the document, the
             # rest addresses the section. Prefixing the whole thing produces
@@ -537,6 +571,55 @@ def _scope_selector(prelude: Sequence[object], *, wrapper: str, notes: list[str]
         else:
             parts.append(f".{wrapper} {text}")
     return ", ".join(parts)
+
+
+def _retarget_source_selector(
+    selector: str, *, source_wrapper: str | None, wrapper: str,
+) -> str | None:
+    if source_wrapper is None:
+        return None
+    tokens = tinycss2.parse_component_value_list(selector, skip_comments=True)
+    if not (
+        len(tokens) >= 2 and tokens[0].type == "literal" and tokens[0].value == "."
+        and tokens[1].type == "ident" and tokens[1].value == source_wrapper
+    ):
+        return None
+    # The first relationship after the wrapper compound must stay inside that wrapper.
+    # Pseudo functions are single parsed tokens; commas inside them are not selector groups.
+    for index, token in enumerate(tokens[2:], start=2):
+        if token.type == "whitespace" or (
+            token.type == "literal" and token.value in {">", "+", "~", "|", "||"}
+        ):
+            following = next((item for item in tokens[index:] if item.type != "whitespace"), None)
+            if (
+                following is not None and following.type == "literal"
+                and following.value in {"+", "~", "|", "||"}
+            ):
+                raise FragmentRefused(
+                    "fragment.css_scope_escape", "a source wrapper cannot target its siblings",
+                    reference=selector,
+                )
+            break
+    tokens[1].value = wrapper
+    tokens[1].lower_value = wrapper.lower()
+    return tinycss2.serialize(tokens)
+
+
+def _retarget_scope_prelude(
+    tokens: Sequence[object], *, source_wrapper: str, wrapper: str,
+) -> None:
+    """Retarget only class tokens in @scope's selector groups after its reference gate."""
+    for index, token in enumerate(tokens):
+        if (
+            token.type == "ident" and token.value == source_wrapper and index > 0
+            and tokens[index - 1].type == "literal" and tokens[index - 1].value == "."
+        ):
+            token.value = wrapper
+            token.lower_value = wrapper.lower()
+        if token.type == "() block":
+            _retarget_scope_prelude(token.content, source_wrapper=source_wrapper, wrapper=wrapper)
+        elif token.type == "function":
+            _retarget_scope_prelude(token.arguments, source_wrapper=source_wrapper, wrapper=wrapper)
 
 
 #: The element part of a compound that names the document root.
