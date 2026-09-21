@@ -76,3 +76,27 @@ All captured public-source bytes and raw logs stay in ignored local setup:
 The test DB is `clue_web_fresh_20260920_1815`, migrated to `d27183d13445`.
 Raw asset counts include responsive renditions and utility media; they are not
 counts of unique, suitable hero images.
+
+
+## Product-discovery follow-up: second real URL-only run
+
+The shared discovery pipeline now considers tightly scoped, explicitly labelled navigation/footer lists when URL patterns cannot identify a product page. Labels come from a direct group heading or unambiguous ARIA association; whole-page prose and unrelated headings are not evidence. Existing URL/proof roles take precedence. Utility links, foreign origins, credentials, duplicates and over-budget pages remain excluded under the existing rules. No company names or site-specific routes were added to the implementation.
+
+Parent-reviewed regressions include nested-list ownership, conflicting/duplicate/missing ARIA references, utilities, role precedence, query identity, same-origin checks and failed-capture coverage. All 46 focused checks passed independently (37 new, 9 existing). The implementer also caught a list-as-navigation borrowing an outside body heading, reproduced the failure, and closed that leak before handoff. Lint and whitespace checks passed.
+
+A second real API run supplied only `https://linear.app/` in a new empty disposable workspace, with the same model-disabled capture setup. It completed in **147 seconds**:
+
+| Page | Role | Sections admitted / segmented | Coverage |
+|---|---|---:|---|
+| Homepage | homepage | 17 / 18 | partial sections |
+| `/intake` | product | 14 / 14 | captured, sections minted |
+| `/plan` | product | 16 / 16 | captured, sections minted |
+| `/customers` | customer index | 6 / 7 | partial sections |
+| `/customers/openai` | case study | 7 / 7 | captured, sections minted |
+| `/customers/ramp` | case study | 6 / 7 | partial capture and sections |
+
+The registry read returned **152 asset records** and the run admitted **66 draft sections**. `missing_page_roles` is now empty; `fidelity_verified` remains false. Asset counts include renditions and utility media. No assets or page lists were supplied, no fragments were released, and the four live workspaces remain unchanged. The retained first run above documents the original miss; it was not overwritten.
+
+Evidence: `.local-setup/website-capture/fresh-url-linear-product-20260920/{scope,result,latest-job,verification}.json`, sibling log/script, and `semantic-discovery-parent-tests.xml`. The initial readback used an incorrect top-level asset-kind field (records wrap their asset payload); that diagnostic field was removed, while the verified record count remains 152.
+
+This closes the observed unfamiliar-product-slug gap, not every discovery case. Unlabelled or nonstandard navigation can still be missed; labels currently use the existing English role vocabulary. Supporting-page redirects can change the origin used by subsequent discovery, a separate existing issue. Missing media/sections, source reproduction, supporting-media descriptions and live four-brand acceptance remain open.
