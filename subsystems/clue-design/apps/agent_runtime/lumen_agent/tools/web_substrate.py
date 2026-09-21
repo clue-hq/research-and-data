@@ -5242,18 +5242,20 @@ class LumenWebTools:
     def search_cloned_sections(
         self, q: str = "", role: Optional[str] = None, limit: int = 8
     ) -> str:
-        """Find CLONED SECTIONS — real bands lifted verbatim off this client's own website.
+        """Find released reusable website sections in this workspace's library.
 
-        A cloned section is not a template and not generated markup: it is the client's actual
-        nav, footer, proof band or hero, with its own markup, its own CSS and its own images,
-        pinned by id. Reusing one is how a page gets chrome that is right by construction instead
-        of approximated.
+        Results may be captured source bands, authored compositions or derived repairs/variants.
+        Read source_url/page_url and kit associations, then use inspect_cloned_section for
+        origin, composed, lineage and capture_evidence; release is not a source-fidelity verdict.
+        Inspect the selected band's actual markup, CSS and preview before pinning/rebinding it.
+        A composed result is not recovered original website code.
 
         ONLY RELEASED SECTIONS ARE LISTED. Ingestion mints every section it clones as a draft; a
         human releases them by approving the brand kit they came from. A draft or a retired
         section is not offered here, because pinning one is refused.
 
-        `q` is optional — call it with no query to see everything this workspace has released.
+        `q` is optional — no query returns a bounded sample of released sections; compare
+        count with total before claiming complete library coverage.
         With a query it matches over the label, the role, the page it came from and the slot
         names. Naming a `frag_…` id anywhere in the query returns that section first.
         `role` filters to one section role (`nav`, `hero`, `footer`, `proof`, …).
@@ -5278,10 +5280,11 @@ class LumenWebTools:
         of this row; `repairs` lists every repair of it, including ones still waiting for a human
         to release them (so you do not compose the same replacement twice).
 
-        NEVER CASUALLY REWRITE A WORKING CLONED SECTION. Its markup is the client's, verbatim, and
-        its slots are the whole of what may change on a healthy one. When a clone is visibly or
-        functionally broken, preserve the original artifact and repair, rebuild or replace it
-        through `repair_cloned_section` — never by retyping the band into your own page markup.
+        Preserve healthy source structure and use slots for copy/image/link changes. A healthy
+        band needing a structural campaign change uses a source-based campaign variant through
+        repair_cloned_section; a broken band uses its defect-repair contract. Read the repair
+        skill for these distinct lanes. Preserve immutable originals and inspected source
+        grammar rather than retyping a healthy band as an unrelated imitation.
         """
         registry = self._cloned_section_registry()
         if registry is None:

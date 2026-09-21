@@ -129,6 +129,15 @@ A named concept without binding is not an account-derived page; a template alone
 does not verify a requested batch. Follow `web-account-personalization` for
 contact identity binding and appropriate allowed use.
 
+For an account-content request, compare the argument in the current plan with
+the rendered page: what supported account context changed the message, section
+choice, proof or next decision? A role label or repeated company name alone does
+not demonstrate researched relevance. Task-relevant proposals can be useful,
+but do not accept them as deep account personalization when research was required
+and unavailable. Keep internal research caveats out of visitor copy; removing
+them must leave the remaining promises fully supported. An explicit identity-only
+edit is reviewed at that narrower scope.
+
 A missing source comparison prevents certifying required source fidelity. Report
 what was observed, the available source/version and what remains unverified.
 Neither a blank `broken_clones` array nor schema success overrides these judgments.

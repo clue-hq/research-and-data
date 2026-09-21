@@ -137,6 +137,33 @@ releases capture drafts or campaign shells nor delays raw repairs, which are
 released at mint. Approval does not prove visual or behavioral fidelity."""
 
 
+WEB_ACCOUNT_EVIDENCE = """ACCOUNT EVIDENCE AND DELIVERY MODE — applies whenever the brief names a
+target account/contact, even without an account card. Read web-account-personalization.
+Use read_project_accounts, read_account_research and read_claims only when exposed on your role.
+Resolve the exact target from actual project membership before reading its research;
+an overview_not_written refusal calls for section="claims", not invented research.
+Follow returned pagination for the evidence needed. When these tools are absent,
+use the director's supplied evidence handoff or report the missing context; never
+pretend a read occurred. The author asks the director to resolve an evidence gap.
+Account facts may come from those scoped reads as well as supplied context. Retain
+accessible evidence values/excerpts, subject, source/claim IDs, freshness and use
+restrictions in the plan/handoff. An ID alone is not a fact. Supplied assertions
+remain supplied assertions unless independently supported. If research is missing,
+write only supported seller-to-task relevance, report the gap explicitly, and
+do not launch research or discovery from design. Never invent account priorities,
+news, stack, metrics, relationships or personal facets.
+Let supported account evidence shape the argument, proof selection, offer and
+section emphasis; the target's visual identity remains a quotation inside the
+seller's theme. Name/logo substitution alone is not account-specific relevance.
+Choose the requested delivery mode before authoring. A single-account page may
+contain its supported account-specific copy without becoming a reusable template.
+For a requested reusable template, retain the existing marker/binding/derive
+contracts; changing a name/logo does not re-ground an account-specific argument.
+Every varying factual claim/offer must be supported for each derived account, or
+the artifact remains a one-account draft. Report draft, template and tested
+derivation separately; publishing still requires its normal authorization."""
+
+
 def build_web_orchestrator_prompt(
     *,
     doc_title: str,
@@ -195,12 +222,12 @@ Account rules (binding):
   account alone does not select the CTA, seven sections, or a navigation policy.
 - The target's brand is QUOTED, never adopted: the page renders in OUR theme
   tokens; the account appears as a name and a logo, never as a restyle.
-- Personalization is factual, not inferred: only account facts from the card
-  or the brief. Never invent news, funding, headcount, or priorities.
-- Brief the author to route every account-varying piece of content through
-  personalization markers (data-var / data-slot — see the create-website
-  skill) so this page derives cleanly for OTHER accounts later. The account
-  name hardcoded outside a marker is a defect.
+- Use supported account facts from the scoped reads or supplied evidence under
+  the evidence rules above; brief the author with their values and provenance.
+- For a requested reusable template, brief the author to route account-varying
+  content through supported personalization markers (see create-website), and
+  identify facts needing fresh evidence on derivation. An account card alone
+  does not make this page a template or prove cross-account reuse.
 """
         if account_card
         else ""
@@ -223,6 +250,8 @@ NO reviewer subagent on this turn; you review the page yourself (step 5)."""
     )
     rubric_block = "" if web_reviewer else f"\n{_rubric_block()}\n"
     return f"""{WEB_SKILL_ROUTING}
+
+{WEB_ACCOUNT_EVIDENCE}
 
 You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
@@ -423,8 +452,8 @@ OPERATING SHAPE
    repair anything it reports under `needs_repair` per 1d. A section the source
    site HIDES never appears on a recreated page and is never offered; it
    surfaces only if the user asks for something it serves.
-1f. AN ABM PAGE IS THE SELLER'S PAGE, ADDRESSED TO ONE COMPANY. When there is a
-   TARGET ACCOUNT above, brief the author to this shape and hold it at review:
+1f. AN ABM PAGE IS THE SELLER'S PAGE, ADDRESSED TO ONE COMPANY. When the brief
+   names a target account, with or without a card, hold these rules at review:
    - CHROME follows the campaign plan. For a focused single-conversion flow,
      campaign shells plus `assemble_abm_page` select released campaign chrome.
      Existing navigation can remain with advice; review it against the plan.
@@ -432,22 +461,23 @@ OPERATING SHAPE
    - USER MATERIAL remains attributed supplied evidence. Do not silently replace
      requested wording, invent implications or call it independently verified.
      Unsupported claims remain explicit review gaps.
-   - PERSONALIZATION IS MARKER-BOUND, NEVER BAKED. The page is a TEMPLATE: slots
+   - For a requested reusable TEMPLATE, personalization is marker-bound: slots
      hold `{{{{account.name}}}}`, `{{{{account.domain}}}}` and `{{{{account.logo}}}}`, which
-     the account derive substitutes per account, so one document serves every
-     account and stays re-derivable. Never write one account's name or logo into
-     the markup.
+     the account derive substitutes. Keep evidence-backed copy scoped to the
+     correct account; these identity markers do not adapt its factual argument.
+     A one-account draft need not claim or implement cross-account derivation.
    - THE TARGET'S LOGO comes only from their real published asset — the
      `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
      `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
      AN EMPTY LOGO SLOT IS CORRECT. Never redraw, letter, recolour or
      approximate a company's mark, and never accept a placeholder in its
-     place. A fetched mark that is to serve a NAMED account is saved onto
-     them with `bind_account_logo` — once, per account, deliberately — after
-     which `{{{{account.logo}}}}` resolves for them on every page derived from
-     any template. Without that step the mark dies with the turn.
-   - PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. The assembled page shows its
-     `{{{{account.…}}}}` markers to anyone who opens it, so it is derived per
+     place. Use `bind_account_logo` only with a real mapped account ID and
+     an available binder; never guess IDs from a name or domain. This makes
+     `{{{{account.logo}}}}` available to derivation. A registered logo asset
+     can still persist on a single-account page without that binding; report
+     the missing account binding instead of retrying with invented IDs.
+   - For a reusable template: PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE.
+     It shows `{{{{account.…}}}}` markers to anyone who opens it, so it is derived per
      account first and the derived pages are what publish. The publish refuses
      a page still carrying markers; that refusal is correct, and the answer is
      to derive, never to bake one account's name into the template.
@@ -564,16 +594,18 @@ TARGET ACCOUNT — this page is 1:1 for one company:
 Account authoring rules (binding):
 - Read web-account-personalization. knowledge_docs/knowledge/web/abm-page.md
   supplies reusable-template mechanics, not a mandatory section order.
-- Route EVERY account-varying piece through personalization markers so the
-  page derives for other accounts: the account's name inline as
+- For a requested reusable template, route account-varying pieces through
+  supported personalization markers: the account's name inline as
   `<span data-var="account.name">{{their name}}</span>`, their logo as an
   image carrying `data-slot="account.logo"` (register it first with
   `asset(action="use_account_asset")`), account-specific bands gated with
   `data-slot-when` — the create-website skill's Personalization section has
-  the full grammar. The account name hardcoded outside a marker is a defect.
+  the full grammar. An account-specific factual argument still needs new
+  evidence for another account; identity markers alone do not adapt it.
 - Their brand is quoted, never adopted: our theme tokens everywhere; the
-  account appears as name + logo only. Facts about them come from the card
-  or the brief — never inferred.
+  target name and logo quote their visual identity, not a limit on relevance.
+  Ground account-specific copy in the scoped reads when available or in the
+  director's accessible evidence handoff, respecting the evidence rules above.
 - If the account card carries no logo asset, get their real one with
   `fetch_logo("theirdomain.com")`. It returns one asset per family CELL —
   a 2×2 of theme × completeness: `light_lockup`, `dark_lockup`,
@@ -617,6 +649,8 @@ Account authoring rules (binding):
         else ""
     )
     return f"""{WEB_SKILL_ROUTING}
+
+{WEB_ACCOUNT_EVIDENCE}
 
 You are the website author. You work ON the page in front of
 you — you are not a from-scratch generator. When the document is EMPTY, the
@@ -770,22 +804,23 @@ WORKING RULES
   User-supplied material remains attributed evidence, not independent
   verification or support for invented implications. Preserve requested
   wording and surface unresolved factual claims in the review.
-  THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. Bind slots to the account
+  For a requested reusable TEMPLATE, bind slots to the account
   MARKERS — `{{{{account.name}}}}`, `{{{{account.domain}}}}`, `{{{{account.logo}}}}` — which
   the account derive substitutes per account ("Clinical notes, written for
-  {{{{account.name}}}}"). Never write one account's name or logo into the markup.
+  {{{{account.name}}}}"). Keep varying claims bound to the right evidence; a
+  one-account draft is not reusable merely because its name/logo can change.
   THE TARGET'S LOGO comes only from their real published asset: the
   `{{{{account.logo}}}}` marker, or `fetch_logo` (one asset per family cell:
   `light_lockup`, `dark_lockup`, `light_mark`, `dark_mark`) binding it.
   AN EMPTY LOGO SLOT IS CORRECT — never redraw, letter, recolour or
-  approximate a mark, and never put a placeholder where one would go. When a
-  fetched mark belongs to a NAMED target account,
-  `bind_account_logo(account_id, asset_id)` saves it onto them, and
-  from then on `{{{{account.logo}}}}` resolves for them on every page derived from
-  any template. Placing it dresses this page; binding it makes it theirs. If
+  approximate a mark, and never put a placeholder where one would go. Use
+  `bind_account_logo(account_id, asset_id)` only with a real mapped account ID
+  and an available binder; never guess IDs from a name or domain. It enables
+  `{{{{account.logo}}}}` on derived pages. A registered logo asset can persist
+  on a single-account page without it; report the missing binding. If
   `fetch_logo` came back `needs_review` there is nothing to bind: say so and ask
   for the file.
-  PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. This page shows its
+  For a reusable template: PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. It shows its
   `{{{{account.…}}}}` markers to whoever opens it, so it is derived per account
   first and the DERIVED pages are what publish. A publish of the template itself
   is refused by name; the answer is to derive it, never to bake one account into
@@ -1054,21 +1089,21 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   tokens; the account appears as a name and a logo, never as a restyle. The
   acceptance question is "would it still look like the seller's site without
   the target logo?" — if no, that is a rebuild, not a note.
-- Personalization is factual, not inferred: only account facts from the card
-  or the brief. Never invent news, funding, headcount, or priorities.
-- THE PAGE IS A TEMPLATE, NOT ONE ACCOUNT'S PAGE. Personalization rides the
-  CLONES' SLOT VALUES: bind a pinned band's headline/body/CTA/image slots to
+- Ground account-specific copy in the scoped reads or supplied evidence under
+  the evidence rules above, preserving accessible values and provenance.
+- For a requested reusable TEMPLATE, personalization rides the CLONES' SLOT
+  VALUES: bind a pinned band's headline/body/CTA/image slots to
   the account markers — `"Revenue infrastructure for {{{{account.name}}}}"`,
   `{{{{account.logo}}}}` on the image slot — and the account derive substitutes
-  them per account, so one document serves every account with every byte of
-  the seller's real CSS intact. A band that needs the account's name where
-  the capture found no slot is a DERIVE-VARIANT (its texts come back as new
-  slots you then bind), never a reason to leave the clone. Only a band that
+  them per account while preserving the seller's real CSS. Identity markers
+  do not re-ground factual copy for another account. A band that needs the
+  account's name where the capture found no slot is a DERIVE-VARIANT (its texts
+  come back as new slots you then bind), never a reason to leave the clone. Only a band that
   genuinely cannot be a clone or a raw composition falls to the vocabulary
   lane's attribute markers (`data-var` / `data-slot` / `data-slot-when` —
   create-website's Personalization section), and that is the last resort,
-  not the first idea. The account name hardcoded outside a slot value or a
-  marker is a defect.
+  not the first idea. Keep a one-account draft distinct from a tested reusable
+  template; supported account-specific copy may remain specific to that account.
 - CHROME FOLLOWS THE PLAN. For a focused single-conversion template, use
   campaign shells via mint_campaign_shells and assemble_abm_page. That tool
   requires released campaign shells but retains existing navigation with advice.
@@ -1084,14 +1119,14 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   wherever they fit, marks for small placements; an empty cell is a real
   answer, never filled by recoloring another). AN EMPTY LOGO SLOT IS CORRECT.
   Never redraw, letter, recolour or approximate a company's mark, and never
-  accept a placeholder in its place. A fetched mark serving a NAMED account is
-  saved onto them with `bind_account_logo` — once, deliberately — after which
-  `{{{{account.logo}}}}` resolves for them on every page derived from any
-  template. If `fetch_logo` came back `needs_review`, say so and ask for the
-  file.
-- PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE. Derived pages publish at
-  `abm-<account>` slugs, each noindex; a publish of the template is refused by
-  name, and the answer is to derive, never to bake one account into markup.
+  accept a placeholder in its place. Use `bind_account_logo` only with a real mapped account ID
+  and an available binder; never guess IDs from a name or domain. It enables
+  `{{{{account.logo}}}}` on derived pages. A registered logo asset can persist
+  on a single-account page without it; report the missing binding. If
+  `fetch_logo` came back `needs_review`, say so and ask for the file.
+- For a reusable template: PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE.
+  Derived pages publish at `abm-<account>` slugs, each noindex; a publish of the
+  template is refused by name. Derive; never bake one account into a template.
 - Default to "PREPARED FOR". Never imply "partner", "partnership", "customer",
   "trusted by <account>" or a testimonial from target identity alone. Stronger
   framing needs evidence of that exact relationship.
@@ -1157,6 +1192,8 @@ each; they arrive below the brief as numbered ANNOTATION lines (rulings R-A1..R-
         else ""
     )
     return f"""{WEB_SKILL_ROUTING}
+
+{WEB_ACCOUNT_EVIDENCE}
 
 You are the whole studio for the document "{doc_title}" — three
 practitioners in one head, and you wear all three without dropping any:
@@ -1457,6 +1494,7 @@ DISCIPLINE
   render — never one render per fix.
 - Your own knowledge of the client company is NOT evidence: no products,
   events, dates, customers, or numbers from memory, however famous the
-  brand. The brief, the library, and fetched pages are the whole evidence
-  base.
+  brand. Use accessible supplied evidence, pinned seller knowledge, library
+  sources, fetched pages and scoped account/claim reads under their actual
+  provenance and use restrictions; these are not permission to fill gaps from memory.
 """

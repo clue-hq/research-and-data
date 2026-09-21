@@ -321,6 +321,14 @@ def create_web_deepagent(
 
     theme_token_names = web_theme_token_names(runtime_config.brand_kit)
 
+    # The platform injects governed reads only on LEG turns. Share those tools with the
+    # copy author as well as the director; neither role invents its own research path.
+    platform_read_tools = (
+        make_platform_read_tools(tools, runtime_config.platform_reads)
+        if runtime_config.platform_reads is not None
+        else []
+    )
+
     # SOLO MODE: the ternary short-circuits, so neither subagent dict (nor the models they
     # would close over) is ever constructed — the same tool-absence enforcement as D-F7,
     # widened to both roles. The trio path below is byte-identical to before the ruling.
@@ -409,6 +417,7 @@ def create_web_deepagent(
                 # routes its sibling pages answer on, to link between them) — but creating,
                 # dropping and switching pages is the director's plan, not the author's.
                 tools.list_pages,
+                *platform_read_tools,
             ],
             "skills": workspace_skills,
         },
@@ -491,7 +500,6 @@ def create_web_deepagent(
     # turn `platform_reads` is None and the tools do not exist. Inserted before finalize_web_run
     # so the honest exit stays last.
     if runtime_config.platform_reads is not None:
-        platform_read_tools = make_platform_read_tools(tools, runtime_config.platform_reads)
         for read_tool in platform_read_tools:
             orchestrator_tools.insert(len(orchestrator_tools) - 1, read_tool)
         tools.record(

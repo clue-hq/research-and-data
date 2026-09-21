@@ -67,6 +67,16 @@ def test_every_family_is_discoverable_and_nested_references_survive_materializat
     assert (tmp_path / "knowledge_docs/knowledge/web/skill-families.md").is_file()
 
 
+def test_account_argument_guide_is_required_and_delivered_with_the_skill(tmp_path):
+    read_required_skill_reference(
+        tmp_path,
+        "web-account-personalization",
+        "account argument",
+        before="Read ",
+        after=" before selecting sections or rewriting an account page.",
+    )
+
+
 @pytest.mark.parametrize("role", ["orchestrator", "author", "reviewer", "solo"])
 def test_runtime_prompts_receive_the_same_conditional_family_router(role):
     if role == "orchestrator":
