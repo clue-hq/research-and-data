@@ -6,6 +6,16 @@ references. Native runs have used them, but the complete four-brand source,
 motion and account-personalization quality target has not passed. Continue
 implementation and testing in the Clue platform, not the standalone gallery.
 
+**Current test environment — founder correction, 2026-09-21:** use only
+Conduit Fresh on port 3020, workspace `ws_23c8a42f25f3429f8f2921e21a484b3b`.
+The older four instances on 3021–3024 contain old ingestion and are suspended.
+Their run receipts below are historical runtime/bug evidence, not current
+fresh-ingestion acceptance. The final Google spacing attempt was cancelled before
+any tool mutation. Docker and the standard sandbox image are healthy. A separate
+native Fresh Conduit artifact test now targets the approved six-page capture;
+the existing Fresh version 3 remains intact. Do not restart old instances or
+substitute the standalone preview for this qualification.
+
 **Historical 2026-09-20 authoring checkpoint:** implemented in
 `codex/website-capture-v1`, offline integration checked, not yet deployed to the
 four workspaces. The scope, verification and remaining-work lists below record
@@ -223,5 +233,26 @@ Parent subsequently inspected all four mobile previews. Clue/AWS/Conduit remain
 readable with intact identities. Google Cloud's capabilities band has excessive
 mobile whitespace despite its native self-review reporting no unusable empty
 height. This is a quality finding, not a passed fidelity check. A scoped native
-spacing repair is the next behavioral verification.
+spacing repair was cancelled before tool execution when the user superseded the
+four-workspace test plan below.
 Receipts: `.local-setup/native-account-skills/`.
+
+### Current test boundary — Conduit Fresh only, 2026-09-21
+
+The user withdrew the four old-ingestion workspaces from acceptance testing.
+Their frontend instances on 3021–3024 are suspended, with data preserved. A
+read-only check found no nonterminal fleet jobs and no active design runs in those
+workspaces. Do not restart them or count their results as fresh-ingestion proof.
+
+Conduit Fresh on 3020 is the sole current test workspace. Its approved product-ready
+kit v1 has six captured source pages and 45 approved, non-degraded fragments
+(40 original plus five derivatives). The capture succeeded; the overall onboarding
+aggregate still records the earlier alias failure. Docker and the existing agent
+sandbox image are available. The original native version 3 remains preserved.
+
+A separate native test artifact has been prepared with the correct Fresh kit.
+The Head of ABM handoff took nine model calls (170.3 seconds), including two failed
+manual searches caused by recursive-glob and file-path handling defects. The
+handoff eventually succeeded; a subsequent user message starts the design run.
+At this checkpoint, authentication recovery is pending account selection. The
+new skill test has **not** started generation or passed acceptance yet.

@@ -79,3 +79,35 @@
   the same pin only in that case. Changed markup keeps replacement semantics.
   Real-engine regression failed before the fix. 84 runtime + 12 API tests pass;
   independent review found no issue. Repair skill now documents this boundary.
+
+## User supersedes old-workspace testing
+
+- User clarified that ports 3021–3024 have expired/old ingestion. Test ONLY
+  Conduit Fresh on 3020 (workspace ws_23c8a42f25f3429f8f2921e21a484b3b).
+  Do not restart the old instances or treat their results as fresh-ingestion acceptance.
+- Cancelled the just-started Google spacing turn through the native Stop control.
+  Durable result says cancelled by request, no tool calls and no operations.
+- Suspended the ownership-checked four-instance frontend manager. Verified
+  3021–3024 closed; 3020 and shared 8010/8020/8030 remain live. No data deleted.
+- Docker 29.8.0 and existing clue-agent-sandbox image verified healthy. Four idle
+  workers were reloaded on 614ce7cf before this user correction; shared services
+  stay available for Fresh. Parent combined runtime/API check: 96 passed.
+- Fresh capture succeeded: approved product-ready kit v1 from ingest_2b619e5d06c044d8949f556f5f3d0447,
+  six source pages, 45 approved non-degraded fragments (40 original plus derivatives).
+  Overall onboarding aggregate still records prior alias failure, distinct from capture.
+- Started a separate native website artifact test in Fresh project prj_6bf6cb3005aa5623be3a083a16107342,
+  new chat thr_1d740b2fe6555115b9c060321e4005a2. Existing v3 preserved. Request uses
+  fresh captured source library, authentic Hyatt mark, grounded task/account argument,
+  relevant family reads and desktop/mobile/link review; no discovery, seeding or publish.
+- Handoff did finish: new leg is open_awaiting_user, artifact doc_ea3fc8bf949f5ded81b11730f8e29298,
+  correct Fresh kit. No design run yet; next user message starts it. Do not create
+  a duplicate chat. Head took 9 model calls / 170.3s; read-only audit found two
+  manual grep defects (recursive glob misses root SKILL.md; file path handled as
+  directory and mislabeled permission error). No changes made to workspace grep.
+- Fresh browser session expired. The expired-session cleanup stalled; normal
+  /sign-in -> Google flow reached account chooser. Automatic approval review
+  rejected selecting an account as ambiguous. Asked user to select the account;
+  no server-token/auth bypass attempted. Tab 12 holds this normal login flow.
+- Read-only DB verification: zero nonterminal fleet tasks globally, all old
+  workspace design runs terminal. Only frontend 3020 listens. This is an auth
+  blocker for the Fresh-only generation test, not a Docker or ingestion failure.
