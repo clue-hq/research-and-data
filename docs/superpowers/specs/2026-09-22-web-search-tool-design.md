@@ -1,6 +1,6 @@
 # `web_search@1`: an open-web search for Head-of-ABM and the design agents
 
-**Date:** 2026-09-22 · **Branch:** `research-streaming-v3` (lome lane) · **Status:** founder-approved in chat (2026-09-22)
+**Date:** 2026-09-22 · **Branch:** `research-streaming-v3` (lome lane) · **Status:** implemented on `research-streaming-v3` (2026-09-22; live proofs §4.5–4.6 owed, founder-triggered)
 
 ## 1. What this is, and what it is not
 
@@ -176,18 +176,20 @@ The web lane's prompt (`prompts.py`, at both platform-reads sentences) gets the 
 
 ## 4. Acceptance
 
-**Offline (every item a test):**
+**Offline (every item a test) — all four DONE 2026-09-22:**
 
-1. `search_body`: `excludeDomains` and `outputSchema` present only when passed; `type` passes
-   `deep-lite` through; highlights present when on; the four optional filters absent by default.
-2. The tool: both refusals fire before any spend; a canned Exa response renders to the agreed
-   text and typed output; one ledger row per call carrying the provider's metered cost; the
-   journal shows only the safe display fields.
-3. Grants: `head-of-abm@v61` and `design@v3` pin `web_search@1`, the registry grants both roles,
-   and the existing catalog / registry / manual-drift gates (`tests/agents/test_catalog.py`,
-   `tests/agents/test_manual_drift.py`, `tests/api/test_agent_registry_wiring.py`) stay green —
-   they refuse a grant no profile pins and a manual that drifts from the profile's surface.
-4. Design: the fourth tool appears in the runtime's tool list
+1. **DONE 2026-09-22.** `search_body`: `excludeDomains` and `outputSchema` present only when
+   passed; `type` passes `deep-lite` through; highlights present when on; the four optional
+   filters absent by default.
+2. **DONE 2026-09-22.** The tool: both refusals fire before any spend; a canned Exa response
+   renders to the agreed text and typed output; one ledger row per call carrying the provider's
+   metered cost; the journal shows only the safe display fields.
+3. **DONE 2026-09-22.** Grants: `head-of-abm@v61` and `design@v3` pin `web_search@1`, the
+   registry grants both roles, and the existing catalog / registry / manual-drift gates
+   (`tests/agents/test_catalog.py`, `tests/agents/test_manual_drift.py`,
+   `tests/api/test_agent_registry_wiring.py`) stay green — they refuse a grant no profile pins
+   and a manual that drifts from the profile's surface.
+4. **DONE 2026-09-22.** Design: the fourth tool appears in the runtime's tool list
    (`agent_runtime/tests/test_platform_reads.py`); `DesignPlatformReads.web_search` reaches the
    invoker under the turn's identity with a fresh operation id
    (`tests/api/test_design_platform_reads_db.py`).

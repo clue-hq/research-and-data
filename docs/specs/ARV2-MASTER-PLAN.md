@@ -486,7 +486,9 @@ persona documents; background = one Agent run per discovered product. Seller-com
 Onboarding as a research pipeline (parallel research agents writing `.md` artifacts into the
 deepagent workspace), 2–5 ICP proposal artifacts, the prompt-driven interview, the final ICP
 artifact under project + brand context, durable project context (replacing scoped memory for v1),
-the Exa MCP search tool on the main agent, brand context, and the chat-shell output-pane motion
+the Exa MCP search tool on the main agent (landed 2026-09-22 as the direct governed tool
+`web_search@1`, not MCP — spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`),
+brand context, and the chat-shell output-pane motion
 handoff. The Head-of-ABM skills adopt the co-founder's refinements content with three edits: every
 "route to memory" becomes "record in project context"; the copy-voice lint/reviewer-judge lines are
 removed (the em-dash and no-fabrication rules stay as prompt rules the agent applies itself); recon
