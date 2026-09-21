@@ -191,6 +191,7 @@ from clue_api.value_narrative_tools import (
     build_value_narrative_tools,
 )
 from clue_api.verification import build_verification_phase_handler
+from clue_api.web_search_tool import build_web_search_tools
 from clue_config import (
     DEFAULT_STAGE0_POLICY,
     Secrets,
@@ -3129,6 +3130,12 @@ def build_toolbelt(
             else DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
         ),
     ):
+        registry.register(tool, make_default=True)
+    # web_search@1 (spec 2026-09-22). Registers in EVERY composition like its neighbour above —
+    # the C6 authority audit needs one registry shape — and a missing Exa key is refused in
+    # `preconditions`, never by absence. Registered UNGRANTED here: the grants are the reviewed
+    # `head-of-abm@v61` and `design@v3` bumps, never a dict edit.
+    for tool in build_web_search_tools(secrets=secrets):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
     # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,

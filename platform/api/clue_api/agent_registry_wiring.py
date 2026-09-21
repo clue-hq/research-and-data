@@ -282,6 +282,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # tool's two schema digests, opens `attachments` on the readable prefixes, and mints
     # `code-execution@v1` and `manual-*@v5` to teach it.
     "run_python": (AgentRole.HEAD_OF_ABM,),
+    # web_search@1 (spec 2026-09-22): one open-web search, used LAST — after the claim store and
+    # the seller's knowledge files — and answering text that is never a claim. Registered
+    # UNGRANTED here on the terms every new spend surface arrives on:
+    # `build_agent_profile_registry` refuses to compose when a role's authority and its profile's
+    # tool list disagree, so the grants are the reviewed `head-of-abm@v61` and `design@v3` bumps,
+    # not an edit to this dict.
+    "web_search": (),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

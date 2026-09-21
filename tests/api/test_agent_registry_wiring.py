@@ -288,7 +288,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # web_search@1 (2026-09-22): registered ungranted (161 -> 162).
+    assert len(by_address) == 162
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -401,7 +403,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # web_search@1 (2026-09-22): registered ungranted (161 -> 162).
+    assert len(by_address) == 162
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     for address in (
         "create_thread@1",
         "rename_thread@1",
