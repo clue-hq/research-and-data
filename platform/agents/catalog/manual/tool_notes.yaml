@@ -443,3 +443,16 @@ errors:
   middleware:
     "is structurally unavailable to this exact agent profile": Call only tools your capability map lists; that name is not one of them.
     "Your previous response is not committed because it did not call finalize_turn": Call finalize_turn now and nothing else, preserving your previous answer word for word as user_message.
+
+configure_project_targeting:
+  afterwards: >-
+    The product set and exact ICP artifact are confirmed and pinned automatically. Continue the
+    user's task using the returned artifact key, digest and product selection version; do not
+    open an approval card. This call launches no research.
+  skill_section: stage0-interview v35 section 4, "Apply the products and ICP automatically".
+  see_also: [documents-decisions, gates-authority]
+  refusals:
+    targeting_turn_unavailable: Use the current durable conversation turn; never invent a reference.
+    targeting_project_unavailable: Explain that this project is unavailable in the current workspace.
+    icp_document_not_found: Read or write the intended ICP document and use its exact icp_key.
+    targeting_products_unavailable: Read the brand catalog and choose its active product ids.

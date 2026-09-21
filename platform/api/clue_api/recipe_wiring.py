@@ -137,6 +137,7 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
     # stays); v29 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v30.json",
+    "recipe0-stage0-v31.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly

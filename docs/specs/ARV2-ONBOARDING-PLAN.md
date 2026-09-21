@@ -1,5 +1,15 @@
 # ARV2 ONBOARDING PLAN — Track O: onboarding as a research pipeline, the synthesis agent, and the Head-of-ABM integration
 
+**Amendment, Aryan 2026-09-21 — automatic approval:** Successful brand-kit
+ingestion publishes an approved kit after validation. Current Head-of-ABM turns
+apply the selected ICP and products through `configure_project_targeting@1`,
+without an approve/reject step. This supersedes the two human-gate requirements
+in the outcome, S5 and O6 below. Onboarding still produces brand-level proposals;
+applying one to a project creates its confirmed artifact and exact project pin.
+Automatic provenance identifies the initiating turn rather than a human answer.
+See `ARV2-PRODUCT-CATALOG-CONTRACT.md`'s 2026-09-21 amendment for selection rules.
+Other authority, spending and evidence boundaries keep their existing behavior.
+
 **Status:** RATIFIED by Aryan 2026-09-07 — all six decision boxes O-D1–O-D6 ruled as recommended
 (O-D1 with the addition: reasoning effort stays at the model default). Version 1.1. This is the
 authoritative plan for Track O; the master plan's Track O paragraph points here. Shashank's column

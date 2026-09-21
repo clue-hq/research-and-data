@@ -116,6 +116,7 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # declares the same ``project`` pin as its siblings, the spine row the execution is bound to
     # and the project whose ``attachments/`` the container can see.
     "run_python@1",
+    "configure_project_targeting@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

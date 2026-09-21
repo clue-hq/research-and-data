@@ -128,6 +128,7 @@ from clue_api.project_document_tools import (
     build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
+from clue_api.project_targeting_tools import ConfigureProjectTargetingTool
 from clue_api.project_tools import (
     CreateProjectTool,
     RenameProjectTool,
@@ -2995,6 +2996,9 @@ def build_toolbelt(
         storage=storage,
     ):
         registry.register(tool, make_default=True)
+    registry.register(
+        ConfigureProjectTargetingTool(conn_factory=conn_factory, storage=storage), make_default=True
+    )
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected
