@@ -34,6 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -277,7 +278,7 @@ async def _write_section(
 # -- the page -------------------------------------------------------------------------------------
 
 
-def _people_of(
+def people_of(
     subject: SubjectRef, members: Sequence[SubjectRef]
 ) -> tuple[list[SubjectRef], list[str]]:
     """The page's people, and every entity id its staleness scan must watch.
@@ -303,6 +304,7 @@ async def ensure_page(
     spend_conn_factory: ConnFactory,
     force: bool = False,
     regenerate_stale: bool = False,
+    job_id: UUID | None = None,
 ) -> PageResult:
     """The page, writing only the sections that are missing (or, on request, stale).
 
@@ -318,6 +320,10 @@ async def ensure_page(
     after the sections return, sequentially, under ``spend_conn_factory`` (D2, slice 1b) — so a
     caller that rolls the page back (``--dry-run``) still records the money it spent. A page
     belongs to an account, not a project or a run, so the rows are workspace spend.
+
+    ``job_id`` is the research job whose claims this page is written from, when the caller
+    knows it (the settle-time task does; a read does not): the page's spend then shows where
+    the research spend shows.
     """
     if PAGE_SUBJECT_KIND[page] != subject_kind:
         raise PageSubjectMismatch(f"the {page} page is about a {PAGE_SUBJECT_KIND[page]}")
@@ -333,7 +339,7 @@ async def ensure_page(
         if subject.kind == "account"
         else []
     )
-    people, expansion = _people_of(subject, members)
+    people, expansion = people_of(subject, members)
 
     stored = await live_blocks(
         conn,
@@ -423,7 +429,7 @@ async def ensure_page(
                         raw=raw,
                         ledger=ledger,
                         artifacts=artifacts,
-                        stamp=LedgerStamp(workspace_id=workspace_id),
+                        stamp=LedgerStamp(workspace_id=workspace_id, job_id=job_id),
                     )
 
     # A section the model failed to write twice is *not* stored. Persisting its empty draft would
