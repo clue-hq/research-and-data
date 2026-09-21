@@ -804,6 +804,10 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # on `@2` only. The `@1`s stay held by nobody.
     if name in {"read_account_research", "read_discovery_run"}:
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
+    # Asset ingestion registered @2 for the upload/edit API, while the reviewed design
+    # profile still pins @1. Registration must not implicitly grant every new version.
+    if name in {"design_register_asset_record", "design_set_asset_description"}:
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

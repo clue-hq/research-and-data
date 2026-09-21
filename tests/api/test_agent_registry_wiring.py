@@ -288,7 +288,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    assert len(by_address) == 164
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -401,7 +402,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    assert len(by_address) == 164
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -937,6 +939,16 @@ def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path
             engine_tool_ceiling=admitted,
             selected_profile_versions=C6_ACTIVE_PROFILE_VERSIONS,
         )
+
+
+@pytest.mark.parametrize("name", ["design_register_asset_record", "design_set_asset_description"])
+def test_asset_api_versions_do_not_expand_the_reviewed_design_profile(
+    registry: AgentProfileRegistry, name: str
+) -> None:
+    capabilities = {item.address: item for item in registry.resolve(AgentRole.DESIGN).capabilities}
+    assert capabilities[f"{name}@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert capabilities[f"{name}@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert capabilities[f"{name}@2"].reason_code == "not_admitted_for_role"
 
 
 def test_design_profile_resolves_with_the_full_granted_write_surface(
