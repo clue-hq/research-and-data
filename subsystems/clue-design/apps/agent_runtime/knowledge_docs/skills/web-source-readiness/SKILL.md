@@ -21,8 +21,13 @@ named brand pack or an evaluation snapshot being in the live library.
    no matching reusable result, not no source page or no capture drafts.
 3. For candidates, use `view("cloned_section:<returned id>")` for pixels and
    `inspect_cloned_section(fragment_id="<returned id>")` for HTML, CSS, slots,
-   lineage and human text overrides. Missing previews and truncated source
-   are explicit evidence gaps; do not claim to have inspected missing bytes.
+   lineage and human text overrides. For more source, pass the returned
+   `html_next_offset` / `css_next_offset` as `html_offset` / `css_offset`.
+   Each stream is capped at 12,000 characters; null means finished. Pass a
+   stream's total (`html_chars` / `css_chars`) to skip it while reading the other.
+   Missing previews and unread source remain evidence gaps; do not claim to
+   have inspected missing bytes. Pagination supplies inspection, not a targeted
+   attribute-edit capability; use the repair skill to assess that separate limit.
 4. Check source provenance, kit association, capture time when available,
    required page/section coverage, dependency availability and rendered
    behavior separately. Record unknown fields as unknown. Use the

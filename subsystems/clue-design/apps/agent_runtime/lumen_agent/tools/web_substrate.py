@@ -5141,7 +5141,9 @@ class LumenWebTools:
         found.sort(key=lambda entry: (entry["page_id"], entry["node_id"], entry["path"]))
         return found
 
-    def inspect_cloned_section(self, fragment_id: str) -> str:
+    def inspect_cloned_section(
+        self, fragment_id: str, html_offset: int = 0, css_offset: int = 0,
+    ) -> str:
         """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
         its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
         raw composition (`compose_web_section`) remix — the client's actual class names,
@@ -5149,8 +5151,15 @@ class LumenWebTools:
         adapt, or on the ancestor of a band you are about to compose, BEFORE writing any
         markup; `view("cloned_section:<id>")` shows the picture, this shows the bytes.
         The clone's source lives in the library, never in the workspace filesystem —
-        searching files for it finds nothing. Long sources are truncated; the response
-        says so and gives the full sizes.
+        searching files for it finds nothing. Each call returns at most 12,000 characters
+        EACH of HTML and CSS, starting at independent zero-based character offsets (not byte
+        offsets). Defaults return the original first slices. Continue with `html_next_offset`
+        and/or `css_next_offset`; null means that stream is finished. To skip a finished or
+        unneeded stream while reading the other, pass its total (`html_chars` or `css_chars`)
+        as its offset. Offsets must be integers from zero through the stream's total, inclusive.
+        Each stream reports its total chars, slice chars, start/end offsets (end exclusive),
+        and whether more remains (`*_truncated`). Never reconstruct unseen source. Pagination
+        is inspection only; it does not patch links or preserve omitted CSS in a raw repair.
 
         `text_overrides` lists the HUMAN's own edits to individual elements of the pins of this
         clone on the page — the one interior change a person may make to a cloned band — and
@@ -5162,6 +5171,11 @@ class LumenWebTools:
             return self._tool_error(
                 "cloned_section.bad_request", "inspect_cloned_section requires a fragment id."
             )
+        for field, offset in (("html_offset", html_offset), ("css_offset", css_offset)):
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+                return self._tool_error(
+                    "cloned_section.bad_offset", f"{field} must be a non-negative integer."
+                )
         registry = self._cloned_section_registry()
         try:
             source = registry.read_source(clean_id)
@@ -5174,6 +5188,15 @@ class LumenWebTools:
         cap = 12_000
         html = source.get("html") or ""
         css = source.get("css") or ""
+        for field, offset, total in (
+            ("html_offset", html_offset, len(html)), ("css_offset", css_offset, len(css)),
+        ):
+            if offset > total:
+                return self._tool_error(
+                    "cloned_section.bad_offset", f"{field} must not exceed {total} characters."
+                )
+        html_end = min(html_offset + cap, len(html))
+        css_end = min(css_offset + cap, len(css))
         payload: JsonObject = {
             "status": "ok",
             "fragment_id": clean_id,
@@ -5184,12 +5207,21 @@ class LumenWebTools:
             "derived_from": source.get("derived_from"),
             "slots": source.get("slots"),
             "text_overrides": self._fragment_text_overrides(clean_id),
+            "page_char_limit": cap,
             "html_chars": len(html),
-            "html_truncated": len(html) > cap,
-            "html": html[:cap],
+            "html_offset": html_offset,
+            "html_end_offset": html_end,
+            "html_slice_chars": html_end - html_offset,
+            "html_next_offset": html_end if html_end < len(html) else None,
+            "html_truncated": html_end < len(html),
+            "html": html[html_offset:html_end],
             "css_chars": len(css),
-            "css_truncated": len(css) > cap,
-            "css": css[:cap],
+            "css_offset": css_offset,
+            "css_end_offset": css_end,
+            "css_slice_chars": css_end - css_offset,
+            "css_next_offset": css_end if css_end < len(css) else None,
+            "css_truncated": css_end < len(css),
+            "css": css[css_offset:css_end],
         }
         for key in (
             "source_kit_id", "source_kit_version", "source_kit_bindings", "page_url",

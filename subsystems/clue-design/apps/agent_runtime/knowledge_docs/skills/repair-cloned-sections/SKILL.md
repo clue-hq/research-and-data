@@ -28,9 +28,16 @@ fallback and release consequences, read the
 3. Use `view("cloned_section:<id>")` for the preview and
    `inspect_cloned_section(fragment_id="<id>")` for HTML/CSS, slots and human
    `text_overrides`. Preserve those overrides and untouched slot values.
-   If HTML/CSS is truncated, do not reconstruct the unseen remainder or claim
-   a full-source remix. Name the inspection gap; use a complete suitable
-   ancestor or the actual source-acquisition handoff from `web-source-readiness`.
+   Continue truncated source with the returned `html_next_offset` / `css_next_offset`
+   as `html_offset` / `css_offset`. Offsets count characters; each stream returns
+   at most 12,000 per call. A null next offset means finished. Pass that stream's
+   total (`html_chars` / `css_chars`) to skip it while continuing the other.
+   Read only what the diagnosis needs; a full-source remix requires all original
+   bytes. Pagination does not add a targeted link edit: raw repair still requires
+   complete HTML and CSS, and omitting `css` selects the typed lane. If slots
+   cannot express a small change and full repair is impractical, preserve the
+   source, make supported edits, and report the remaining editability gap.
+   Never reconstruct unseen bytes or rebuild the visuals to work around it.
 4. Inspect the current band between its neighbors at the failing width.
    Name the defect and evidence, or the requested structural adaptation.
    A root-unit/font-context defect, an inadequate source image and an

@@ -1254,6 +1254,113 @@ def test_inspect_cloned_section_shows_the_real_html_and_css(tmp_path: Path) -> N
     assert missing["status"] == "error" and missing["error_code"] == "cloned_section.not_found"
 
 
+def test_inspect_cloned_section_default_still_returns_bounded_source_prefixes(
+    tmp_path: Path,
+) -> None:
+    registry = FakeRegistry(tmp_path)
+    html = "<section>" + "é🧭" * 10_000 + "</section>"
+    css = ".card{color:red}" * 2_000
+    registry.add("frag_long", role="feature", label="Long source", html=html, css=css)
+
+    result = json.loads(_tools(tmp_path, registry).inspect_cloned_section("frag_long"))
+
+    for kind, source in (("html", html), ("css", css)):
+        assert result[kind] == source[:12_000]
+        assert result[f"{kind}_chars"] == len(source)
+        assert result[f"{kind}_truncated"] is True
+        assert result[f"{kind}_offset"] == 0
+        assert result[f"{kind}_end_offset"] == 12_000
+        assert result[f"{kind}_slice_chars"] == 12_000
+        assert result[f"{kind}_next_offset"] == 12_000
+
+
+def test_inspect_cloned_section_pages_reassemble_exact_source_without_mutation(
+    tmp_path: Path,
+) -> None:
+    registry = FakeRegistry(tmp_path)
+    sources = {
+        "html": ("é🧭<a href='/demo'>Read</a>" * 2_000)[:42_268],
+        "css": (".café{color:red} /* 🧭 */\n" * 10_000)[:195_384],
+    }
+    registry.add("frag_long", role="feature", label="Long source", **sources)
+    tools = _tools(tmp_path, registry)
+    original_doc = json.dumps(tools.web_doc, sort_keys=True)
+    original_registry = json.dumps(registry.sections, sort_keys=True)
+    offsets = {"html": 0, "css": 0}
+    chunks = {"html": [], "css": []}
+
+    for _ in range(20):
+        result = json.loads(tools.inspect_cloned_section(
+            "frag_long", html_offset=offsets["html"], css_offset=offsets["css"],
+        ))
+        assert result["status"] == "ok"
+        assert result["fragment_id"] == "frag_long"
+        for kind, source in sources.items():
+            chunk = result[kind]
+            end = offsets[kind] + len(chunk)
+            assert len(chunk) <= 12_000
+            assert chunk == source[offsets[kind]:end]
+            assert result[f"{kind}_offset"] == offsets[kind]
+            assert result[f"{kind}_end_offset"] == end
+            assert result[f"{kind}_chars"] == len(source)
+            assert result[f"{kind}_slice_chars"] == len(chunk)
+            assert result[f"{kind}_next_offset"] == (end if end < len(source) else None)
+            assert result[f"{kind}_truncated"] is (end < len(source))
+            chunks[kind].append(chunk)
+            offsets[kind] = end
+        if all(result[f"{kind}_next_offset"] is None for kind in sources):
+            break
+    else:
+        pytest.fail("bounded inspection did not reach the end of both source streams")
+
+    assert {kind: "".join(parts) for kind, parts in chunks.items()} == sources
+    assert json.dumps(tools.web_doc, sort_keys=True) == original_doc
+    assert json.dumps(registry.sections, sort_keys=True) == original_registry
+    assert tools.operations_ledger == []
+
+
+@pytest.mark.parametrize("field", ["html_offset", "css_offset"])
+@pytest.mark.parametrize("offset", [-1, True, 1.5, "1", None, 10**30])
+def test_inspect_cloned_section_refuses_invalid_offsets(tmp_path: Path, field, offset) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_small", role="feature", label="Small", html="html", css="css")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_small", **{field: offset}))
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "cloned_section.bad_offset"
+    assert "html" not in result and "css" not in result
+    assert tools.operations_ledger == []
+
+
+def test_inspect_cloned_section_empty_source_and_end_offsets_are_terminal(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_small", role="feature", label="Small", html="html", css="")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_small", html_offset=4))
+
+    assert result["status"] == "ok"
+    for kind in ("html", "css"):
+        assert result[kind] == ""
+        assert result[f"{kind}_slice_chars"] == 0
+        assert result[f"{kind}_next_offset"] is None
+        assert result[f"{kind}_truncated"] is False
+
+
+def test_inspect_cloned_section_continuation_still_uses_workspace_registry(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_here", role="feature", label="Local", html="local")
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.inspect_cloned_section("frag_other_workspace", html_offset=12_000))
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "cloned_section.not_found"
+    assert "html" not in result and "css" not in result
+
+
 # --------------------------------------------------------------------------- #
 # A pin is born with a human name (R-A5)
 # --------------------------------------------------------------------------- #
@@ -1355,6 +1462,10 @@ def test_inspect_lists_the_human_text_overrides_on_every_pin_of_that_clone(
             "size": 1,
         }
     ]
+    terminal = json.loads(tools.inspect_cloned_section(
+        HERO_ID, html_offset=result["html_chars"], css_offset=result["css_chars"],
+    ))
+    assert terminal["text_overrides"] == result["text_overrides"]
 
 
 def test_a_clone_nobody_has_edited_lists_no_overrides(
