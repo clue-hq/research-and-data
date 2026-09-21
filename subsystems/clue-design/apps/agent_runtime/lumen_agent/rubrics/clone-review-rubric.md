@@ -1,5 +1,5 @@
 <!--
-version: 2
+version: 3
 DRAFT — founder review pending (standing rule for prompt/rubric wording).
 
 v2 (clone-fidelity F4.2, ruling R24-4) adds the ABM / seller-dominance section at the end. It is
@@ -15,17 +15,18 @@ readers change. Do not paste any of it into a prompt builder.
 Everything below the marker line is what those readers receive, verbatim.
 -->
 --- rubric ---
-CLONE-REVIEW RUBRIC (v2) — how a cloned or repaired page is judged.
+CLONE-REVIEW RUBRIC (v3) — how a cloned or repaired page is judged.
 
 This rubric is the same for every reviewer of this page, whoever that is. It is not a
 style opinion; it is where the line sits between "different" and "broken".
 
 SOFT — note it, do not block on it, do not spend a repair round on it:
-- animation timing, easing, and anything that only moves;
-- hover, focus and transition polish;
+- minor animation timing/easing or transition polish that does not affect the requested
+  behavior, comprehension, accessibility or visual identity;
 - sub-pixel spacing differences, a font rendering a hair wider, a shadow a shade softer;
-- a band that is measurably different from the source capture but reads correctly.
-  A measured difference is not a defect. The clone is a reconstruction, not a copy.
+- small measured differences that preserve source hierarchy and the requested fidelity.
+  Large geometry/type/media differences or missing requested motion are not excused
+  by compilation. A fallback may be usable while exact reproduction remains unmet.
 
 STRICT — this is BROKEN and it is work, not taste:
 - blank space: a band that renders nothing, or a screenful of nothing between bands;
@@ -91,20 +92,25 @@ renders in the SELLER's theme: their type, their palette, their spacing, their c
   real published mark. A redrawn, recoloured, re-lettered or approximated logo is BLOCKING —
   it is the never-synthesize rule, and it is not a matter of taste. AN EMPTY LOGO SLOT IS
   CORRECT: we do not always hold a mark, and a header with the seller's mark alone is a clean
-  header, never a defect. Flag a placeholder, a grey box or the words "logo here"; never flag
-  an absence.
+  header. Flag a placeholder, a grey box or the words "logo here". Do not invent
+  a mark; when the brief explicitly requires the real target logo, its absence
+  remains an unmet requirement rather than a fidelity pass.
 - ONE RESTRAINED ACCENT at most from the target's palette. Two is a restyle. Zero is fine.
-- NO ESCAPE ROUTES. An ABM page carries the campaign shells, not the client's global nav or
-  site footer. A nav, a link menu, or a second call to action going somewhere else is
-  BLOCKING — the page exists to hold one visitor on one argument.
+- CHROME AND LINKS MATCH THE CHOSEN INTENT. A focused single-conversion template
+  uses campaign shells and a real primary destination. An approved native-site or
+  resource journey can retain source navigation and useful secondary links. Judge
+  deviation from that plan, dead controls or misleading destinations; do not fail
+  a page merely because a real relevant resource link exists.
 - NO RELATIONSHIP THAT DOES NOT EXIST. The framing is "Prepared for <account>". "Partner",
   "partnership", "customer", "trusted by <account>", a target logo in a logo wall, or a
-  testimonial attributed to the target are all BLOCKING: they are claims, and they are false.
+  testimonial attributed to the target without evidence are BLOCKING: a target
+  name alone supports none of those claims.
   The target's name belongs in the prepared-for line and in the copy written for them.
 - NEW SECTIONS carry `abm_` section ids and obey the Brand Grammar Audit exactly as any other
   new section does. An unnamed new band is a review finding, not a defect in the page.
 
 CLASSIFY HONESTLY. Blocking means the page cannot ship as it is — that is the STRICT list
 above. Everything on the SOFT list is advisory: it belongs in the final summary, not in
-another author round. Never report an issue you cannot point at in a capture or a
-measurement.
+another author round. Visual defects require a capture or measurement. Missing
+source, claim, destination or playback evidence is a separately reported unverified
+requirement. A named material gap prevents acceptance for that requested scope.

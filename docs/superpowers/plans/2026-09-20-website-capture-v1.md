@@ -1,7 +1,7 @@
 # Website capture fidelity and skill foundation
 
-**Goal:** Capture representative source pages for Clue, AWS, Google Cloud and Conduit, prove faithful reproduction, then ground account-personalized pages in that library.
-**Authority / Spec:** The active user goal and the 2026-09-20 capture audit; source reproduction precedes personalization. This plan is the implementation record, not a claim of completed fidelity.
+**Goal:** Improve the shared onboarding capture and website-design pipeline for any customer, using Clue, AWS, Google Cloud and Conduit as regression cases. Prove faithful reproduction, then ground account-personalized pages in the captured library.
+**Authority / Spec:** The active user goal and the 2026-09-20 capture audit. Latest steering authorizes parallel skill implementation during capture work; source reproduction remains an acceptance prerequisite for personalized quality. This plan is the implementation record, not a claim of completed fidelity.
 **Architecture:** Extend the existing capture -> snapshot -> fragment -> brand-kit -> web-design seams. Preserve original bytes and capture provenance. Keep original captures distinct from derived React compositions and generated media.
 **Stack:** Python capture/API, Playwright, Postgres registry, React website artifacts, existing application skills.
 
@@ -63,9 +63,29 @@ Reference-resolution security; deduplicated fragment lineage across kit ingestio
 ## Task 6: Skill families and grounded account personalization
 **Files:** Existing application skills under `subsystems/clue-design/apps/agent_runtime/knowledge_docs/skills`, registry/harness tests where exposed.
 **Interface:** Progressive skill loading over the verified library and existing account/claim/logo tools.
-- [ ] Define seven families / 24 responsibilities from the audit; reuse existing skills instead of duplicate agents.
+- [x] Define seven families / 24 responsibilities from the audit; reuse existing skills instead of duplicate agents.
 - [ ] Test source-first retrieval, supported animation, product crop/staging, proof media, scoped editing and fidelity review on the four brands.
-- [ ] Implement missing skill files and callable routing with explicit evidence and fallback policies.
+- [x] Implement missing skill files and callable routing with explicit evidence and fallback policies. Four new skills, seven existing entries updated, fourteen progressive references. Offline delivery/contract validation is separate from model behavior and live quality.
 - [ ] Personalize approved pages using correct account logos and grounded insights; contact adaptation only with identity-bound, appropriate evidence.
 - [ ] Verify repeatability, account isolation, responsive rendering and absence of invented proof.
 - [ ] Final independent branch review; resolve important findings, run relevant checks, commit. Goal complete only after live acceptance criteria pass.
+
+## 2026-09-20 parallel skill checkpoint
+
+User explicitly requested supervised parallel implementation now, not four-brand
+special cases. Three bounded specialists owned source/composition, media/motion,
+and personalization/edit/review. Parent owns runtime routing, source-evidence
+projection, integration review and test closure. No additional production agent
+roles or per-brand seed catalogs were introduced.
+
+The family map is `knowledge_docs/knowledge/web/skill-families.md`; human validation
+records are `subsystems/clue-design/docs/website-skills-*-validation-2026-09-20.md`.
+Peer scenario walkthroughs are explicitly unblinded reasoning checks, not live
+model runs. They found and corrected tool availability, stale node-state reads,
+logo/evidence, release-lifecycle and prompt/rubric contradictions.
+
+Still required: live ingestion/reproduction, current rendered/behavioral evidence,
+standard Docker generation runtime, unseeded fresh-brand onboarding and at least
+one held-out-brand case. Full source/node readers, capture-refresh handoff and
+remaining source-capture fidelity gaps are explicit. Do not call this complete
+because skills are written or contract checks pass.

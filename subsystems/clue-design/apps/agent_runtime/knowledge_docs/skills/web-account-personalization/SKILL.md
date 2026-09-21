@@ -1,0 +1,39 @@
+---
+name: web-account-personalization
+description: Use when a landing page targets a named account, contact, selected account group or audience segment, or when adapting a campaign across 1:1, 1:few and 1:many modes.
+---
+
+# Personalize the argument from evidence
+
+Keep seller identity/capabilities, target identity, target facts, audience/task
+hypotheses, campaign intent and relationship evidence separate. A name and logo
+establish identity; they do not establish needs, stack, results or endorsement.
+
+1. Read [audience modes](references/audience-modes.md) to choose the actual unit of
+   relevance: one account/contact, an evidenced segment, or a shared audience.
+   Event and regular landing pages follow their own offer. Do not default any
+   mode to a pilot. `campaign-landing-page` owns argument and shell choices.
+2. For target facts, logos or personal facets, read
+   [identity and evidence](references/identity-and-evidence.md). Consume the shared
+   platform reads when exposed; keep missing research explicit instead of
+   inventing it or launching discovery inside design. Supplied assertions retain
+   their source scope; only evidence supports a claim of verification.
+3. Join a supported seller capability to the supplied audience's task. Without
+   target research, write an invitation or proposed use. Remove the name/logo
+   mentally: the remaining argument must still explain the task relevance.
+   Identity-only is sufficient only for an explicitly logo-only/exact-copy edit.
+4. Use `conversion-copywriting` for visible evidence, qualification and the real
+   next action/destination. Unsupported requested proof remains a review gap
+   even when a useful narrower draft is possible. Keep caveats out of visitor copy.
+5. Preserve actual derivation markers, bound identity and version lineage through
+   the existing tools. A literal company name, successful logo fetch or populated
+   fallback does not establish account binding or tested multi-account derivation.
+   Report concept, template and derived artifact status separately.
+
+Use authentic marks with the correct surface variant; inspect their pixels and
+avoid false partnership implications. Contact-level facts require strong identity
+binding AND an appropriate allowed use. Public availability is not permission to
+turn private interests or sensitive traits into outreach. Missing support means
+omitting the facet, never inventing one. Finish with `review-website` at the scope
+actually produced; do not report undelivered accounts, published pages or recovered
+original React source.

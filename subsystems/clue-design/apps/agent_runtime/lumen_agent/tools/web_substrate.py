@@ -2686,8 +2686,10 @@ class LumenWebTools:
                items:[{children:[INLINE,...], nested:[BLOCK,...]?},...]}.
             INLINE is {type:"text",text,marks?,classes?,link?},
             {type:"variable",key,fallback,marks?,classes?,link?}, or
-            {type:"line_break",link?}. Read the current content with
-            view("doc"), preserve every unaffected block/list/mark/variable,
+            {type:"line_break",link?}. This needs the actual current content;
+            view("doc") is only a summary, not a full node reader. Without a
+            supplied current payload, report the missing read capability rather
+            than reconstructing it. Preserve every unaffected block/list/mark/variable
             and use this operation whenever a human-authored structured body
             must survive the edit. Body and Small variants allow paragraphs
             and lists; heading variants accept exactly one paragraph.
@@ -5183,6 +5185,13 @@ class LumenWebTools:
             "css_truncated": len(css) > cap,
             "css": css[:cap],
         }
+        for key in (
+            "source_kit_id", "source_kit_version", "source_kit_bindings", "page_url",
+            "section_index", "created_at", "payload_digest", "degraded",
+            "degraded_reason", "composed", "capture_evidence",
+        ):
+            if key in source:
+                payload[key] = source[key]
         self.record(
             "author",
             "cloned_section_inspected",
@@ -5218,7 +5227,9 @@ class LumenWebTools:
             A section with no slots is reusable exactly as it is;
           - `view`          — paste into `view("cloned_section:<id>")` to SEE the real band
             before choosing it. A row whose `preview` is `"none"` has no image to show;
-          - `source_url` and `brand_kit` — which page it came from and whose approval released it.
+          - `source_url`, `page_url`, `brand_kit` and `source_kit_bindings` — original
+            origin and known kit associations. Association does not prove freshness or fidelity.
+            `created_at` is registry creation time, not the source capture time.
 
         A row may also say the clone is BROKEN. `degraded: true` means something about this
         harvested band does not work in a clone — `degraded_note` says what, in words. Never put
@@ -5315,6 +5326,9 @@ class LumenWebTools:
                 "view": f"cloned_section:{fragment_id}",
                 "preview": "available" if preview_path else "none",
             }
+            for key in ("source_kit_bindings", "page_url", "section_index", "created_at"):
+                if key in section:
+                    row[key] = section[key]
             # D-F6: brokenness and lineage travel with the row, because a picker that shows a
             # degraded clone the same way it shows a healthy one is how a broken band ends up on
             # a page. Only present when there is something to say — an unbroken, never-repaired
@@ -5354,7 +5368,10 @@ class LumenWebTools:
                 row["composed_note"] = (
                     "composed for ABM pages, not lifted off the client's site: a page-local "
                     "shell with one call to action and no navigation. Use it on account pages "
-                    "instead of the cloned nav or footer."
+                    "when the page plan calls for that focused shell."
+                    if section.get("composed") == "campaign_shell"
+                    else "authored composition, not lifted off the client's site; inspect its "
+                    "role, source lineage and pixels before reuse."
                 )
             if section.get("repairs"):
                 row["repairs"] = section.get("repairs")

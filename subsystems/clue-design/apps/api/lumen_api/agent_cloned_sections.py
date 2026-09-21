@@ -698,6 +698,18 @@ class DurableAgentClonedSectionRegistry:
         )
         row = loaded.row
         payload = loaded.payload
+        provenance = row.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        # Only capture evidence, never arbitrary provider payloads or reconstructed facts.
+        # created_at is a registry timestamp, not a claim that the source was fetched then.
+        capture_evidence = {
+            key: provenance[key]
+            for key in (
+                "snapshot_id", "viewport_width", "preview_basis", "geometry",
+                "dead_height_check", "hidden_on_source", "recovery", "degraded",
+            )
+            if key in provenance
+        }
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),
@@ -705,6 +717,17 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "status": row.get("status"),
             "derived_from": row.get("derived_from"),
+            "source_kit_id": row.get("source_kit_id"),
+            "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
+            "page_url": _page_url(row),
+            "section_index": provenance.get("section_index"),
+            "created_at": row.get("created_at"),
+            "payload_digest": row.get("payload_digest"),
+            "degraded": bool(row.get("degraded")),
+            "degraded_reason": row.get("degraded_reason"),
+            "composed": provenance.get("composed"),
+            "capture_evidence": capture_evidence,
             "slots": _slot_summary(loaded.slot_manifest),
             "html": str(payload.get("html") or ""),
             "css": str(payload.get("css") or ""),

@@ -12,6 +12,9 @@ work. The depth lives in the specialist skills; the sequence lives here.
 
 ## A roadmap, not a rail
 
+For a local change to an existing page, start with `edit-website` and perform
+only the affected steps. Do not reload/replan/regenerate the whole campaign.
+
 The steps below run in order, but real builds loop back: a render
 reveals a wrong guess, a pin refuses, the copy outgrows a slot. Looping
 back is fine; doing it OFF THE RECORD is not — every return to an
@@ -26,31 +29,39 @@ that the brief has already answered is a step you skip, saying so.
 
 From the user's words, the design brief, and anything they supplied,
 establish: the audience, the offer, the ONE action, the traffic source,
-and the visitor's awareness stage. Material the user supplied is trusted
-as-is. Where the brief is silent, assume and state the assumption; ask
+and the visitor's awareness stage. User-supplied material retains its
+attribution and scope; it is not independently verified or support for invented claims. Where the brief is silent, assume and state the assumption; ask
 in chat only when the missing piece forks the page into two genuinely
 different arguments.
 
 The user's exact words are ANCHORS. Carry them verbatim into everything
-downstream — the plan, the copy, your report. "Billing strategy session"
+downstream as requirements in the plan/report. Preserve supported exact copy;
+do not put an unsupported requested factual claim on the page. Record that
+requirement as unresolved and provide a supported narrower draft where useful. "Billing strategy session"
 is not "Sessions"; one reinterpreted qualifier costs a whole wasted
 build.
 
 ## Step 2 — Survey the material
 
-*Tools: `list_cloned_sections`, targeted `search_cloned_sections`,
+*Skills: `web-source-readiness`; `web-media-composition` for media and
+`web-motion-fidelity` for animation/video/custom-component requirements.*
+
+*Tools: `search_cloned_sections(q="", limit=8)`, targeted `search_cloned_sections`,
 `view("cloned_section:frag_…")`, `search_assets`; on an existing page
 also `view("doc")` and `render_web_preview`.*
 
 Know what the library actually holds and what the key bands actually
 look like BEFORE deciding anything. View the bands you are likely to
-keep or remix — their markup, their slots, their previews. The evidence
+keep or remix for pixels; use `inspect_cloned_section` for markup/CSS/slots.
+Truncated or unavailable source remains a gap. The evidence
 base for this entire build is: what the brief supplied + what this
 library captured + registered brand assets. Nothing from your own
 memory of the client company, however famous it is.
 
-(When the platform's research spine plugs in, its verified claims join
-this step's material. Until then, this step is the whole of research.)
+Read `web-account-personalization` for target evidence. Consume shared platform
+reads only where exposed; their verified claims can ground this plan. A named
+account without research does not provide its priorities or buying intent.
+Never seed a brand pack or invent a fetch/refresh tool to fill library gaps.
 
 ## Step 3 — Construct the argument
 
@@ -114,7 +125,7 @@ Walk the clone ladder PER BAND:
   fragment payload; copy per the slot-geometry rule).
 - Shape wrong on a HEALTHY band — a CTA to remove, a sub-element to
   hide, a new eyebrow, restructured emphasis → **derive a campaign
-  variant**: `view` the original, remix its FULL markup and CSS,
+  variant**: view the original and inspect its source, remix its FULL markup and CSS,
   change exactly what the campaign needs, inherit the geometry, type
   scale, surfaces, and responsive behavior you didn't touch. This is
   the shallow-refactor move: the canonical example is the cloned hero
@@ -154,8 +165,9 @@ evidence), proof attribution, receipt CTAs ("Book the strategy
 session", never "Submit"), the slot-geometry rule (match the original's
 length; escalate to a variant when the argument needs more room — never
 cram). Copy lands through slot rebinds or in the pinning act itself.
-ONE action: every CTA on the page leads to the same place, wording
-flexing by position, destination never.
+One coherent primary conversion intent; repeat primary CTAs to its real
+destination. Preserve legitimate secondary resource and legal actions when
+the selected page intent needs them; do not relabel a homepage as booking.
 
 ## Step 9 — Render, review, and amend
 
@@ -169,7 +181,7 @@ invented now:
 - Compare against the cloned source page: it is the acceptance
   reference for grammar, rhythm, and density.
 - The logo-off test on every composed and derived band.
-- One-action check across every CTA.
+- Check primary conversion intent and every actual link/control destination.
 - Every claim on the page traces to the anchors (brief or library).
 - Read the finished page top to bottom as the arriving visitor: at
   every scroll position — do I know what this is, why it's for me,
@@ -204,10 +216,8 @@ controlled build regardless of how many loop-backs it took.
 - **Editing and composing mechanics** — edit-website, create-website.
 - **Repair and variant contracts** — repair-cloned-sections.
 - **The words** — conversion-copywriting.
-- **Account-personalization depth** (markers, `data-slot-when`,
-  noindex, derivation) — the abm-page knowledge doc and create-website's
-  Personalization section; this workflow's steps apply to ABM pages
-  unchanged, with that material layered on.
-- **Research** — deliberately absent; it will slot in alongside step 2
-  when the platform's research spine feeds design. Until then, step 2's
-  evidence base is the whole policy.
+- **Audience modes, target evidence and contact-use gates** —
+  web-account-personalization. The abm-page knowledge document adds real
+  template/derivation mechanics when that route is chosen.
+- **Research acquisition** — belongs to the shared platform/brand ingestion;
+  consume available evidence and report coverage rather than fabricate it.

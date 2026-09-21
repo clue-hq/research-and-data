@@ -825,13 +825,13 @@ def _squashed(text: str) -> str:
 
 @pytest.mark.parametrize("prompt_of", [_director_prompt, _author_prompt])
 def test_the_reuse_ladder_carries_the_abm_rung(prompt_of) -> None:
-    """R24-6: on an ABM page chrome is the campaign shells — never the cloned nav — while proof
-    and testimonial bands are still cloned sections where they serve."""
+    """The focused template path uses shells, without making all account pages identical."""
     prompt = _squashed(prompt_of())
 
     assert "assemble_abm_page" in prompt
     assert "mint_campaign_shells" in prompt
-    assert "every nav link is an escape route" in prompt.lower()
+    assert "existing navigation" in prompt.lower() or "existing pinned navigation" in prompt.lower()
+    assert "advice" in prompt.lower()
     # The rung ORDER survives: shells for chrome, clones for proof, new sections last.
     lowered = prompt.lower()
     shells = lowered.index("campaign shell")

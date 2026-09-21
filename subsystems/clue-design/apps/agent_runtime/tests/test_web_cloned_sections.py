@@ -1363,3 +1363,42 @@ def test_a_clone_nobody_has_edited_lists_no_overrides(
     tools = _tools(tmp_path, registry)
     tools.insert_cloned_section(HERO_ID)
     assert json.loads(tools.inspect_cloned_section(HERO_ID))["text_overrides"] == []
+
+
+def test_source_version_evidence_survives_search_and_inspection(tmp_path: Path) -> None:
+    class SourceRegistry(FakeRegistry):
+        def read_source(self, fragment_id):
+            return {**super().read_source(fragment_id), **metadata}
+
+    metadata = {
+        "source_kit_id": "kit_original", "source_kit_version": 1,
+        "source_kit_bindings": [{"brand_kit_id": "kit_current", "version": 2}],
+        "page_url": "https://insight.example/product", "section_index": 3,
+        "created_at": "2026-09-19T00:00:00Z", "payload_digest": "a" * 64,
+        "capture_evidence": {"snapshot_id": "snap_old", "dead_height_check": {
+            "assessed": False, "because": "no_preview"}},
+    }
+    registry = SourceRegistry(tmp_path)
+    registry.add("frag_evidence", role="hero", label="Product hero", html=HERO_HTML)
+    registry.sections["frag_evidence"].update(metadata)
+    tools = _tools(tmp_path, registry)
+    found = json.loads(tools.search_cloned_sections())["results"][0]
+    assert found["brand_kit"] == {"id": "kit_original", "version": 1}
+    assert found["source_kit_bindings"] == metadata["source_kit_bindings"]
+    assert found["page_url"] == metadata["page_url"]
+    inspected = json.loads(tools.inspect_cloned_section("frag_evidence"))
+    for key, value in metadata.items():
+        assert inspected[key] == value
+    # Association is not freshness or visual acceptance.
+    assert "fidelity_verified" not in inspected
+    assert "captured_at" not in inspected
+
+
+def test_authored_product_band_is_not_mislabeled_as_campaign_chrome(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    registry.add("frag_product", role="feature", label="Product", html=HERO_HTML)
+    registry.sections["frag_product"]["composed"] = "agent"
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())["results"][0]
+    assert result["composed"] == "agent"
+    assert "authored" in result["composed_note"]
+    assert "shell" not in result["composed_note"]

@@ -1,133 +1,74 @@
-# Recipe: ABM Page (single account)
+# Account templates and focused campaign assembly
 
-The section grammar and hard rules for an account-based-marketing page — a
-page built by a SELLER for exactly ONE target account. A recipe is a business
-contract, not a style guide: the create-website skill owns HOW to author;
-this owns WHAT an ABM page must contain and must never do.
+Read `web-account-personalization` for audience modes and evidence, and
+`campaign-landing-page` for the argument and chrome choice. A target account
+does not force a pilot, a booking CTA, seven sections or a minimal header.
+Use inspected source anatomy and the actual offer. One-to-few, one-to-many,
+event and regular pages are different intents; do not turn them into 1:1
+account templates merely to use this recipe.
 
-The page is a private pitch, not a public site. Everything on it exists to
-make one named account book one conversation.
+## Reusable account template mechanics
 
-## How the page is assembled
+For an account template, preserve markers in cloned slot values such as
+`{{account.name}}`, `{{account.domain}}`, `{{account.logo}}`. Derivation fills
+those per account. Do not bake an account's name into the shared template.
+If a healthy band needs a new slot/shape, derive a source-based campaign
+variant; unsupported original motion is a separate fidelity issue. Use
+attribute-level `data-var`/`data-slot`/`data-slot-when` only where required by
+typed content. The create-website reference owns their exact grammar.
 
-The chrome is not composed — it is the seller's own CAMPAIGN SHELLS, minted
-once per brand by `mint_campaign_shells` and released by a human re-approving
-the brand kit. `assemble_abm_page` puts them on: campaign header FIRST,
-campaign footer LAST, a chosen cloned hero between them. It NEVER pins the
-client's cloned nav or cloned site footer, and it refuses rather than falling
-back to one — every nav link is a way off the one page written for this
-account.
+Fetch missing target marks through the available `fetch_logo` capability.
+Inspect identity and surface fit: `light_lockup`/`dark_lockup` for corresponding
+surfaces, `light_mark`/`dark_mark` for symbols. An empty or `needs_review` result
+is not permission to synthesize a logo. Use supported name-only presentation
+and report the gap. A logo found for a named account is persisted through
+`bind_account_logo(account_id, asset_id)` when this role exposes it. Derivation
+uses that binding; it does not fetch missing logos by itself. A successful
+asset lookup is not proof of account binding or derivation.
 
-Order of operations: build the page's own sections FIRST — pinned clones with
-marker-bearing slot values, derived variants, and raw compositions
-(`assemble_cloned_sections` / `insert_cloned_section` / `repair_cloned_section`
-/ `compose_web_section`), with `author_web_page` reserved for the few bands
-that must carry `data-var`/`data-slot` attributes a slot value cannot express —
-then `assemble_abm_page`. (This line once said "author_web_page FIRST"; that
-wording predates the raw lane and taught a full-vocabulary page — the
-2026-09-04 Ramp run's generic-template regression. A whole-page rewrite drops
-every pinned clone, so chrome pinned before it is chrome you lose — another
-reason the largest verb comes last, if at all.)
+Publish only the resolved derived page when a reusable template contains
+markers. Existing publish validation refuses unresolved templates; preserve
+that contract. Report draft/template/derived/published states separately.
+Derived pages may be noindex, but noindex and an unlisted URL are not privacy
+or authentication. Never claim otherwise.
 
-**The page is a TEMPLATE, not one account's page.** Slots hold the account
-markers — `{{account.name}}`, `{{account.domain}}`, `{{account.logo}}` — which
-the account derive substitutes per account, so one document serves every
-account and stays re-derivable. Never write one account's name or logo into the
-markup.
+## Focused single-conversion route
 
-**PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE.** This page renders its
-`{{account.…}}` markers to whoever opens it, so it is derived per account first
-and the DERIVED pages are what publish — one page per account, at
-`abm-<account>` slugs, each `noindex` and reachable only by its own URL. A
-publish of the template itself is refused by name; the answer is to derive it,
-never to bake one account's name into the markup.
+Use `mint_campaign_shells` + `assemble_abm_page` only when the plan calls for
+minimal campaign chrome. It selects released campaign header/footer shells;
+it does not silently substitute global navigation when shells are missing.
+Existing pinned navigation (or a nav passed as hero) is retained with advice,
+not blocked or removed. Review that advice against the intended journey. Respect
+actual draft/release status and refusals. For a native-navigation page, use
+the ordinary cloned-section assembly tools instead. Do not silently change the
+plan to escape a refusal.
 
-**A target account's logo is bound to the ACCOUNT, once.** `fetch_logo` gets
-their real published mark; `bind_account_logo(account_id, asset_id)` saves it
-onto that account, and from then on `{{account.logo}}` resolves for them on
-every page derived from any template. Placing a mark dresses one page; binding
-it makes it theirs. The derive uses whatever the account already holds and
-fetches nothing of its own, so an account nobody bound a logo for derives the
-clean empty-logo page — which is CORRECT, not a gap to fill.
+Build the source-based section set first, then assemble the shells. A later
+whole-page `author_web_page` would discard pinned clones. Use existing slots
+and small operations for subsequent copy changes. Composed account bands use
+`abm_` ids; existing source pins preserve their ids.
 
-**Every section you compose for this page carries a section id beginning
-`abm_`** (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
-from cloned chrome. Pinned clones keep their own ids.
+The plan selects sections from the evidenced argument: personalized hero,
+relevant features, actual peer proof, verified resources, proposal/next steps,
+and a closing action when useful. Those are options, not required counts.
+Proof absent means omit proof. Customer logos and target logos have distinct
+roles; an addressed target is not a customer endorsement. Resource journeys
+may use real relevant links, while a focused booking page concentrates its
+primary actions on one verified destination. Preserve legal links.
 
-## Required section order
+## Evidence and finish
 
-1. **co-branded header** — the CAMPAIGN HEADER SHELL, not a header you write:
-   the seller's mark, "Prepared for <account>", the target's logo when we hold
-   one, and exactly one CTA. Never redraw or synthesize someone else's logo. A
-   target's logo comes from exactly two places: the `{{account.logo}}` marker
-   the derive resolves, or the `fetch_logo` tool, which returns their real
-   published assets — one per family cell (`light_lockup`, `dark_lockup`,
-   `light_mark`, `dark_mark`: `light_*` for light surfaces, `dark_*` for dark
-   surfaces, `*_lockup` the complete logo, `*_mark` the bare symbol). An empty
-   cell means the brand publishes nothing for it. `alternatives` are other real
-   assets found for them; a cell first, an alternative only when the cell does
-   not fit. If it answers `needs_review`, it could not confirm the asset belongs
-   to that company — that means ASK, not guess: use the name alone and tell the
-   user you need the file. AN EMPTY LOGO SLOT IS CORRECT: a header with the
-   seller's mark alone is a clean header, not a broken one. NO nav links.
-   Exactly one CTA, the conversion CTA. On phone: both marks + CTA.
-2. **personalized hero** — h1 names the ACCOUNT, not the market ("Acme's
-   clinical notes, written for you" — never the generic tagline), one
-   paragraph mapping the seller's value to the account's situation as given
-   in the brief, single primary CTA.
-3. **peer proof** — 5–7 peer logos or names, REAL and verifiable from the
-   brief/kit only; the bar is "companies this account would recognize as
-   peers". Fewer than 5 verifiable → show what is real; none → OMIT the
-   section entirely.
-4. **account-mapped feature spotlight** — 2–3 features MAX, each explicitly
-   tied to something the brief says about the account (their stack, their
-   scale, their stated pain). A feature you cannot map to the account does
-   not belong on this page.
-5. **verified resources** — NAMED, NOT LINKED. An ABM page exists to hold one
-   visitor on one argument, and the rubric makes any link beyond the single
-   CTA and the footer's legal links a BLOCKING finding (F4 wave: the old
-   "2–3 links" wording here instructed the exact escape routes the rubric
-   forbids — the recipe yields to the rubric). Cite the case study, doc or
-   security page by NAME as static text ("SOC 2 report available on the
-   first call"); the one CTA is the door to all of it. No resource is
-   verifiable → omit the item, and the section below 2.
-6. **"how we'd work together"** — 3 short numbered steps from first call to
-   value, concrete to this account's context (pilot scope, rollout shape).
-7. **conversion CTA band** — statement background, h2 addressed to the
-   account, the single conversion CTA. A booking dialog (or a Calendly
-   embed inside it) is the preferred mechanism when an endpoint exists.
+The seller's measured visual system remains dominant. Target identity is
+quoted authentically; do not recolor or redraw marks, imply partnership, or
+write unsupported target priorities. Use verified platform evidence when
+available, attributed supplied facts otherwise, and stated proposals when
+research is missing. Personal facets need identity and appropriate-use gates.
 
-No footer nav. The footer is the CAMPAIGN FOOTER SHELL — the seller's mark,
-their copyright, their privacy/terms links, nothing else. Anything more leaks
-the pitch into a website.
+Choose CTA wording from the actual offer and destination. No endpoint means
+an unresolved conversion requirement: do not invent a booking URL, disguise a
+homepage as booking, or leave a functional-looking placeholder. A useful draft
+can be retained with the limitation stated outside the visitor copy.
 
-## Hard rules (violations are defects, not taste)
-
-- **One CTA, one destination.** Header, hero, and the final band carry the
-  SAME conversion action (same dialog target or same verified link). No
-  secondary CTAs, no anchor menus — there is nothing else to do here.
-- **Personalization is factual, not flattering.** Use only what the brief
-  states about the account (name, industry, stack, stated pains). Never
-  infer news, funding, headcount, or initiatives that are not in the brief.
-- **Never invent peers, quotes, or numbers.** The peer-proof and resource
-  sections are the two highest-trust surfaces on the page; one fake logo
-  poisons the whole pitch.
-- **The target's brand is quoted, not adopted.** The page renders in the
-  SELLER's theme tokens; the target appears as a name/logo, never as a
-  restyle of the page. The acceptance question is "would it still look like
-  the seller's site without the target logo?" — one restrained accent from
-  the target's palette at most.
-- **Claim no relationship that does not exist.** The framing is "Prepared for
-  <account>" and nothing stronger. Never "partner", "partnership",
-  "customer", "trusted by <account>", or any wording implying they already
-  buy from, work with, or endorse the seller — they do not, and a false claim
-  on the first page they see costs the whole pitch. Their name belongs in the
-  prepared-for line and in copy written for them; never in a logo wall, never
-  in a testimonial.
-- **Real endpoints only** for the conversion CTA (booking link, calendar
-  embed). None given → obvious placeholder + flag it in the finalize
-  summary and ask.
-- **Fake illustrative data is flagged** (pricing, comparisons) — same rule
-  as everywhere, sharper here because the reader is one skeptical account.
-- **Copy**: second person addressed to the account; concrete verbs; no
-  emojis; no em-dashes; sentence case except brand names.
+`review-website` checks the current derived output, all relevant viewports,
+source fidelity, logo placement, evidence, interactions and real destinations.
+Completing template assembly alone does not establish those outcomes.
