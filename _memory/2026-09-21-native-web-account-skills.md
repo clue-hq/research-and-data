@@ -136,3 +136,24 @@
   Resume the existing queued test through normal UI after auth; do not duplicate it.
 - Account chooser still pending user selection. Old frontends remain suspended;
   only 3020 listens. No auth bypass, discovery, seeding, publishing or remote push.
+
+## Recovery after Codex interruption
+
+- Docker 29.8.0 was already running; the existing sandbox image passed an offline,
+  read-only container smoke test (Python 3.12.14). No reinstall or rebuild needed.
+- Verified idle fleet before reloading four owned workers and the two platform API
+  processes onto 2fc1fc50. Preserved environment, database, storage, design API and
+  Fresh frontend. All four shared/Fresh ports respond; legacy 3021–3024 remain closed.
+- Fresh capture still succeeded with approved product-ready kit v1, six pages and
+  45 approved non-degraded fragments. Overall onboarding retains its earlier failed
+  aggregate status; do not report all onboarding as repaired.
+- Exactly one saved automatic first-turn submission remains held, no design run and
+  no nonterminal fleet tasks. Native chat exposes a Resume queue button after login;
+  recover this submission instead of creating another chat/message.
+- Reopened Fresh test through the normal browser flow. Session expired; Sign in again
+  reaches onboarding sign-in, but Google action remained on that screen after reload.
+  Asked user to finish sign-in. Prior automatic review rejected choosing among multiple
+  Google accounts; no account selection, token workaround or auth bypass attempted.
+- Operational receipts and scoped API-reload helper are in ignored
+  `.local-setup/conduit-fresh-native/`. Native skill-quality acceptance remains pending
+  authenticated queue resume and rendered review. No remote push or new generation.
