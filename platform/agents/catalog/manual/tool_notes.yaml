@@ -368,6 +368,20 @@ run_python:
     workspace_unavailable: Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools.
     run_budget_exhausted: Say what you have read so far and what is left, and do the rest in one script on the next turn.
 
+web_search:
+  afterwards: >-
+    Nothing changes on the platform. You hold the written answer and up to ten results with their
+    highlighted passages, and one search has been charged to the workspace. Read it as what a
+    search found today, not as a fact the platform verified: quote it as "a search found", never
+    as a claim, and never write it into a project document as if research had established it.
+    If the search did not settle the question, say so rather than searching again with the same
+    words.
+  skill_section: head-of-abm prompt v14, the paragraph "Look things up in this order".
+  see_also: [claims, accounts-research]
+  refusals:
+    exa_not_configured: Tell the human web search is not available on this deployment; do not answer the question from memory instead.
+    query_empty: Write the question you want searched, in plain words, then call again.
+
 submit_ingestion:
   afterwards: >-
     An ingestion job is queued for the uploaded file. Queued is not read: the extracted content

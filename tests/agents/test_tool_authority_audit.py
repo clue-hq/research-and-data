@@ -162,10 +162,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # (137 -> 141), all UNGRANTED and human-only for the same reason the design library's
     # curation writes are: filing a project is an act of the person looking at the list.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 142
-    # web_search@1 (2026-09-22): registered UNGRANTED; the grants are the reviewed bumps in the
-    # tasks that follow (141 -> 142).
-    assert C6_AGENT_TOOL_AUTHORITY["web_search"] == ()
-    assert c6_roles_for_tool("web_search@1") == ()
+    # web_search@1 (2026-09-22): registered UNGRANTED (141 -> 142) and GRANTED at
+    # head-of-abm@v61 (2026-09-22).
+    assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM,)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never

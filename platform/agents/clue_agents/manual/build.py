@@ -71,11 +71,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v7"
+MANUAL_VERSION = "v8"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v60"
+PROFILE_VERSION = "v61"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")

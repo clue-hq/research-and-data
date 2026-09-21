@@ -204,7 +204,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # the leg, so prompt pin v12→v13 changes one sentence. No tool address moves, so the recipe
     # stays at 30; the manual re-mints at `manual-*@v7` because its generated chapters render this
     # profile's version into their title.
-    AgentRole.HEAD_OF_ABM: "v60",
+    # v61 (web search, 2026-09-22): v60's surface with `web_search@1` GRANTED — one deep-lite
+    # open-web search, used last, text out and never a claim — and prompt pin v13→v14 for the
+    # paragraph that orders the lookups (claims, then the seller's files, then the web). The
+    # conversation recipe moves 30 → 31; the manual re-mints at `manual-*@v8`.
+    AgentRole.HEAD_OF_ABM: "v61",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -283,12 +287,12 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # `code-execution@v1` and `manual-*@v5` to teach it.
     "run_python": (AgentRole.HEAD_OF_ABM,),
     # web_search@1 (spec 2026-09-22): one open-web search, used LAST — after the claim store and
-    # the seller's knowledge files — and answering text that is never a claim. Registered
-    # UNGRANTED here on the terms every new spend surface arrives on:
-    # `build_agent_profile_registry` refuses to compose when a role's authority and its profile's
-    # tool list disagree, so the grants are the reviewed `head-of-abm@v61` and `design@v3` bumps,
-    # not an edit to this dict.
-    "web_search": (),
+    # the seller's knowledge files — and answering text that is never a claim. It arrived here
+    # UNGRANTED on the terms every new spend surface arrives on: `build_agent_profile_registry`
+    # refuses to compose when a role's authority and its profile's tool list disagree, so a grant
+    # rides a reviewed profile bump and never an edit to this dict. GRANTED at `head-of-abm@v61`
+    # (2026-09-22); the design role joins at `design@v3`.
+    "web_search": (AgentRole.HEAD_OF_ABM,),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

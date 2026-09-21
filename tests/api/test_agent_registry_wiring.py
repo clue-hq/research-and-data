@@ -160,8 +160,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # the re-minted `manual-*@v6`. v60 moves it for neither reason: no tool and no grant
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
-        # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("abc2e4117e9ef1a346876a21b2d24478e6cd32a3c81afa686d8289da7fed7437"),
+        # v61 moves it: one address ADDED (web_search@1), prompt v14 and the re-minted
+        # `manual-*@v8`. Digest measured off this tree.
+        AgentRole.HEAD_OF_ABM: ("eb85d53b277d54f3e33bd46a4fdd3147ec4eafe708ea94d001fae5442a9937b5"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -290,7 +291,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # web_search@1 (2026-09-22): registered ungranted (161 -> 162).
     assert len(by_address) == 162
-    assert by_address["web_search@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    # GRANTED at head-of-abm@v61 (2026-09-22).
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -405,7 +407,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # web_search@1 (2026-09-22): registered ungranted (161 -> 162).
     assert len(by_address) == 162
-    assert by_address["web_search@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    # GRANTED at head-of-abm@v61 (2026-09-22).
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -518,6 +521,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "record_interview_answer@1",
         "run_python@1",
         "submit_ingestion@1",
+        "web_search@1",
     }
     # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
     # stops it inventing a workaround — and every one of them names WHY.
@@ -580,7 +584,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v60"
+    assert production.profile_ref.address == "profile:head-of-abm@v61"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v34"
     )
@@ -695,7 +699,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -876,7 +880,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -906,7 +910,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v13/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v14/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

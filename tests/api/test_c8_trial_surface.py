@@ -349,7 +349,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
     ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.

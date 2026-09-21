@@ -44,8 +44,8 @@ def test_tools_chapter_has_one_section_per_granted_tool_in_profile_order(
 ) -> None:
     chapter = manual.build_tools_chapter(toolbelt, profile, notes)
     granted = [pin.name for pin in profile.tools]  # type: ignore[attr-defined]
-    # 21 since `head-of-abm@v58` granted `run_python@1`.
-    assert len(granted) == 21
+    # 22 since head-of-abm@v61 granted web_search@1.
+    assert len(granted) == 22
 
     headings = [line[3:].strip() for line in chapter.body.splitlines() if line.startswith("## ")]
     # Every granted tool, in profile order, then the two fixed sections.
