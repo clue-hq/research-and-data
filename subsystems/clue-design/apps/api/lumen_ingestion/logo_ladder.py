@@ -2642,6 +2642,7 @@ async def fetch_logo_family(
     # more obvious version of the same hazard.
     import httpx
 
+    from .capture.budget import short_url
     from .capture.net import (
         REQUEST_TIMEOUT_SECONDS,
         BoundedFetcher,
@@ -2680,10 +2681,22 @@ async def fetch_logo_family(
                     )
 
         candidates = harvest(tree, final_url, stylesheets)
+        optional_page_notes: list[str] = []
 
         if with_brand_pages:
             for brand_url in discover_brand_pages(tree, final_url, host_of(final_url))[:2]:
-                result = await fetcher.fetch_page(brand_url)
+                try:
+                    result = await fetcher.fetch_page(brand_url)
+                except (CaptureError, httpx.RequestError) as error:
+                    # Optional discovery must not discard the successful page's candidates.
+                    # Keep security/size refusals fatal; only ordinary fetch failures degrade.
+                    if isinstance(error, CaptureError) and error.code != "LUMI0503":
+                        raise
+                    code = error.code if isinstance(error, CaptureError) else type(error).__name__
+                    optional_page_notes.append(
+                        f"optional brand page skipped ({code}): {short_url(brand_url)}"
+                    )
+                    continue
                 if not result.ok or result.body is None:
                     continue
                 candidates.extend(
@@ -2724,6 +2737,7 @@ async def fetch_logo_family(
             ),
         }
         resolution = resolve(candidates, page_meta, host_of(final_url), company_name)
+        resolution.notes.extend(optional_page_notes)
         if not any(c.rung in ("HEADER", "NAV_VISIBLE", "INLINE_SVG", "FOOTER") for c in candidates):
             resolution.notes.append(_JS_SHELL_NOTE)
         return resolution
