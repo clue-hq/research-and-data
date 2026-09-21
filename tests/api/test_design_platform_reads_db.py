@@ -236,6 +236,13 @@ async def _seeded(
         registry.register(tool, make_default=tool.descriptor.name not in unaliased)
     for tool in build_arv2_paged_read_tools(service):
         registry.register(tool, make_default=True)
+    from clue_api.web_search_tool import build_web_search_tools  # noqa: PLC0415
+    from tests.api.test_web_search_tool import HIT, FakeExa, _result  # noqa: PLC0415
+
+    fake_exa = FakeExa(_result(output_text="Acme's summit is in May.", hits=(HIT,)))
+    search_tool = build_web_search_tools(secrets=None)[0]
+    search_tool._client_factory = lambda label, raw, ledger: fake_exa  # the offline double
+    registry.register(search_tool, make_default=True)
     invoker = build_tool_invoker(
         registry=registry,
         idempotency_store=DbIdempotencyStore(conn_factory=conn_factory),
@@ -253,6 +260,7 @@ async def _seeded(
         "opening_turn": opening_turn,
         "pin": pin,
         "product_set": product_set,
+        "fake_exa": fake_exa,
     }
 
 
@@ -372,6 +380,58 @@ def test_paging_a_read_is_never_answered_by_the_previous_pages_receipt(
                 )
             ).scalar_one()
             assert rows == 2
+
+    run_async(scenario())
+
+
+def test_a_leg_may_search_the_web_through_the_governed_tool(
+    tmp_path: Path, migrated_db: bool
+) -> None:
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import build_design_platform_reads_factory
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="search")
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = await asyncio.to_thread(
+                factory,
+                _leg_envelope(
+                    seeds["workspace_id"], seeds["project"].project_id, seeds["opening_turn"]
+                ),
+            )
+            assert reads is not None
+
+            found = await asyncio.to_thread(
+                reads.web_search, query="acme summit 2026", num_results=3
+            )
+            assert found["answer"] == "Acme's summit is in May."
+            assert found["rendered"].startswith("Acme's summit is in May.")
+            assert seeds["fake_exa"].calls[0]["type"] == "deep-lite"
+            assert seeds["fake_exa"].calls[0]["num_results"] == 3
+
+            second = await asyncio.to_thread(
+                reads.web_search, query="acme summit 2026", num_results=3
+            )
+            assert second == found
+            # Two calls, two operations, two journal rows — a search is never replayed from the
+            # previous search's receipt (the same rule the paged reads follow).
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT tool_name FROM tool_invocation WHERE workspace_id = :ws "
+                        "ORDER BY created_at"
+                    ),
+                    {"ws": seeds["workspace_id"]},
+                )
+            ).all()
+            assert [str(row[0]) for row in rows] == ["web_search@1", "web_search@1"]
+            assert len(seeds["fake_exa"].calls) == 2
 
     run_async(scenario())
 

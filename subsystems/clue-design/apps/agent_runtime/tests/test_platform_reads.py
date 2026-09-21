@@ -57,6 +57,14 @@ class _Reads:
         self.calls.append(("claims", kw))
         return {"claims": [], "prefixes": []}
 
+    def web_search(self, **kw):
+        self.calls.append(("search", kw))
+        return {
+            "answer": "Acme's summit is in May.",
+            "results": [],
+            "rendered": "Acme's summit is in May.\n",
+        }
+
     def seller_knowledge(self):
         if self.seller_error is not None:
             raise self.seller_error
@@ -88,7 +96,7 @@ def _events(tools: LumenDesignTools) -> list[dict]:
 def test_tools_return_json_and_errors_as_strings_and_record(tmp_path, monkeypatch) -> None:
     tools = _tools(tmp_path, monkeypatch)
     reads = _Reads()
-    accounts, research, claims = make_platform_read_tools(tools, reads)
+    accounts, research, claims, search = make_platform_read_tools(tools, reads)
 
     assert [accounts.name, research.name, claims.name] == [
         "read_project_accounts",
@@ -104,8 +112,22 @@ def test_tools_return_json_and_errors_as_strings_and_record(tmp_path, monkeypatc
         {"account_entity_id": "x", "section": "overview", "field_prefix": None, "offset": 0},
     )
 
+    assert search.name == "web_search"
+    assert json.loads(search.invoke({"query": "acme summit 2026"}))["rendered"].startswith("Acme")
+    assert reads.calls[-1] == (
+        "search",
+        {
+            "query": "acme summit 2026",
+            "num_results": 10,
+            "include_domains": None,
+            "exclude_domains": None,
+            "start_published_date": None,
+            "end_published_date": None,
+        },
+    )
+
     events = [event for event in _events(tools) if event["event"] == "platform_read"]
-    assert [event["payload"]["ok"] for event in events] == [True, False, True]
+    assert [event["payload"]["ok"] for event in events] == [True, False, True, True]
     assert events[1]["payload"]["code"] == "read_failed"
     assert events[1]["payload"]["tool"] == "read_account_research"
 
@@ -113,7 +135,7 @@ def test_tools_return_json_and_errors_as_strings_and_record(tmp_path, monkeypatc
 def test_a_governed_refusal_reaches_the_agent_as_its_reason_codes(tmp_path, monkeypatch) -> None:
     tools = _tools(tmp_path, monkeypatch)
     reads = _Reads(research_error=_ReadError("refused:overview_not_written,account_not_researched"))
-    _, research, _ = make_platform_read_tools(tools, reads)
+    _, research, _, _ = make_platform_read_tools(tools, reads)
 
     assert json.loads(research.invoke({"account_entity_id": "x"})) == {
         "error": "refused",
@@ -122,6 +144,17 @@ def test_a_governed_refusal_reaches_the_agent_as_its_reason_codes(tmp_path, monk
     event = [event for event in _events(tools) if event["event"] == "platform_read"][-1]
     assert event["payload"]["ok"] is False
     assert event["payload"]["code"] == "refused:overview_not_written,account_not_researched"
+
+
+def test_a_refused_search_reaches_the_agent_as_its_reason_code(tmp_path, monkeypatch) -> None:
+    tools = _tools(tmp_path, monkeypatch)
+    reads = _Reads()
+    reads.web_search = lambda **kw: (_ for _ in ()).throw(_ReadError("refused:exa_not_configured"))
+    *_, search = make_platform_read_tools(tools, reads)
+    assert json.loads(search.invoke({"query": "acme"})) == {
+        "error": "refused",
+        "reasons": ["exa_not_configured"],
+    }
 
 
 def test_seller_files_are_written_once_per_pin(tmp_path, monkeypatch) -> None:

@@ -13,6 +13,10 @@ turn's workspace, so a design turn's reads are receipts like any other. ``read_a
 is asked for at ``@2`` and nowhere else at ``@1``: ``@1`` is granted to no role, and ``@2`` is the
 paged contract the design role was granted (Task 1, ``design@v2``).
 
+Since 2026-09-22 the seam also carries ONE spend tool, ``web_search@1`` — the open-web search both
+roles hold, used last. It rides the same invoker and the same fresh-operation-id rule; its ledger
+row is workspace spend because the invoker's context carries no project.
+
 The fourth is not a tool: it hands over the seller's brand-knowledge documents as pinned for the
 turn that OPENED the leg (``get_knowledge_pin`` by the bundle's ``opened_by_turn_id``), plus the
 project's confirmed product set and the path of the ICP it pinned — the same set head-of-abm's own
@@ -233,6 +237,34 @@ class DesignPlatformReads:
             if value is not None:
                 body[key] = value
         return self._invoke("read_claims", body)
+
+    # --- the one spend tool on this seam --------------------------------------------------------
+
+    def web_search(
+        self,
+        *,
+        query: str,
+        num_results: int = 10,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+        start_published_date: str | None = None,
+        end_published_date: str | None = None,
+    ) -> dict[str, Any]:
+        """One open-web search (``web_search@1``), used last. The first SPEND tool on this seam:
+        the ledger row it lands is workspace spend under the turn's identity, and — like the reads —
+        every call is its own operation, so a second search is never answered by the first's
+        receipt."""
+
+        body: dict[str, Any] = {"query": query, "num_results": num_results}
+        for key, value in (
+            ("include_domains", include_domains),
+            ("exclude_domains", exclude_domains),
+            ("start_published_date", start_published_date),
+            ("end_published_date", end_published_date),
+        ):
+            if value is not None:
+                body[key] = value
+        return self._invoke("web_search", body)
 
     # --- the seller ---------------------------------------------------------------------------
 

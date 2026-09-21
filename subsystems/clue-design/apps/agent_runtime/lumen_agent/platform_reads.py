@@ -1,11 +1,11 @@
 """The platform's reads, as the design agent sees them (design note 2026-09-19).
 
-Three tools — the same three head-of-abm has for the target account — and the seller's pinned
-knowledge written into ``workspace/seller/`` once per session. The design runtime never learns
-where any of this comes from: ``reads`` is an object the platform injected (config.platform_reads),
-and this module only calls it. Every tool answers a JSON string; a failure answers
-``{"error": "<code>"}`` and is recorded, never raised — a read the agent could not make is a fact
-to design around, not a reason to kill the turn.
+Four tools — the three account reads head-of-abm has, and web_search, the open-web search used
+last — and the seller's pinned knowledge written into ``workspace/seller/`` once per session. The
+design runtime never learns where any of this comes from: ``reads`` is an object the platform
+injected (config.platform_reads), and this module only calls it. Every tool answers a JSON string;
+a failure answers ``{"error": "<code>"}`` and is recorded, never raised — a read the agent could
+not make is a fact to design around, not a reason to kill the turn.
 
 A GOVERNED REFUSAL IS NOT A CRASH. The platform's read error carries one machine-readable code,
 and a refusal spells it ``refused:<reason>[,<reason>...]``. That shape is unfolded here into
@@ -115,7 +115,35 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
             offset=offset,
         )
 
-    return [read_project_accounts, read_account_research, read_claims]
+    @tool
+    def web_search(
+        query: str,
+        num_results: int = 10,
+        include_domains: list[str] | None = None,
+        exclude_domains: list[str] | None = None,
+        start_published_date: str | None = None,
+        end_published_date: str | None = None,
+    ) -> str:
+        """Search the open web and read back what it found: a short written answer, then up to
+        ten results with title, URL, date and highlighted passages (the `rendered` field is the
+        text to read). Use this last: the account reads and the seller's files under seller/
+        come first, every time. It is for the brief's subject when the platform has nothing on
+        it — an event the seller is running, a workshop, a topic outside its products. What it
+        returns is text you may use in the design now; it is not a claim, it is not verified,
+        and it must not be presented as research the platform did."""
+        return _call(
+            tools,
+            reads,
+            "web_search",
+            query=query,
+            num_results=num_results,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            start_published_date=start_published_date,
+            end_published_date=end_published_date,
+        )
+
+    return [read_project_accounts, read_account_research, read_claims, web_search]
 
 
 def _render_index(seller: Any, documents: list[Any]) -> str:
