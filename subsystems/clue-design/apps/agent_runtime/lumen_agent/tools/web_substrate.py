@@ -87,6 +87,7 @@ from lumen_api.fragments.render import (
     web_doc_page_section_count,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
+from lumen_api.fragments.href_repair import validate_href_replacements
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -6695,9 +6696,105 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
+    def _repair_cloned_hrefs(
+        self, fragment_id: str, mapping_json: str, rung: int, note: str,
+    ) -> str:
+        """Source-preserving, one-pin lane; the registry alone reads and derives the payload."""
+        pins = [
+            node for page in self.web_doc.get("pages", [])
+            for node in (page.get("nodes") or {}).values()
+            if node.get("kind") == "fragment" and node.get("fragment_id") == fragment_id
+        ]
+        if len(pins) != 1:
+            return self._tool_error("repair.ambiguous_pin", "exact href repair requires one pin")
+
+        def unique_pairs(pairs: list) -> dict:
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate href map key")
+                result[key] = value
+            return result
+
+        try:
+            if not isinstance(mapping_json, str) or len(mapping_json) > 40_000:
+                raise ValueError("href map JSON must be at most 40000 characters")
+            replacements = validate_href_replacements(
+                json.loads(mapping_json, object_pairs_hook=unique_pairs)
+            )
+        except (ValueError, FragmentRefused) as error:
+            return self._tool_error("repair.bad_href_map", str(error))
+        registry = self._cloned_section_registry()
+        try:
+            minted = registry.mint_href_repair(
+                replaces=fragment_id, replacements=replacements, rung=rung, note=note,
+            )
+        except FragmentRefused as error:
+            return self._tool_error(
+                str(error.code), str(error.message), fragment_id=error.reference or fragment_id,
+                pinned=False,
+            )
+        except Exception as error:
+            return self._tool_error(
+                "repair.mint_unconfirmed",
+                f"href repair mint could not be confirmed ({type(error).__name__}); page unchanged",
+            )
+        new_id = str(minted.get("fragment_id") or "")
+        if minted.get("status") != "approved":
+            return self._tool_error(
+                "repair.not_released",
+                "derived fragment exists but is not released; page unchanged",
+                fragment_id=new_id, released=False, pinned=False,
+            )
+        try:
+            resolved = registry.resolve_insertable(new_id)
+        except Exception as error:
+            return self._tool_error(
+                "repair.released_but_unpinnable",
+                f"released repair could not resolve ({type(error).__name__}); page unchanged",
+                fragment_id=new_id, released=True, pinned=False,
+            )
+        pin = pins[0]
+        operations = [{
+            "kind": "set_node_props", "page_id": self.page_id, "id": pin["id"],
+            "props": {"kind": "fragment", "fragment_id": new_id,
+                      "slots": copy.deepcopy(pin.get("slots") or {})},
+        }]
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            return self._tool_error(
+                "repair.swap_rejected", "repair released but page swap failed; page unchanged",
+                fragment_id=new_id, released=True, pinned=False, diagnostics=[error.message],
+            )
+        if not response.get("ok"):
+            return self._tool_error(
+                "repair.swap_rejected", "repair released but page swap failed; page unchanged",
+                fragment_id=new_id, released=True, pinned=False,
+                diagnostics=response.get("diagnostics") or [],
+            )
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        self._admit_fragment_artifact(new_id, resolved.get("render") or {})
+        self._cloned_section_previews[new_id] = resolved.get("preview_path")
+        self._cloned_section_seen[new_id] = {
+            "label": resolved.get("label"), "section_role": resolved.get("section_role"),
+            "composed": resolved.get("composed"),
+        }
+        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact hrefs",
+                    output_summary=f"{new_id} released; existing pin preserved", payload=minted)
+        return json.dumps({
+            "status": "ok", "repaired": fragment_id, "repair_fragment_id": new_id,
+            "released": True, "pinned": True, "node_id": pin["id"], "href_only": True,
+            "match_counts": minted.get("match_counts"), "converged": minted.get("converged"),
+            "lineage_kept": minted.get("lineage_kept"), "note": note,
+            "report": "released repair; future pins follow stored lineage; existing pin preserved",
+        }, indent=2)
+
     def repair_cloned_section(
-        self, fragment_id: str, html: str, rung: int, note: str,
-        css: Optional[str] = None,
+        self, fragment_id: str, html: str | None = None, rung: int = 1, note: str = "",
+        css: str | None = None, href_replacements_json: str | None = None,
     ) -> str:
         """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
 
@@ -6711,6 +6808,15 @@ class LumenWebTools:
         (derive once, rebind per page). A variant's note reads "campaign variant: …", its copy
         and cardinality MAY change, its visual system may NOT. The repair-cloned-sections
         skill's adaptation contract governs; read it first for either intent.
+
+        EXACT LINK REPAIR: for inherited anchor targets not exposed as slots, omit `html` and
+        `css` and pass `href_replacements_json` as an object of exact old href -> new href
+        strings (1-8 entries, at most 2048 characters per URL). Every old target must match;
+        all matching anchors change simultaneously. Full source stays in the workspace library.
+        This preserves captured CSS/assets, the one existing pin's layout, explicit slot values
+        and human text overrides. Multiple pins refuse as ambiguous. It uses the same released
+        repair lineage as raw repair, so report its effect on future pins. This is not a general
+        markup edit. Provide a precise `note`; `rung` defaults to 1 for restoring navigation.
 
         TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
         RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
@@ -6797,6 +6903,17 @@ class LumenWebTools:
                 pinned_fragment_ids=sorted(pinned),
             )
         instances = pinned[clean_id]
+
+        if href_replacements_json is not None:
+            if html is not None or css is not None:
+                return self._tool_error(
+                    "repair.bad_href_map", "exact href repair cannot also supply html or css"
+                )
+            return self._repair_cloned_hrefs(
+                clean_id, href_replacements_json, int(rung), cleaned_note,
+            )
+        if html is None:
+            return self._tool_error("repair.html_missing", "provide html or href_replacements_json")
 
         if css is not None:
             # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------

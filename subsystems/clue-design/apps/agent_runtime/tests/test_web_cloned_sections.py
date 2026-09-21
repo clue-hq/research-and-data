@@ -1513,3 +1513,131 @@ def test_authored_product_band_is_not_mislabeled_as_campaign_chrome(tmp_path: Pa
     assert result["composed"] == "agent"
     assert "authored" in result["composed_note"]
     assert "shell" not in result["composed_note"]
+
+
+class HrefRegistry(FakeRegistry):
+    def __init__(self, tmp_path):
+        super().__init__(tmp_path)
+        from lumen_api.fragments.artifact import build_fragment_artifact
+        from lumen_api.fragments.slots import SlotSpec
+
+        source = build_fragment_artifact(
+            html=HERO_HTML.replace(
+                "</section>", '<a href="/demo">Lower one</a><a href="/demo">Lower two</a></section>'
+            ),
+            css=".clone-hero{padding:64px}@media(max-width:600px){.clone-hero{padding:16px}}",
+            rehosted={}, slots=[SlotSpec(key="headline", kind="text", selector="h1"),
+                                SlotSpec(key="cta_href", kind="href", selector="a")],
+        )
+        self.original = source.fragment_id
+        self.payloads = {}
+        self.mint_calls = []
+        self.install(source)
+
+    def install(self, artifact):
+        payload = artifact.payload
+        self.payloads[artifact.fragment_id] = payload
+        self.add(artifact.fragment_id, role="hero", label="Captured hero", html=payload["html"],
+                 css=payload["css"], slots=[{"key": key, "kind": spec["kind"]}
+                                          for key, spec in payload["slot_manifest"].items()])
+
+    def mint_href_repair(self, *, replaces, replacements, rung, note):
+        from lumen_api.fragments.href_repair import build_href_repair
+
+        self.mint_calls.append(replacements)
+        repair = build_href_repair(self.payloads[replaces], replacements)
+        self.install(repair.artifact)
+        return {"fragment_id": repair.artifact.fragment_id, "status": "approved",
+                "match_counts": repair.match_counts, "lineage_kept": True, "converged": False}
+
+
+def test_exact_href_tool_schema_and_real_render_preserve_pin_human_edits_and_binding(tmp_path):
+    from langchain_core.tools import StructuredTool
+    from selectolax.lexbor import LexborHTMLParser
+
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({"cta_href": "https://client.example/bound"})
+    ))
+    tools.web_ops(json.dumps([{
+        "kind": "set_fragment_text_override", "page_id": "home", "id": pin["node_id"],
+        "path": ":nth-child(1) > :nth-child(1)",
+        "override": {"text": "Human headline", "bold": True},
+    }]))
+    before = json.loads(json.dumps(tools.web_doc))
+    original_source = json.loads(json.dumps(registry.payloads[registry.original]))
+    exposed = StructuredTool.from_function(tools.repair_cloned_section)
+    schema = exposed.args_schema.model_json_schema()
+    assert schema["required"] == ["fragment_id"]
+    result = json.loads(exposed.invoke({
+        "fragment_id": registry.original, "note": "Restore the two inherited navigation targets",
+        "href_replacements_json": json.dumps({"/demo": "https://client.example/demo"}),
+    }))
+    assert result["status"] == "ok", result
+    assert result["match_counts"] == {"/demo": 2}
+    expected = before
+    expected["pages"][0]["nodes"][pin["node_id"]]["fragment_id"] = result["repair_fragment_id"]
+    assert tools.web_doc == expected
+    assert registry.payloads[registry.original] == original_source
+    assert tools.operations_ledger[-1]["kind"] == "set_node_props"
+    for mode in ("editor", "delivery"):
+        rendered = tools.core.web_render(
+            tools.web_doc, "home", mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )
+        tree = LexborHTMLParser(rendered["html"])
+        assert [a.attributes["href"] for a in tree.css(".clone-hero a")] == [
+            "https://client.example/bound", "https://client.example/demo", "https://client.example/demo",
+        ]
+        assert tree.css_first(".clone-hero h1").text() == "Human headline"
+
+
+@pytest.mark.parametrize("mapping", ["{}", "[]", "not json", '{"/demo":"javascript:x"}',
+                                    '{"/demo":"/a","/demo":"/b"}', "x" * 40_001],
+                         ids=["empty", "array", "malformed", "unsafe", "duplicate", "oversized"])
+def test_exact_href_tool_rejects_bad_input_before_registry_mint(tmp_path, mapping):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json=mapping,
+    ))
+    assert result["error_code"] == "repair.bad_href_map"
+    assert not registry.mint_calls
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_exact_href_tool_refuses_multiple_pins_and_mixed_source_inputs(tmp_path):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html="replacement", note="Fix links",
+        href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.bad_href_map"
+    tools.insert_cloned_section(registry.original)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.ambiguous_pin"
+    assert not registry.mint_calls
+
+
+def test_exact_href_tool_reports_released_artifact_when_swap_fails(tmp_path, monkeypatch):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(registry.original)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    monkeypatch.setattr(
+        tools.core, "web_apply_ops", lambda *_: {"ok": False, "diagnostics": ["refused"]},
+    )
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Fix links", href_replacements_json='{"/demo":"/x"}',
+    ))
+    assert result["error_code"] == "repair.swap_rejected"
+    assert result["released"] is True and result["pinned"] is False
+    assert result["fragment_id"] in registry.payloads
+    assert json.dumps(tools.web_doc, sort_keys=True) == before

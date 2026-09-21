@@ -51,6 +51,7 @@ from .artifact import (
     parse_fragment_payload,
 )
 from .cssscope import PRELUDE_REFERENCE_REFUSE
+from .href_repair import HrefRepair, build_href_repair
 from .refs import FragmentRefused
 from .slots import SlotSpec
 
@@ -160,6 +161,52 @@ def create_web_fragment(
         preview_digest=preview_digest,
         prelude_reference=prelude_reference,
     )
+
+    return _persist_fragment_artifact(
+        storage, workspace_id=workspace_id, artifact=artifact, source_url=source_url,
+        section_role=section_role, label=label, source_kit_id=source_kit_id,
+        source_kit_version=source_kit_version, preview=preview,
+        preview_media_type=preview_media_type, provenance=provenance, status=status,
+        degraded=degraded, degraded_reason=degraded_reason,
+        derived_from=derived_from, derived_reason=derived_reason,
+    )
+
+
+def create_href_repaired_fragment(
+    storage: StorageBackend, *, workspace_id: str, replaces: str,
+    replacements: Mapping[str, str], label: str, derived_reason: str,
+    provenance: Mapping[str, Any],
+) -> tuple[dict[str, Any], HrefRepair, bool]:
+    """Derive only from this workspace's stored sanitized source, then use ordinary custody."""
+    source = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=replaces)
+    repair = build_href_repair(source.payload, replacements)
+    converged = web_fragment_exists(
+        workspace_id=workspace_id, fragment_id=repair.artifact.fragment_id
+    )
+    row, _ = _persist_fragment_artifact(
+        storage, workspace_id=workspace_id, artifact=repair.artifact,
+        source_url=source.row["source_url"], section_role=source.row["section_role"], label=label,
+        source_kit_id=source.row.get("source_kit_id"),
+        source_kit_version=source.row.get("source_kit_version"),
+        provenance={**(source.row.get("provenance") or {}), **provenance},
+        degraded=bool(source.row.get("degraded")),
+        degraded_reason=source.row.get("degraded_reason"),
+        derived_from=replaces, derived_reason=derived_reason,
+    )
+    return row, repair, converged
+
+
+def _persist_fragment_artifact(
+    storage: StorageBackend, *, workspace_id: str, artifact: FragmentArtifact,
+    source_url: str, section_role: str, label: str | None = None,
+    source_kit_id: str | None = None, source_kit_version: int | None = None,
+    preview: bytes | None = None, preview_media_type: str = _DEFAULT_PREVIEW_MEDIA_TYPE,
+    provenance: Mapping[str, Any] | None = None, status: str | None = None,
+    degraded: bool = False, degraded_reason: str | None = None,
+    derived_from: str | None = None, derived_reason: str | None = None,
+) -> tuple[dict[str, Any], FragmentArtifact]:
+    """Shared custody for a validated captured artifact or its typed href-only derivative."""
+    preview_digest = _digest(preview) if preview is not None else None
 
     async def _persist(conn: Any) -> dict[str, Any]:
         # The lineage target is the one birth fact that cannot be checked before I/O — it is a

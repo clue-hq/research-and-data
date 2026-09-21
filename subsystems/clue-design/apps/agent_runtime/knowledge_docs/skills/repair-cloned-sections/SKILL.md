@@ -33,11 +33,10 @@ fallback and release consequences, read the
    at most 12,000 per call. A null next offset means finished. Pass that stream's
    total (`html_chars` / `css_chars`) to skip it while continuing the other.
    Read only what the diagnosis needs; a full-source remix requires all original
-   bytes. Pagination does not add a targeted link edit: raw repair still requires
-   complete HTML and CSS, and omitting `css` selects the typed lane. If slots
-   cannot express a small change and full repair is impractical, preserve the
-   source, make supported edits, and report the remaining editability gap.
-   Never reconstruct unseen bytes or rebuild the visuals to work around it.
+   bytes. For inherited anchor destinations, use the exact-link lane below;
+   full source stays in the registry, so no HTML/CSS transcription is needed.
+   Other raw repairs still need complete HTML/CSS. Never reconstruct unseen
+   bytes or rebuild visuals to work around an unsupported edit.
 4. Inspect the current band between its neighbors at the failing width.
    Name the defect and evidence, or the requested structural adaptation.
    A root-unit/font-context defect, an inadequate source image and an
@@ -50,7 +49,18 @@ If existing slots express the request, rebind them through the edit skill;
 no repair is needed. Account markers work in raw slot values.
 
 For a pinned band, the real signature is
-`repair_cloned_section(fragment_id, html, rung, note, css=None)`.
+`repair_cloned_section(fragment_id, html=None, rung=1, note="", css=None,
+href_replacements_json=None)`.
+
+For exact inherited link changes, omit `html` and `css`, provide a precise
+`note`, and pass `href_replacements_json='{"/old":"https://client.example/new"}'`.
+The map allows 1–8 exact old/new URLs, each at most 2048 characters. Every old
+target must match; all matching anchors change simultaneously. Exactly one
+pin is required. Its wrapper, node, explicit bindings and human text edits
+survive; captured CSS/assets stay intact with only the fragment namespace
+rebased. Matching href-slot fallbacks follow the new targets. Existing capture
+degradation remains. This uses the released repair lineage: report its effect
+on future pins, and report any minted-but-unreleased or failed-swap state.
 
 | Intent / lane | Inputs and consequences |
 |---|---|

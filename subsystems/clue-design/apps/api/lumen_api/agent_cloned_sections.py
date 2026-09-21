@@ -81,6 +81,7 @@ from .fragments import (
 )
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
 from .fragments.render import slot_kinds
+from .fragments.registry import create_href_repaired_fragment
 from .fragments.sanitize import sanitize_fragment_html
 
 # The SAME slot detector minting uses. Imported rather than reimplemented (and rather than
@@ -1076,6 +1077,46 @@ class DurableAgentClonedSectionRegistry:
         return {"groups": groups, "gaps": gaps, "fidelity_verified": False}
 
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
+
+    def mint_href_repair(
+        self, *, replaces: str, replacements: Mapping[str, str], rung: int, note: str,
+    ) -> JsonObject:
+        """Repair exact anchor targets from held source; preserve its slots, assets and CSS."""
+        original = self._repository().find_web_fragment(replaces)
+        if original is None:
+            raise FragmentRefused("fragment.unresolved", "this workspace holds no such fragment")
+        reason = repair_reason(rung=rung, trigger=original.get("degraded_reason"), note=note)
+        provenance = _repair_provenance(original, rung=rung, note=note, replaces=replaces)
+        provenance["repair"]["source"] = "captured_href_repair"
+        row, repair, converged = create_href_repaired_fragment(
+            self.blobs.storage, workspace_id=self.workspace_id, replaces=replaces,
+            replacements=replacements, label=_repair_label(original), derived_reason=reason,
+            provenance=provenance,
+        )
+        fragment_id = repair.artifact.fragment_id
+        if row.get("status") == "draft":
+            try:
+                row = set_web_fragment_status(
+                    workspace_id=self.workspace_id, fragment_id=fragment_id, status="approved",
+                )
+            except Exception as error:
+                raise FragmentRefused(
+                    "repair.release_unconfirmed",
+                    f"repair {fragment_id} was minted, but release could not be confirmed; "
+                    "the page is unchanged",
+                    reference=fragment_id,
+                ) from error
+        return {
+            "fragment_id": fragment_id, "status": row.get("status"),
+            "derived_from": row.get("derived_from"), "match_counts": repair.match_counts,
+            "derived_reason": row.get("derived_reason"), "requested_derived_reason": reason,
+            "converged": converged,
+            "lineage_kept": (
+                row.get("derived_from") == replaces and row.get("derived_reason") == reason
+            ),
+            "slot_keys": list(repair.artifact.payload["slot_manifest"]),
+            "insertable": row.get("status") == "approved",
+        }
 
     def mint_repair(
         self,
