@@ -9,9 +9,18 @@ the user actually looks at; the insights page stays lazy and is composed from bl
 own wherever it asks the same question; a shared block is the stored body only (sentences + claim
 cites), never the other page's heading, position or open/closed default; no synthesis is ever
 written from another synthesis — every section cites claims.
-**Ruling (founder, 2026-09-12):** a section whose block is not yet written is simply blank —
+~~**Ruling (founder, 2026-09-12):** a section whose block is not yet written is simply blank —
 no spinner, no placeholder copy. The page shows what exists, the rest stays empty until the
-block lands, and the page picks it up on its poll.
+block lands, and the page picks it up on its poll.~~
+**Ruling (founder, 2026-09-21, replaces the one above):** a section whose block is not yet
+written but is being written shows the one served sentence
+`Synthesis in progress, please wait a few seconds.` in its empty state — no spinner, no other
+placeholder copy. The section is served `pending: true` with that sentence as its
+`emptyMessage`, and the page polls every 5 s while any section is pending. A section that will
+never be written (its recipe matches no claim) is NOT pending: it keeps the client's ordinary
+"No {section} information found for {name}." default, so the sentence is never a promise the
+page cannot keep. **Status 2026-09-21:** implementation plan
+`docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`.
 
 ## 1. Today
 
