@@ -40,11 +40,14 @@ the markup-breakout gate remain the scoper's job, including for the root-variabl
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import tinycss2
 from selectolax.parser import HTMLParser
 from tinycss2 import ast
+
+if TYPE_CHECKING:
+    from .source_context import SourceSectionContext
 
 #: At-rules whose block holds declarations (not nested rules) and which are kept whole: they
 #: define something the kept rules NAME, and a name with no definition is a silent failure.
@@ -100,9 +103,11 @@ class _Inventory:
     ids: frozenset[str]
     classes: frozenset[str]
     source_root_classes: frozenset[str] = frozenset()
+    source_context: SourceSectionContext | None = None
 
     @classmethod
-    def of(cls, html: str, source_root_classes: Sequence[str] = ()) -> _Inventory:
+    def of(cls, html: str, source_root_classes: Sequence[str] = (),
+           source_context: SourceSectionContext | None = None) -> _Inventory:
         tree = HTMLParser(html or "")
         tags: set[str] = set()
         ids: set[str] = set()
@@ -120,12 +125,14 @@ class _Inventory:
                 ids.add(element_id)
             classes.update((node.attributes.get("class") or "").split())
         return cls(
-            frozenset(tags), frozenset(ids), frozenset(classes), frozenset(source_root_classes)
+            frozenset(tags), frozenset(ids), frozenset(classes), frozenset(source_root_classes),
+            source_context,
         )
 
 
 def rules_for_subtree(
-    stylesheets: Sequence[Any], *, subtree_html: str, source_root_classes: Sequence[str] = ()
+    stylesheets: Sequence[Any], *, subtree_html: str, source_root_classes: Sequence[str] = (),
+    source_context: SourceSectionContext | None = None,
 ) -> MatchedCss:
     """The page's rules that could style this subtree, in source order.
 
@@ -133,9 +140,11 @@ def rules_for_subtree(
     never imports the snapshot read seam — the same discipline Task 11 applied to the segmenter,
     and for the same reason: a pure function must not drag the DAL in behind it.
     """
-    inventory = _Inventory.of(subtree_html, source_root_classes)
+    inventory = _Inventory.of(subtree_html, source_root_classes, source_context)
     counter = _Counter()
     blocks: list[tuple[str, str]] = []
+    if source_context is not None:
+        blocks.append(("inline:source-document-context", source_context.base_css()))
     notes: list[str] = []
     sheets_read = 0
     for sheet in stylesheets:
@@ -145,6 +154,10 @@ def rules_for_subtree(
             continue
         rules = tinycss2.parse_stylesheet(text, skip_comments=True, skip_whitespace=True)
         sheet_url = str(getattr(sheet, "url", "") or "")
+        if source_context is not None and sheet_url == "inline:source-root-unit":
+            # The trusted derived default belongs below authored root selectors. Keeping
+            # its synthetic :root specificity would beat a later html unit assignment.
+            continue
         rendered = _keep_rules(rules, inventory, counter, notes, sheet_url)
         if rendered:
             blocks.append((sheet_url, rendered))
@@ -172,10 +185,11 @@ def _keep_rules(
     counter: _Counter,
     notes: list[str],
     sheet_url: str,
+    conditions: tuple[str, ...] = (),
 ) -> str:
     out: list[str] = []
     for rule in rules:
-        rendered = _keep_rule(rule, inventory, counter, notes, sheet_url)
+        rendered = _keep_rule(rule, inventory, counter, notes, sheet_url, conditions)
         if rendered:
             out.append(rendered)
     return "\n".join(out)
@@ -187,12 +201,21 @@ def _keep_rule(
     counter: _Counter,
     notes: list[str],
     sheet_url: str,
+    conditions: tuple[str, ...] = (),
 ) -> str:
     if isinstance(rule, ast.QualifiedRule):
         counter.considered += 1
         selector = tinycss2.serialize(rule.prelude).strip()
         regular = _selector_could_match(selector, inventory)
         root_variables = _source_root_custom_properties(rule, inventory)
+        if inventory.source_context is not None:
+            projected = inventory.source_context.project(
+                selector, rule.content, regular=regular, conditions=conditions
+            )
+            if projected:
+                counter.kept += 1
+                counter.root_variables += bool(root_variables)
+            return projected
         if not regular and not root_variables:
             return ""
         counter.kept += 1
@@ -207,7 +230,7 @@ def _keep_rule(
         return "\n".join(out)
 
     if isinstance(rule, ast.AtRule):
-        return _keep_at_rule(rule, inventory, counter, notes, sheet_url)
+        return _keep_at_rule(rule, inventory, counter, notes, sheet_url, conditions)
 
     if isinstance(rule, ast.ParseError):
         # A page's stylesheet is not ours to be strict about: browsers skip what they cannot
@@ -249,6 +272,7 @@ def _keep_at_rule(
     counter: _Counter,
     notes: list[str],
     sheet_url: str,
+    conditions: tuple[str, ...] = (),
 ) -> str:
     keyword = rule.lower_at_keyword
     prelude = tinycss2.serialize(rule.prelude).strip()
@@ -269,14 +293,17 @@ def _keep_at_rule(
 
     if keyword in _CONDITIONAL_AT_RULES:
         inner = tinycss2.parse_rule_list(rule.content, skip_comments=True, skip_whitespace=True)
-        body = _keep_rules(inner, inventory, counter, notes, sheet_url)
+        body = _keep_rules(inner, inventory, counter, notes, sheet_url, conditions + (keyword,))
         if not body.strip():
             return ""
         head = f"@{keyword} {prelude}".rstrip()
         return f"{head} {{ {body} }}"
 
-    # An at-rule nobody here has an opinion about. Keeping it is the conservative direction and
-    # the scoper is the gate that decides what may actually be stored.
+    # Unknown nested rules cannot remain unguarded around synthetic context elements.
+    if inventory.source_context is not None:
+        inventory.source_context.note(f"unsupported source-context at-rule: @{keyword}")
+        raise ValueError("source-context at-rule grammar is unsupported")
+    # Without context transport, retain the existing conservative path to the scoper.
     return f"@{keyword} {prelude} {{{tinycss2.serialize(rule.content)}}}"
 
 

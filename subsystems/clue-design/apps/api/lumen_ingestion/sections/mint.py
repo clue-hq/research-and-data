@@ -73,6 +73,7 @@ from .deadheight import (
 from .rootunits import RootUnits, prepare_root_units
 from .segment import SectionRecord, SectionSegmentation, recovery_sections, resolve_section
 from .slotdetect import detect_slots
+from .source_context import SourceDocumentContext
 
 logger = logging.getLogger(__name__)
 
@@ -585,6 +586,7 @@ def mint_sections(
     # times to extract twelve subtrees would be the most expensive thing this module does.
     tree = SectionParser(html or "")
     root_units = prepare_root_units(stylesheets, html=html, initial_font_px=initial_font_px)
+    source_context = SourceDocumentContext.prepare(html, stylesheets, root_units)
     if root_units.notes:
         diagnostics.append(_diag(
             "LUMI0540",
@@ -618,6 +620,7 @@ def mint_sections(
                     tree=tree,
                     stylesheets=root_units.stylesheets,
                     root_units=root_units,
+                    source_context=source_context,
                     captured=captured,
                     screenshot=screenshot,
                     source_kit_id=source_kit_id,
@@ -739,6 +742,7 @@ def _mint_one(
     tree: SectionParser,
     stylesheets: Sequence[Any],
     root_units: RootUnits,
+    source_context: SourceDocumentContext | None,
     captured: Mapping[str, CapturedAsset],
     screenshot: bytes | None,
     source_kit_id: str | None,
@@ -768,11 +772,35 @@ def _mint_one(
     subtree = root_units.markup(node.html or "")
 
     root_classes = ((tree.root.attributes.get("class") or "").split() if tree.root else ())
-    matched = rules_for_subtree(
-        stylesheets, subtree_html=subtree, source_root_classes=root_classes
-    )
+    section_context = source_context.for_section(node) if source_context is not None else None
+    context_gap = None
+    if source_context is None:
+        context_gap = {
+            "mode": "unsupported", "fidelity_verified": False,
+            "limitations": ["source document context could not allocate collision-free markers"],
+        }
+    elif section_context is None:
+        context_gap = {
+            "mode": "unsupported" if source_context.unsupported else "not_needed",
+            "fidelity_verified": False,
+            "limitations": list(source_context.notes) if source_context.unsupported else [],
+        }
+    try:
+        matched = rules_for_subtree(
+            stylesheets, subtree_html=subtree, source_root_classes=root_classes,
+            source_context=section_context,
+        )
+    except ValueError as error:
+        if section_context is None:
+            raise
+        context_gap = {"mode": "unsupported", "fidelity_verified": False,
+                       "limitations": [*section_context.notes, str(error)]}
+        section_context = None
+        matched = rules_for_subtree(
+            stylesheets, subtree_html=subtree, source_root_classes=root_classes,
+        )
     harvest = build_reference_harvest(
-        subtree_html=subtree,
+        subtree_html=section_context.wrap(subtree) if section_context is not None else subtree,
         page_url=segmentation.page_url,
         css_blocks=matched.blocks,
         captured=captured,
@@ -863,6 +891,10 @@ def _mint_one(
             )
         )
 
+    if section_context is not None:
+        html_for_artifact = section_context.wrap(html_for_artifact)
+        detected = section_context.wrap_slots(detected)
+
     provenance = _provenance(
         segmentation,
         record,
@@ -875,6 +907,9 @@ def _mint_one(
         preview_refused_by=preview_refused_by,
     )
     provenance["css"]["root_units"] = root_units.provenance()
+    provenance["css"]["source_document_context"] = (
+        section_context.provenance() if section_context is not None else context_gap
+    )
     if recovery_parent is not None:
         provenance["recovery"] = {
             "mode": "authored-descendant-after-refusal",
