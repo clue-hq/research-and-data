@@ -61,9 +61,6 @@ export function AssetContextDetails({ asset, controller }: { asset: BrandAsset; 
         {observations.length ? <dl>{observations.map(([key, value]) => <div key={key}><dt>{assetLabel(key)}</dt><dd>{Array.isArray(value) ? value.join(" · ") : value}</dd></div>)}</dl> : <p>No visual analysis yet.</p>}
         {interpretations.map(item => {
           const fields = [
-            ["Observed use", item.observed_usage],
-            ["Logo relationship", `${assetLabel(item.logo_relationship)}. ${item.relationship_evidence}`],
-            ["Messaging & tone", [item.messaging_angle, item.tone].filter(Boolean).join(" · ")],
             ["Call to action", item.cta],
             ["Composition", [item.visual_hierarchy, item.copy_density].filter(Boolean).join(" · ")],
             ["Product hypothesis", item.product_or_use_case_hypothesis],
@@ -71,6 +68,7 @@ export function AssetContextDetails({ asset, controller }: { asset: BrandAsset; 
             ["Design patterns", item.design_patterns.join(" · ")],
             ["Uncertainties", item.uncertainties.join(" · ")],
           ].filter(([, value]) => value.trim());
+          if (!fields.length) return null;
           return <section key={item.occurrence_id}><h3>Source interpretation</h3><dl>{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>;
         })}
         {context?.agent_context?.uncertainties.length ? <p>{context.agent_context.uncertainties.join(" · ")}</p> : null}
