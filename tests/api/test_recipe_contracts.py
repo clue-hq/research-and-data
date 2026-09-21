@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from pathlib import Path
@@ -17,7 +18,10 @@ from clue_api.recipe_contracts import (
     build_replay_safety_audit,
     standing_recipe_addresses,
 )
-from clue_api.recipe_wiring import SYSTEM_RECIPE_FILENAMES
+from clue_api.recipe_wiring import (
+    HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES,
+    SYSTEM_RECIPE_FILENAMES,
+)
 from clue_api.stage0_recipe import RecipeStep
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_toolbelt import ReplayPolicy, ToolRegistry
@@ -33,6 +37,97 @@ def _standing_recipe_registry() -> ToolRegistry:
         make_default=True,
     )
     return registry
+
+
+def test_startup_recipe_seeds_validate_against_the_current_tool_registry() -> None:
+    """A retired exact tool pin must not wedge a fresh or partially seeded worker boot."""
+    from clue_api.recipe_wiring import build_recipe_pin_registry, load_system_recipe_definitions
+    from clue_execution import (
+        CompatibilityContext,
+        CompatibilityLoader,
+        CompatibilityManifest,
+        validate_graph,
+    )
+
+    registry = _standing_recipe_registry()
+    loader = CompatibilityLoader(build_recipe_pin_registry(tool_registry=registry))
+
+    async def scenario() -> None:
+        failures = []
+        for recipe in load_system_recipe_definitions():
+            graph = validate_graph(
+                recipe.graph,
+                parameter_schema=recipe.parameter_schema,
+                tool_catalog=registry,
+                max_nodes=recipe.max_nodes,
+                max_depth=recipe.max_depth,
+                max_fanout=recipe.max_fanout,
+                execution_requirements=recipe.compatibility.execution,
+            )
+            # Exercise the production resolver for every exact tool pin, without opening
+            # a database for the recipe's unrelated tenant/data requirements.
+            manifest = CompatibilityManifest(
+                execution=tuple(p for p in recipe.compatibility.execution if p.kind == "tool"),
+                nodes={
+                    key: tuple(p for p in pins if p.kind == "tool")
+                    for key, pins in recipe.compatibility.nodes.items()
+                },
+            )
+            compatibility = await loader.load(
+                manifest, context=CompatibilityContext(workspace_id="__system__")
+            )
+            if not graph.valid or not compatibility.compatible:
+                failures.append(
+                    (
+                        recipe.recipe_key,
+                        recipe.version,
+                        graph.issues,
+                        compatibility.incompatibilities,
+                    )
+                )
+        assert failures == []
+
+    asyncio.run(scenario())
+
+
+def test_replay_only_design_recipe_still_refuses_new_promotion() -> None:
+    """Retaining historical bytes must not alias the retired @4 contract onto @5."""
+    from clue_api.recipe_wiring import build_recipe_pin_registry, system_recipe_asset_root
+    from clue_execution import (
+        CompatibilityContext,
+        CompatibilityLoader,
+        CompatibilityManifest,
+        load_recipe_definition,
+        validate_graph,
+    )
+
+    recipe = load_recipe_definition(system_recipe_asset_root() / "recipe0-stage0-v29.json")
+    registry = _standing_recipe_registry()
+    graph = validate_graph(
+        recipe.graph,
+        parameter_schema=recipe.parameter_schema,
+        tool_catalog=registry,
+        max_nodes=recipe.max_nodes,
+        max_depth=recipe.max_depth,
+        max_fanout=recipe.max_fanout,
+        execution_requirements=recipe.compatibility.execution,
+    )
+    assert [(issue.location, issue.code) for issue in graph.issues] == [
+        ("graph.stage0_interactions", "unknown_tool")
+    ]
+    loader = CompatibilityLoader(build_recipe_pin_registry(tool_registry=registry))
+    pins = recipe.compatibility.nodes["stage0_interactions"]
+    report = asyncio.run(
+        loader.load(
+            CompatibilityManifest(
+                execution=tuple(p for p in pins if p.kind == "tool"),
+            ),
+            context=CompatibilityContext(workspace_id="__system__"),
+        )
+    )
+    assert [
+        (item.key, item.requested_version, item.reason) for item in report.incompatibilities
+    ] == [("open_design_leg", "4", "version_mismatch")]
 
 
 def test_every_registered_tool_has_a_typed_output_contract() -> None:
@@ -276,11 +371,8 @@ def test_o6_head_of_abm_mints_recipe_v22_without_rewriting_v19() -> None:
         "read_arv2_account_research_run@1",
     }
 
-    v19_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v19.json")
-    assert SYSTEM_RECIPE_FILENAMES[v19_index : v19_index + 2] == (
-        "recipe0-stage0-v19.json",
-        "recipe0-stage0-v22.json",
-    )
+    assert "recipe0-stage0-v19.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v22.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v19["graph"]["tool_allowlist"])
     assert added <= set(v22["graph"]["tool_allowlist"])
     slot = next(node for node in v22["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -333,11 +425,8 @@ def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
     # same lane and behind the same confirmations as the two launches already in this slot.
     added = {"launch_arv2_discovery@1"}
 
-    v22_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v22.json")
-    assert SYSTEM_RECIPE_FILENAMES[v22_index : v22_index + 2] == (
-        "recipe0-stage0-v22.json",
-        "recipe0-stage0-v23.json",
-    )
+    assert "recipe0-stage0-v22.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v23.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v22["graph"]["tool_allowlist"])
     assert added <= set(v23["graph"]["tool_allowlist"])
     slot = next(node for node in v23["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -374,11 +463,8 @@ def test_icp_authoring_mints_recipe_v24_without_rewriting_v23() -> None:
     # may write, and the personas it may request for a profile the human already confirmed.
     added = {"author_icp_document@1", "request_persona_synthesis@1"}
 
-    v23_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v23.json")
-    assert SYSTEM_RECIPE_FILENAMES[v23_index : v23_index + 2] == (
-        "recipe0-stage0-v23.json",
-        "recipe0-stage0-v24.json",
-    )
+    assert "recipe0-stage0-v23.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v24.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v23["graph"]["tool_allowlist"])
     assert added <= set(v24["graph"]["tool_allowlist"])
     slot = next(node for node in v24["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -420,11 +506,8 @@ def test_project_plan_mints_recipe_v25_without_rewriting_v24() -> None:
     # version-checked against the human's own edits in the Plan tab.
     added = {"write_project_document@1"}
 
-    v24_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v24.json")
-    assert SYSTEM_RECIPE_FILENAMES[v24_index : v24_index + 2] == (
-        "recipe0-stage0-v24.json",
-        "recipe0-stage0-v25.json",
-    )
+    assert "recipe0-stage0-v24.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v25.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v24["graph"]["tool_allowlist"])
     assert added <= set(v25["graph"]["tool_allowlist"])
     slot = next(node for node in v25["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -465,11 +548,8 @@ def test_read_tools_mint_recipe_v26_without_rewriting_v25() -> None:
     # and the discovery run — effect-free reads over rows that already exist.
     added = {"read_project_accounts@1", "read_account_research@1", "read_discovery_run@1"}
 
-    v25_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v25.json")
-    assert SYSTEM_RECIPE_FILENAMES[v25_index : v25_index + 2] == (
-        "recipe0-stage0-v25.json",
-        "recipe0-stage0-v26.json",
-    )
+    assert "recipe0-stage0-v25.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v26.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v25["graph"]["tool_allowlist"])
     assert added <= set(v26["graph"]["tool_allowlist"])
     slot = next(node for node in v26["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -512,11 +592,8 @@ def test_document_skills_mint_recipe_v27_without_rewriting_v26() -> None:
     # saying the conversation may still call them.
     removed = {"author_icp_document@1", "request_persona_synthesis@1", "write_project_document@1"}
 
-    v26_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v26.json")
-    assert SYSTEM_RECIPE_FILENAMES[v26_index : v26_index + 2] == (
-        "recipe0-stage0-v26.json",
-        "recipe0-stage0-v27.json",
-    )
+    assert "recipe0-stage0-v26.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v27.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert removed <= set(v26["graph"]["tool_allowlist"])
     assert removed.isdisjoint(v27["graph"]["tool_allowlist"])
     slot = next(node for node in v27["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -574,11 +651,8 @@ def test_paged_and_new_reads_mint_recipe_v28_without_rewriting_v27() -> None:
     }
     removed = {"read_account_research@1", "read_discovery_run@1"}
 
-    v27_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v27.json")
-    assert SYSTEM_RECIPE_FILENAMES[v27_index : v27_index + 2] == (
-        "recipe0-stage0-v27.json",
-        "recipe0-stage0-v28.json",
-    )
+    assert "recipe0-stage0-v27.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v28.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v27["graph"]["tool_allowlist"])
     assert added <= set(v28["graph"]["tool_allowlist"])
     assert removed <= set(v27["graph"]["tool_allowlist"])
@@ -646,11 +720,8 @@ def test_the_code_sandbox_mints_recipe_v29_without_rewriting_v28() -> None:
     # for a turn pinned to it.
     added = {"run_python@1"}
 
-    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
-    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
-        "recipe0-stage0-v28.json",
-        "recipe0-stage0-v29.json",
-    )
+    assert "recipe0-stage0-v28.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v29.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     assert added.isdisjoint(v28["graph"]["tool_allowlist"])
     assert added <= set(v29["graph"]["tool_allowlist"])
     slot = next(node for node in v29["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -705,11 +776,8 @@ def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
     added = {"open_design_leg@5"}
     removed = {"open_design_leg@4"}
 
-    v29_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v29.json")
-    assert SYSTEM_RECIPE_FILENAMES[v29_index : v29_index + 2] == (
-        "recipe0-stage0-v29.json",
-        "recipe0-stage0-v30.json",
-    )
+    assert "recipe0-stage0-v29.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v30.json" in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v29["graph"]["tool_allowlist"])
     assert added <= set(v30["graph"]["tool_allowlist"])
     assert removed <= set(v29["graph"]["tool_allowlist"])

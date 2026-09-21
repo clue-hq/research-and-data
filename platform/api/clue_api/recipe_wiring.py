@@ -67,6 +67,47 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v14.json",
     # Plan-safe research directives retain the frozen v2 contract while new turns use @3.
     "recipe0-stage0-v15.json",
+    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
+    # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
+    # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
+    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
+    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
+    # one version per (kind, key), so @4 and @5 in one slot is a `conflicting_requirement` that
+    # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
+    # stays); v29 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v30.json",
+    "recipe1-classic-v1.json",
+    "recipe1-classic-v2.json",
+    # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
+    # ``exa_search_evidence@1`` and pins the ``audience-persona`` skill that tool requires.
+    "onboarding-synthesis-unit-v1.json",
+)
+
+# Kept on disk solely so already-pinned executions can resolve their exact historical definition.
+# R1 never seeds or promotes these recipes for new executions.
+HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
+    "account-research-unit-v1.json",
+    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@5 is the
+    # live version, pinned by v30). On the long-lived shared dev DB they were promoted when
+    # their pins were live, so the idempotent seed skips them; on a FRESH database the
+    # seeder re-validates every active revision against TODAY's registry and v16 failed
+    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
+    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
+    # this shape: already-pinned executions still resolve them; new seeds skip them.
+    "recipe0-stage0-v16.json",
+    "recipe0-stage0-v17.json",
+    "recipe0-stage0-v18.json",
+    # recipe0 v20/v21 arrive from the comprehensive-account-contact-research line, where they were
+    # the promoted head (v20 = v16 plus ``draft_account_research_directive@4``, the
+    # comprehensive-profile directive contract; v21 = v20 with @5, the same contract behind a
+    # satisfiable schema whose ``directive.field_keys`` is omittable). On this branch the promoted
+    # revision stays v19 — the design-delegation lineage — so both land replay-only: their bytes
+    # stay resolvable for any execution already pinned to them, and no new seed promotes them.
+    "recipe0-stage0-v20.json",
+    "recipe0-stage0-v21.json",
+    # The @5 cutover also retires @4. Keep v19 and v22-v29 as immutable replay inputs,
+    # but never newly promote them against a registry that only implements @5. Otherwise
+    # fresh boots, or a long-lived DB missing any one revision, fail before reaching v30.
     # PD-part3 P3.4's design delegation entry (``open_design_leg@1``), re-versioned onto the v15
     # lineage at the part-iii integration merge. Same rule as v6: the C5 slot is a second,
     # independent ceiling, so a profile grant alone would show the model a tool that plan
@@ -132,44 +173,6 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # `head-of-abm@v58`. Nothing leaves — it is one address ADDED, not a re-pin — so v29 is v28
     # plus that address and v28 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v29.json",
-    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
-    # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
-    # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
-    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
-    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
-    # one version per (kind, key), so @4 and @5 in one slot is a `conflicting_requirement` that
-    # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
-    # stays); v29 stays the exact replay input for turns pinned to it.
-    "recipe0-stage0-v30.json",
-    "recipe1-classic-v1.json",
-    "recipe1-classic-v2.json",
-    # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
-    # ``exa_search_evidence@1`` and pins the ``audience-persona`` skill that tool requires.
-    "onboarding-synthesis-unit-v1.json",
-)
-
-# Kept on disk solely so already-pinned executions can resolve their exact historical definition.
-# R1 never seeds or promotes these recipes for new executions.
-HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
-    "account-research-unit-v1.json",
-    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
-    # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
-    # their pins were live, so the idempotent seed skips them; on a FRESH database the
-    # seeder re-validates every active revision against TODAY's registry and v16 failed
-    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
-    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
-    # this shape: already-pinned executions still resolve them; new seeds skip them.
-    "recipe0-stage0-v16.json",
-    "recipe0-stage0-v17.json",
-    "recipe0-stage0-v18.json",
-    # recipe0 v20/v21 arrive from the comprehensive-account-contact-research line, where they were
-    # the promoted head (v20 = v16 plus ``draft_account_research_directive@4``, the
-    # comprehensive-profile directive contract; v21 = v20 with @5, the same contract behind a
-    # satisfiable schema whose ``directive.field_keys`` is omittable). On this branch the promoted
-    # revision stays v19 — the design-delegation lineage — so both land replay-only: their bytes
-    # stay resolvable for any execution already pinned to them, and no new seed promotes them.
-    "recipe0-stage0-v20.json",
-    "recipe0-stage0-v21.json",
 )
 
 
