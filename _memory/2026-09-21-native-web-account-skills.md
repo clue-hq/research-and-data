@@ -100,7 +100,7 @@
   fresh captured source library, authentic Hyatt mark, grounded task/account argument,
   relevant family reads and desktop/mobile/link review; no discovery, seeding or publish.
 - Handoff did finish: new leg is open_awaiting_user, artifact doc_ea3fc8bf949f5ded81b11730f8e29298,
-  correct Fresh kit. No design run yet; next user message starts it. Do not create
+  correct Fresh kit. No design run yet. Do not create
   a duplicate chat. Head took 9 model calls / 170.3s; read-only audit found two
   manual grep defects (recursive glob misses root SKILL.md; file path handled as
   directory and mislabeled permission error). No changes made to workspace grep.
@@ -111,3 +111,28 @@
 - Read-only DB verification: zero nonterminal fleet tasks globally, all old
   workspace design runs terminal. Only frontend 3020 listens. This is an auth
   blocker for the Fresh-only generation test, not a Docker or ingestion failure.
+
+## Search repair and corrected queued-turn status
+
+- Fixed the two native handoff search failures in the anchored workspace adapter:
+  optional leading `**/` prefixes include direct files; a file path is searched
+  by its basename instead of being treated as a directory. Retains flat fnmatch
+  behavior, no-follow traversal, owner/private-mode checks and hardlink refusal.
+- Regression reproduction: seven expected failures before code; 12 targeted cases
+  passed afterward. Final workspace/policy/mount/manual/catalog/registry/API suites:
+  189 passed, 2 database-dependent research tests skipped; three old pytest temporary
+  cleanup warnings. Ruff, formatting and manual generation drift checks passed.
+- Updating the generated manual first exposed immutable-digest enforcement. Restored
+  v7 bytes exactly; created manual v8 and profile v61, same prompt/model/tools/caps/
+  permissions as v60. Updated selectors, declared catalog inventory and exact resource
+  manifest. Independent review verified all 15 pins and historical byte preservation.
+  These are manual revisions, not additional website skill families. Native latency
+  improvement is unmeasured, and services have not yet reloaded these changes.
+- Corrected prior handoff interpretation from durable submission/log evidence:
+  automatic first design submission 04d66909-6fc6-55bc-8946-6309c9fe1f73 WAS queued
+  at 12:56:49. The parent's Stop at 12:56:59 cancelled the opening Head turn and
+  held the thread queue. The automatic submission remains pending without a fleet
+  task/design run. No stale-runtime or missing-submission failure was proven.
+  Resume the existing queued test through normal UI after auth; do not duplicate it.
+- Account chooser still pending user selection. Old frontends remain suspended;
+  only 3020 listens. No auth bypass, discovery, seeding, publishing or remote push.

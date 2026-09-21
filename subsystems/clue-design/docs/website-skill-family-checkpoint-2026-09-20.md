@@ -253,6 +253,17 @@ sandbox image are available. The original native version 3 remains preserved.
 A separate native test artifact has been prepared with the correct Fresh kit.
 The Head of ABM handoff took nine model calls (170.3 seconds), including two failed
 manual searches caused by recursive-glob and file-path handling defects. The
-handoff eventually succeeded; a subsequent user message starts the design run.
+handoff eventually succeeded and queued an automatic first design turn. A Stop
+sent while the parent believed the handoff was stalled cancelled the opening Head
+turn and held the thread queue. The derived design submission is preserved pending;
+it must be resumed through the native control after authentication is restored.
 At this checkpoint, authentication recovery is pending account selection. The
 new skill test has **not** started generation or passed acceptance yet.
+
+The two search defects are now repaired with the original filesystem authority
+checks preserved. Head profile v61 and manual v8 describe the corrected file-search
+behavior; previous catalog versions remain immutable. No prompt, model, tool grant,
+workspace permission or limit changed. 189 focused checks passed; two database-
+dependent research checks were skipped. Independent code/catalog review found no
+remaining issue. Native uptake and latency improvement remain unverified until
+the services are reloaded and the Fresh test resumes.

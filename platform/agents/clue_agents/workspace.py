@@ -128,6 +128,17 @@ def _is_under(path: str, prefixes: Sequence[str]) -> bool:
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in prefixes)
 
 
+def _matches_workspace_glob(path: str, pattern: str) -> bool:
+    """Keep flat fnmatch semantics, allowing leading recursive prefixes to be empty."""
+
+    while True:
+        if fnmatch.fnmatch(path, pattern):
+            return True
+        if not pattern.startswith("**/"):
+            return False
+        pattern = pattern[3:]
+
+
 def _read_all(file_fd: int) -> bytes:
     chunks: list[bytes] = []
     while True:
@@ -636,7 +647,13 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
         start_fd = os.dup(root_fd)
         try:
             if relative:
-                for component in relative.split("/"):
+                components = relative.split("/")
+                for index, component in enumerate(components):
+                    if index == len(components) - 1:
+                        metadata = os.stat(component, dir_fd=start_fd, follow_symlinks=False)
+                        if not stat.S_ISDIR(metadata.st_mode):
+                            _validate_regular_file(metadata)
+                            return [(prefix, metadata.st_size, metadata.st_mode)]
                     next_fd = os.open(component, _DIR_FLAGS, dir_fd=start_fd)
                     os.close(start_fd)
                     start_fd = next_fd
@@ -1292,11 +1309,17 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 matches.extend(
                     entry
                     for entry in self._mount_directory_entries()
-                    if fnmatch.fnmatch(entry["path"], pattern)
+                    if _matches_workspace_glob(entry["path"], pattern)
                 )
             for item in entries:
-                relative = item.path.removeprefix(f"{logical}/") if logical else item.path
-                if fnmatch.fnmatch(relative, pattern):
+                relative = (
+                    PurePosixPath(item.path).name
+                    if item.path == logical
+                    else item.path.removeprefix(f"{logical}/")
+                    if logical
+                    else item.path
+                )
+                if _matches_workspace_glob(relative, pattern):
                     matches.append({"path": item.path, "is_dir": False, "size": item.byte_count})
             return GlobResult(matches=matches)
         except WorkspaceError as exc:

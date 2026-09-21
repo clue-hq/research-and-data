@@ -71,11 +71,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v7"
+MANUAL_VERSION = "v8"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v60"
+PROFILE_VERSION = "v61"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -563,9 +563,11 @@ def _framework_section() -> list[str]:
         "occurrence. `replace_all=True` is refused outright. A source text that is absent or not "
         "unique is a conflict: copy the span again, never reword it. |",
         "| `glob(pattern, path=None)` | `fnmatch` over a flat list, not a path glob: `*` crosses "
-        "`/`, and `**` is only two stars. |",
+        "`/`. Leading `**/` prefixes are optional, so `**/*.md` includes directly contained "
+        "files. `path` may name a directory or one file; a file is filtered by its basename. |",
         "| `grep(pattern, path=None, glob=None)` | A plain substring test, not a regular "
-        "expression, over every file the glob matched. Each matched file is read whole. |",
+        "expression, over every file the glob matched. `path` may name one file or a directory. "
+        "Each matched file is read whole. |",
         "| `write_todos(...)` | The framework's own scratch plan. It writes to graph state only: "
         "no file, no durable row, and the human never sees it. |",
         "",

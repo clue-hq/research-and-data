@@ -62,7 +62,8 @@ __all__ = [
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v60"
+# v61 changes only the manual references for direct-file and recursive-prefix searches.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v61"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
