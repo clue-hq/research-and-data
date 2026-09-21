@@ -86,10 +86,12 @@ itself every 5 s while anything is pending.
 - T6: `npm test` 3242 pass / 1 skip and lint 0 errors.
 - T7: 175 passed / 1 skipped across the display, seam, workspace, detail, contacts and migration
   suites; one head `2b702a116c15`; `lint-imports` 28/0.
-- Notes on the gates: `npm run build` was **not** run on this branch during execution (the lane's
-  dev server uses this worktree's plain `.next`; `npx tsc --noEmit` carries 61 pre-existing errors,
-  none in touched files) — the build gate runs once at the end with the lane stack down, per the
-  runbook rule. `tests/api/test_fleet_wiring.py::test_the_discovery_handler_is_off…` fails only
+- **The frontend build gate ran green** after T7, with the lane stack down (runbook rule):
+  `npm run design-system:build` + `npm run lint` (0 errors, 2 pre-existing warnings) +
+  `npm run build` ("Compiled successfully"), exit 0, stack restarted afterwards. During execution it
+  was deliberately skipped per task (the lane's dev server uses this worktree's plain `.next`;
+  `npx tsc --noEmit` carries 61 pre-existing errors, none in touched files).
+- Notes on the other gates: `tests/api/test_fleet_wiring.py::test_the_discovery_handler_is_off…` fails only
   with the lane `.env` sourced (pre-existing key leak, slice-5 note) and is green in a clean env;
   `tests/arv2/test_import_guard.py` is pre-existing red on two other files (ruling T1-1 of slice 5);
   `ruff format --check` on `frontend_read/project_memory.py` is pre-existing red.
@@ -112,8 +114,8 @@ itself every 5 s while anything is pending.
    the migration.
 
 Also owed: the live placeholder→content proof for the 5 s poll (T6's poll is source-asserted only;
-there is no React renderer in the `node:test` setup), and `npm run build` once with the lane stack
-down.
+there is no React renderer in the `node:test` setup). Nothing else — the frontend build gate is
+done and green (see above).
 
 ## Residuals / deferred minors
 - **Deployment.** `projections_app` composes `DbWorkQueue()` unconditionally, so **every**
