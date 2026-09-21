@@ -1551,6 +1551,104 @@ class HrefRegistry(FakeRegistry):
                 "match_counts": repair.match_counts, "lineage_kept": True, "converged": False}
 
 
+class RawRepairRegistry(HrefRegistry):
+    """Real sanitize/slot/scoping primitives; only artifact custody is in memory."""
+
+    def __init__(self, tmp_path):
+        FakeRegistry.__init__(self, tmp_path)
+        from lumen_api.fragments import build_fragment_artifact
+        from lumen_ingestion.sections.slotdetect import detect_slots
+
+        html = (
+            '<section class="clone-hero"><h1>Original headline</h1>'
+            '<p>Original body</p><img src="/asset-store/' + 'a' * 64 + '" alt="Brand">'
+            '<a href="https://seller.example/demo">Book a demo</a></section>'
+        )
+        source = build_fragment_artifact(
+            html=html, css='.clone-hero { padding: 160px }',
+            rehosted={}, slots=detect_slots(html).specs,
+        )
+        self.original = source.fragment_id
+        self.payloads = {}
+        self.install(source)
+
+    def mint_repair(self, *, replaces, html, css, rung, note, release=False):
+        from lumen_api.fragments import build_fragment_artifact, sanitize_fragment_html
+        from lumen_ingestion.sections.slotdetect import detect_slots
+
+        sanitized = sanitize_fragment_html(html, rehosted={})
+        artifact = build_fragment_artifact(
+            html=sanitized.html, css=css, rehosted={},
+            slots=detect_slots(sanitized.html).specs, source_fragment_id=replaces,
+        )
+        self.install(artifact)
+        source = self.payloads[replaces]
+        return {
+            'fragment_id': artifact.fragment_id, 'status': 'approved', 'derived_from': replaces,
+            'preserves_pin_content': source['html'] == artifact.payload['html']
+            and source['slot_manifest'] == artifact.payload['slot_manifest'],
+        }
+
+
+def test_css_only_raw_repair_preserves_live_copy_logo_and_human_edit_in_place(tmp_path):
+    registry = RawRepairRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original,
+        slot_values_json=json.dumps({'body': 'Account-specific body', 'image': 'asset_logo_1'}),
+    ))
+    assert pin['status'] == 'ok', pin
+    assert json.loads(tools.web_ops(json.dumps([{
+        'kind': 'set_node_props', 'page_id': 'home', 'id': pin['section_node_id'],
+        'props': {'kind': 'section', 'tag': 'section', 'anchor_id': 'account-insights'},
+    }, {
+        'kind': 'set_fragment_text_override', 'page_id': 'home', 'id': pin['node_id'],
+        'path': ':nth-child(1) > :nth-child(1)',
+        'override': {'text': 'Human account headline', 'bold': True},
+    }])))['status'] == 'ok'
+    before = json.loads(json.dumps(tools.web_doc))
+    source = registry.payloads[registry.original]
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html=source['html'], css=source['css'].replace('160px', '32px'),
+        note='Reduce spacing only; keep current copy and logo',
+    ))
+    assert result['status'] == 'ok', result
+    expected = before
+    expected['pages'][0]['nodes'][pin['node_id']]['fragment_id'] = result['repair_fragment_id']
+    assert tools.web_doc == expected
+    assert result['section_node_id'] == pin['section_node_id']
+    assert tools.operations_ledger[-1]['kind'] == 'set_node_props'
+    for mode in ('editor', 'delivery'):
+        rendered = tools.core.web_render(
+            tools.web_doc, 'home', mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )['html']
+        assert 'Human account headline' in rendered
+        assert 'Account-specific body' in rendered
+        assert 'id="account-insights"' in rendered
+
+
+def test_raw_copy_change_is_not_masked_by_old_copy_overrides(tmp_path):
+    registry = RawRepairRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({'headline': 'Old bound headline'}),
+    ))
+    source = registry.payloads[registry.original]
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, html=source['html'].replace('Original headline', 'Revised campaign'),
+        css=source['css'], note='Change campaign headline',
+    ))
+    assert result['status'] == 'ok', result
+    assert result['section_node_id'] != pin['section_node_id']
+    rendered = tools.core.web_render(
+        tools.web_doc, 'home', fragments=tools._fragment_render_map(),
+        fragment_css=tools._fragment_css(),
+    )['html']
+    assert 'Revised campaign' in rendered
+    assert 'Old bound headline' not in rendered
+
+
 def test_exact_href_tool_schema_and_real_render_preserve_pin_human_edits_and_binding(tmp_path):
     from langchain_core.tools import StructuredTool
     from selectolax.lexbor import LexborHTMLParser

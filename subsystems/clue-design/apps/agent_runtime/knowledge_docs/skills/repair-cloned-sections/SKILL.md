@@ -68,6 +68,15 @@ on future pins, and report any minted-but-unreleased or failed-swap state.
 | Campaign variant, raw | Full inspected HTML/CSS; `note` begins `campaign variant: `. Copy/cardinality may change as requested; source type, surfaces, geometry and responsive system survive. On success, released/pinned, but starts its own lineage; original pins keep their original meaning. |
 | Defect repair, typed vocabulary | Omit `css`; read the [typed authoring contract](../web-source-readiness/references/authoring-vocabulary.md). The page carries authored nodes and the library repair stays draft. Individual release follows the existing explicit approval contract. |
 
+For a CSS-only defect, keep the inspected HTML unchanged and edit only the CSS.
+The raw path recognizes the declared source wrapper; do not invent cosmetic HTML
+changes to make a geometry repair count. If the resulting markup and slot kinds
+are unchanged, it retains the existing section/node, bindings and human text
+overrides. This is not a promise to remap overrides across changed DOM structure.
+When markup changes, inspect the returned page's current node and explicitly
+preserve/reapply compatible bindings; never assume a matching slot name proves
+the same meaning. Verify the visible copy, logo and links after either path.
+
 Inventory what each behavior contributes: navigation, reveal, scrolling,
 carousel, media, hover, sticky context. `rung` is an integer: **1** reproduce
 with supported primitives; **2** substitute an equivalent supported behavior;

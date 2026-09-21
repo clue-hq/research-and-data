@@ -1286,6 +1286,12 @@ class DurableAgentClonedSectionRegistry:
             "requested_derived_reason": reason,
             "slot_keys": [spec.key for spec in slot_specs],
             "asset_digests": list(artifact.payload.get("asset_digests") or []),
+            # Private runtime fact: exact stored DOM equality preserves human override paths;
+            # identical keys alone would not. No second source read is needed at the swap.
+            "preserves_pin_content": bool(
+                existing is not None and artifact.payload["html"] == existing.html
+                and slot_kinds(artifact.payload["slot_manifest"]) == slot_kinds(existing.slot_manifest)
+            ),
             # The FIRST pass's notes are the real ones. `create_web_fragment` sanitizes again
             # (idempotently) over markup this method already cleaned, so the artifact's own notes
             # are silent about everything that was actually removed.

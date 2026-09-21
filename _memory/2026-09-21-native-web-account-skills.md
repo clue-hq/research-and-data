@@ -73,3 +73,9 @@
   this remains a quality failure. All four tabs restored to desktop and retained.
 - Before native spacing-only test, auditing raw replacement preserving current
   personalized slot values. No native uptake claim for the repair yet.
+- CSS repair checkpoint committed locally as 988a69c6. Follow-up confirms a
+  second defect: raw CSS-only replacement dropped bound slots/human text edits.
+  Registry now signals exact annotated-HTML/slot-kind equality; runtime updates
+  the same pin only in that case. Changed markup keeps replacement semantics.
+  Real-engine regression failed before the fix. 84 runtime + 12 API tests pass;
+  independent review found no issue. Repair skill now documents this boundary.

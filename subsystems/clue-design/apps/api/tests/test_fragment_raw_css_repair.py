@@ -64,6 +64,7 @@ def test_css_only_repair_changes_geometry_without_changing_markup(repair_registr
     assert repaired.payload['html'] == source.payload['html']
     assert 'height: auto' in repaired.payload['css']
     assert result['derived_from'] == source.fragment_id
+    assert result['preserves_pin_content'] is True
     assert rows[source.fragment_id] == original
     assert source.payload['css'].find('height: 3200px') >= 0
     assert rows[result['fragment_id']]['source_kit_id'] == 'kit_seller'
@@ -77,6 +78,7 @@ def test_copy_edit_with_inspected_css_has_one_working_namespace(repair_registry)
         css=source.payload['css'], rung=2, note='Account copy only',
     )
     new = artifacts[result['fragment_id']]
+    assert result['preserves_pin_content'] is False
     old_wrapper = fragment_wrapper_class(source.fragment_id)
     new_wrapper = fragment_wrapper_class(new.fragment_id)
     assert old_wrapper not in new.payload['css']

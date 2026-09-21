@@ -6974,21 +6974,32 @@ class LumenWebTools:
                 frag_node_id,
             )
             index = children.index(old_section) if old_section in children else len(children)
-            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
-            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                new_id, {}, set(nodes), name=pin_display_name(resolved)
-            )
-            operations: List[JsonObject] = [
-                {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
-                {
-                    "kind": "insert_node",
-                    "page_id": self.page_id,
-                    "parent": root_id,
-                    "index": index,
-                    "nodes": pin_nodes,
-                    "root": section_id,
-                },
-            ]
+            if minted.get("preserves_pin_content") is True:
+                # The registry compared full sanitized/annotated DOM and slot kinds. CSS-only
+                # changes therefore retain the active pin's bindings, human text paths and
+                # wrapper identity/layout. A copy/structure change must not carry stale text
+                # over the explicitly changed source; it keeps the replacement lane below.
+                section_id = old_section
+                operations: List[JsonObject] = [{
+                    "kind": "set_node_props", "page_id": self.page_id, "id": frag_node_id,
+                    "props": {"kind": "fragment", "fragment_id": new_id,
+                              "slots": copy.deepcopy(nodes[frag_node_id].get("slots") or {})},
+                }]
+            else:
+                section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                    new_id, {}, set(nodes), name=pin_display_name(resolved)
+                )
+                operations = [
+                    {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
+                    {
+                        "kind": "insert_node",
+                        "page_id": self.page_id,
+                        "parent": root_id,
+                        "index": index,
+                        "nodes": pin_nodes,
+                        "root": section_id,
+                    },
+                ]
             try:
                 response = self.core.web_apply_ops(self.web_doc, operations)
             except CoreError as error:

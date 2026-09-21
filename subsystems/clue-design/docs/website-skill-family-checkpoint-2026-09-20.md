@@ -210,6 +210,15 @@ through the normal sanitizer and asset-custody gates. Originals stay immutable.
 that patch. One existing Chromium test was excluded after sandbox launch denial.
 Native uptake of this repair is not yet verified at this checkpoint.
 
+A second regression found that the raw replacement path discarded active slot
+bindings and human text edits. CSS-only repairs now keep the existing pin when
+the complete annotated HTML and slot-kind map are unchanged. The actual engine
+preserves the wrapper, anchor, current text and asset bindings, and human text
+overrides; changed markup still uses replacement semantics so old content cannot
+mask intentional new copy. 84 runtime and 12 API checks passed, including a
+red-to-green preservation regression and a changed-copy control. Independent
+review found no remaining issue. The repair skill explains this limited guarantee.
+
 Parent subsequently inspected all four mobile previews. Clue/AWS/Conduit remain
 readable with intact identities. Google Cloud's capabilities band has excessive
 mobile whitespace despite its native self-review reporting no unusable empty
