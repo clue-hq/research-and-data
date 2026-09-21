@@ -539,6 +539,14 @@ def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
     if not requested:
         return True
     record_kind = str(record.get("kind") or "").lower()
+    # fetch_logo preserves the byte format as the storage kind. Reuse the same
+    # provenance classification as account binding, never guess from filenames.
+    if (
+        requested == "logo"
+        and record_kind in {"vector", "raster_image"}
+        and is_fetched_logo(record)
+    ):
+        return True
     return requested in {record_kind, _asset_display_kind(record)}
 
 
@@ -4183,7 +4191,8 @@ class LumenWebTools:
         title, description and usage, and both tag lists.
 
         `kind` accepts the words you already use — "image" (a `raster_image` or a
-        `vector`) or "logo" — as well as a raw engine record kind. A record kind
+        `vector`) or "logo" (including provenance-identified fetched logos) — as well
+        as a raw engine record kind. A record kind
         with no such alias (`document`, `other`) matches only its own raw name,
         so `kind="image"` never hands back the brand-guide PDF. The filter NEVER
         silences an id you named: an asset whose id is in the query comes back
