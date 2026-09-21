@@ -57,6 +57,7 @@ def _grey_png(width: int, height: int, fill: int = 255) -> bytes:
 
 
 class _Download:
+    url = f"{SOURCE_URL}#screenshot"
     kind = "screenshot"
     content_type = "image/png"
 
