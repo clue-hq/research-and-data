@@ -54,7 +54,7 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "sensitivity_floor_enabled": True,
     "arv2_display_model": MODEL_ID,
     "arv2_display_timeout_s": 240.0,
-    "arv2_display_max_parallel": 8,
+    "arv2_display_max_parallel": 30,
     "arv2_display_client_pitch": (
         "AI-native ABM: account and committee research, personalised content, "
         "brand-aligned artifacts, scaled per account"
