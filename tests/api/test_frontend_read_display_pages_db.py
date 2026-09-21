@@ -1011,3 +1011,65 @@ def test_opening_an_account_offers_the_contact_pages_of_settled_members_once() -
             assert len([o for o in queue.offers if o["payload"]["subject_kind"] == "contact"]) == 1
 
     run_async(_run())
+
+
+# -- shared blocks: a sharer is never pending, and a stale OWNER page is what gets offered -------
+
+
+def test_a_shared_section_renders_its_owner_is_never_pending_and_re_offers_a_stale_owner() -> None:
+    """Spec 2026-09-12 §3. ``context-only`` owns no block: it shows the overview's ``watch-outs``.
+
+    So a read of the insights page must (a) serve those words rather than an empty section,
+    (b) never mark the section pending — this page's task would not write it — and (c) when the
+    owner's block has gone stale, offer the OWNER's page, on the owner's subject.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            # The owner page first, written inline with no queue.
+            await _pages(conn, runner_factory=_factory(RoutingTransport())).page(
+                conn,
+                workspace_id=seeded.workspace_id,
+                subject_kind="account",
+                subject_id=str(seeded.account),
+                page="overview",
+            )
+            # A newer claim on a ``watch-outs`` key: the OWNER's block is now stale.
+            await write_claim(
+                conn,
+                seeded.claims,
+                label="newer_reputation_risk",
+                workspace_id=seeded.workspace_id,
+                entity_id=seeded.account,
+                entity_type=EntityType.ACCOUNT,
+                field_key="account.reputation_risk",
+                value_json={"what": "A second dispute", "status": "open"},
+                signal_priority=3,
+                outreach_safe=False,
+                evidence_span="a second unresolved dispute",
+                extraction_method=ExtractionMethod.SCRAPE,
+            )
+
+            queue = _RecordingQueue()
+            pages = _pages(
+                conn, runner_factory=_factory(RoutingTransport(allowed=False)), queue=queue
+            )
+            read = await pages.page(
+                conn,
+                workspace_id=seeded.workspace_id,
+                subject_kind="account",
+                subject_id=str(seeded.account),
+                page="insights",
+            )
+
+            sections = {section["key"]: section for section in _sections(read)}
+            assert sections["context-only"]["empty"] is False, "the owner's body is rendered here"
+            assert "context-only" not in read.pending
+            assert sections["context-only"]["pending"] is False
+            # The sharer is never reported stale on this page — the owner's page owns that.
+            assert "context-only" not in read.stale
+            offered = {(o["payload"]["subject_kind"], o["payload"]["page"]) for o in queue.offers}
+            assert ("account", "overview") in offered, "the stale OWNER page is re-offered"
+
+    run_async(_run())

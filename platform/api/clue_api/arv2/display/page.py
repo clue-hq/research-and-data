@@ -41,9 +41,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.display.blocks import (
+    cited_claim_ids,
     compose_display_block,
     insert_block,
     live_blocks,
+    shared_blocks,
     stale_sections,
     supersede_blocks,
 )
@@ -64,7 +66,12 @@ from clue_api.arv2.display.gather import (
     gather_section_inputs,
     resolve_subject,
 )
-from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
+from clue_api.arv2.display.recipes import (
+    PAGE_SUBJECT_KIND,
+    Page,
+    SectionRecipe,
+    read_recipes,
+)
 from clue_api.arv2.display.runner import LunaSectionRunner, SectionDraft
 from clue_api.arv2.errors import Arv2Error
 from clue_api.arv2.provider_ledger import (
@@ -89,12 +96,20 @@ PAGE_WRITTEN_TEXT: dict[str, str] = {
     "contact": "Contact page written",
 }
 
-#: Which subject kind each page is about. A contact page about an account is a caller bug.
-PAGE_SUBJECT_KIND: dict[str, SubjectKind] = {
-    "overview": "account",
-    "insights": "account",
-    "contact": "contact",
-}
+#: Re-exported: ``PAGE_SUBJECT_KIND`` is page-grammar data and lives in
+#: :mod:`~clue_api.arv2.display.recipes`, so a shared section can ask whose page its owner is
+#: without importing the page machinery. Kept importable from here for existing callers.
+__all__ = [
+    "PAGE_SUBJECT_KIND",
+    "PAGE_WRITTEN_TEXT",
+    "PageResult",
+    "PageSubjectMismatch",
+    "RunnerFactory",
+    "default_runner_factory",
+    "ensure_page",
+    "people_of",
+    "record_page_written",
+]
 
 
 class PageSubjectMismatch(Arv2Error):
@@ -340,6 +355,10 @@ async def ensure_page(
         else []
     )
     people, expansion = people_of(subject, members)
+    # A recipe with ``shared_from`` owns no block: it is never gathered, never written, and never
+    # scanned for staleness here — the owner's page does all three, and this page renders the
+    # result. Only the owned recipes decide what this call has to spend money on.
+    recipes_owned = [recipe for recipe in recipes if recipe.shared_from is None]
 
     stored = await live_blocks(
         conn,
@@ -352,7 +371,7 @@ async def ensure_page(
         conn,
         workspace_id=workspace_id,
         subject_ids=expansion,
-        recipes=recipes,
+        recipes=recipes_owned,
         blocks=stored,
     )
     stale_keys = {entry.section_key for entry in stale}
@@ -364,14 +383,14 @@ async def ensure_page(
             subject_kind=subject_kind,
             subject_id=subject.id,
             page=page,
-            section_keys=[recipe.section_key for recipe in recipes],
+            section_keys=[recipe.section_key for recipe in recipes_owned],
             now=now,
         )
-        missing = list(recipes)
+        missing = list(recipes_owned)
     else:
         missing = [
             recipe
-            for recipe in recipes
+            for recipe in recipes_owned
             if recipe.section_key not in stored
             or (regenerate_stale and recipe.section_key in stale_keys)
         ]
@@ -475,15 +494,16 @@ async def ensure_page(
         subject_id=subject.id,
         page=page,
     )
-    display_block = compose_display_block(page, recipes, blocks)
-    cited = tuple(
-        dict.fromkeys(
-            claim_id
-            for recipe in recipes
-            if recipe.section_key in blocks
-            for claim_id in blocks[recipe.section_key].cited_claim_ids
-        )
+    shared = await shared_blocks(
+        conn,
+        workspace_id=workspace_id,
+        page=page,
+        recipes=recipes,
+        subject_id=subject.id,
+        member_ids=[member.id for member in members],
     )
+    display_block = compose_display_block(page, recipes, blocks, shared=shared)
+    cited = cited_claim_ids(recipes, blocks, shared)
     evidence = await evidence_for_ids(conn, workspace_id=workspace_id, claim_ids=cited)
 
     return PageResult(

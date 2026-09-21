@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -38,9 +38,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.blocks import (
-    LiveBlock,
+    cited_claim_ids,
     compose_display_block,
     live_blocks,
+    shared_blocks,
     stale_sections,
 )
 from clue_api.arv2.display.fleet_handler import display_page_payload
@@ -60,7 +61,12 @@ from clue_api.arv2.display.page import (
     people_of,
 )
 from clue_api.arv2.display.personas import persona_display, persona_label
-from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
+from clue_api.arv2.display.recipes import (
+    PAGE_SUBJECT_KIND,
+    Page,
+    SectionRecipe,
+    read_recipes,
+)
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
 from clue_api.arv2.fleet_task import (
     ARV2_DISPLAY_DEDUP_PREFIX,
@@ -413,7 +419,18 @@ class DisplayPages:
                 subject_id=subject_id,
                 page=page,
             )
-        display_block = compose_display_block(page, recipes, blocks)
+        shared = await shared_blocks(
+            conn,
+            workspace_id=workspace_id,
+            page=page,
+            recipes=recipes,
+            subject_id=subject_id,
+            # ``_expansion`` already resolved the committee, in committee order, as
+            # everything after the subject itself — re-reading it here would be a second
+            # query that could disagree with the one the staleness scan used.
+            member_ids=list(expansion[1:]) if subject_kind == "account" else [],
+        )
+        display_block = compose_display_block(page, recipes, blocks, shared=shared)
         # A section a fleet task is about to write says so, and says the one sentence. ``pending``
         # is stamped on EVERY section (``False`` where nothing is coming) so the wire shape does
         # not change with the seam's configuration — the contract's default is the same ``False``.
@@ -439,7 +456,7 @@ class DisplayPages:
                     section["emptyMessage"] = unavailable
         return PageRead(
             display_block=display_block,
-            cited_claim_ids=_cited(recipes, blocks),
+            cited_claim_ids=cited_claim_ids(recipes, blocks, shared),
             generated=generated,
             stale=stale_keys,
             degraded_reason=degraded_reason,
@@ -466,7 +483,13 @@ class DisplayPages:
         matched claims: the placeholder sentence is a promise, and a section that matches nothing
         keeps the ordinary empty state. A stale section is served as stored and re-offered; it is
         never pending, because it is not empty.
+
+        A recipe with ``shared_from`` owns no block on this page, so it is neither missing nor
+        pending here and this page's task would not write it. What it needs instead is its
+        *owner's* page: :meth:`_offer_owner_pages` re-offers that page when the owner's block has
+        gone stale, on the owner's own subject.
         """
+        recipes_owned = [recipe for recipe in recipes if recipe.shared_from is None]
         blocks = await live_blocks(
             conn,
             workspace_id=workspace_id,
@@ -478,10 +501,19 @@ class DisplayPages:
             conn,
             workspace_id=workspace_id,
             subject_ids=expansion,
-            recipes=recipes,
+            recipes=recipes_owned,
             blocks=blocks,
         )
-        missing = [recipe for recipe in recipes if recipe.section_key not in blocks]
+        await self._offer_owner_pages(
+            conn,
+            workspace_id=workspace_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            page=page,
+            recipes=recipes,
+            expansion=expansion,
+        )
+        missing = [recipe for recipe in recipes_owned if recipe.section_key not in blocks]
         would_write: tuple[str, ...] = ()
         if missing:
             subject = await resolve_subject(
@@ -513,6 +545,67 @@ class DisplayPages:
             page=page,
         )
         return would_write if offered else ()
+
+    async def _offer_owner_pages(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        subject_kind: SubjectKind,
+        subject_id: str,
+        page: Page,
+        recipes: Sequence[SectionRecipe],
+        expansion: Sequence[str],
+    ) -> None:
+        """Re-offer the OWNER page of every shared section whose owner block has gone stale.
+
+        A sharer is never pending and never repaired here: the words belong to another page, so
+        the honest repair is to offer *that* page, on *that* subject. An owner on the sharer's own
+        subject (insights ``context-only`` ← the overview's ``watch-outs``) is one offer; an owner
+        per committee member (``contact-insights`` ← each member's ``why-this-person``) is one
+        offer per stale member. An owner nobody has written yet is not offered from here — the
+        owner's own screen, and the on-open contact sweep, are what write it the first time.
+        """
+        members = list(expansion[1:]) if subject_kind == "account" else []
+        for recipe in recipes:
+            if recipe.shared_from is None:
+                continue
+            owner_page, owner_key = recipe.shared_from
+            owner_kind = PAGE_SUBJECT_KIND[owner_page]
+            owners = (
+                [(subject_kind, subject_id, expansion)]
+                if owner_kind == PAGE_SUBJECT_KIND[page]
+                else [(owner_kind, member, [member, subject_id]) for member in members]
+            )
+            for owner_subject_kind, owner_subject_id, owner_expansion in owners:
+                owner_blocks = await live_blocks(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind=owner_subject_kind,
+                    subject_id=owner_subject_id,
+                    page=owner_page,
+                )
+                if owner_key not in owner_blocks:
+                    continue
+                owner_recipes = [
+                    other
+                    for other in await read_recipes(conn, owner_page, workspace_id=workspace_id)
+                    if other.section_key == owner_key
+                ]
+                owner_stale = await stale_sections(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_ids=list(owner_expansion),
+                    recipes=owner_recipes,
+                    blocks=owner_blocks,
+                )
+                if owner_stale:
+                    await self._offer_page(
+                        workspace_id=workspace_id,
+                        subject_kind=owner_subject_kind,
+                        subject_id=owner_subject_id,
+                        page=owner_page,
+                    )
 
     async def _offer_page(
         self,
@@ -726,18 +819,6 @@ async def _expansion(
         return [subject.id, subject.account_id]
     members = await committee_members(conn, workspace_id=workspace_id, account_id=subject_id)
     return [subject_id, *(member.id for member in members)]
-
-
-def _cited(recipes: Sequence[SectionRecipe], blocks: Mapping[str, LiveBlock]) -> tuple[str, ...]:
-    """Every claim the composed page cites, in recipe order, deduped."""
-    return tuple(
-        dict.fromkeys(
-            claim_id
-            for recipe in recipes
-            if recipe.section_key in blocks
-            for claim_id in blocks[recipe.section_key].cited_claim_ids
-        )
-    )
 
 
 # -- the committee -------------------------------------------------------------------------------
