@@ -48,6 +48,11 @@ from clue_api.arv2.account_research_launch import QueuedJob
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.account_research_tools import PERSON_TOOL_NAMES
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
+from clue_api.arv2.fleet_task import (
+    ARV2_DISPLAY_DEDUP_PREFIX,
+    ARV2_DISPLAY_TASK_PRIORITY,
+    arv2_display_work_id,
+)
 from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Secrets, Settings
@@ -1233,6 +1238,70 @@ def test_a_committee_step_that_explodes_never_costs_the_job_its_terminal_row(
 
     assert result.outcome == "completed"
     assert store.named("finish_job")[0]["status"] == "completed"
+    # No PERSON job is offered — the step that would have created their rows exploded. The
+    # account's own overview page is still offered: the account job itself finished, and the
+    # page is written from what it wrote.
+    kinds = [offer["kind"] for offer in store.named("enqueue")]
+    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH not in kinds
+    assert kinds == [FleetTaskKind.ARV2_DISPLAY_PAGE]
+
+
+def test_an_account_job_offers_its_overview_page_after_the_committee(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spec 2026-09-12 §2: the overview is written at settle — offered after the commit, after
+    the committee's person jobs, stamped with the account job as the page's spend."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    offers = [payload for name, payload in store.events if name == "enqueue"]
+    kinds = [offer["kind"] for offer in offers]
+    assert kinds[-1] == FleetTaskKind.ARV2_DISPLAY_PAGE
+    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH in kinds[:-1]
+    page = offers[-1]
+    assert page["work_id"] == arv2_display_work_id(
+        "account", str(job.account_entity_id), "overview"
+    )
+    assert (
+        page["dedup_key"] == f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{job.account_entity_id}:overview"
+    )
+    assert page["priority"] == ARV2_DISPLAY_TASK_PRIORITY
+    assert page["reopen_terminal"] is True
+    assert page["payload"] == {
+        "workspace_id": job.workspace_id,
+        "subject_kind": "account",
+        "subject_id": str(job.account_entity_id),
+        "page": "overview",
+        "job_id": str(job.job_id),
+    }
+
+
+def test_a_worker_with_no_queue_says_it_offered_no_overview_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=None
+    )
+    result = asyncio.run(handler.handle(_context(job)))
+    assert result.outcome == "completed"
     assert not store.named("enqueue")
 
 
