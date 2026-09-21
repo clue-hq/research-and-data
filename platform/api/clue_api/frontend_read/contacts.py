@@ -732,11 +732,22 @@ def register_contact_routes(
     ) -> AccountContactsResponseV1:
         async with conn_factory() as conn:
             try:
-                return await read_account_contacts(
+                served = await read_account_contacts(
                     conn,
                     workspace_id=workspace_id,
                     account_id=account_id,
                 )
+                # Spec 2026-09-12 §2 "on open": the contacts tab is one of the three opens that
+                # start the members' pages. Idempotent on the fleet; a seam without a queue is a
+                # no-op here. The canonical (survivor) id, the same one the read resolved — a
+                # merged loser's id names no committee.
+                canonical, _name = await _resolve_account(
+                    conn, workspace_id=workspace_id, account_id=account_id
+                )
+                await display.offer_contact_pages(
+                    conn, workspace_id=workspace_id, account_id=str(canonical)
+                )
+                return served
             except AccountNotFound as exc:
                 raise _account_404() from exc
 

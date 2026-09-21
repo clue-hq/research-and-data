@@ -25,6 +25,7 @@ import type {
   ResearchSentence,
 } from "../model/research-display";
 import type { Account } from "../model/account";
+import { anySectionPending, usePendingSectionsRefresh } from "../hooks/use-pending-sections-refresh";
 import { ContactAvatar } from "./contact-avatar";
 import { FitBadge } from "./account-detail-primitives";
 import { presentResearchItem } from "./research-item-presentation";
@@ -536,6 +537,7 @@ export function ResearchDocument({
   accountId?: string;
   summary?: string[];
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
   const prefix = useId();
   const [lastVisit, setLastVisit] = useState<string | null>(null);
   useEffect(() => {
@@ -570,6 +572,7 @@ export function ResearchStack({
   contactId?: string;
   name?: string;
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
   const prefix = useId();
   const evidenceById = useMemo(() => new Map(evidence.map((item) => [item.claimId, item])), [evidence]);
   const displaySections = sections.map((section) => ({
@@ -603,6 +606,7 @@ export function ResearchOverview({
   overallFit?: Account["overallFit"];
   sections: ResearchSection[];
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
   const sourcesId = useId();
   const evidenceById = useMemo(
     () => new Map(evidence.map((item) => [item.claimId, item])),

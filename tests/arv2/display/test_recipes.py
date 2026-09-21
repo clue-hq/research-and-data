@@ -126,3 +126,43 @@ def test_recipes_seed_idempotently_and_a_workspace_row_overrides() -> None:
             assert next(r for r in system if r.section_key == "openers").instruction_version == "v1"
 
     run_async(_run())
+
+
+def test_the_sharing_set_leaves_the_insights_page_four_generated_recipes() -> None:
+    insights = recipes_for("insights")
+    shared = {r.section_key: r.shared_from for r in insights if r.shared_from is not None}
+    assert shared == {
+        "context-only": ("overview", "watch-outs"),
+        "contact-insights": ("contact", "why-this-person"),
+    }
+    assert [r.section_key for r in insights if r.shared_from is None] == [
+        "buying-signals",
+        "money-and-momentum",
+        "tools-they-already-use",
+        "how-they-sell",
+    ]
+    # The owner and the sharer ask the same question: identical keys for the same-subject pair.
+    by_key = {(r.page, r.section_key): r for r in SYSTEM_RECIPES}
+    assert (
+        by_key[("insights", "context-only")].allowed_field_keys
+        == by_key[("overview", "watch-outs")].allowed_field_keys
+    )
+    # A sharer never owns a block, so it is never restricted differently from its owner.
+    assert (
+        by_key[("insights", "context-only")].restricted
+        is by_key[("overview", "watch-outs")].restricted
+    )
+
+
+@pytest.mark.usefixtures("require_claimstore_db")
+def test_shared_from_round_trips_through_the_recipe_table() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            await load_display_recipes(conn)
+            rows = await read_recipes(conn, "insights", workspace_id="ws_any")
+            assert {r.section_key: r.shared_from for r in rows if r.shared_from} == {
+                "context-only": ("overview", "watch-outs"),
+                "contact-insights": ("contact", "why-this-person"),
+            }
+
+    run_async(_run())

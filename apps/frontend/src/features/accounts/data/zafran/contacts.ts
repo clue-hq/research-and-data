@@ -203,13 +203,13 @@ function compactDetail(
   const display: ResearchDisplayBlock = {
     page: "contact",
     sections: [
-      { key: "why-this-person", h1: "Why this person", empty: personItems.length === 0, defaultOpen: true, restricted: false, items: personItems },
+      { key: "why-this-person", h1: "Why this person", empty: personItems.length === 0, defaultOpen: true, pending: false, restricted: false, items: personItems },
       ...relatedSections,
       // Ruling R10: "Account context" is fixture-only — it exists so the four
       // non-Nick pages have the spec's content. Production sections come from
       // `contactDisplay` alone, and no component switches on this key.
       {
-        key: "account-context", h1: "Account context", empty: false, defaultOpen: false, restricted: false,
+        key: "account-context", h1: "Account context", empty: false, defaultOpen: false, pending: false, restricted: false,
         items: zafranSpecContent.overviewDisplay.sections.filter((section) => !section.restricted)
           .flatMap((section) => section.items).filter((item) => item.contactRefs.some((ref) => ref.contactId === summary.id)),
       },

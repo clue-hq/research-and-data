@@ -47,6 +47,8 @@ class FleetTaskKind(StrEnum):
       going when that account fails.
     * ``ARV2_DISCOVERY`` — one ARV2 discovery run (Track R, R4): Websets long list, Answer
       verification, candidate accounts.
+    * ``ARV2_DISPLAY_PAGE`` — one ARV2 display page (spec 2026-09-12): the account overview at
+      settle, a contact page on the first open of its account, and any page a read found stale.
 
     New members are appended, never inserted: the DB enum is grown with ``ALTER TYPE … ADD VALUE``
     (which appends), and the parity test compares the two **in order**. Member order here mirrors
@@ -70,6 +72,9 @@ class FleetTaskKind(StrEnum):
     # ARV2 R4: one job per discovery run — the long list, the verification, the candidates.
     # Appended, never inserted.
     ARV2_DISCOVERY = "arv2_discovery"
+    # ARV2 display (spec 2026-09-12): one task per (subject, page) — the fleet writes the page's
+    # missing and stale sections so no HTTP request ever waits on a model. Appended, never inserted.
+    ARV2_DISPLAY_PAGE = "arv2_display_page"
 
 
 class FleetTaskStatus(StrEnum):

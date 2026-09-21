@@ -28,6 +28,7 @@ from clue_api.arv2.display.blocks import (
     LiveBlock,
     Staleness,
     block_body,
+    cited_claim_ids,
     compose_display_block,
     insert_block,
     insight_summary,
@@ -48,6 +49,7 @@ from clue_api.arv2.display.recipes import (
     SectionRecipe,
     load_display_recipes,
     read_recipes,
+    recipes_for,
 )
 from clue_api.arv2.display.runner import SectionDraft
 from clue_config import Settings
@@ -797,3 +799,31 @@ def test_the_stored_block_survives_a_round_trip_through_the_page_shape() -> None
             assert served == draft.items
 
     run_async(_run())
+
+
+# -- shared blocks: a section that renders somebody else's stored body --------------------------
+
+
+def test_a_shared_section_composes_the_owner_body_under_its_own_chrome() -> None:
+    owner = LiveBlock(
+        display_block_id=str(uuid.uuid4()),
+        section_key="watch-outs",
+        body_json={"items": [{"id": "i1", "h2": "x", "body": []}], "intro": []},
+        cited_claim_ids=("c1",),
+        model="m",
+        prompt_version="display-v1+v1",
+        recipe_version=1,
+        generated_at=datetime.now(UTC),
+    )
+    recipes = recipes_for("insights")
+    composed = compose_display_block("insights", recipes, {}, shared={"context-only": [owner]})
+    section = next(s for s in composed["sections"] if s["key"] == "context-only")
+    assert section["h1"] == "Context only" and section["restricted"] is True
+    assert section["items"] == owner.body_json["items"] and section["empty"] is False
+    assert cited_claim_ids(recipes, {}, {"context-only": [owner]}) == ("c1",)
+
+
+def test_a_shared_section_whose_owner_is_unwritten_is_empty_and_never_pending_here() -> None:
+    composed = compose_display_block("insights", recipes_for("insights"), {}, shared={})
+    section = next(s for s in composed["sections"] if s["key"] == "contact-insights")
+    assert section["empty"] is True and section["items"] == []

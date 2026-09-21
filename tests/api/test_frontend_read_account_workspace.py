@@ -109,13 +109,16 @@ async def _seed_insights_block(
     cited: Sequence[str],
     item_count: int,
     now: datetime | None = None,
+    page: str = "insights",
 ) -> None:
-    """One live ``insights/<section_key>`` block, written by hand through D2's ``insert_block``.
+    """One live ``<page>/<section_key>`` block, written by hand through D2's ``insert_block``.
 
     No model is called: what this suite needs is a *stored* section, so the read surface can be
-    proven to compose what is stored rather than to write anything.
+    proven to compose what is stored rather than to write anything. ``page`` is a parameter
+    because the insights page's restricted section is a SHARED one since Task 7 — it owns no
+    block and renders the overview's ``watch-outs``, so that is where the row has to go.
     """
-    recipe = next(item for item in recipes_for("insights") if item.section_key == section_key)
+    recipe = next(item for item in recipes_for(page) if item.section_key == section_key)
     claims = await claims_by_ids(
         conn,
         [ClaimId(uuid.UUID(claim_id)) for claim_id in cited],
@@ -153,7 +156,7 @@ async def _seed_insights_block(
         workspace_id=_WS,
         subject_kind="account",
         subject_id=str(account_id),
-        page="insights",
+        page=page,
         recipe=recipe,
         draft=draft,
         section=section,
@@ -173,7 +176,7 @@ class _Fixture:
         self.zafran = v1.zafran
         #: What the stored ``buying-signals`` block cites.
         self.signal_claim_ids = signal_claim_ids
-        #: What the stored (restricted) ``context-only`` block cites.
+        #: What the stored (restricted) owner block — the overview's ``watch-outs`` — cites.
         self.restricted_claim_id = restricted_claim_id
 
 
@@ -219,12 +222,15 @@ async def _build(conn: AsyncConnection) -> _Fixture:
         cited=signals,
         item_count=2,
     )
+    # The insights page's ``context-only`` shares the overview's ``watch-outs`` (Task 7), so the
+    # restricted body is stored on the OWNER page and rendered under the sharer's chrome.
     await _seed_insights_block(
         conn,
         account_id=v1.zafran,
-        section_key="context-only",
+        section_key="watch-outs",
         cited=(restricted,),
         item_count=2,
+        page="overview",
     )
     return _Fixture(v1=v1, signal_claim_ids=signals, restricted_claim_id=restricted)
 

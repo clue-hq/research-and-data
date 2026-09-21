@@ -25,10 +25,12 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import RunRow, create_job, create_run, finish_job
 from clue_api.arv2.display.blocks import insert_block
 from clue_api.arv2.display.gather import SectionInput
 from clue_api.arv2.display.recipes import recipes_for
@@ -36,6 +38,7 @@ from clue_api.arv2.display.render import display_claim
 from clue_api.arv2.display.runner import SectionDraft
 from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.app import build_frontend_read_router
 from clue_api.frontend_read.contract_v1 import (
     AccountContactDetailResponseV1,
     AccountContactsResponseV1,
@@ -63,6 +66,7 @@ from clue_core import (
     new_project_run_id,
     new_run_id,
 )
+from clue_fleet import FleetTaskKind
 from clue_research.claimstore import (
     WorkspaceScope,
     claims_by_ids,
@@ -1271,3 +1275,155 @@ def test_followers_and_creator_badge_read_the_providers_record_shapes() -> None:
     assert _creator_badge(claim({"creator": False, "premium": True})) is False
     assert _creator_badge(claim({"premium": True})) is None
     assert _creator_badge(None) is None
+
+
+# --- the contacts tab is one of the three "on open" moments (plan 2026-09-21) -------------------
+
+
+class _RecordingQueue:
+    """The fleet's work queue, reduced to the one call the display seam makes."""
+
+    def __init__(self) -> None:
+        self.offers: list[dict[str, Any]] = []
+
+    async def enqueue(self, **kwargs: Any) -> bool:
+        self.offers.append(kwargs)
+        return True
+
+
+def _scheduling_app(conn: AsyncConnection, queue: _RecordingQueue):
+    """The read surface with a work queue behind it — a seam that schedules instead of writing.
+
+    ``secrets=None`` keeps it honest about money: with no runner it could not write a page even
+    if it wanted to, so the only thing this app can do about a missing page is offer its task.
+    """
+    app = FastAPI()
+    app.include_router(
+        build_frontend_read_router(
+            settings=load_settings(
+                _env_file=None,
+                frontend_read_enabled=True,
+                arv2_display_generate_on_read=True,
+            ),
+            conn_factory=conn_session_factory(conn),
+            secrets=None,
+            work_queue=queue,
+        )
+    )
+    return app
+
+
+async def _settled_person_job(
+    conn: AsyncConnection, *, project: Project, account_id: EntityId, contact_id: EntityId
+) -> uuid.UUID:
+    """One completed ``person`` job for this committee member — what makes their page offerable."""
+    project_run_id = new_project_run_id()
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        icp_key="contacts-tab",
+        icp_version=1,
+    )
+    run_id = uuid.uuid4()
+    sha = "b" * 64
+    await create_run(
+        conn,
+        RunRow(
+            run_id=run_id,
+            workspace_id=project.workspace_id,
+            project_id=project.project_id,
+            brand_id=project.brand_id,
+            project_run_id=uuid.UUID(str(project_run_id)),
+            icp_artifact_key=f"{project.workspace_id}/{sha}",
+            icp_artifact_sha256=sha,
+            icp_key="contacts-tab",
+            icp_version=1,
+            product_selection_version=1,
+            effort="full",
+            committee_cap=3,
+            directive_text="",
+            profile_ref="arv2-account/v1",
+            profile_sha256=sha,
+            requested_by_user_id="u_owner",
+            request_sha256=sha,
+        ),
+    )
+    job_id = uuid.uuid4()
+    await create_job(
+        conn,
+        job_id=job_id,
+        run_id=run_id,
+        workspace_id=project.workspace_id,
+        account_entity_id=uuid.UUID(str(account_id)),
+        subject_type="person",
+        subject_entity_id=uuid.UUID(str(contact_id)),
+    )
+    await finish_job(
+        conn,
+        job_id=job_id,
+        status="completed",
+        finalization={"outcome": "completed"},
+        model_rounds=1,
+        tool_calls=1,
+        cost_usd=Decimal("0"),
+        credits=Decimal("0"),
+        media_seconds=0,
+    )
+    return job_id
+
+
+def test_reading_the_contacts_tab_offers_the_pages_of_settled_members_without_one() -> None:
+    """Opening the tab starts the members' pages on the fleet, and skips the ones already written.
+
+    Ravi's research has settled and he has no page — his is offered, stamped with the job whose
+    claims it will be written from. Nick's research has settled too, but the fixture already holds
+    a live ``contact/openers`` block for him, so re-offering his page would pay twice for words
+    that are already on the screen.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            project = fixture.v1.base.project_a
+            ravi_job = await _settled_person_job(
+                conn, project=project, account_id=fixture.zafran, contact_id=fixture.ravi
+            )
+            await _settled_person_job(
+                conn, project=project, account_id=fixture.zafran, contact_id=fixture.nick
+            )
+
+            queue = _RecordingQueue()
+            async with _client(_scheduling_app(conn, queue)) as client:
+                response = await client.get(
+                    f"{_BASE}/{fixture.zafran}/contacts", headers={"X-Workspace-Id": _V1_WS}
+                )
+
+            assert response.status_code == 200
+            assert [offer["payload"]["subject_id"] for offer in queue.offers] == [str(fixture.ravi)]
+            offer = queue.offers[0]
+            assert offer["kind"] is FleetTaskKind.ARV2_DISPLAY_PAGE
+            assert offer["payload"]["page"] == "contact"
+            assert offer["payload"]["job_id"] == str(ravi_job)
+            assert offer["reopen_terminal"] is True
+
+    run_async(scenario())
+
+
+def test_reading_the_contacts_tab_without_a_queue_offers_nothing() -> None:
+    """The default deployment is unchanged: no queue, no offers, and no extra statements."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            await _settled_person_job(
+                conn,
+                project=fixture.v1.base.project_a,
+                account_id=fixture.zafran,
+                contact_id=fixture.ravi,
+            )
+            response = await _list(conn, fixture.zafran, workspace_id=_V1_WS)
+            assert response.status_code == 200
+
+    run_async(scenario())

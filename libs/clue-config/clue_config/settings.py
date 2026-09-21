@@ -489,7 +489,7 @@ class Settings(BaseSettings):
     arv2_display_timeout_s: float = 240.0
     # How many sections of one page are in flight at once (one ProviderCaller each).
     # Env: ``CLUE_ARV2_DISPLAY_MAX_PARALLEL``.
-    arv2_display_max_parallel: int = 8
+    arv2_display_max_parallel: int = 30
     # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
     # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
     arv2_display_client_pitch: str = (

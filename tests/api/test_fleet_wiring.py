@@ -445,6 +445,30 @@ def test_arv2_discovery_handler_is_composed_when_given_and_kind_guarded() -> Non
         )
 
 
+def test_arv2_display_page_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Spec 2026-09-12: the display-page drain joins on the same terms as its neighbours — optional
+    # (a deployment with the display flag off, or no model key, composes none) and kind-guarded at
+    # construction, so a handler wired to the wrong keyword fails here rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ARV2_DISPLAY_PAGE)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        arv2_display_page_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ARV2_DISPLAY_PAGE] is handler
+
+    with pytest.raises(ValueError, match="arv2_display_page_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            arv2_display_page_handler=_CompositionHandler(FleetTaskKind.ARV2_DISCOVERY),
+        )
+
+
 def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_set(
     tmp_path: Path,
 ) -> None:

@@ -335,14 +335,31 @@ is served rather than inferred from a page (additive — the dummy's envelope Zo
   claims, claim ids valid and on-recipe, send lines present. **The single hard rule** (the floor, on
   by default): an `outreach_safe=false` claim cited outside a restricted section regenerates that
   section once, then serves the section without the offending item. A page is never blocked.
-- **Generation policy:** a section is generated **once, on first request** (lazy — an unopened
-  contact page costs nothing; the first open waits ~15 s), then **persisted and served as-is on every
-  later visit**. It is regenerated **only on invalidation, and only the affected sections**.
-  Invalidation is **recipe-scoped**: a section is stale when any claim for that subject whose
-  `field_key` is in the section's recipe is added, superseded, or has its `outreach_safe` flag
-  changed, or when the recipe/prompt version changes. On invalidation, serve the persisted block and
-  regenerate in the background, swapping the new row in when it lands. No scheduled regeneration;
-  `:batch` only for an accumulated invalidated set.
+- **Generation policy (2026-09-21 — written by the fleet, never inside a read):** a section is
+  written **once, by a fleet task** (`arv2_display_page`, one task per `(subject, page)`) and then
+  **persisted and served as-is on every later visit**. When each page is written: the account
+  **overview and insights pages** at **settle** — the account research job offers both after the
+  committee step, so the first human to open a researched account waits for nothing; the **contact
+  pages** of an account the **first time that account is opened** (its overview or its contacts
+  tab), all settled committee members at once, because an account nobody looks at costs nothing;
+  every other page on **its own first open**. A **read never writes**: it serves the blocks that are
+  stored, marks the sections the task will write `pending` with the one served sentence
+  `Synthesis in progress, please wait a few seconds.`, and offers the page's task — the client
+  re-reads the page every 5 s while any section is pending. A section that will *never* be written
+  (its recipe matches no claim) is **not** `pending` and keeps the ordinary empty state, so the
+  sentence is never a promise the page cannot keep. **Stale sections are served as stored and the
+  page is re-offered**, swapping the new row in when it lands. It is regenerated **only on
+  invalidation, and only the affected sections**. Invalidation is **recipe-scoped**: a section is
+  stale when any claim for that subject whose `field_key` is in the section's recipe is added,
+  superseded, or has its `outreach_safe` flag changed, or when the recipe/prompt version changes.
+  No scheduled regeneration; `:batch` only for an accumulated invalidated set. (With no work queue
+  composed — the CLI, a test root — the read falls back to the old inline write.)
+- **Shared blocks (2026-09-21):** the **insights** page does not re-synthesise a question another
+  page already answered. `context-only` is the overview's `watch-outs` block and `contact-insights`
+  is the committee's `why-this-person` blocks in committee order — the stored bodies only (same
+  items, same claim ids), under the insights page's own `h1` and open/closed default. They are never
+  `pending` on the insights page: their owner page carries that, and a stale owner is re-offered
+  from whichever page is being read. No synthesis is ever written from another synthesis.
 - **Empty state:** "No {section} information found for {name}." The H1 is never hidden.
 - **Presentation (frontend-owned, decided 5 Sep):** Notion-style heading toggles, closed by
   default and independently expandable; no tabs, no jump menu, no priority accents, no boxed copy

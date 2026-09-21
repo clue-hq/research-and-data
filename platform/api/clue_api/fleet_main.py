@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
 )
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
@@ -1325,6 +1326,14 @@ async def _serve() -> None:
         # R4: the discovery drain. No model provider — a discovery run is Websets plus Exa Answer
         # and a pile of arithmetic, not an agent loop.
         arv2_discovery_handler = _build_arv2_discovery_handler(settings, secrets, storage=storage)
+        # Spec 2026-09-12: the page writer. No model provider object — the runner reads the key
+        # itself, the way the web seam's production factory does. The artifact sink is injected
+        # from outside the lane, like the discovery lane's (Global Constraint 7).
+        arv2_display_page_handler = build_arv2_display_page_handler(
+            settings,
+            secrets,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1338,6 +1347,7 @@ async def _serve() -> None:
             onboarding_handler=onboarding_handler,
             arv2_account_research_handler=arv2_account_research_handler,
             arv2_discovery_handler=arv2_discovery_handler,
+            arv2_display_page_handler=arv2_display_page_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
             design_handler=build_design_job_handler(
                 enabled=settings.design_runtime_enabled,
