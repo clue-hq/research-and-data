@@ -321,6 +321,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # `read_claims@1`, so a 1:1 creative opens the target account's research itself. Nothing
         # else moves — same prompt, same 50 v1 pins, same model and workspace policy.
         "profile:design@v2",
+        # web_search@1: v2 plus the open-web search. Nothing else moves.
+        "profile:design@v3",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",

@@ -217,7 +217,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `read_account_research@2` and `read_claims@1`, the same tools on the same contracts
     # head-of-abm holds — so a 1:1 creative can open the target account's research itself
     # instead of writing from whatever the brief happened to carry. Nothing else moves.
-    AgentRole.DESIGN: "v2",
+    # v3 (2026-09-22): v2 plus web_search@1 (spec 2026-09-22). Nothing else moves.
+    AgentRole.DESIGN: "v3",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -292,7 +293,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # refuses to compose when a role's authority and its profile's tool list disagree, so a grant
     # rides a reviewed profile bump and never an edit to this dict. GRANTED at `head-of-abm@v61`
     # (2026-09-22); the design role joins at `design@v3`.
-    "web_search": (AgentRole.HEAD_OF_ABM,),
+    "web_search": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),
