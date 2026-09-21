@@ -7,6 +7,7 @@ Coverage describes acquisition, not approval or visual fidelity.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from urllib.parse import urldefrag, urljoin, urlsplit
 
@@ -72,13 +73,32 @@ _PROOF_SEGMENTS = frozenset(
     }
 )
 
+_STRONG_PROOF_SEGMENTS = frozenset(
+    {"case-studies", "case-study", "customer-stories", "success-stories"}
+)
+_PROOF_COLLECTION_CTA = re.compile(
+    r"(?:view|see|browse|explore|read) (?:all|more) "
+    r"(?:stories|customer stories|success stories|case studies|customers|testimonials|reviews)"
+)
+
 
 def page_role(url: str, label: str = "") -> str:
     segments = [part.lower() for part in urlsplit(url).path.split("/") if part]
     if set(segments) & _EXCLUDED_SEGMENTS:
         return "reference"
+    product_namespace = False
     for index, segment in enumerate(segments):
+        product_namespace |= segment in _PRODUCT_LABELS
         if segment in _PROOF_SEGMENTS:
+            # A product's customer/review feature is not evidence of customers.
+            # Explicit story namespaces still carry proof inside a product tree.
+            if product_namespace and segment not in _STRONG_PROOF_SEGMENTS:
+                continue
+            # Depth alone cannot distinguish a nested collection from a story.
+            # Use a complete, observed collection CTA only within a proof path;
+            # arbitrary prose containing these words is not a role override.
+            if _PROOF_COLLECTION_CTA.fullmatch(_label(label)):
+                return "customers"
             return "case-study" if segments[index + 1 :] else "customers"
     if set(segments) & _PRODUCT_LABELS:
         return "product"
@@ -189,8 +209,13 @@ def discover_reference_pages(html: str, base_url: str, *, existing: list[dict]) 
         href = node.attributes.get("href", "").strip()
         if not href or href.startswith("#"):
             continue
-        url = canonical_page_url(href, base_url)
-        parsed = urlsplit(url)
+        try:
+            url = canonical_page_url(href, base_url)
+            parsed = urlsplit(url)
+        except ValueError:
+            # Untrusted source markup can contain malformed URLs; one bad link
+            # must not discard all otherwise valid, bounded page candidates.
+            continue
         if (parsed.scheme, parsed.netloc) != (origin.scheme, origin.netloc):
             continue
         if parsed.username or parsed.password or url in seen:

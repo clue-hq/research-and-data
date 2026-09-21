@@ -110,3 +110,19 @@ The implementer ran 54 focused checks (12 new custom-property cases, 36 existing
 A frozen, hash-verified replay of `snap_79578c160535ad71` compared previous/current enumeration: 35 → 47 URLs, exactly twelve missing SVG references added, zero removed, no budget diagnostic. Evidence is `.local-setup/website-capture/custom-property-frozen-replay.json`. This proves enumeration, not a fresh download or visual acceptance. It used existing disposable-workspace source bytes; no new sources were fetched and no workspace assets were seeded.
 
 Separate unresolved findings: external SVG/MP4 fragment suffixes need correct resource lookup and retained output suffixes; one video was correctly refused by the 50 MiB per-video cap. Those issues are not claimed fixed by custom-property enumeration.
+
+## Third URL-only run: acquired media and ordered CSS verified
+
+After the shared media/cascade/reference fixes, another fresh workspace received only `{"url":"https://linear.app/"}` through the real API and embedded worker. It completed in **175 seconds**, with all model stages disabled and no injected assets, snapshots or page list. The disposable database had only two completed fleet tasks before this run.
+
+- Six pages were captured and durably saved; **164 asset records** and **67 draft sections** were created.
+- The customer index now has **48 captured dependencies and 7/7 admitted sections**, up from 36 and 6/7 in the preceding run.
+- All **12 previously missed customer SVG references** were found in this new capture. Parent read their actual stored bytes, checked SHA-256, matched each to a registry record, and found one by filename using the real agent asset-search tool.
+- All **857 persisted stylesheet occurrences** across the six pages retain source order and raw source metadata. Parent checked each effective text against its recorded digest, and checked each page's HTML digest.
+- Homepage remains 17/18 sections; Ramp remains 6/7 with partial acquisition. The large-video cap and homepage slot conflict are not closed by this run. No fragment was released, and `fidelity_verified` remains false.
+
+This advances the customer-media fix from enumeration to real acquisition and reusable custody. It does not establish end-to-end visual or model quality. Timing is an observed run duration, not a controlled performance comparison against earlier runs.
+
+Evidence: `.local-setup/website-capture/fresh-url-linear-custody-20260920/{scope,result,latest-job,verification}.json`, sibling capture log, `fresh-url-linear-custody-proof.py` and `verify-linear-custody.py`. The first two read-only search attempts used incorrect engine call/return shapes; correcting the required document id and `web_doc` key completed verification without rerunning capture. Provider/model calls and live workspace writes remained disabled.
+
+External SVG/video fragment identity was separately repaired in commit `7ca33e20`; see `website-reference-identity-validation-2026-09-20.md`. The earlier unresolved note above describes the state at that earlier checkpoint.
