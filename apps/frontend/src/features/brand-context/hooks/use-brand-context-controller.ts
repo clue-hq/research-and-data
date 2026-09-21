@@ -82,12 +82,6 @@ export function useBrandContextController({
       : null,
   );
   const [assetEditingField, setAssetEditingField] = useState<AssetEditingField>(null);
-  // Keep only local edits: ingestion refreshes the server props without
-  // remounting this hook, so newly imported assets need their current metadata.
-  const [assetDrafts, setAssetDrafts] = useState<Record<string, {
-    description?: string;
-    name?: string;
-  }>>({});
   const [dialog, setDialog] = useState<BrandDialog>(null);
   const [addedTypefaces, setAddedTypefaces] = useState<BrandTypeface[]>([]);
   const [removedTypefaceIds, setRemovedTypefaceIds] = useState<Set<string>>(() => new Set());
@@ -116,7 +110,7 @@ export function useBrandContextController({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || selectedAssetId) return;
       if (assetRenameId) {
         setAssetRenameId(null);
         setAssetRenameValue("");
@@ -126,11 +120,6 @@ export function useBrandContextController({
         setAssetFilterOpen(false);
       } else if (typefaceMenuId) {
         setTypefaceMenuId(null);
-      } else if (assetEditingField) {
-        setAssetEditingField(null);
-      } else if (selectedAssetId) {
-        setSelectedAssetId(null);
-        setAssetEditingField(null);
       } else if (dialog) {
         setDialog(null);
       }
@@ -138,7 +127,7 @@ export function useBrandContextController({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [assetEditingField, assetFilterOpen, assetMenuId, assetRenameId, dialog, selectedAssetId, typefaceMenuId]);
+  }, [assetFilterOpen, assetMenuId, assetRenameId, dialog, selectedAssetId, typefaceMenuId]);
 
   const allDocuments = useMemo(
     () => workspace.knowledgeFolders.flatMap((folder) => folder.documents),
@@ -155,10 +144,6 @@ export function useBrandContextController({
     const query = assetQuery.trim().toLocaleLowerCase();
     const visibleAssets = assets
       .filter((asset) => !hiddenAssetIds.has(asset.id))
-      .map((asset) => ({
-        ...asset,
-        name: assetDrafts[asset.id]?.name ?? asset.name,
-      }))
       .filter((asset) => assetCategoryFilter === "all" || asset.category === assetCategoryFilter)
       .filter((asset) => creativeTypeFilter === "all" || (asset.context?.creative_type ?? "unknown") === creativeTypeFilter)
       .filter((asset) => usageFilter === "all" || asset.context?.usage_roles.includes(usageFilter as never))
@@ -173,7 +158,7 @@ export function useBrandContextController({
       if (assetSortKey === "created") comparison = Date.parse(left.createdAt) - Date.parse(right.createdAt);
       return assetSortDirection === "ascending" ? comparison : -comparison;
     });
-  }, [assetCategoryFilter, assetDrafts, assetQuery, assetSortDirection, assetSortKey, hiddenAssetIds, assets, creativeTypeFilter, usageFilter, sourceFilter]);
+  }, [assetCategoryFilter, assetQuery, assetSortDirection, assetSortKey, hiddenAssetIds, assets, creativeTypeFilter, usageFilter, sourceFilter]);
   const filteredTypefaces = useMemo(() => {
     const query = fontSearch.trim().toLocaleLowerCase();
     return typefaces.filter((typeface) =>
@@ -235,19 +220,14 @@ export function useBrandContextController({
     const asset = assets.find((item) => item.id === assetId);
     if (!asset) return;
     setAssetRenameId(assetId);
-    setAssetRenameValue(assetDrafts[assetId]?.name ?? asset.name);
+    setAssetRenameValue(asset.name);
     setAssetMenuId(null);
   }
 
   async function commitAssetRename() {
     if (!assetRenameId) return;
     const nextName = assetRenameValue.trim();
-    if (nextName && await assetLibrary.save(assetRenameId, {title: nextName})) {
-      setAssetDrafts((current) => ({
-        ...current,
-        [assetRenameId]: { ...current[assetRenameId], name: nextName },
-      }));
-    }
+    if (nextName && !(await assetLibrary.save(assetRenameId, {title: nextName}))) return;
     setAssetRenameId(null);
     setAssetRenameValue("");
   }
@@ -265,7 +245,8 @@ export function useBrandContextController({
     syncRoute({ assetId, section: "assets" });
   }
 
-  function closeAsset() {
+  async function closeAsset() {
+    if (selectedAssetId && !(await assetLibrary.edits.flush(selectedAssetId))) return;
     setSelectedAssetId(null);
     setAssetEditingField(null);
     syncRoute({ assetId: null, section: "assets" });
@@ -324,28 +305,14 @@ export function useBrandContextController({
   return {
     assetLibrary,
     creativeTypeFilter, setCreativeTypeFilter, usageFilter, setUsageFilter, sourceFilter, setSourceFilter,
-    async saveAssetDraft() {
-      if (!selectedAsset) return;
-      const draft = assetDrafts[selectedAsset.id];
-      if (!draft) return;
-      const saved = await assetLibrary.save(selectedAsset.id, {
-        ...(draft.name !== undefined ? {title: draft.name} : {}),
-        ...(draft.description !== undefined ? {description: draft.description} : {}),
-      });
-      if (saved) {
-        setAssetDrafts(prior => {const next = {...prior}; delete next[selectedAsset.id]; return next;});
-        setAssetEditingField(null);
-      }
+    flushAssetDraft() {
+      if (selectedAsset) void assetLibrary.edits.flush(selectedAsset.id);
     },
     setCreativeType(value: CreativeType) {
       if (selectedAsset) void assetLibrary.save(selectedAsset.id, {creative_type: value});
     },
     addCustomFont,
-    assetDraft: selectedAsset ? {
-      description: selectedAsset.description,
-      name: selectedAsset.name,
-      ...assetDrafts[selectedAsset.id],
-    } : null,
+    assetDraft: selectedAsset ? { description: selectedAsset.description, name: selectedAsset.name } : null,
     assetEditingField,
     assetFilterOpen,
     assetFilterOptions,
@@ -402,10 +369,8 @@ export function useBrandContextController({
     selectSection,
     setAssetDraft(field: "description" | "name", value: string) {
       if (!selectedAsset) return;
-      setAssetDrafts((current) => ({
-        ...current,
-        [selectedAsset.id]: { ...current[selectedAsset.id], [field]: value },
-      }));
+      if (!assetLibrary.canWrite) return;
+      assetLibrary.edits.stage(selectedAsset.id, field === "name" ? {title: value} : {description: value});
     },
     setAssetEditingField,
     setAssetRenameValue,

@@ -1,7 +1,7 @@
 import { SelectField } from "@/components/ui/select-field";
-import { AssetContextDetails } from "./asset-context-details";
+export { AssetDetailDialog } from "./asset-detail-dialog";
 import { CreativeTypeSchema, UsageRoleSchema, AssetSourceSchema, assetLabel } from "../model/asset-context";
-import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
+import type { FocusEvent, KeyboardEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
 import type { BrandAsset, BrandAssetSortKey } from "../model/brand-context";
 import { BrandContextIcon } from "./brand-context-icon";
@@ -265,79 +265,6 @@ export function AssetsPanel({ controller }: { controller: BrandContextController
         </div>
       )}
       {!controller.filteredAssets.length ? <div className={styles.assetEmptyState}>No assets match this view.</div> : null}
-    </div>
-  );
-}
-
-export function AssetDetailDialog({ controller }: { controller: BrandContextController }) {
-  const asset = controller.selectedAsset;
-  if (!asset || !controller.assetDraft) return null;
-
-  const gradientStyle: CSSProperties | undefined = asset.visual.kind === "gradient"
-    ? { background: `linear-gradient(135deg, ${asset.visual.colors.join(", ")})` }
-    : undefined;
-
-  return (
-    <div
-      className={styles.dialogBackdrop}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) controller.closeAsset();
-      }}
-      role="presentation"
-    >
-      <section aria-label={`${asset.name} details`} aria-modal="true" className={`${styles.assetDialog} clue-panel-enter`} role="dialog">
-        <button aria-label="Close asset details" className={styles.dialogClose} onClick={controller.closeAsset} type="button"><BrandContextIcon name="close" size={16} /></button>
-        <div className={styles.assetDialogPreview} style={gradientStyle}>
-          {asset.visual.kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt={asset.name} src={asset.visual.imagePath} />
-          ) : null}
-        </div>
-        <div className={styles.assetDialogDetails}>
-          <div className={styles.dialogTitleRow}>
-            <h2>Details</h2>
-          </div>
-          <div className={styles.detailField}>
-            <div className={styles.detailFieldLabel}>
-              <label htmlFor="asset-name">Title</label>
-              <button aria-label="Edit title" className={styles.fieldEditButton} onClick={() => controller.setAssetEditingField("name")} type="button"><BrandContextIcon name="edit" size={12} /></button>
-            </div>
-            {controller.assetEditingField === "name" ? (
-              <input
-                autoFocus
-                id="asset-name"
-                onBlur={() => controller.setAssetEditingField(null)}
-                onChange={(event) => controller.setAssetDraft("name", event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") controller.setAssetEditingField(null);
-                }}
-                value={controller.assetDraft.name}
-              />
-            ) : <p>{controller.assetDraft.name}</p>}
-          </div>
-          <div className={styles.detailField}>
-            <div className={styles.detailFieldLabel}>
-              <label htmlFor="asset-description">Description</label>
-              <button aria-label="Edit description" className={styles.fieldEditButton} onClick={() => controller.setAssetEditingField("description")} type="button"><BrandContextIcon name="edit" size={12} /></button>
-            </div>
-            {controller.assetEditingField === "description" ? (
-              <textarea
-                autoFocus
-                id="asset-description"
-                onBlur={() => controller.setAssetEditingField(null)}
-                onChange={(event) => controller.setAssetDraft("description", event.target.value)}
-                value={controller.assetDraft.description}
-              />
-            ) : <p>{controller.assetDraft.description}</p>}
-          </div>
-          <button type="button" className={styles.primaryButton} disabled={controller.assetLibrary.saving} onClick={controller.saveAssetDraft}>Save title and description</button>
-          <AssetContextDetails key={asset.id} asset={asset} controller={controller} />
-          <dl className={styles.assetFacts}>
-            <div><dt>Size</dt><dd>{asset.sizeLabel}</dd></div>
-            <div><dt>Dimensions</dt><dd>{asset.dimensions}</dd></div>
-          </dl>
-        </div>
-      </section>
     </div>
   );
 }

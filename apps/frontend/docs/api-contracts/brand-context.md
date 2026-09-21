@@ -612,8 +612,10 @@ banner is removed. The older O5 removal of Preview/Edit is superseded by this fo
 
 The asset dialog uses the available viewport up to 1440 × 960 px. The image fills
 its display region with proportional `contain` sizing, preserving all artwork.
-Desktop reserves 280–360 px for the description; mobile stacks the details below
-the preview. Long names wrap and long descriptions scroll within the details pane.
+Desktop reserves 340–420 px for the details; at 820 px and below, the preview and
+details stack. The details column spans the dialog height, with a fixed heading
+and close control above independently scrolling content. Long names, descriptions
+and source URLs wrap within the pane.
 This is presentation-only and does not change the asset write contract above.
 
 
@@ -714,3 +716,21 @@ files survive another file's failure. Server analysis continues through fleet
 jobs after upload, independently of the browser. Reload reads persisted metadata.
 Fixture and HTTP adapters implement the same operations; fixtures do not simulate
 successful provider analysis.
+
+### Asset inspector refinement (2026-09-22)
+
+The inspector exposes **When to use** directly below the description, followed by
+placement/composition and avoidance guidance when present. Pending or absent usage
+guidance has an explicit empty state. Source evidence and agent interpretations
+remain separate disclosures. Type and usage-role controls use the shared brand
+controls; usage roles are native semantic checkboxes in one readable column.
+
+Title, description and user context save automatically after 500 ms without an
+edit and flush on blur. Type and role changes save immediately. There are no Save
+buttons. A workspace-owned queue serializes writes per asset, keeps newer edits
+visible while a write is pending, and preserves failed drafts with a Retry action.
+Closing the inspector (button, backdrop or Escape) flushes pending edits first;
+a failed save keeps the inspector open. Successful responses refresh effective
+metadata, and older polling responses cannot overwrite a newer revision. This
+does not add an API endpoint or change the write payload. Drafts are in-memory;
+browser/process termination is not an offline persistence mechanism.

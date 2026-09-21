@@ -22,6 +22,9 @@ Keep notes concise and operational. Do not store secrets, API keys, credentials,
 
 ## Repository Role
 
+- `2026-09-22-asset-inspector-review.md` — branded asset inspector, automatic saving,
+  responsive/failure verification and pilot comparison with an open generation-quality defect.
+
 This repository is the data and research subsystem for the larger AI-native ABM orchestration platform. Its job is to turn client ICPs and client knowledge into canonical account/contact entities, typed claims with provenance, explainable fit/intent scores, and persona-keyed buying-committee research that downstream content and design systems can trust.
 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
