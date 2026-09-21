@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
+from .reference_identity import ReferenceConflict, lookup_reference_key
+
 #: The engine's fragment-id grammar (``lumen_web::doc::fragment_id_is_valid``): the registry
 #: mints these and the document node refuses anything else.
 FRAGMENT_ID_RE = re.compile(r"frag_[0-9a-f]{16}")
@@ -80,6 +82,12 @@ def asset_url(digest: str) -> str:
     return f"{ASSET_URL_PREFIX}{digest}"
 
 
+def asset_reference_url(raw: str, digest: str) -> str:
+    """Rewrite the fetched resource while retaining its authored in-resource selector/time."""
+    _resource, marker, suffix = raw.strip().partition("#")
+    return asset_url(digest) + (marker + suffix if marker else "")
+
+
 def asset_url_digest(value: str) -> str | None:
     """The digest an ``/asset-store/{sha}`` reference names, or ``None`` if it is not one.
 
@@ -115,10 +123,9 @@ def resolve_asset_reference(raw: str, rehosted: Mapping[str, str]) -> str | None
     ``<use href="#icon">` points inside the fragment's own markup and fetches nothing).
 
     Anything else must be in our custody — already written as ``/asset-store/{digest}``, or
-    present in ``rehosted`` under EXACTLY the spelling the source used. Exact-match lookup is
-    deliberate: normalising URLs here would mean guessing which of two spellings the rehoster
-    meant, and a wrong guess silently serves the wrong bytes. The producer knows what it
-    fetched; it hands over that key.
+    present in ``rehosted`` under the source spelling or an unambiguous fragment-only alias.
+    Query strings and other spelling differences remain exact. Aliases naming different bytes
+    refuse, including when one alias exactly matches. Non-web schemes require an exact entry.
     """
     text = raw.strip()
     if not text or text.startswith("#"):
@@ -126,7 +133,17 @@ def resolve_asset_reference(raw: str, rehosted: Mapping[str, str]) -> str | None
     already = asset_url_digest(text)
     if already is not None:
         return already
-    digest = rehosted.get(text) or rehosted.get(raw)
+    try:
+        key = lookup_reference_key(text, rehosted)
+        if key is None and text != raw:
+            key = lookup_reference_key(raw, rehosted)
+    except ReferenceConflict as conflict:
+        raise FragmentRefused(
+            "fragment.rehost_reference_conflict",
+            f"fragment reference has conflicting rehosted content: {text}",
+            reference=text,
+        ) from conflict
+    digest = rehosted[key] if key is not None else None
     if digest is None:
         raise FragmentRefused(
             "fragment.unrehosted_reference",

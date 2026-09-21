@@ -21,10 +21,10 @@ on an element the sanitizer was about to remove; and the preview is cropped last
 digest is part of the artifact's identity.
 
 **The rehost map is keyed on the token as the page wrote it.** ``refs.resolve_asset_reference``
-looks a reference up EXACTLY as it appears in the markup — Task 6's ruling, because normalising
-a URL here would mean guessing which of two spellings the rehoster meant, and a wrong guess
-serves the wrong bytes silently. Resolution against a base URL happens only to FIND the
-captured bytes; the key stays raw.
+retains exact URL/query spelling while allowing fragment-only aliases that name equal held
+content. Conflicting aliases refuse rather than guessing. Resolution against a base URL
+happens only to FIND the captured bytes; the rehost-map key stays raw and the authored
+fragment suffix survives rewriting.
 """
 
 from __future__ import annotations
@@ -48,6 +48,7 @@ from lumen_api.fragments import (
     parse_srcset_candidates,
 )
 from lumen_api.fragments.cssscope import PRELUDE_REFERENCE_STRIP
+from lumen_api.fragments.reference_identity import ReferenceConflict, ReferenceIndex
 from lumen_api.fragments.sanitize import sanitize_fragment_html
 from py_lumen_config import settings
 from selectolax.lexbor import LexborHTMLParser
@@ -221,6 +222,8 @@ def build_reference_harvest(
     found: dict[str, set[str]] = {}
     inline: dict[str, tuple[bytes, str]] = {}
     missing: list[str] = []
+    alias_conflicts: set[str] = set()
+    references = ReferenceIndex(captured, identity=lambda asset: asset.data)
 
     def offer(token: str, base: str) -> None:
         raw = (token or "").strip()
@@ -236,8 +239,13 @@ def build_reference_harvest(
                 missing.append(raw)
             return
         absolute = urljoin(base, raw)
-        if absolute in captured:
-            found.setdefault(raw, set()).add(absolute)
+        try:
+            captured_key = references.lookup_key(absolute)
+        except ReferenceConflict:
+            alias_conflicts.add(raw)
+            return
+        if captured_key is not None:
+            found.setdefault(raw, set()).add(captured_key)
         elif raw not in missing:
             missing.append(raw)
 
@@ -254,8 +262,10 @@ def build_reference_harvest(
         _harvest_css(text, base, offer)
 
     resolved: dict[str, str] = {}
-    conflicts: list[str] = []
+    conflicts: list[str] = list(alias_conflicts)
     for raw, urls in found.items():
+        if raw in alias_conflicts:
+            continue
         if len(urls) == 1:
             resolved[raw] = next(iter(urls))
         else:

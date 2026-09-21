@@ -76,9 +76,16 @@ from dataclasses import dataclass
 
 import tinycss2
 from tinycss2 import ast
+from tinycss2.serializer import serialize_string_value
 
 from .cssflatten import flatten_css_layers
-from .refs import FragmentRefused, asset_url, fragment_wrapper_class, resolve_asset_reference
+from .reference_identity import indexed_references
+from .refs import (
+    FragmentRefused,
+    asset_reference_url,
+    fragment_wrapper_class,
+    resolve_asset_reference,
+)
 
 #: At-rules whose block holds declarations, not nested rules, and which are NOT scoped.
 _GLOBAL_BLOCK_AT_RULES = frozenset({"font-face", "page", "counter-style", "property"})
@@ -157,6 +164,7 @@ def scope_fragment_css(
             f"prelude_reference must be one of {', '.join(PRELUDE_REFERENCE_MODES)}: "
             f"{prelude_reference!r}",
         )
+    rehosted = indexed_references(rehosted)
     wrapper = fragment_wrapper_class(fragment_id)
     notes: list[str] = []
     digests: set[str] = set()
@@ -202,6 +210,7 @@ def rewrite_declaration_urls(
     same declaration in a stylesheet — an ungated inline style would be the obvious hole in an
     otherwise fail-closed rule.
     """
+    rehosted = indexed_references(rehosted)
     digests: set[str] = set()
     tokens = tinycss2.parse_component_value_list(declarations)
     _rewrite_urls(tokens, rehosted=rehosted, digests=digests)
@@ -699,8 +708,8 @@ def _rewrite_urls(
                 token.representation = _defuse(token.representation)
                 continue
             digests.add(digest)
-            token.value = asset_url(digest)
-            token.representation = f'url("{token.value}")'
+            token.value = asset_reference_url(token.value, digest)
+            token.representation = f"url({_quoted_reference(token.value)})"
 
         elif isinstance(token, ast.StringToken):
             token.representation = _defuse(token.representation)
@@ -730,6 +739,12 @@ def _defuse(representation: str) -> str:
     return representation.replace("<", _ESCAPED_LT)
 
 
+def _quoted_reference(value: str) -> str:
+    # A preserved URL fragment may contain quotes, backslashes, or markup. Keep its value
+    # without letting it become CSS syntax or end a downstream raw-text <style> element.
+    return _defuse('"' + serialize_string_value(value) + '"')
+
+
 def _rewrite_url_function(
     token: ast.FunctionBlock, *, rehosted: Mapping[str, str], digests: set[str]
 ) -> None:
@@ -746,8 +761,8 @@ def _rewrite_url_function(
                     return
                 continue
             digests.add(digest)
-            argument.value = asset_url(digest)
-            argument.representation = f'"{argument.value}"'
+            argument.value = asset_reference_url(argument.value, digest)
+            argument.representation = _quoted_reference(argument.value)
             return
     # `url(var(--x))` and friends: a reference we cannot read is a reference we cannot vouch for.
     raise FragmentRefused(
@@ -775,8 +790,8 @@ def _rewrite_image_set(
                 argument.representation = _defuse(argument.representation)
                 continue
             digests.add(digest)
-            argument.value = asset_url(digest)
-            argument.representation = f'"{argument.value}"'
+            argument.value = asset_reference_url(argument.value, digest)
+            argument.representation = _quoted_reference(argument.value)
         else:
             _rewrite_urls([argument], rehosted=rehosted, digests=digests)
 
