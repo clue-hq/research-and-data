@@ -28,6 +28,10 @@ the settle-time overview offer, contact pages offered on the first open of their
 as scheduler (`pending` + the sentence + the 5 s poll) and shared blocks all shipped, in eight
 tasks, with two migrations (`fd8795c4fd5a`, `2b702a116c15`). The five live proofs listed in the
 execution record are owed (founder-triggered; they spend money).
+**Ruling (founder, 2026-09-22):** the account **insights** page is written at settle too, offered by the
+account job right after the overview (its four owned sections; the two shared sections still compose
+from the overview's and the contact pages' blocks at read time). Implemented the same day on the
+branch (`_SETTLE_PAGES` in `account_research_driver.py`).
 
 ## 1. Today
 
@@ -109,5 +113,5 @@ owner (pure + DB). Insights page: the sharing set leaves exactly four generated 
 
 ## 6. Out of scope
 
-Rewriting the insights recipes' prose; writing the insights page at settle; any change to what
+Rewriting the insights recipes' prose; ~~writing the insights page at settle~~ (ruled IN, 2026-09-22); any change to what
 research writes; any placeholder visual beyond a blank section.

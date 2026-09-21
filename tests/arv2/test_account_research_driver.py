@@ -1241,9 +1241,11 @@ def test_a_committee_step_that_explodes_never_costs_the_job_its_terminal_row(
     # No PERSON job is offered — the step that would have created their rows exploded. The
     # account's own overview page is still offered: the account job itself finished, and the
     # page is written from what it wrote.
-    kinds = [offer["kind"] for offer in store.named("enqueue")]
+    offers = store.named("enqueue")
+    kinds = [offer["kind"] for offer in offers]
     assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH not in kinds
-    assert kinds == [FleetTaskKind.ARV2_DISPLAY_PAGE]
+    assert kinds == [FleetTaskKind.ARV2_DISPLAY_PAGE, FleetTaskKind.ARV2_DISPLAY_PAGE]
+    assert [offer["payload"]["page"] for offer in offers] == ["overview", "insights"]
 
 
 def test_an_account_job_offers_its_overview_page_after_the_committee(
@@ -1267,24 +1269,27 @@ def test_an_account_job_offers_its_overview_page_after_the_committee(
     assert result.outcome == "completed"
     offers = [payload for name, payload in store.events if name == "enqueue"]
     kinds = [offer["kind"] for offer in offers]
-    assert kinds[-1] == FleetTaskKind.ARV2_DISPLAY_PAGE
-    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH in kinds[:-1]
-    page = offers[-1]
-    assert page["work_id"] == arv2_display_work_id(
-        "account", str(job.account_entity_id), "overview"
-    )
-    assert (
-        page["dedup_key"] == f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{job.account_entity_id}:overview"
-    )
-    assert page["priority"] == ARV2_DISPLAY_TASK_PRIORITY
-    assert page["reopen_terminal"] is True
-    assert page["payload"] == {
-        "workspace_id": job.workspace_id,
-        "subject_kind": "account",
-        "subject_id": str(job.account_entity_id),
-        "page": "overview",
-        "job_id": str(job.job_id),
-    }
+    # Founder ruling 2026-09-22: BOTH account pages are written at settle — the overview first,
+    # then the insights page — each its own task, after every research offer.
+    assert kinds[-2:] == [FleetTaskKind.ARV2_DISPLAY_PAGE, FleetTaskKind.ARV2_DISPLAY_PAGE]
+    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH in kinds[:-2]
+    for page, expected_page in zip(offers[-2:], ("overview", "insights"), strict=True):
+        assert page["work_id"] == arv2_display_work_id(
+            "account", str(job.account_entity_id), expected_page
+        )
+        assert (
+            page["dedup_key"]
+            == f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{job.account_entity_id}:{expected_page}"
+        )
+        assert page["priority"] == ARV2_DISPLAY_TASK_PRIORITY
+        assert page["reopen_terminal"] is True
+        assert page["payload"] == {
+            "workspace_id": job.workspace_id,
+            "subject_kind": "account",
+            "subject_id": str(job.account_entity_id),
+            "page": expected_page,
+            "job_id": str(job.job_id),
+        }
 
 
 def test_a_worker_with_no_queue_says_it_offered_no_overview_page(

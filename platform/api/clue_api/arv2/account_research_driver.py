@@ -1035,14 +1035,21 @@ class Arv2AccountResearchWorkHandler:
         except Exception:  # noqa: BLE001 — the job's terminal row must survive a queue outage
             log.exception("arv2.committee_jobs_enqueue_failed", job_id=str(composition.job.job_id))
 
-    async def _offer_display_page(self, composition: _Composition) -> None:
-        """Offer the account's overview page — **after** the settle committed. Never raises.
+    #: The account pages written at settle, in offer order. Spec 2026-09-12 §2 named the overview;
+    #: the founder ruling of 2026-09-22 added the insights page, so both account screens read
+    #: written on the first open. The insights page writes only its four owned sections — its two
+    #: shared sections compose from the overview's and the contact pages' blocks at read time.
+    _SETTLE_PAGES: tuple[str, ...] = ("overview", "insights")
 
-        Spec 2026-09-12 §2: the overview is written when the account job settles, so the first
-        person to open the account reads a page instead of paying for one. Only the account job
-        offers (a person job settling enqueues nothing: contact pages are paid for on accounts a
-        user opens). The offer rides the committee offer's rules: rows first, offer second; a
-        failed offer is logged, never raised — the next read of the page re-offers it.
+    async def _offer_display_page(self, composition: _Composition) -> None:
+        """Offer the account's overview and insights pages — **after** the settle committed.
+        Never raises.
+
+        The pages are written when the account job settles, so the first person to open the
+        account reads a page instead of paying for one. Only the account job offers (a person
+        job settling enqueues nothing: contact pages are paid for on accounts a user opens). The
+        offers ride the committee offer's rules: rows first, offer second; a failed offer is
+        logged, never raised — the next read of the page re-offers it.
         """
         if composition.job.subject_type != "account":
             return
@@ -1053,30 +1060,36 @@ class Arv2AccountResearchWorkHandler:
                 account_entity_id=str(composition.job.account_entity_id),
                 detail=(
                     "this worker composed the ARV2 research handler without a work queue, so the "
-                    "account's overview page will be written on its first open instead"
+                    "account's overview and insights pages will be written on their first open "
+                    "instead"
                 ),
             )
             return
         subject_id = str(composition.job.account_entity_id)
-        try:
-            await self._queue.enqueue(
-                kind=FleetTaskKind.ARV2_DISPLAY_PAGE,
-                work_id=arv2_display_work_id("account", subject_id, "overview"),
-                dedup_key=f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{subject_id}:overview",
-                priority=ARV2_DISPLAY_TASK_PRIORITY,
-                payload=display_page_payload(
-                    workspace_id=composition.job.workspace_id,
-                    subject_kind="account",
-                    subject_id=subject_id,
-                    page="overview",
-                    job_id=composition.job.job_id,
-                ),
-                # A re-settle re-offers the page: a terminal (done or failed) task is re-opened,
-                # a queued or claimed one is left alone.
-                reopen_terminal=True,
-            )
-        except Exception:  # noqa: BLE001 — the job's terminal row must survive a queue outage
-            log.exception("arv2.display_page_enqueue_failed", job_id=str(composition.job.job_id))
+        for page in self._SETTLE_PAGES:
+            try:
+                await self._queue.enqueue(
+                    kind=FleetTaskKind.ARV2_DISPLAY_PAGE,
+                    work_id=arv2_display_work_id("account", subject_id, page),
+                    dedup_key=f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{subject_id}:{page}",
+                    priority=ARV2_DISPLAY_TASK_PRIORITY,
+                    payload=display_page_payload(
+                        workspace_id=composition.job.workspace_id,
+                        subject_kind="account",
+                        subject_id=subject_id,
+                        page=page,
+                        job_id=composition.job.job_id,
+                    ),
+                    # A re-settle re-offers the page: a terminal (done or failed) task is
+                    # re-opened, a queued or claimed one is left alone.
+                    reopen_terminal=True,
+                )
+            except Exception:  # noqa: BLE001 — the job's terminal row must survive a queue outage
+                log.exception(
+                    "arv2.display_page_enqueue_failed",
+                    job_id=str(composition.job.job_id),
+                    page=page,
+                )
 
     async def _record_activity(
         self,

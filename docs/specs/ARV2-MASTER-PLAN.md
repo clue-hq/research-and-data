@@ -338,7 +338,7 @@ is served rather than inferred from a page (additive — the dummy's envelope Zo
 - **Generation policy (2026-09-21 — written by the fleet, never inside a read):** a section is
   written **once, by a fleet task** (`arv2_display_page`, one task per `(subject, page)`) and then
   **persisted and served as-is on every later visit**. When each page is written: the account
-  **overview** at **settle** — the account research job offers its own overview page after the
+  **overview and insights pages** at **settle** — the account research job offers both after the
   committee step, so the first human to open a researched account waits for nothing; the **contact
   pages** of an account the **first time that account is opened** (its overview or its contacts
   tab), all settled committee members at once, because an account nobody looks at costs nothing;

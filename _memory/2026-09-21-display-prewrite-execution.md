@@ -153,3 +153,11 @@ done and green (see above).
 - T7: `tests/api/test_frontend_read_v1_live_zafran_db.py` **skips** on the throwaway DB (no answer
   key), so its insights expectations are unverified until it runs on a D1/D2-seeded DB;
   `_offer_owner_pages` re-reads the owner recipes per shared recipe per read.
+
+## Addendum 2026-09-22 — the insights page is written at settle too (founder ruling)
+`Arv2AccountResearchWorkHandler._offer_display_page` now offers `("account", id, "overview")` and
+`("account", id, "insights")` in that order (`_SETTLE_PAGES`), each its own `arv2_display_page`
+task with the job id stamped; the driver tests assert both offers. The insights task writes only its
+four owned sections; `context-only`/`contact-insights` still compose from the overview's and the
+members' blocks at read time, so nothing is synthesised twice. Spec §6's "not at settle" line is
+struck. Workers must be restarted to pick this up (done when the queue was idle).
