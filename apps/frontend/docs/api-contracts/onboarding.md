@@ -34,6 +34,16 @@ screens, navigation theatre, no network. `?hold=1` still freezes the setup timer
 
 ## Read flow configuration (D-7, ratified)
 
+### Missing website recovery (2026-09-21)
+
+An authenticated workspace with no onboarding run and no surviving profile draft now offers
+a company-website form on `/onboarding/setting-up`. It uses the existing
+`startWorkspaceSetup` repository operation and authenticated `/api/clue/onboarding` proxy.
+It does not repeat first-time provisioning or change the selected workspace. Only the typed
+`company_domain_missing` refusal enables this recovery; existing runs remain observation-only.
+Submission is latched against double clicks, failures remain retryable, and a successful start
+reloads the screen to observe the durable run. No backend payload or authentication change.
+
 `GET /api/v1/onboarding` is **retired**. Screen copy, role options, and the setup checklist
 art are frontend-owned fixture data (`onboarding.fixture.ts`), validated by
 `OnboardingFlowSchema`. Serving button copy over HTTP earned nothing, and the old adapter's

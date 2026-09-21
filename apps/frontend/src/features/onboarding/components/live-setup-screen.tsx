@@ -4,6 +4,7 @@ import type { OnboardingFlow } from "../model/onboarding";
 import { deriveSetupItems } from "../model/setup-items";
 import { useSetupProgress } from "../hooks/use-setup-progress";
 import { SetupScreen } from "./setup-screen";
+import { Button } from "@/components/ui/button";
 import styles from "./onboarding.module.css";
 
 /**
@@ -30,8 +31,34 @@ export function LiveSetupScreen({
   compact: boolean;
   setup: OnboardingFlow["setup"];
 }) {
-  const { status, failure, terminal } = useSetupProgress({ companyWebsite });
+  const { status, failure, terminal, needsWebsite, recoveryWebsite, setRecoveryWebsite,
+    recoveryBusy, recoveryError, submitWebsite } = useSetupProgress({ companyWebsite });
   const items = deriveSetupItems(setup, status);
+
+  if (needsWebsite) {
+    return (
+      <form className={styles.profileCard} onSubmit={(event) => {
+        event.preventDefault();
+        void submitWebsite();
+      }}>
+        <div className={styles.profileHeading}>
+          <h1>Set up your workspace</h1>
+          <p>Add your company website to research your business and capture its brand.</p>
+        </div>
+        <label className={styles.profileField}>
+          Company website
+          <input aria-label="Company website" required disabled={recoveryBusy}
+            placeholder="www.company.com" value={recoveryWebsite}
+            onChange={(event) => setRecoveryWebsite(event.target.value)} />
+        </label>
+        {recoveryError ? <p className={styles.authError} role="alert">{recoveryError}</p> : null}
+        <Button className={styles.profileSubmit} size="lg" type="submit"
+          disabled={recoveryBusy || !recoveryWebsite.trim()}>
+          {recoveryBusy ? "Starting setup…" : "Start setup"}
+        </Button>
+      </form>
+    );
+  }
 
   return (
     <div className={styles.setupStack}>

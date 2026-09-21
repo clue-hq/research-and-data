@@ -32,6 +32,12 @@ export interface SetupProgress {
   failure: string | null;
   /** Which terminal family the failure belongs to — decides the recovery controls. */
   terminal: SetupTerminalKind;
+  needsWebsite: boolean;
+  recoveryWebsite: string;
+  setRecoveryWebsite: (value: string) => void;
+  recoveryBusy: boolean;
+  recoveryError: string | null;
+  submitWebsite: () => Promise<void>;
 }
 
 /**
@@ -59,6 +65,11 @@ export function useSetupProgress(
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [terminal, setTerminal] = useState<SetupTerminalKind>(null);
+  const [needsWebsite, setNeedsWebsite] = useState(false);
+  const [recoveryWebsite, setRecoveryWebsite] = useState("");
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const recoveryInFlight = useRef(false);
   // Refs, not effect-locals: they survive StrictMode's double-invocation so a start failure
   // from the first run is re-applied by the second run's poll loop (review FE-N4).
   const startFailure = useRef<string | null>(null);
@@ -97,6 +108,9 @@ export function useSetupProgress(
       try {
         await sourceRef.current.start({ companyWebsite: websiteRef.current });
       } catch (caught) {
+        if (caught instanceof SetupApiError && caught.code === "company_domain_missing") {
+          setNeedsWebsite(true);
+        }
         startFailure.current =
           caught instanceof SetupApiError && caught.status === 409
             ? "Workspace setup isn't available for this account."
@@ -184,5 +198,24 @@ export function useSetupProgress(
     };
   }, []);
 
-  return { status, failure, terminal };
+  async function submitWebsite() {
+    if (!needsWebsite || recoveryInFlight.current || !recoveryWebsite.trim()) return;
+    recoveryInFlight.current = true;
+    setRecoveryBusy(true);
+    setRecoveryError(null);
+    try {
+      await sourceRef.current.start({ companyWebsite: recoveryWebsite.trim() });
+      // The durable run now owns the company. A reload reattaches to that run through
+      // the existing blank-draft probe; it never repeats first-time provisioning.
+      window.location.reload();
+    } catch {
+      setRecoveryError("We couldn't start setup. Check the website and try again.");
+    } finally {
+      recoveryInFlight.current = false;
+      setRecoveryBusy(false);
+    }
+  }
+
+  return { status, failure, terminal, needsWebsite, recoveryWebsite, setRecoveryWebsite,
+    recoveryBusy, recoveryError, submitWebsite };
 }
