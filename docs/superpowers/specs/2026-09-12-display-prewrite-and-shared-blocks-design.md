@@ -19,8 +19,15 @@ placeholder copy. The section is served `pending: true` with that sentence as it
 `emptyMessage`, and the page polls every 5 s while any section is pending. A section that will
 never be written (its recipe matches no claim) is NOT pending: it keeps the client's ordinary
 "No {section} information found for {name}." default, so the sentence is never a promise the
-page cannot keep. **Status 2026-09-21:** implementation plan
-`docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`.
+page cannot keep.
+**Status 2026-09-22 — IMPLEMENTED** on branch `display/prewrite-and-shared-blocks` (plan
+`docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`, ledger
+`.superpowers/sdd/2026-09-21-display-prewrite-and-shared-blocks/progress.md`, execution record
+`_memory/2026-09-21-display-prewrite-execution.md`): the `arv2_display_page` fleet kind and handler,
+the settle-time overview offer, contact pages offered on the first open of their account, the read
+as scheduler (`pending` + the sentence + the 5 s poll) and shared blocks all shipped, in eight
+tasks, with two migrations (`fd8795c4fd5a`, `2b702a116c15`). The five live proofs listed in the
+execution record are owed (founder-triggered; they spend money).
 
 ## 1. Today
 

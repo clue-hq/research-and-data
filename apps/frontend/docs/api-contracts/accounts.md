@@ -304,6 +304,11 @@ renders `emptyMessage` verbatim and never parses a provider or reason out of it.
 read *did* generate are untouched, and a page with nothing wrong keeps the client's
 "No {section} information found for {name}." default.
 
+**Shared sections (2026-09-21).** `context-only` on the insights page is the overview's
+`watch-outs` block; `contact-insights` is the committee's `why-this-person` blocks in committee
+order. Same items, same claim ids, the insights page's own `h1`/`defaultOpen`. They are never
+`pending` on the insights page — their owner page carries that.
+
 `BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
 linkedinUrl|null, whyTheyMatter }` — `persona` is served display text, e.g. `Economic buyer`, as it
 is on every `persona` slot including `ContactRef`'s. `AccountOwner` (`owner`, `createdBy`, and the `person` actor):
