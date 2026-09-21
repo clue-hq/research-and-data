@@ -183,3 +183,51 @@ Required next work at the asset-library seam:
 
 This finding remains open in the live UI. No existing assets were deleted,
 replaced or reclassified during the audit.
+
+## Rendition search and preview repair (isolated branch)
+
+The web agent's existing `search_assets` now groups recognized Next optimizer
+renditions from the same source and capture, selecting the largest ready member
+for general searches. The full inner source/crop query, deployment and other
+outer parameters remain part of identity; only optimizer width varies. Different
+aspect ratios or uncertain URLs remain separate. Explicit ids still return exact
+records. Alternatives and the matching member are named without modifying any
+record, byte, component reference or workspace binding.
+
+Search results now include decoded-resolution guidance and accept optional
+required source-pixel dimensions. These arguments reach the actual model tool
+schema. An inadequate source remains visible with an explicit insufficiency;
+this is advisory metadata, not yet a placement-time enforcement gate.
+
+A read-only check against existing Conduit records found 479 responsive members
+in 60 verified families among 535 raster records. The user's building has eight
+renditions, with 480x720 preferred; the avatar has four, with 128x128 preferred.
+Both correctly fail a requested 600px-wide placement. Counts describe this
+existing live library, not the newer frozen multipage corpus.
+
+The asset detail preview now keeps rasters at native size or smaller. Actual
+source bytes were checked in two preview sizes: eight cases passed after six
+previously enlarged thumbnails. SVG previews retain scalable fit behavior. This
+is an offline production-CSS check; the live frontend has not been updated.
+
+Verification: 56 direct search/rendition tests pass, including exact-id
+preservation, distinct crops/captures/deployments, nonready alternatives, bounded
+metadata and source-budget behavior. Broader agent/asset checks: 193 pass, one
+skip, one failure in `test_generate_image_aspect_ratio_reaches_the_images_api_body`.
+That same failure reproduces against unchanged HEAD runtime code: its HTTP mock
+does not intercept the current provider path, which receives HTTP 401 and returns
+a placeholder. No successful model-generation test is claimed. Frontend design
+system build, lint and production build pass; lint retains two unrelated existing
+unused-helper warnings.
+
+Source acquisition remains a shared brand-context capture responsibility. Manual
+invocation of that service for frozen evaluation is not live onboarding acceptance.
+Before skill-family acceptance, a fresh onboarding/refresh must acquire and store
+usable assets from a company URL without a hand-seeded asset pack, expose coverage
+and failures, and support design retrieval. Test at least one additional brand
+without a brand-specific repair. Source originals, generated derivatives and
+reference-only media must remain distinguishable.
+
+Still pending: live deployment/import, richer source roles and labels, gallery
+rendition grouping, placement-size enforcement, higher-resolution acquisition
+when the saved crop is insufficient, and the larger page-fidelity/skill goal.

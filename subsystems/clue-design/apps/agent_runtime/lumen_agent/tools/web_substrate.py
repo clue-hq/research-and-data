@@ -111,6 +111,12 @@ try:  # pragma: no cover - exercised only when the T2I model is configured
 except Exception:  # pragma: no cover
     image_provider = None  # type: ignore[assignment]
 
+from ..asset_renditions import (
+    decoded_dimensions,
+    family_summary,
+    rendition_families,
+    resolution_summary,
+)
 from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
@@ -4147,7 +4153,12 @@ class LumenWebTools:
         return candidates
 
     def search_assets(
-        self, q: str, kind: Optional[str] = None, limit: int = 8
+        self,
+        q: str,
+        kind: str | None = None,
+        limit: int = 8,
+        min_width_px: int | None = None,
+        min_height_px: int | None = None,
     ) -> str:
         """Search the REAL assets this turn can place. No result is invented.
 
@@ -4196,9 +4207,21 @@ class LumenWebTools:
         Searching costs no source budget on a `brand_kit` or `document` row —
         only a library placement cites one.
 
+        RENDITIONS: general search returns the largest ready rendition of a
+        verified same-source family. Relevance comes from the best matching
+        member; `rendition_family.matched_asset_id` identifies it. Different
+        crops, deployments and capture dates remain distinct. An explicitly
+        named id ALWAYS returns its exact record plus available alternatives.
+
+        RESOLUTION: optional positive `min_width_px` and `min_height_px` state
+        the required SOURCE pixels (rendered CSS size times display density).
+        Rows report measured dimensions and `meets_requested_pixels`; an
+        insufficient or unknown source is still returned with guidance. A URL
+        width is never evidence of decoded resolution. This is advice, not a
+        placement gate. Inspect actual pixels via `view` before choosing.
+
         ZERO results always names the inventory that was searched, so "nothing
-        matched" is never confused with "nothing exists" — and because a matched
-        row is never dropped, zero results can only mean zero matches.
+        matched" is never confused with "nothing exists".
         """
         query = (q or "").strip()
         if not query:
@@ -4215,7 +4238,15 @@ class LumenWebTools:
                 "asset_search.bad_limit",
                 f"limit must be an integer from 1 to {_ASSET_SEARCH_LIMIT_MAX}.",
             )
+        for name, value in (("min_width_px", min_width_px), ("min_height_px", min_height_px)):
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 1
+            ):
+                return self._tool_error(
+                    "asset_search.bad_resolution", f"{name} must be a positive integer."
+                )
         candidates = self._asset_search_candidates()
+        families = rendition_families(candidates)
         normalized_kind = (kind or "").strip().lower()
         query_lower = query.lower()
         tokens = _asset_search_tokens(query_lower)
@@ -4270,7 +4301,7 @@ class LumenWebTools:
             phrase_hit = 1 if _asset_text_hit(query_lower, haystack, words) else 0
             if not phrase_hit and token_hits == 0:
                 continue
-            dims = record_pixel_dims(record)
+            dims = decoded_dimensions(record)
             area = dims[0] * dims[1] if dims else 0
             scored.append((-phrase_hit, -token_hits, -area, asset_id, entry, origin))
         scored.sort(key=lambda item: item[:4])
@@ -4279,7 +4310,20 @@ class LumenWebTools:
         ordered = [
             (hit["asset_id"], hit["entry"], hit["origin"], True, hit["note"])
             for hit in id_hits
-        ] + [(item[3], item[4], item[5], False, None) for item in scored]
+        ]
+        matched_ids = {asset_id: asset_id for asset_id in named_ids}
+        seen = {member for asset_id in named_ids
+                for member in families.get(asset_id, (asset_id,))}
+        for item in scored:
+            matched_id = item[3]
+            if matched_id in seen:
+                continue
+            members = families.get(matched_id, (matched_id,))
+            preferred_id = members[0]
+            entry, origin = candidates[preferred_id]
+            ordered.append((preferred_id, entry, origin, False, None))
+            matched_ids[preferred_id] = matched_id
+            seen.update(members)
         unregistered = 0
         for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
@@ -4305,16 +4349,18 @@ class LumenWebTools:
                 registered = self._register_grounding_source(source)
                 if not registered:
                     unregistered += 1
-            results.append(
-                self._asset_search_result(
-                    source,
-                    entry,
-                    origin=origin,
-                    id_match=id_match,
-                    kind_note=note,
-                    registered=registered,
-                )
+            row = self._asset_search_result(
+                source, entry, origin=origin, id_match=id_match,
+                kind_note=note, registered=registered,
             )
+            row["resolution"] = resolution_summary(
+                entry["record"], min_width_px, min_height_px,
+            )
+            if asset_id in families:
+                row["rendition_family"] = family_summary(
+                    families[asset_id], candidates, matched_id=matched_ids[asset_id],
+                )
+            results.append(row)
         payload: JsonObject = {
             "status": "ok",
             "query": query,
@@ -4322,8 +4368,8 @@ class LumenWebTools:
             "count": len(results),
             "results": results,
         }
-        # A matched row is ALWAYS returned (see the loop), so zero results can
-        # only ever mean zero matches — the note never has to guess which.
+        # Grouping replaces a match with a real sibling; it cannot empty a
+        # nonempty match set. Source-budget exhaustion cannot hide results.
         if not results:
             payload["note"] = self._asset_search_empty_note(query, normalized_kind)
         elif unregistered:
