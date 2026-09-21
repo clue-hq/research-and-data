@@ -1,3 +1,4 @@
+import { SelectField } from "@/components/ui/select-field";
 import { useState } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
 import type { BrandAsset } from "../model/brand-context";
@@ -12,9 +13,9 @@ export function AssetContextDetails({asset, controller}: {asset: BrandAsset; con
   return <>
     <div className={styles.detailField}>
       <label htmlFor="asset-creative-type">Type</label>
-      <select id="asset-creative-type" disabled={library.saving} value={context?.creative_type ?? "unknown"} onChange={event => controller.setCreativeType(event.target.value as CreativeType)}>
-        {CreativeTypeSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-      </select>
+      <SelectField id="asset-creative-type" ariaLabel="Asset type" disabled={library.saving} value={context?.creative_type ?? "unknown"}
+        onValueChange={value => controller.setCreativeType(value as CreativeType)}
+        options={CreativeTypeSchema.options.map(value => ({value, label: assetLabel(value)}))} />
       <small>{context?.classification_origin === "human" ? "Chosen by you" : context?.classification_reason ?? "Analysis has not classified this asset yet."}</small>
     </div>
     <fieldset className={styles.detailField} disabled={library.saving}>

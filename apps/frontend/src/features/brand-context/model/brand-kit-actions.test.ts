@@ -5,7 +5,6 @@ import { BrandKitDetailSchema } from "./brand-kit";
 import {
   IngestionJobSchema,
   approvalChip,
-  canApprove,
   isJobActive,
   latestWebsiteUrl,
   panelEmptyMessage,
@@ -89,13 +88,7 @@ test("a status this build does not name is reported in the store's own word", ()
 
 // --- Approve ----------------------------------------------------------------------
 
-test("Approve is offered for every unapproved kit and withdrawn once approved", () => {
-  assert.equal(canApprove({ ...KIT, approvalStatus: "draft" }), true);
-  assert.equal(canApprove({ ...KIT, approvalStatus: "generated_unreviewed" }), true);
-  assert.equal(canApprove({ ...KIT, approvalStatus: null }), true);
-  assert.equal(canApprove({ ...KIT, approvalStatus: "approved" }), false);
-  assert.equal(canApprove(null), false);
-});
+
 
 // --- Re-extract -------------------------------------------------------------------
 

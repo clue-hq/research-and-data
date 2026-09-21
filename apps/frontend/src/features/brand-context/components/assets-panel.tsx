@@ -1,11 +1,10 @@
+import { SelectField } from "@/components/ui/select-field";
 import { AssetContextDetails } from "./asset-context-details";
 import { CreativeTypeSchema, UsageRoleSchema, AssetSourceSchema, assetLabel } from "../model/asset-context";
 import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
-import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
 import type { BrandAsset, BrandAssetSortKey } from "../model/brand-context";
 import { BrandContextIcon } from "./brand-context-icon";
-import { BrandKitActionsRow } from "./brand-kit-actions";
 import styles from "./brand-context.module.css";
 
 function AssetVisual({ asset }: { asset: BrandAsset }) {
@@ -146,10 +145,8 @@ function AssetSortHeader({
 }
 
 export function AssetsHeader({
-  brandKitActions,
   controller,
 }: {
-  brandKitActions: BrandKitActionsController;
   controller: BrandContextController;
 }) {
   return (
@@ -158,15 +155,6 @@ export function AssetsHeader({
         <h1>Assets</h1>
         <div className={styles.headerActions}>
           <button className={styles.primaryButton} type="button" disabled={!controller.assetLibrary.canWrite} onClick={() => controller.assetLibrary.setOpen(true)}>Upload assets{controller.assetLibrary.uploads.length ? ` (${controller.assetLibrary.uploads.length})` : ""}</button>
-          <BrandKitActionsRow controller={brandKitActions} />
-          <button
-            aria-label={controller.shareCopied ? "Assets link copied" : "Copy assets link"}
-            className={styles.documentLinkButton}
-            onClick={controller.shareCurrentView}
-            type="button"
-          >
-            <BrandContextIcon name="link" size={14} />
-          </button>
         </div>
       </div>
       <div className={styles.assetToolbar}>
@@ -180,16 +168,22 @@ export function AssetsHeader({
           />
         </label>
         <div className={styles.assetToolbarRight}>
-          <div className={styles.assetFilterRow}>
-            <label>Type <select aria-label="Filter by creative type" value={controller.creativeTypeFilter} onChange={event => controller.setCreativeTypeFilter(event.target.value)}>
-              <option value="all">All types</option>{CreativeTypeSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-            </select></label>
-            <label>Used as <select aria-label="Filter by usage" value={controller.usageFilter} onChange={event => controller.setUsageFilter(event.target.value)}>
-              <option value="all">Any usage</option>{UsageRoleSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-            </select></label>
-            <label>Source <select aria-label="Filter by source" value={controller.sourceFilter} onChange={event => controller.setSourceFilter(event.target.value)}>
-              <option value="all">All sources</option>{AssetSourceSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-            </select></label>
+          <div className={styles.assetToolbarFilters}>
+            <label className={styles.assetFilterField}>Type
+              <SelectField ariaLabel="Filter by creative type" value={controller.creativeTypeFilter}
+                onValueChange={controller.setCreativeTypeFilter}
+                options={[{value: "all", label: "All types"}, ...CreativeTypeSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
+            <label className={styles.assetFilterField}>Used as
+              <SelectField ariaLabel="Filter by usage" value={controller.usageFilter}
+                onValueChange={controller.setUsageFilter}
+                options={[{value: "all", label: "Any usage"}, ...UsageRoleSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
+            <label className={styles.assetFilterField}>Source
+              <SelectField ariaLabel="Filter by source" value={controller.sourceFilter}
+                onValueChange={controller.setSourceFilter}
+                options={[{value: "all", label: "All sources"}, ...AssetSourceSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
           </div>
           <div aria-label="Asset view" className={styles.iconSegmentedControl}>
             <button aria-label="Grid view" aria-pressed={controller.assetView === "grid"} className={controller.assetView === "grid" ? styles.iconSegmentActive : ""} onClick={() => controller.setAssetView("grid")} type="button">

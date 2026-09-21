@@ -135,6 +135,7 @@ def _publish_ingested_kit(
     tools: Any,
     repo: HybridRepository,
     *,
+    core: Any,
     brand_kit: JsonObject,
     brand_summary: JsonObject,
     diagnostics: "list[JsonObject]",
@@ -164,10 +165,16 @@ def _publish_ingested_kit(
 
     A rare reaper residual remains deliberately visible: an existing-lineage job that dies after
     this publish but before terminalizing has no durable producing-job marker in the kit row, so
-    its re-offer can publish one extra DRAFT version. The page shows the latest and the approval
-    gate still holds; adding a new provenance field solely for this recovery case was explicitly
-    left out of Slice 4.
+    its re-offer can publish one extra version. Ingestion now auto-approves each version;
+    the page shows the latest. A durable producing-job receipt remains a separate follow-up.
     """
+    # Extraction is automatically accepted at publication (founder, 2026-09-21).
+    # Normalize and structurally validate first, then summarize the approved kit so
+    # product_ready and completeness diagnostics still describe the actual content.
+    brand_kit = {**brand_kit, "approval_status": "approved"}
+    summary_response = core.summarize_brand_kit(brand_kit, raise_on_error=False)
+    brand_summary = {**brand_summary, **summary_response["brand_summary"]}
+
     if not job_derived_id:
         brand_kit_id = str(brand_kit["id"])
         try:
@@ -1047,7 +1054,7 @@ def _ingest(
     kit = result.brand_kit
 
     # Persist mirroring main.py's create_brand_kit flow, but for a draft
-    # ingestion kit (product_ready=False — the human reviews before publish).
+    # ingestion kit (product_ready=False — completeness is reported independently).
     validation = core.validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     if not validation.get("ok"):
         codes = sorted(
@@ -1057,11 +1064,9 @@ def _ingest(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     # The brief rides the VALIDATED kit: the engine's BrandKit has no `brief`
     # field, so a payload carrying one through `validate_brand_kit` would come
@@ -1101,6 +1106,7 @@ def _ingest(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,
@@ -1554,11 +1560,9 @@ def _ingest_pdf(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     diagnostics = (
         result.diagnostics
@@ -1570,6 +1574,7 @@ def _ingest_pdf(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,
@@ -1820,11 +1825,9 @@ def _ingest_assets(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     diagnostics = (
         result.diagnostics
@@ -1836,6 +1839,7 @@ def _ingest_assets(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,

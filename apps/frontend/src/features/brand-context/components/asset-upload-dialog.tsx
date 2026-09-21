@@ -1,3 +1,4 @@
+import { SelectField } from "@/components/ui/select-field";
 import { useEffect, useRef } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
@@ -31,12 +32,16 @@ export function AssetUploadDialog({controller}: {controller: BrandContextControl
           <input aria-label="Choose asset files" disabled={!library.limits} type="file" accept={ASSET_UPLOAD_ACCEPT} multiple onChange={event => {library.queue.add(Array.from(event.target.files ?? [])); event.target.value = "";}} />
         </label>
         <div className={styles.assetFilterRow}>
-          <label>Type for selected files <select aria-label="Bulk asset type" defaultValue="" onChange={event => library.queue.editAll({creative_type: (event.target.value || undefined) as CreativeType | undefined})}>
-            <option value="">Let analysis suggest</option>{CreativeTypeSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-          </select></label>
-          <label>Used as <select aria-label="Bulk usage role" defaultValue="" onChange={event => library.queue.editAll({usage_roles: event.target.value ? [event.target.value as UsageRole] : undefined})}>
-            <option value="">Let analysis suggest</option>{UsageRoleSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-          </select></label>
+          <label>Type for selected files
+            <SelectField ariaLabel="Bulk asset type" defaultValue=""
+              onValueChange={value => library.queue.editAll({creative_type: (value || undefined) as CreativeType | undefined})}
+              options={[{value: "", label: "Let analysis suggest"}, ...CreativeTypeSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+          </label>
+          <label>Used as
+            <SelectField ariaLabel="Bulk usage role" defaultValue=""
+              onValueChange={value => library.queue.editAll({usage_roles: value ? [value as UsageRole] : undefined})}
+              options={[{value: "", label: "Let analysis suggest"}, ...UsageRoleSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+          </label>
         </div>
         <div className={styles.uploadRows} aria-live="polite">
           {library.uploads.map(row => <div className={styles.uploadRow} key={row.id}>
@@ -46,12 +51,12 @@ export function AssetUploadDialog({controller}: {controller: BrandContextControl
               <div><strong>{row.name}</strong><div>{row.file.type || row.name.split(".").pop()?.toUpperCase()} · {(row.file.size / 1024).toFixed(1)} KB</div></div>
             </div>
             <div className={styles.assetFilterRow}>
-              <select aria-label={`Type for ${row.name}`} disabled={row.state !== "selected"} value={row.overrides.creative_type ?? ""} onChange={event => library.queue.edit(row.id, {creative_type: (event.target.value || undefined) as CreativeType | undefined})}>
-                <option value="">Suggest type</option>{CreativeTypeSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-              </select>
-              <select aria-label={`Usage for ${row.name}`} disabled={row.state !== "selected"} value={row.overrides.usage_roles?.[0] ?? ""} onChange={event => library.queue.edit(row.id, {usage_roles: event.target.value ? [event.target.value as UsageRole] : undefined})}>
-                <option value="">Suggest usage</option>{UsageRoleSchema.options.map(value => <option key={value} value={value}>{assetLabel(value)}</option>)}
-              </select>
+              <SelectField ariaLabel={`Type for ${row.name}`} className={styles.assetUploadSelect} disabled={row.state !== "selected"} value={row.overrides.creative_type ?? ""}
+                onValueChange={value => library.queue.edit(row.id, {creative_type: (value || undefined) as CreativeType | undefined})}
+                options={[{value: "", label: "Suggest type"}, ...CreativeTypeSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+              <SelectField ariaLabel={`Usage for ${row.name}`} className={styles.assetUploadSelect} disabled={row.state !== "selected"} value={row.overrides.usage_roles?.[0] ?? ""}
+                onValueChange={value => library.queue.edit(row.id, {usage_roles: value ? [value as UsageRole] : undefined})}
+                options={[{value: "", label: "Suggest usage"}, ...UsageRoleSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
               <input aria-label={`Note for ${row.name}`} maxLength={4000} placeholder="Optional context" disabled={row.state !== "selected"} value={row.overrides.user_note ?? ""} onChange={event => library.queue.edit(row.id, {user_note: event.target.value})} />
             </div>
             <span>{row.state === "uploaded" ? `Uploaded · ${assetLabel(row.context?.status ?? "queued")}` : assetLabel(row.state)}</span>

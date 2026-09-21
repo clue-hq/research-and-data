@@ -43,7 +43,7 @@ export function BrandContextScreen({
         <BrandContextSidebar controller={controller} workspace={workspace} />
         <main className={styles.main}>
           {controller.section === "assets"
-            ? <AssetsHeader brandKitActions={brandKitActions} controller={controller} />
+            ? <AssetsHeader controller={controller} />
             : <BrandContextHeader brandKitActions={brandKitActions} controller={controller} />}
           <div className={`${styles.panelScroll} clue-view-enter`} key={controller.section}>
             {controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} workspace={workspace} /> : null}
