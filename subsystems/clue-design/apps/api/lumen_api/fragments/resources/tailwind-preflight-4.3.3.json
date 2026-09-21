@@ -1,0 +1,12 @@
+{
+  "version": "4.3.3",
+  "source_package": "tailwindcss",
+  "source_path": "preflight.css",
+  "source_repository": "https://github.com/tailwindlabs/tailwindcss/tree/v4.3.3/packages/tailwindcss",
+  "license": "MIT",
+  "preflight_sha256": "ace8310eed6dc5568a56fc16e1d695cf58da7528d81d66d81649e93cce644df6",
+  "browser_package": "@tailwindcss/browser",
+  "browser_path": "dist/index.global.js",
+  "browser_sha256": "a60c785630a06196808cbe79e6f7bdb4abcc8f4421a47b56f29338fc84805e3b",
+  "provenance": "Copied unchanged from the existing local 4.3.3 npm package. Browser compiler output was compared against its default preflight; removing only the added selector guards preserves normalized CSS tokens, order, declarations and importance. No vendor runtime edits."
+}

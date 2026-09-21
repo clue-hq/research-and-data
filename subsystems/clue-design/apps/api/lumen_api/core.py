@@ -504,6 +504,14 @@ class CoreClient:
             from .fragments.editor_candidates import isolate_fragment_candidates
 
             html, diagnostics = isolate_fragment_candidates(response["html"])
+            # Inline preview callers qualify only after reading the actual runtime bytes.
+            if tailwind_runtime_src is not None:
+                from .fragments.editor_preflight import qualify_fragment_preflight
+
+                html, preflight_diagnostics = qualify_fragment_preflight(
+                    html, runtime_src=tailwind_runtime_src
+                )
+                diagnostics.extend(preflight_diagnostics)
             response = {**response, "html": html}
             if diagnostics:
                 response["diagnostics"] = list(response.get("diagnostics") or []) + diagnostics

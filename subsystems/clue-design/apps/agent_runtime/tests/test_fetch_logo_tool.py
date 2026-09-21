@@ -12,6 +12,7 @@ import copy
 import hashlib
 import io
 import json
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,6 +37,36 @@ def _vendor_rung_disabled(monkeypatch):
 
     monkeypatch.setattr(logo_fetch, "_vendor_rung", disabled)
     monkeypatch.setattr(logo_fetch, "_logo_dev_rung", disabled, raising=False)
+
+
+@contextmanager
+def _vendor_transport(handler):
+    """Serve the paid lookup and free asset downloads through one offline handler."""
+    import httpx
+    from lumen_api import spend
+
+    from clue_spend import HttpResponse, LedgerStamp
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        class Transport:
+            def send(self, request):
+                response = client.request(
+                    request.method,
+                    request.url,
+                    headers=dict(request.headers),
+                    content=request.body,
+                    timeout=request.timeout_s,
+                )
+                return HttpResponse(
+                    status=response.status_code,
+                    headers=dict(response.headers),
+                    body=response.content,
+                )
+
+        with spend.spend_scope(
+            LedgerStamp(workspace_id="ws_logo_tool_test"), transport=Transport()
+        ):
+            yield client
 
 
 def test_brandfetch_original_is_attributed_and_usable_when_site_is_blocked(monkeypatch):
@@ -880,7 +911,7 @@ def test_dispatch_retains_identity_refusal_when_official_site_is_rate_limited(
 
     cache = _RecordingCache()
     monkeypatch.setattr(logo_fetch, "_ladder_rung", blocked)
-    with httpx.Client(transport=httpx.MockTransport(provider)) as client:
+    with _vendor_transport(provider) as client:
         monkeypatch.setattr(
             logo_fetch, "_vendor_rung",
             lambda site, company: fetch_vendor_family(
@@ -1194,16 +1225,16 @@ def _e2e_vendor_handler(request):
 
 
 def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monkeypatch):
-    """The whole tool, both rungs live, nothing faked above the transport.
+    """The whole tool with real vendor logic and a fixture-backed ladder rung.
 
-    The vendor rung runs the REAL `fetch_vendor_family` against an httpx MockTransport, so the
-    lookup, the allowlist, the download, the theme inversion and the cell mapping all execute;
+    The vendor rung runs the REAL `fetch_vendor_family` with an offline ProviderCaller
+    transport for the lookup and an httpx MockTransport for the free downloads. The identity
+    check, allowlist, download, theme inversion and cell mapping all execute;
     the ladder rung is faked at its own driver seam, as every other test in this file does. Two
     cells therefore come from Brandfetch and two from the ladder, and the point of the test is
     that each ingested record carries ITS OWN source: a family is allowed to be mixed, and a
     reader must never have to guess which half of it the vendor served.
     """
-    import httpx
     from lumen_ingestion.logo_vendor import fetch_vendor_family
 
     ladder = _resolution({
@@ -1215,7 +1246,7 @@ def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monk
     monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: ladder)
 
     tools = _web_tools(tmp_path)
-    with httpx.Client(transport=httpx.MockTransport(_e2e_vendor_handler)) as client:
+    with _vendor_transport(_e2e_vendor_handler) as client:
         monkeypatch.setattr(
             logo_fetch,
             "_vendor_rung",

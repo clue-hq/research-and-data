@@ -6020,6 +6020,108 @@ class LumenWebTools:
                 }
             )
 
+        # Source envelopes are a read capability, reached only after every pin and
+        # slot passed its ordinary gate. A read failure never partially mutates the doc.
+        prepare_flows = getattr(registry, "prepare_source_flows", None)
+        source_flow: JsonObject = {"groups": [], "gaps": [], "fidelity_verified": False}
+        if callable(prepare_flows):
+            try:
+                prepared = prepare_flows([entry["fragment_id"] for entry in pinned])
+            except FragmentReferenceError as error:
+                return self._tool_error(str(error.code), error.message)
+            except Exception as error:  # noqa: BLE001 - source capability boundary
+                return self._tool_error(
+                    "source_flow.read_failed",
+                    f"captured source context could not be prepared: {type(error).__name__}. "
+                    "Nothing was pinned.",
+                )
+            source_flow["gaps"] = list(prepared.get("gaps") or [])
+            grouped = {}
+            consumed = set()
+            ids = [entry["fragment_id"] for entry in pinned]
+            for group in prepared.get("groups") or []:
+                members = list(group.get("member_ids") or [])
+                positions = [ids.index(fid) for fid in members if fid in ids]
+                if (
+                    not members
+                    or len(positions) != len(members)
+                    or positions != list(range(positions[0], positions[0] + len(members)))
+                    or consumed.intersection(positions)
+                ):
+                    return self._tool_error(
+                        "source_flow.order_mismatch",
+                        "captured envelope members do not match the gated source-order plan. "
+                        "Nothing was pinned.",
+                    )
+                descriptors = list(group.get("nodes") or [])
+                if not descriptors or len(descriptors) > 10:
+                    return self._tool_error(
+                        "source_flow.bound", "captured ancestor chain exceeds its bound"
+                    )
+                group_ids = [str(group["group_id"]) + "_" + str(i) for i in range(len(descriptors))]
+                if taken.intersection(group_ids):
+                    return self._tool_error(
+                        "source_flow.identity_collision", "source envelope node ids already exist"
+                    )
+                taken.update(group_ids)
+                group_nodes = [
+                    {
+                        "id": node_id,
+                        "kind": "section" if i == 0 else "container",
+                        "classes": descriptor["classes"],
+                        "name": "Captured source flow",
+                        "children": [group_ids[i + 1]]
+                        if i + 1 < len(group_ids)
+                        else [pinned[pos]["section_node_id"] for pos in positions],
+                    }
+                    for i, (node_id, descriptor) in enumerate(
+                        zip(group_ids, descriptors, strict=True)
+                    )
+                ]
+                for pos in positions:
+                    group_nodes.extend(operations[pos]["nodes"])
+                grouped[positions[0]] = {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "root": group_ids[0],
+                    "nodes": group_nodes,
+                }
+                consumed.update(positions)
+                source_flow["groups"].append(
+                    {
+                        **{k: v for k, v in group.items() if k not in ("nodes", "css")},
+                        "root_node_id": group_ids[0],
+                        "fidelity_verified": False,
+                    }
+                )
+            if grouped:
+                assembled = []
+                for pos, operation in enumerate(operations):
+                    if pos in grouped:
+                        operation = grouped[pos]
+                    elif pos in consumed:
+                        continue
+                    operation["index"] = len(assembled)
+                    assembled.append(operation)
+                css = "\n".join(str(group.get("css") or "") for group in prepared["groups"])
+                assembled.append(
+                    {
+                        "kind": "set_custom_css",
+                        "css": str(self.web_doc.get("custom_css") or "") + "\n" + css,
+                    }
+                )
+                operations = assembled
+        else:
+            source_flow["gaps"].append(
+                {
+                    "code": "source_flow.reader_unavailable",
+                    "member_ids": [entry["fragment_id"] for entry in pinned],
+                    "message": "shared source layout was not inspected; "
+                    "the registry has no snapshot reader",
+                }
+            )
+
         try:
             response = self.core.web_apply_ops(self.web_doc, operations)
         except CoreError as error:
@@ -6058,6 +6160,17 @@ class LumenWebTools:
 
         substituted = [entry for entry in pinned if entry["substituted_for"]]
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        for gap in source_flow["gaps"]:
+            warnings.append(
+                {
+                    "severity": "warning",
+                    "phase": "source_flow",
+                    "code": gap["code"],
+                    "message": "Shared source layout remains unpreserved: "
+                    + str(gap.get("message") or ""),
+                    "hint": "",
+                }
+            )
         self.record(
             "author",
             "cloned_page_recreated",
@@ -6072,6 +6185,7 @@ class LumenWebTools:
                 "fragment_ids": [entry["fragment_id"] for entry in pinned],
                 "needs_repair": copy.deepcopy(degraded_pins),
                 "operations": copy.deepcopy(operations),
+                "source_flow": copy.deepcopy(source_flow),
             },
             sink_extra={"pinned_count": len(pinned)},
         )
@@ -6085,6 +6199,7 @@ class LumenWebTools:
             "ranked": ranked,
             "warnings": warnings,
             "advice": advice,
+            "source_flow": source_flow,
         }
         if ranked:
             # ADVICE, not a warning: the band is already reported as work through `needs_repair`
@@ -8689,7 +8804,16 @@ class LumenWebTools:
         if reference_note is not None:
             result["reference_unavailable"] = reference_note
         if tailwind_missing:
-            result["tailwind_runtime_missing"] = True
+            preflight_unverified = any(
+                str(item.get("code", "")).startswith("fragment.editor_preflight_")
+                for item in diagnostics
+            )
+            status_key = (
+                "tailwind_runtime_unverified"
+                if preflight_unverified
+                else "tailwind_runtime_missing"
+            )
+            result[status_key] = True
 
         self.record(
             "orchestrator",
@@ -9456,7 +9580,16 @@ class LumenWebTools:
             "diagnostics": diagnostics,
         }
         if tailwind_missing:
-            result["tailwind_runtime_missing"] = True
+            preflight_unverified = any(
+                str(item.get("code", "")).startswith("fragment.editor_preflight_")
+                for item in diagnostics
+            )
+            status_key = (
+                "tailwind_runtime_unverified"
+                if preflight_unverified
+                else "tailwind_runtime_missing"
+            )
+            result[status_key] = True
         if state_capture_error is not None:
             result["state_capture_error"] = state_capture_error
         omitted_nonempty = {k: v for k, v in (state_omitted or {}).items() if v}
@@ -9511,13 +9644,24 @@ class LumenWebTools:
         tailwind_missing = False
         runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
         if runtime_path is not None:
+            from lumen_api.fragments.editor_preflight import qualify_fragment_preflight
+
+            # Read once: qualification and execution must use exactly the same bytes.
+            runtime_bytes = runtime_path.read_bytes()
+            html, preflight_diagnostics = qualify_fragment_preflight(
+                html, runtime_bytes=runtime_bytes
+            )
+            diagnostics.extend(preflight_diagnostics)
+            # Transitional internal name: this bool also makes unsupported runtime
+            # evidence unsettled. Public results distinguish unverified from missing.
+            tailwind_missing = bool(preflight_diagnostics)
             # The marker is what the F3.3 review gate's readiness check anchors on: the compiled
             # utilities can only land AFTER this element, so "an untyped style following this
             # script" means the JIT has run, and a page with no such script can never be mistaken
             # for a compiled one. The attribute is inert to every other reader.
             script = (
                 f"<script {TAILWIND_RUNTIME_MARKER}>"
-                + runtime_path.read_text(encoding="utf-8")
+                + runtime_bytes.decode("utf-8")
                 + "</script>"
             )
             if "</head>" in html:

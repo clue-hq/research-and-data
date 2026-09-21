@@ -158,7 +158,7 @@ def _reachable_nodes(web_doc: Any, page_id: str) -> list[dict[str, Any]]:
 
 
 def web_doc_page_section_count(web_doc: Any, page_id: str) -> int:
-    """How many top-level bands this page carries — sections AND pinned fragments.
+    """How many structural bands this page carries — native sections and pinned fragments.
 
     The behavioural gate probes only fragment-wrapped bands (`.lumen-frag-…`), so a draft
     repair or a composed section riding as a plain document node is invisible to it. This
@@ -178,12 +178,39 @@ def web_doc_page_section_count(web_doc: Any, page_id: str) -> int:
     children = root.get("children")
     if not isinstance(children, list):
         return 0
-    count = 0
-    for child_id in children:
-        child = nodes.get(child_id) if isinstance(child_id, str) else None
-        if isinstance(child, dict) and child.get("kind") in ("section", "fragment"):
-            count += 1
-    return count
+    # Source-flow envelopes are ordinary nested Section/Container nodes. Count the
+    # bands inside them, not just the outer envelope. A fragment is one opaque band;
+    # a native section with no nested band still counts as unmeasured native content.
+    pending = [(child, None) for child in reversed(children) if isinstance(child, str)]
+    seen = {root_id}
+    native_bands: set[str] = set()
+    fragment_count = 0
+    while pending:
+        node_id, containing_section = pending.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        kind = node.get("kind")
+        if kind not in ("container", "section", "fragment"):
+            continue
+        if kind in ("section", "fragment"):
+            native_bands.discard(containing_section)
+            if kind == "fragment":
+                fragment_count += 1
+                continue
+            native_bands.add(node_id)
+            containing_section = node_id
+        nested = node.get("children")
+        if isinstance(nested, list):
+            pending.extend(
+                (child, containing_section)
+                for child in reversed(nested)
+                if isinstance(child, str)
+            )
+    return fragment_count + len(native_bands)
 
 
 def web_doc_fragment_ids(web_doc: Any, page_id: str) -> list[str]:

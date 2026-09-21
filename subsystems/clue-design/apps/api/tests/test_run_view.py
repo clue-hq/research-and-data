@@ -78,7 +78,11 @@ import pytest
 from lumen_api import run_view as run_view_module
 from lumen_api.run_view import RunViewNotFound, assemble
 
-DB = os.environ.get("CLUE_DATABASE_URL", "").replace("+asyncpg", "")
+DB = (
+    os.environ.get("CLUE_DATABASE_URL", "")
+    .replace("postgresql+asyncpg:", "postgresql:", 1)
+    .replace("postgresql+psycopg:", "postgresql:", 1)
+)
 # Was a module-level `pytestmark` (Task 1: every test needed the DB). Task 2 adds a pure-unit
 # materializer test that must NOT be skipped just because this file's neighbours need Postgres,
 # so the skip is now per-test.

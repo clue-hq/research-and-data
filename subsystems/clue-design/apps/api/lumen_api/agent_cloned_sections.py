@@ -90,6 +90,8 @@ from .fragments.sanitize import sanitize_fragment_html
 # (`main.py`, `fleet_handler.py` do the same in the other direction) and `slotdetect` itself
 # pulls only `lumen_api.fragments`, so there is no cycle to be had here.
 from lumen_ingestion.sections.slotdetect import detect_slots
+from lumen_ingestion.sections.source_flow import SourceFlowUnavailable, compile_source_flow
+from lumen_ingestion.site_snapshot import read_site_snapshot
 
 JsonObject = Dict[str, Any]
 
@@ -495,7 +497,15 @@ class DurableAgentClonedSectionRegistry:
         # bottom — nav, hero, proof, footer — and "newest first" scattered that into the order
         # the minter happened to write rows in, which carries no meaning a human can use. Page
         # first so a multi-page walk stays grouped, then the section's own index within it.
-        ordered = sorted(rows, key=self._document_order)
+        by_id = {str(row["fragment_id"]): row for row in all_rows}
+        # A repair keeps its family's captured source position, even if its own
+        # provenance intentionally lacks the original snapshot/layout identity.
+        def source_order(row):
+            verdict = lineages.get(str(row["fragment_id"]))
+            original = by_id.get(verdict.root, row) if verdict else row
+            return (*self._document_order(original)[:-1], str(row["fragment_id"]))
+
+        ordered = sorted(rows, key=source_order)
         sections = [
             self._section_row(row, repairs, lineages)
             for row in ordered[:CLONED_SECTION_LIST_MAX]
@@ -539,9 +549,24 @@ class DurableAgentClonedSectionRegistry:
         provenance = row.get("provenance")
         provenance = provenance if isinstance(provenance, dict) else {}
         index = provenance.get("section_index")
+        path: tuple = ()
+        recovery = provenance.get("recovery") or {}
+        parent = recovery.get("parent_dom_path")
+        member = provenance.get("dom_path")
+        recovered_index = recovery.get("parent_section_index")
+        if (
+            recovery.get("mode") == "authored-descendant-after-refusal"
+            and type(recovered_index) is int and recovered_index >= 0
+            and isinstance(parent, (list, tuple)) and isinstance(member, (list, tuple))
+            and parent and len(member) > len(parent)
+            and all(type(i) is int and i >= 0 for i in (*parent, *member))
+            and list(member[:len(parent)]) == list(parent)
+        ):
+            index, path = recovered_index, tuple(member[len(parent):])
         return (
             _page_url(row) or "",
-            int(index) if isinstance(index, int) else 1_000_000,
+            int(index) if type(index) is int else 1_000_000,
+            path,
             str(row.get("fragment_id") or ""),
         )
 
@@ -958,6 +983,97 @@ class DurableAgentClonedSectionRegistry:
                 conn, workspace_id=self.workspace_id, snapshot_id=snapshot_id
             )
         )
+
+    def prepare_source_flows(self, fragment_ids: Sequence[str]) -> JsonObject:
+        """Read exact captured envelopes after the ordinary per-fragment release gate.
+
+        No artifact, release state, snapshot or asset is written. Each snapshot is
+        loaded once per call. Missing/unsupported source context is returned as an
+        explicit assembly gap, never replaced by measured or invented spacing.
+        """
+        if (
+            len(fragment_ids) > CLONED_SECTION_LIST_MAX
+            or len(set(fragment_ids)) != len(fragment_ids)
+        ):
+            raise SourceFlowUnavailable("bound", "assembly ids exceed the supported bound")
+        repository = self._repository()
+        rows = {}
+        buckets = {}
+        gaps = []
+
+        def read(fid):
+            if fid not in rows:
+                rows[fid] = repository.find_web_fragment(fid)
+            return rows[fid]
+
+        for fid in fragment_ids:
+            repository.validate_fragment_reference_changes(
+                before_web_doc={}, after_web_doc=_probe_web_doc(fid)
+            )
+            row = read(fid)
+            original = row
+            seen = set()
+            while original.get("derived_from"):
+                parent_id = str(original["derived_from"])
+                if parent_id in seen or len(seen) >= 40:
+                    raise SourceFlowUnavailable(
+                        "lineage", "source lineage is cyclic or exceeds bound"
+                    )
+                seen.add(parent_id)
+                original = read(parent_id)
+            p = original.get("provenance") or {}
+            recovery = p.get("recovery") or {}
+            if recovery.get("mode") != "authored-descendant-after-refusal":
+                continue
+            path = recovery.get("parent_dom_path")
+            if (
+                not isinstance(path, (list, tuple))
+                or not path
+                or any(type(i) is not int or i < 0 for i in path)
+            ):
+                gaps.append(
+                    {
+                        "code": "source_flow.source_mismatch",
+                        "member_ids": [fid],
+                        "message": "captured parent path is absent or invalid",
+                    }
+                )
+                continue
+            key = (str(p.get("snapshot_id") or ""), tuple(path))
+            buckets.setdefault(key, []).append(row)
+
+        snapshots = {}
+        groups = []
+        for (snapshot_id, _), members in buckets.items():
+            ids = [str(row["fragment_id"]) for row in members]
+            try:
+                if any(row.get("derived_from") for row in members):
+                    raise SourceFlowUnavailable(
+                        "incompatible_repair",
+                        "repaired member has no verified shared source layout",
+                    )
+                if not snapshot_id:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "recovery has no immutable snapshot id"
+                    )
+                if snapshot_id not in snapshots:
+                    try:
+                        snapshots[snapshot_id] = read_site_snapshot(
+                            self.blobs.storage,
+                            workspace_id=self.workspace_id,
+                            snapshot_id=snapshot_id,
+                        )
+                    except Exception:  # custody boundary; do not leak storage paths or row details
+                        snapshots[snapshot_id] = None
+                snapshot = snapshots[snapshot_id]
+                if snapshot is None:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "immutable captured source could not be read"
+                    )
+                groups.append(compile_source_flow(snapshot, members))
+            except SourceFlowUnavailable as error:
+                gaps.append({"code": error.code, "member_ids": ids, "message": str(error)[:500]})
+        return {"groups": groups, "gaps": gaps, "fidelity_verified": False}
 
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
 

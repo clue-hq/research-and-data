@@ -988,6 +988,10 @@ fn render_node(
                 out.push_str(&escape_attr(node.classes.trim()));
             }
             out.push('"');
+            // Semantic CSS boundary in both modes, only for resolved artifacts.
+            // Unlike an authored class, this cannot accidentally turn a native
+            // container or missing-pin placeholder into source-owned markup.
+            out.push_str(" data-lumen-fragment=\"true\"");
             node_attr(out);
             // Slice 2 / R-A1: the bridge has to tell a clone ROOT from an ordinary
             // vocabulary node, because everything INSIDE this wrapper is the artifact's
@@ -1818,7 +1822,7 @@ mod tests {
         assert!(
             editor.html.contains(
                 "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" \
-                 data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
+                 data-lumen-fragment=\"true\" data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
             ),
             "{}",
             editor.html
@@ -1838,7 +1842,7 @@ mod tests {
         )
         .expect("delivery render");
         assert!(delivery.html.contains(
-            "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\">"
+            "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" data-lumen-fragment=\"true\">"
         ));
         assert!(delivery.html.contains(FRAGMENT_HTML));
         assert!(!delivery.html.contains("data-node-id"));

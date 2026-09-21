@@ -1,4 +1,4 @@
-"""Bounded HTML/body inheritance for detached sections; never source document layout.
+"""Bounded HTML/body style context for detached sections; never source document layout.
 
 Two private, non-layout elements retain the inheritance levels. Ordinary selectors exclude
 those elements at zero specificity; separately projected rules address captured HTML/body
@@ -60,6 +60,9 @@ _INHERITED = frozenset(
         "color-scheme",
     }
 )
+# box-sizing is not inherited by default, but source resets often explicitly inherit it.
+# Retain it on the display:contents context nodes without recovering document layout.
+_CONTEXT_PROPERTIES = _INHERITED | {"box-sizing"}
 _SELECTOR_FUNCTIONS = frozenset({"is", "where", "not", "has"})
 _STATIC_PSEUDOS = frozenset(
     {
@@ -76,6 +79,50 @@ _STATIC_PSEUDOS = frozenset(
 _STRUCTURAL = (":first-", ":last-", ":only-", ":nth-", ":empty")
 _ROOT_NAMES = frozenset({"html", "body"})
 _MAX_NOTES = 32
+_MAX_BOX_SIZING_FALLBACK_DEPTH = 32
+
+
+def _root_box_sizing(tokens: Sequence[Any], depth: int = 0) -> list[Any] | None:
+    """Normalize explicit root inheritance, including var fallbacks, without resolving vars."""
+    if depth > _MAX_BOX_SIZING_FALLBACK_DEPTH:
+        raise ValueError("source root box-sizing var fallback nesting exceeds supported bound")
+    significant = [t for t in tokens if t.type not in {"whitespace", "comment"}]
+    if len(significant) != 1:
+        return None
+    token = significant[0]
+    if isinstance(token, ast.IdentToken) and token.lower_value == "inherit":
+        replacement = ast.IdentToken(token.source_line, token.source_column, "initial")
+    elif isinstance(token, ast.FunctionBlock) and token.lower_name == "var":
+        comma = next(
+            (
+                i
+                for i, part in enumerate(token.arguments)
+                if isinstance(part, ast.LiteralToken) and part.value == ","
+            ),
+            None,
+        )
+        if comma is None:
+            return None
+        name = [t for t in token.arguments[:comma] if t.type not in {"whitespace", "comment"}]
+        if not (
+            len(name) == 1
+            and isinstance(name[0], ast.IdentToken)
+            and name[0].value.startswith("--")
+        ):
+            return None
+        fallback = _root_box_sizing(token.arguments[comma + 1 :], depth + 1)
+        if fallback is None:
+            return None
+        replacement = ast.FunctionBlock(
+            token.source_line,
+            token.source_column,
+            token.name,
+            [*token.arguments[: comma + 1], *fallback],
+        )
+    else:
+        return None
+    # Keep the stylesheet AST shared with body/ordinary rules unchanged.
+    return [replacement if part is token else part for part in tokens]
 
 
 def _parts(selector: str) -> tuple[list[list[Any]], list[str]]:
@@ -384,9 +431,25 @@ class SourceSectionContext:
         ):
             if not isinstance(declaration, ast.Declaration):
                 continue
-            if declaration.lower_name not in _INHERITED and not declaration.name.startswith("--"):
+            if (
+                declaration.lower_name not in _CONTEXT_PROPERTIES
+                and not declaration.name.startswith("--")
+            ):
                 dropped.add(declaration.lower_name)
                 continue
+            if owner == 0 and declaration.lower_name == "box-sizing":
+                try:
+                    normalized = _root_box_sizing(declaration.value)
+                except ValueError as error:
+                    self.note(str(error))
+                    self.document.unsupported = True
+                    normalized = None
+                if normalized is not None:
+                    # The source document root inherits the initial value; the synthetic
+                    # root must not inherit the host wrapper's box model instead.
+                    priority = "!important" if declaration.important else ""
+                    out.append(f"box-sizing:{tinycss2.serialize(normalized)}{priority};")
+                    continue
             if owner == 0 and declaration.lower_name == "font-size":
                 value = _root_length(declaration.value, self.document.root_units.initial_px)
                 if value is not None:
@@ -489,7 +552,7 @@ class SourceSectionContext:
     def base_css(self) -> str:
         # Source HTML inherits browser defaults, not the host brand kit. Relative source-root
         # font declarations are normalized separately; no computed source pixels are copied.
-        names = sorted(_INHERITED - {"font", "direction"})
+        names = sorted(_CONTEXT_PROPERTIES - {"font", "direction"})
         reset = ";".join(f"{name}:initial" for name in names)
         direction = (self.document.tree.root.attributes.get("dir") or "").lower()
         if direction == "auto":

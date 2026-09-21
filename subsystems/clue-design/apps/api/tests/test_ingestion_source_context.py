@@ -332,3 +332,193 @@ def test_authored_direction_overrides_document_attribute_hints(monkeypatch):
         page.set_content(delivery)
         assert page.eval_on_selector("#copy", "e=>getComputedStyle(e).direction") == "ltr"
         browser.close()
+
+
+@pytest.mark.parametrize(
+    "document_css, root_style, width, expected_width, expected_sizing",
+    [
+        pytest.param("html{box-sizing:border-box}", "", 1440, 100, "border-box", id="root"),
+        pytest.param("", "", 1440, 160, "content-box", id="absent-root"),
+        pytest.param(
+            "html,body{box-sizing:var(--missing,inherit)} html{box-sizing:border-box}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="shared-rule-keeps-body-inheritance",
+        ),
+        pytest.param(
+            "html{box-sizing:var(--missing,inherit)}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="missing-var-inherit",
+        ),
+        pytest.param(
+            "html{box-sizing:var(--missing,var(--other,inherit))}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="nested-var-inherit",
+        ),
+        pytest.param(
+            "html{--box:border-box;box-sizing:var(--box,inherit)}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="present-var-wins",
+        ),
+        pytest.param(
+            "html{--box:inherit;box-sizing:var(--box)}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="unset-custom-property",
+        ),
+        pytest.param(
+            "html{box-sizing:var(--missing,inherit)!important}html[lang]{box-sizing:border-box}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="var-inherit-important",
+        ),
+        pytest.param("html{box-sizing:content-box}", "", 1440, 160, "content-box", id="content"),
+        pytest.param(
+            "html{box-sizing:border-box} body{box-sizing:content-box}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="body-content",
+        ),
+        pytest.param(
+            "html{box-sizing:content-box} body{box-sizing:border-box}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="body-border",
+        ),
+        pytest.param(
+            "html{box-sizing:content-box}",
+            "box-sizing:border-box",
+            1440,
+            100,
+            "border-box",
+            id="inline-root",
+        ),
+        pytest.param(
+            "html{box-sizing:border-box} @media(max-width:600px){html{box-sizing:content-box}}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="media-desktop",
+        ),
+        pytest.param(
+            "html{box-sizing:border-box} @media(max-width:600px){html{box-sizing:content-box}}",
+            "",
+            375,
+            160,
+            "content-box",
+            id="media-mobile",
+        ),
+        pytest.param(
+            "html{box-sizing:border-box!important} html[lang]{box-sizing:content-box}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="important",
+        ),
+        pytest.param(
+            "@layer base{html{box-sizing:border-box!important}}"
+            "@layer override{html{box-sizing:content-box}}",
+            "",
+            1440,
+            100,
+            "border-box",
+            id="layer-priority",
+        ),
+        pytest.param(
+            "html{box-sizing:border-box} #copy{box-sizing:content-box}",
+            "",
+            1440,
+            160,
+            "content-box",
+            id="local-override",
+        ),
+    ],
+)
+def test_source_box_sizing_survives_removal_of_host_defaults(
+    monkeypatch, document_css, root_style, width, expected_width, expected_sizing
+):
+    html = HTML.replace('<html lang="en">', f'<html lang="en" style="{root_style}">')
+    css = (
+        document_css
+        + " *,*::before,*::after{box-sizing:inherit}"
+        + " #copy,#copy::before{width:100px;padding:20px;border:10px solid black}"
+        + ' #copy::before{content:"";display:block}'
+    )
+    artifact, row = _artifact(html, css)
+    if "@layer" in document_css:
+        limits = row["provenance"]["css"]["source_document_context"]["limitations"]
+        assert any("layer ranking" in note for note in limits)
+    # The real renderer leaves source descendants to their captured/browser defaults.
+    # Its native wrapper still uses border-box; the source context must supply its own
+    # document box model instead of inheriting that host fallback.
+    delivery = _real_core(monkeypatch).web_render(
+        isolation_web_doc(artifact.fragment_id),
+        "home",
+        mode="delivery",
+        fragments={artifact.fragment_id: {"html": artifact.payload["html"], "slot_kinds": {}}},
+        fragment_css=artifact.payload["css"],
+    )["html"]
+    measure = """() => {const el=document.querySelector('#copy');
+      return {width:el.getBoundingClientRect().width,
+        sizing:getComputedStyle(el).boxSizing,
+        pseudoSizing:getComputedStyle(el,'::before').boxSizing}}"""
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": width, "height": 900})
+        page.route("**/*", lambda route: route.abort())
+        page.set_content(html.replace("</head>", f"<style>{css}</style></head>"))
+        source = page.evaluate(measure)
+        page.set_content(delivery)
+        actual = page.evaluate(measure)
+        browser.close()
+    assert source == {
+        "width": expected_width,
+        "sizing": expected_sizing,
+        "pseudoSizing": expected_sizing,
+    }
+    assert actual == source
+
+
+def test_box_sizing_support_does_not_transport_document_layout_or_paint():
+    _, row = _artifact(
+        HTML,
+        "html{box-sizing:border-box;width:123px;background:red} "
+        "*,*::before,*::after{box-sizing:inherit}",
+    )
+    limits = row["provenance"]["css"]["source_document_context"]["limitations"]
+    omitted = next(note for note in limits if note.startswith("omitted document layout/paint"))
+    assert "width" in omitted
+    assert "background" in omitted
+    assert "box-sizing" not in omitted
+
+
+def test_source_box_sizing_excessive_var_fallback_depth_is_explicit():
+    # A bounded projection must retain unhandled source CSS and name the gap.
+    value = "inherit"
+    for _ in range(33):
+        value = f"var(--missing,{value})"
+    _, row = _artifact(HTML, f"html{{box-sizing:{value}}}")
+    context = row["provenance"]["css"]["source_document_context"]
+    assert any("box-sizing var fallback nesting" in note for note in context["limitations"])
+    assert f"box-sizing:{value}" in row["css"]

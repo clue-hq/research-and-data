@@ -573,7 +573,11 @@ def test_a_document_with_no_fragments_renders_exactly_as_before(
         doc_kind="web",
     )
     rendered = _render(client, "doc_none")
-    assert "lumen-fragment" not in rendered["html"]
+    # Host CSS may name the isolation boundary; only real body wrappers mark pins.
+    from selectolax.lexbor import LexborHTMLParser
+
+    tree = LexborHTMLParser(rendered["html"])
+    assert tree.css("body [data-lumen-fragment], body .lumen-fragment") == []
     assert "/* lumen-fragment css */" not in rendered["html"]
 
 

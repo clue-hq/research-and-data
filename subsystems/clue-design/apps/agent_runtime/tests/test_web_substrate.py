@@ -1777,14 +1777,17 @@ def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path,
     """FOUNDER RULE (2026-08-23): the deepagent must be able to specify the
     aspect ratio. The neighbouring test stops at the provider seam; this one runs
     the REAL `image_provider` on the gpt-image-2 (`IMAGE_MODEL_API_STYLE=images`)
-    transport with only the HTTP call mocked, so the whole chain —
+    transport with only the ProviderCaller transport mocked, so the whole chain —
     `asset(aspect_ratio=...)` → `_generate_image_record` → `generate` →
     `_invoke_images_api` → the wire body's STRUCTURED `aspect_ratio` — is pinned
     end to end. Its `21:9` also proves the closed-enum snap survives the trip:
     the agent asks for an unsupported 5:2 and the endpoint sees a legal member.
     """
     from lumen_api import image_provider as real_image_provider
+    from lumen_api import spend
     from py_lumen_config import settings
+
+    from clue_spend import HttpResponse, LedgerStamp
 
     png = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -1798,23 +1801,26 @@ def test_generate_image_aspect_ratio_reaches_the_images_api_body(tmp_path: Path,
 
     captured: dict = {}
 
-    class _FakeResponse:
-        status_code = 200
-        headers = {"content-type": "application/json"}
+    class Transport:
+        def send(self, request):
+            assert request.method == "POST"
+            assert request.headers["Authorization"] == "Bearer test-key"
+            captured.update(url=request.url, json=json.loads(request.body))
+            return HttpResponse(
+                status=200,
+                headers={"content-type": "application/json"},
+                body=json.dumps({
+                    "data": [{"b64_json": base64.b64encode(png).decode("ascii")}]
+                }).encode("utf-8"),
+            )
 
-        def json(self) -> dict:
-            return {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
-
-    def fake_post(url, json=None, headers=None, timeout=None):
-        captured.update(url=url, json=json)
-        return _FakeResponse()
-
-    monkeypatch.setattr("httpx.post", fake_post)
     tools = _tools(tmp_path)
-
-    result = json.loads(
-        tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
-    )
+    with spend.spend_scope(
+        LedgerStamp(workspace_id="ws_image_ratio_test"), transport=Transport()
+    ):
+        result = json.loads(
+            tools.asset(action="generate_image", prompt="A calm hero field", aspect_ratio="5:2")
+        )
 
     assert result["status"] == "ok", result
     assert result["mode"] == "model"
