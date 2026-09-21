@@ -1853,7 +1853,6 @@
 .assetContextSection summary { cursor: pointer; font-weight: 600; }
 .assetContextSection p, .assetContextSection dl { margin-top: 10px; }
 .assetContextSection dt { margin-top: 8px; font-weight: 600; }
-.assetDialogDetails { overflow-y: auto; max-height: 80vh; }
 
 .uploadPreview { width: 56px; height: 56px; object-fit: contain; border-radius: 4px; background: var(--clue-ds-color-bg-neutral); }
 
