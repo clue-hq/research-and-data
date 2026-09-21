@@ -63,6 +63,7 @@ dependencies = [
     "clue-config",
     "clue-gateway",
     "clue-spend",
+    "clue-locks",
     # The ingestion capture parser names a brand from its host through the one shared rule
     # (`clue_core.normalize.canonical_workspace_name`), so the platform and the design lane
     # cannot drift on what a domain is called. Also resolved transitively until now.
@@ -81,6 +82,7 @@ packages = ["lumen_api", "lumen_ingestion"]
 
 [tool.uv.sources]
 clue-design = { workspace = true }
+clue-locks = { workspace = true }
 clue-obs = { workspace = true }
 clue-config = { workspace = true }
 clue-gateway = { workspace = true }

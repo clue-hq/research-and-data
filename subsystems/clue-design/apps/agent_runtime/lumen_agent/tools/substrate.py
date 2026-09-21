@@ -1315,6 +1315,27 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
+        """Search all frozen workspace images by type, usage, source, text or exact id.
+
+        Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,
+        then asset(action='use_brand_asset', asset_id=...) to place the chosen image.
+        """
+        from .asset_catalog import rank_assets, asset_summary
+        if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
+            return json.dumps({"status": "error", "message": "Supply a query and limit 1..20"})
+        candidates = {}
+        for manifest, origin in ((self.config.brand_kit_assets or {}, "brand_kit"),
+                                 (self.config.asset_library or {}, "library")):
+            for asset_id, entry in manifest.items():
+                candidates.setdefault(asset_id, (entry, origin))
+        results = [{"asset_id": aid, "origin": origin, "title": entry.get("title"),
+                    "description": entry.get("description"), "usage": entry.get("usage"),
+                    "view": f"asset:{aid}", **asset_summary(entry)}
+                   for aid, entry, origin, _, _ in rank_assets(candidates, q.strip().lower(), (kind or "").lower())[:limit]]
+        return json.dumps({"status": "ok", "results": results, "count": len(results),
+                           "inventory_count": len(candidates)})
+
     def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
         """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.
 
@@ -1348,6 +1369,8 @@ class LumenDesignTools:
         entry = self._library_asset_entry(asset_id)
         if entry is None:
             return None
+        from .asset_catalog import materialize_asset
+        materialize_asset(self.config, entry["record"])
         return copy.deepcopy(entry["record"])
 
     @_scene_mutation

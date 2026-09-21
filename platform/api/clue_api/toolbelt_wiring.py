@@ -91,7 +91,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.design_leg_tools import build_design_leg_tools
-from clue_api.design_tools import build_design_tools
+from clue_api.design_tools import build_design_tools, is_default_design_tool
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
@@ -3149,7 +3149,7 @@ def build_toolbelt(
         enabled=resolved_settings.design_runtime_enabled,
         storage=storage,
     ):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=is_default_design_tool(tool))
     # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
     # Registered unconditionally for the same audit reason, and gated on the SAME runtime
     # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg

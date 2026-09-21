@@ -458,6 +458,9 @@ def _default_apply_descriptions(
     resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
     diagnostics: list | None = None,
     workspace_id: str | None = None,
+    asset_records: list[dict] | None = None,
+    job_id: str | None = None,
+    brand_kit_id: str | None = None,
 ) -> Any:
     """Lazily resolve Agent A's ``apply_descriptions`` and call it.
 
@@ -479,6 +482,7 @@ def _default_apply_descriptions(
         resolve_thumbnail=resolve_thumbnail,
         diagnostics=diagnostics,
         workspace_id=workspace_id,
+        asset_records=asset_records, job_id=job_id, brand_kit_id=brand_kit_id,
     )
 
 
@@ -613,6 +617,9 @@ def _maybe_describe(
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
     diagnostics: list | None = None,
+    asset_records: list[dict] | None = None,
+    job_id: str | None = None,
+    brand_kit_id: str | None = None,
 ) -> Any:
     """Stamp AI descriptions onto ``evidence`` — a guaranteed no-op when
     describe.py is absent or errors.
@@ -629,7 +636,9 @@ def _maybe_describe(
     # through the three ``_ingest*`` signatures, and passed ONLY to the default (an injected
     # test stub still sees the unchanged protocol).
     workspace_id = getattr(repo, "workspace_id", None)
-    apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id)
+    apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id,
+                                                     asset_records=asset_records, job_id=job_id,
+                                                     brand_kit_id=brand_kit_id)
     describer = describer if describer is not None else resolve_describer()
     resolve_bytes = _make_resolve_bytes(repo, blobs)
     try:
@@ -1014,6 +1023,8 @@ def _ingest(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)
@@ -1511,6 +1522,8 @@ def _ingest_pdf(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)
@@ -1775,6 +1788,8 @@ def _ingest_assets(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)

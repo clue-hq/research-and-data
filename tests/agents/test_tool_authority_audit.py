@@ -161,7 +161,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `update_project_details`, `set_project_pinned` and `set_project_archived`
     # (137 -> 141), all UNGRANTED and human-only for the same reason the design library's
     # curation writes are: filing a project is an act of the person looking at the list.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 141
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 142
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
@@ -249,7 +249,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 56
+    assert len(design_grants) == 57
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a
@@ -259,6 +259,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # not get to make on its own.
     AD_ASSETS_LANE = {
         "design_ingest_ad_assets",
+        "design_enrich_assets",
         "design_record_ad_creatives",
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",

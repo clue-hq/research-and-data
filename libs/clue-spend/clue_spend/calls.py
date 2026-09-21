@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from email.utils import parsedate_to_datetime
+from threading import Lock
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -341,6 +342,7 @@ class ProviderCaller:
         self._now = now
         self._halted: dict[str, str] = {}
         self._totals = SpendTotals()
+        self._totals_lock = Lock()
 
     def halted(self, provider: str) -> str | None:
         """The latched halt reason for a provider, or ``None`` when it is free to be called."""
@@ -759,11 +761,12 @@ class ProviderCaller:
                 reason=f"{spec.provider}.{spec.operation}: the settled cost exceeds a ceiling",
                 metadata={"call_id": call_id, "phase": "result"},
             )
-        self._totals = SpendTotals(
-            usd=self._totals.usd + usd,
-            credits=self._totals.credits + credits,
-            media_seconds=self._totals.media_seconds + media_seconds,
-        )
+        with self._totals_lock:
+            self._totals = SpendTotals(
+                usd=self._totals.usd + usd,
+                credits=self._totals.credits + credits,
+                media_seconds=self._totals.media_seconds + media_seconds,
+            )
         row_id = self._record(
             spec,
             call_id=call_id,

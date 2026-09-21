@@ -372,6 +372,7 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # name?" stays a complete, static statement. Granting them later is a reviewed profile
     # version bump, which is the review this deliberately does not pre-empt.
     "design_ingest_ad_assets": (),
+    "design_enrich_assets": (),  # Explicit human retry; no autonomous backfill grant.
     "design_record_ad_creatives": (),
     "design_publish_ad_dna_card": (),
     "design_link_ad_pregenerated_assets": (),

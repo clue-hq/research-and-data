@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # D5 Round B (R-D5-B1): this package moved from `<clue-design>/py_lumen_config/` into its own
@@ -212,7 +212,8 @@ class Settings(BaseSettings):
     # in `.env.example`) — ~$0.00021 per caption vs grok-4.5's ~$0.0039, and
     # the describe stage keeps its OWN model: brief/vision/assist are untouched.
     lumen_ingestion_describe: bool = True
-    lumen_ingestion_describe_model: str = "google/gemini-2.5-flash-lite"
+    lumen_ingestion_describe_model: str = "deepseek/deepseek-v4.1-flash"
+    lumen_ingestion_describe_concurrency: int = Field(default=15, ge=1, le=128)
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's

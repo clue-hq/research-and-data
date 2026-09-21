@@ -133,6 +133,8 @@ def _scene_envelope(document_id: str, workspace_id: str, config: dict):
     from clue_design.envelopes import DesignTurnEnvelope
 
     run_id = f"run_{uuid4().hex[:12]}"
+    # Executions pin metadata on their durable run, just as fleet-offered turns do.
+    HybridRepository(workspace_id).create_run(run_id, None)
     return DesignTurnEnvelope(
         kind="agent_turn",
         work_id=uuid4(),

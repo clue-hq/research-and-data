@@ -22,6 +22,22 @@ class _Transport:
         return self.responses.pop(0)
 
 
+def test_parallel_descriptions_keep_every_charge_in_the_shared_scope():
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+
+    transport = _Transport([_openrouter_ok(0.001)] * 137)
+    with spend.spend_scope(LedgerStamp(workspace_id="ws_t"), transport=transport) as scope:
+        def call():
+            return spend.openrouter_call(operation="design.ingestion.describe", body={"model": "test"},
+                label="image", timeout_s=1, api_key="fake", base_url="https://or.example/api/v1")
+        with ThreadPoolExecutor(max_workers=15) as pool:
+            futures = [pool.submit(copy_context().run, call) for _ in range(137)]
+            assert all(future.result().status == 200 for future in futures)
+        assert scope.caller.totals().usd == Decimal("0.137")
+        assert len([row for row in scope.ledger.rows if row.phase == "result"]) == 137
+
+
 def _openrouter_ok(cost: float = 0.0123) -> HttpResponse:
     body = {
         "choices": [{"message": {"content": "{}"}}],

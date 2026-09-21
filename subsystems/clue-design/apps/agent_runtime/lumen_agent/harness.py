@@ -659,6 +659,7 @@ def create_design_deepagent(
     author_tools = [
         view,
         tools.inspect,
+        tools.search_assets,
         tools.compile_dsl_block,
         tools.asset,
         fetch_logo,
@@ -758,6 +759,7 @@ def create_design_deepagent(
         view,
         render_preview,
         tools.inspect,
+        tools.search_assets,
         tools.preflight_design,
         tools.record_gap,
         _make_candidate_finalize_tool(tools) if scene_candidate else tools.finalize_run,
@@ -787,7 +789,7 @@ def create_design_deepagent(
         from .prompts import build_scene_solo_prompt
 
         orchestrator_tools.extend([
-            tools.compile_dsl_block, tools.asset, fetch_logo, tools.validate_binding_set,
+            tools.compile_dsl_block, tools.asset, tools.search_assets, fetch_logo, tools.validate_binding_set,
         ])
         tools.record(
             "orchestrator", "scene_agent_topology",

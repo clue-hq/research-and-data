@@ -633,6 +633,7 @@ _INGESTION_TOOLS = {
     "pdf": "design_ingest_pdf",
     "asset_upload": "design_ingest_assets",
     "ad_assets": "design_ingest_ad_assets",
+    "asset_enrichment": "design_enrich_assets",
 }
 
 
@@ -1613,7 +1614,8 @@ def create_app(
         return repo.require_asset_record(asset_id)
 
     def _register_asset_record(
-        repo: HybridRepository, record: JsonObject, *, tool: str = "design_register_asset_record"
+        repo: HybridRepository, record: JsonObject, *, tool: str = "design_register_asset_record",
+        enrichment: JsonObject | None = None
     ) -> JsonObject:
         """The ONE 'persist an engine-produced asset record' call shape.
 
@@ -1622,7 +1624,7 @@ def create_app(
         """
         ref = run_design_tool(
             tool,
-            {"record": record},
+            {"record": record, **({"enrichment": enrichment} if enrichment is not None else {})},
             workspace_id=store_workspace_id(repo),
         )
         return repo.require_asset_record(ref["asset_id"])
@@ -7138,9 +7140,27 @@ def create_app(
         uploaded_by: Optional[str] = Form(None),
         license_json: Optional[str] = Form(None),
         tags: Optional[str] = Form(None),
+        idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key", min_length=1, max_length=200),
+        creative_type: Optional[str] = Form(None),
+        usage_roles: Optional[str] = Form(None),
+        user_note: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        data = file.file.read()
+        from clue_design.asset_context import AssetOverrides, fingerprint
+        from .asset_enrichment import UploadKeyConflict
+        from pydantic import ValidationError
+        try:
+            overrides = AssetOverrides.model_validate({
+                **({"creative_type": creative_type} if creative_type else {}),
+                **({"usage_roles": json.loads(usage_roles)} if usage_roles else {}),
+                **({"user_note": user_note} if user_note else {}),
+            }).model_dump(exclude_none=True, exclude_unset=True)
+        except (ValueError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if brand_kit_id:
+            repo.require_brand_kit(brand_kit_id)
+        data = file.file.read(asset_max_bytes() + 1)
         max_bytes = asset_max_bytes()
         if len(data) > max_bytes:
             raise HTTPException(
@@ -7215,7 +7235,22 @@ def create_app(
         register_engine_write(
             blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
         )
-        stored = _register_asset_record(repo, record)
+        enrichment = None
+        if str((record.get("media") or {}).get("mime_type", "")).startswith("image/"):
+            enrichment = {
+                "idempotency_key": idempotency_key or uuid4().hex,
+                "request_digest": fingerprint({"file": hashlib.sha256(data).hexdigest(),
+                                               "filename": file.filename, "label": label,
+                                               "mime_type": file.content_type, "uploaded_by": uploaded_by,
+                                               "kind": kind, "license": license_payload,
+                                               "tags": tag_list, "overrides": overrides,
+                                               "brand_kit_id": brand_kit_id}),
+                "overrides": overrides, "brand_kit_id": brand_kit_id,
+            }
+        try:
+            stored = _register_asset_record(repo, record, enrichment=enrichment)
+        except UploadKeyConflict as error:
+            raise HTTPException(status_code=409, detail={"code": "asset_upload.key_conflict", "message": str(error)}) from error
         log_event(
             api_logger,
             logging.INFO,
@@ -7232,6 +7267,8 @@ def create_app(
             "asset": public_asset_record(stored["asset"]),
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
+            "enrichment": DescriptionStore(workspace_id=repo.workspace_id).get_many(
+                [stored["asset"]["id"]]).get(stored["asset"]["id"]),
         }
 
     @app.post("/assets/generate/qr")
@@ -7731,17 +7768,24 @@ def create_app(
         """
         run_design_tool(
             "design_set_asset_description",
-            {
-                "asset_id": asset_id,
-                "title": payload.title,
-                "description": payload.description,
-                "usage": payload.usage,
-                "tags": payload.tags,
-            },
+            {"asset_id": asset_id, **payload.model_dump(exclude_none=True)},
             workspace_id=store_workspace_id(repo),
             refusals=_asset_refusals(asset_id),
         )
         return DescriptionStore(workspace_id=repo.workspace_id).get_many([asset_id])[asset_id]
+
+    @app.get("/assets/upload-capabilities")
+    def asset_upload_capabilities() -> JsonObject:
+        return {"max_bytes": asset_max_bytes(), "formats": ["png", "jpeg", "webp", "svg", "gif"]}
+
+    @app.post("/assets/{asset_id}/analysis/retry")
+    def retry_asset_analysis(asset_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
+        repo.require_asset_record(asset_id)
+        try:
+            job = _offer_ingestion(repo, "asset_enrichment", {"targets": {asset_id: {}}})
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.get("/assets/{asset_id}")
     def get_asset(
@@ -9274,6 +9318,7 @@ def run_agent_turn_preview(
     run_id: str | None = None,
     session_manifest: dict | None = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
+    resolved_asset_library: JsonObject | None = None,
     scene_checkpoint: Any = None,
     cancel_requested: Any = None,
     scoped_preferences: Any = None,
@@ -9398,7 +9443,7 @@ def run_agent_turn_preview(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
-        asset_library = resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
+        asset_library = resolved_asset_library if resolved_asset_library is not None else resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
         if asset_library is not None:
             # W1.1 (Brand Ad Assets v1 §5): the bounded workspace ASSET LIBRARY rides
             # the run BY VALUE — the same rule as brand_kit_assets and
@@ -9412,8 +9457,13 @@ def run_agent_turn_preview(
             config = replace(
                 config,
                 asset_library=asset_library,
+                asset_materializer=asset_materializer(asset_library, turn_blobs, str(turn_cache_root)),
                 asset_store_root=turn_cache_root,
             )
+        for manifest in (config.brand_kit_assets or {},):
+            for aid, entry in manifest.items():
+                if aid in (asset_library or {}):
+                    entry.update({key: value for key, value in asset_library[aid].items() if key != "record"})
         turn_targets = editor_target_node_ids(payload)
         if turn_targets:
             # Slice 2.5: the chipped edit targets ride the run BY VALUE so the
@@ -9436,7 +9486,7 @@ def run_agent_turn_preview(
             # that attach references.
             config = replace(
                 config,
-                reference_assets=reference_assets,
+                reference_assets={aid: {**entry, **{k: v for k, v in (asset_library or {}).get(aid, {}).items() if k != "record"}} for aid, entry in reference_assets.items()},
                 asset_store_root=turn_cache_root,
             )
         ad_dna_card = ad_runtime.context_card(ad_lane)
@@ -10014,7 +10064,11 @@ def run_web_agent_turn(
                 "placed image broken. Set LUMEN_API_ORIGIN to the design API's origin."
             )
         if asset_library is not None:
-            config = replace(config, asset_library=asset_library)
+            config = replace(config, asset_library=asset_library,
+                             asset_materializer=asset_materializer(asset_library, turn_blobs, str(turn_cache_root)))
+        for aid, entry in (config.brand_kit_assets or {}).items():
+            if aid in (asset_library or {}):
+                entry.update({key: value for key, value in asset_library[aid].items() if key != "record"})
         # F1.3: resolve the artifacts this document ALREADY pins HERE, where the database is, and
         # hand them to the runtime BY VALUE — the same rule asset_library follows, because a fleet
         # worker never reads the API database.
@@ -10846,6 +10900,7 @@ def _execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
+                resolved_asset_library=pinned_asset_library(store, envelope.run_id),
                 frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
@@ -11436,7 +11491,7 @@ def _execute_web_turn_job(
             else:
                 response = override(doc, prompt, model, root, **account_kwargs)
         else:
-            asset_library = workspace_asset_library_manifest(store)
+            asset_library = pinned_asset_library(store, envelope.run_id)
             component_account_id = doc.get("account_id")
             custom_component_registry = (
                 DurableAgentCustomComponentRegistry(
@@ -11641,13 +11696,18 @@ def execute_ingestion_job(
     except (TypeError, ValueError):
         job_id = None
     stamp = LedgerStamp(workspace_id=envelope.workspace_id, job_id=job_id)
+    from lumen_ingestion.asset_enrichment import JOB_CONTEXT
+    job_context = JOB_CONTEXT.set((envelope.job_id, expected_generation))
     with _spend.spend_scope(stamp, drain_fn=spend_drain) as scope:
         try:
             return _execute_ingestion_job(
                 envelope, host=host, expected_generation=expected_generation
             )
         finally:
-            _drain_spend(scope)
+            try:
+                _drain_spend(scope)
+            finally:
+                JOB_CONTEXT.reset(job_context)
 
 
 def _execute_ingestion_job(
@@ -11672,7 +11732,9 @@ def _execute_ingestion_job(
     """
     workspace_id = envelope.workspace_id
     kind = DesignIngestionKind(envelope.ingestion_kind)
+    from .asset_enrichment import run_asset_enrichment
     runner = {
+        DesignIngestionKind.ASSET_ENRICHMENT: run_asset_enrichment,
         DesignIngestionKind.WEBSITE: run_website_ingestion,
         DesignIngestionKind.PDF: run_pdf_ingestion,
         DesignIngestionKind.ASSET_UPLOAD: run_asset_ingestion,
@@ -12032,157 +12094,75 @@ def resolve_account_assets(
         return None
 
 
-WEB_AGENT_ASSET_LIBRARY_MAX = 2_000
+ASSET_LIBRARY_PAGE_SIZE = 500
+# Compatibility constants describe page/response sizes, never total inventory coverage.
+WEB_AGENT_ASSET_LIBRARY_MAX = ASSET_LIBRARY_PAGE_SIZE
+SCENE_TURN_ASSET_LIBRARY_MAX = 24
+SCENE_TURN_ASSET_LIBRARY_SCAN = ASSET_LIBRARY_PAGE_SIZE
+SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
+
+
+def asset_metadata_entry(described: dict) -> dict:
+    if not described:
+        return {}
+    return {
+        **{key: described.get(key) for key in ("title", "description", "usage", "tags", "creative_type", "usage_roles", "revision")},
+        "analysis_status": described.get("status", "stale"),
+        "sources": sorted({item["source"] for item in described.get("source_occurrences", [])}),
+        "asset_context": {key: described.get(key) for key in (
+            "asset_id", "revision", "status", "title", "description", "creative_type",
+            "usage_roles", "classification_origin", "classification_reason", "overrides",
+            "source_occurrences", "agent_context", "model", "input_fingerprint",
+        )},
+    }
 
 
 def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
-    """Grounded website-agent inventory of real workspace asset records.
-
-    The API owns persistence, so it materializes a bounded, non-archived
-    manifest BY VALUE for the runtime. Description rows are advisory search
-    metadata; the engine-built record remains authoritative for placement,
-    license, digest, and provenance.
-    """
-    rows = repo.list_asset_records(
-        include_archived=False,
-        limit=WEB_AGENT_ASSET_LIBRARY_MAX,
-        offset=0,
-    )
-    asset_ids = [
-        str((row.get("asset") or {}).get("id"))
-        for row in rows
-        if (row.get("asset") or {}).get("id")
-    ]
-    try:
-        # D5 Round C: workspace-scoped. `DescriptionStore()` defaulted to the DEV workspace, so
-        # every tenant's asset-library manifest was annotated from the dev tenant's description
-        # rows (in practice: no descriptions at all, silently). The registry read beside it has
-        # always been correctly scoped, which is what hid the split.
-        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
-    except Exception:
-        descriptions = {}
-
-    manifest: JsonObject = {}
-    for row in rows:
-        record = row.get("asset") or {}
-        asset_id = record.get("id")
-        if not asset_id or record.get("status") == "archived":
-            continue
-        described = descriptions.get(str(asset_id)) or {}
-        entry: JsonObject = {
-            "record": record,
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
-        for field in ("title", "description", "usage", "tags"):
-            if described.get(field):
-                entry[field] = described[field]
-        manifest[str(asset_id)] = entry
-    return manifest
+    """All non-archived records, paginated metadata only. No image bytes or prompt dump."""
+    manifest = {}
+    offset = 0
+    while True:
+        rows = repo.list_asset_records(include_archived=False, limit=ASSET_LIBRARY_PAGE_SIZE, offset=offset)
+        ids = [str(row["asset"]["id"]) for row in rows if (row.get("asset") or {}).get("id")]
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(ids)
+        for row in rows:
+            record = row.get("asset") or {}
+            asset_id = record.get("id")
+            if asset_id and record.get("status") != "archived":
+                manifest[str(asset_id)] = {
+                    "record": record, "created_at": row.get("created_at"),
+                    "updated_at": row.get("updated_at"),
+                    **asset_metadata_entry(descriptions.get(str(asset_id)) or {}),
+                }
+        if len(rows) < ASSET_LIBRARY_PAGE_SIZE:
+            return manifest
+        offset += len(rows)
 
 
-# --- W1.1: the workspace asset library -> SCENE turn -----------------------------------------
-#
-# THE BOUND LIVES HERE, and it is deliberately far smaller than website mode's
-# `WEB_AGENT_ASSET_LIBRARY_MAX` (2_000). The two manifests are consumed differently:
-#
-#   * A WEBSITE turn only ever SEARCHES its manifest (`search_assets` scores it in Python and
-#     returns ≤8 hits), so 2_000 entries cost memory and nothing else.
-#   * A SCENE turn has no search tool. Its manifest is looked up by id — and, more expensively,
-#     every entry's bytes are pulled out of durable storage into the per-workspace engine cache
-#     by the read-through below, because a placed asset that never materializes renders as an
-#     empty chip. Its ids are also listed back to the agent by `view`'s honest-miss text, which
-#     IS prompt-cache surface.
-#
-# So the scene manifest is the workspace's MOST RECENTLY UPDATED placeable images, capped. That
-# ordering is the DAL's (`updated_at DESC, asset_id`) and it is the right one for this feature:
-# the assets a scene turn wants are the ones the onboarding harvest / pre-generation lane just
-# wrote. If a client ever needs to reach further back, the answer is a search tool on the scene
-# side — NOT a bigger dump into every turn's context.
-SCENE_TURN_ASSET_LIBRARY_MAX = 24
-
-# Fonts and documents are not placeable in a scene, and shipping them would spend read-through
-# on bytes no image node can ever bind. `vector` stays: SVG library assets are placeable and
-# ingestion gives them raster thumbnails.
-SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
-
-# The kind/status filter runs in Python (the DAL takes one `kind` at a time), so the query
-# over-fetches a BOUNDED window of the recency order and keeps the first N placeable rows.
-# The window is what stops a library whose newest rows are all fonts from yielding nothing;
-# it is a scan bound, never a manifest bound.
-SCENE_TURN_ASSET_LIBRARY_SCAN = SCENE_TURN_ASSET_LIBRARY_MAX * 8
+def pinned_asset_library(repo: HybridRepository, run_id: str) -> JsonObject:
+    """First execution pins one metadata revision; takeover never reads newer guidance."""
+    from clue_design.runs import asset_context_snapshot, pin_asset_context_snapshot
+    stored = repo._bridge._run(lambda conn: asset_context_snapshot(conn, workspace_id=repo.workspace_id, run_id=run_id))
+    if stored is not None:
+        return stored
+    snapshot = workspace_asset_library_manifest(repo)
+    return repo._bridge._run(lambda conn: pin_asset_context_snapshot(
+        conn, workspace_id=repo.workspace_id, run_id=run_id, snapshot=snapshot))
 
 
-def scene_turn_asset_library_manifest(
-    repo: HybridRepository,
-    blobs: DesignBlobStore,
-    cache_dir: str,
-) -> JsonObject:
-    """The bounded workspace-library manifest a SCENE turn can view and place.
+def asset_materializer(manifest: dict, blobs: DesignBlobStore, cache_dir: str):
+    """Only records already authorized in this run can cause a durable byte read."""
+    def materialize(asset_id: str):
+        entry = manifest.get(asset_id)
+        if entry is not None:
+            ensure_materialized(blobs, cache_dir, (digest for digest, _mime in record_digests(entry["record"])))
+    return materialize
 
-    W1.1 (Brand Ad Assets v1 §5). `workspace_asset_library_manifest` had exactly one
-    call site — the website-mode turn — so a scene turn saw only `brand_kit_assets`
-    and this turn's `reference_assets`. A pre-generated `asset_gen_*` background was
-    therefore unviewable AND unplaceable however healthy it was in the database
-    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). This is
-    the missing third channel, built from the same rows and the same description
-    store, then bounded (see the constants above) and byte-backed.
 
-    Read-through, the P0.1 pattern (fast-loop v1 §4), identical to
-    `brand_kit_asset_manifest`: the runtime resolves previews BY DIGEST out of the
-    per-workspace engine cache, so durable bytes are materialized there first.
-    Without it a fleet worker sees the manifest and none of the pixels — a silent
-    empty chip, which is the failure mode this whole item exists to kill. Fail-SOFT
-    like every other read-through: a digest with no durable bytes is left absent and
-    `view("asset:…")` degrades to its honest missing-file text.
-    """
-    manifest: JsonObject = {}
-    # The DAL already returns `updated_at DESC, asset_id`; keep THAT order rather than
-    # re-sorting here, so recency has exactly one definition and no timestamp shape has
-    # to be re-derived in Python.
-    for row in repo.list_asset_records(
-        include_archived=False,
-        limit=SCENE_TURN_ASSET_LIBRARY_SCAN,
-        offset=0,
-    ):
-        if len(manifest) >= SCENE_TURN_ASSET_LIBRARY_MAX:
-            break
-        record = row.get("asset") or {}
-        asset_id = record.get("id")
-        # `status` is mirrored onto the record; only a READY asset is placeable, and
-        # the runtime's library seam refuses anything else anyway.
-        if not asset_id or record.get("status") != "ready":
-            continue
-        if record.get("kind") not in SCENE_TURN_ASSET_LIBRARY_KINDS:
-            continue
-        manifest[str(asset_id)] = {
-            "record": record,
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
-
-    try:
-        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(
-            list(manifest.keys())
-        )
-    except Exception:
-        descriptions = {}
-    for asset_id, entry in manifest.items():
-        described = descriptions.get(asset_id) or {}
-        for field in ("title", "description", "usage", "tags"):
-            if described.get(field):
-                entry[field] = described[field]
-
-    ensure_materialized(
-        blobs,
-        cache_dir,
-        (
-            digest
-            for entry in manifest.values()
-            for digest, _mime in record_digests(entry["record"])
-        ),
-    )
-    return manifest
+def scene_turn_asset_library_manifest(repo: HybridRepository, blobs: DesignBlobStore, cache_dir: str) -> JsonObject:
+    return {asset_id: entry for asset_id, entry in workspace_asset_library_manifest(repo).items()
+            if entry["record"].get("status") == "ready"
+            and entry["record"].get("kind") in SCENE_TURN_ASSET_LIBRARY_KINDS}
 
 
 def resolve_scene_turn_asset_library(
@@ -12249,7 +12229,7 @@ def brand_kit_asset_manifest(
     try:
         from lumen_ingestion.describe import DescriptionStore
 
-        descriptions = DescriptionStore().get_many(asset_ids)
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 
@@ -12260,9 +12240,7 @@ def brand_kit_asset_manifest(
             continue
         entry: JsonObject = {"record": record.get("asset") or record}
         described = descriptions.get(asset_id) or {}
-        for field in ("title", "description", "usage"):
-            if described.get(field):
-                entry[field] = described[field]
+        entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
 
     ensure_materialized(
@@ -12523,9 +12501,7 @@ def reference_asset_manifest(
             "order": order,
         }
         described = descriptions.get(asset_id) or {}
-        for field in ("title", "description"):
-            if described.get(field):
-                entry[field] = described[field]
+        entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
     return manifest
 

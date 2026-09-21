@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from asset_analysis_fixture import analysis as _analysis
 
 from py_lumen_config import settings
 
@@ -122,6 +123,9 @@ class _ScriptedDescriber:
                     description=f"A caption for {item.asset_id}.",
                     usage="Use on light backgrounds.",
                     tags=["mark", "brand"],
+                    analysis={**_analysis(f"Title {item.asset_id}", item.source_occurrences),
+                              "description": f"A caption for {item.asset_id}.",
+                              "usage": "Use on light backgrounds.", "tags": ["mark", "brand"]},
                 )
             )
         return results
@@ -212,7 +216,7 @@ def test_scripted_describer_stamps_and_persists(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_cache_hit_skips_describer(tmp_path: Path) -> None:
+def test_legacy_caption_survives_a_failed_structured_refresh(tmp_path: Path) -> None:
     _register("asset_ing_cached")
     store = DescriptionStore()
     store.put_ai(
@@ -228,7 +232,7 @@ def test_cache_hit_skips_describer(tmp_path: Path) -> None:
         reporter=_noop,
     )
     # Cached id stamped from the store; describer never invoked.
-    assert describer.calls == 0
+    assert describer.calls == 2
     assert result.logos[0].title == "Cached"
     assert result.logos[0].description == "Cached desc."
     assert result.logos[0].usage_note == "Cached usage."
@@ -296,7 +300,7 @@ def test_svg_skipped(tmp_path: Path) -> None:
     )
     assert describer.calls == 0
     assert result.logos[0].title is None
-    assert _description_count("asset_ing_svg") == 0
+    assert _stored("asset_ing_svg")["status"] == "unsupported"
 
 
 # --------------------------------------------------------------------------- #
@@ -337,7 +341,7 @@ def test_describer_failure_leaves_evidence_unchanged(tmp_path: Path) -> None:
         reporter=_noop,
     )
     assert result.logos[0].title is None
-    assert _description_count("asset_ing_a") == 0
+    assert _stored("asset_ing_a")["status"] == "failed"
 
 
 # D2.5B DELETED `test_migration_idempotent` here: it re-ran `run_migrations` against a SQLite
@@ -583,7 +587,7 @@ def test_reporter_carries_described_summary(tmp_path: Path) -> None:
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=reporter,
     )
-    assert stages[-1] == "Asset descriptions: 2/3 (2 new, 0 cached, 1 failed)"
+    assert stages[-1] == "Asset descriptions: 2/3 ready; 1 failed; 15 concurrent request slots"
 
 
 # --------------------------------------------------------------------------- #
@@ -832,10 +836,7 @@ def _describe_ok(asset_id: str = "asset_a"):
         [
             {
                 "asset_id": asset_id,
-                "title": "T",
-                "description": "D",
-                "usage": "U",
-                "tags": [],
+                "analysis": _analysis("T"),
             }
         ]
     )
@@ -935,190 +936,22 @@ def _descending_images(count: int, *, prefix: str = "asset_img") -> list[tuple[s
     return [(f"{prefix}_{i:02d}", 2000 - i * 10, 2000 - i * 10) for i in range(count)]
 
 
-def test_described_image_cap_mirrors_the_brand_card_constant() -> None:
-    """The ingestion-side cap is a MIRROR of `brand_card.MAX_IMAGE_LIST` (one
-    home, two packages that may not import each other) — this test is the drift
-    guard, and it is the only place both constants are read together."""
-    from lumen_agent.brand_card import MAX_IMAGE_LIST
-
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    assert MAX_DESCRIBED_IMAGES == MAX_IMAGE_LIST
-
-
-def test_describe_selection_is_top_images_by_area_union_all_logos(tmp_path: Path) -> None:
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    images = _descending_images(MAX_DESCRIBED_IMAGES + 4)
-    logo_ids = ["asset_logo_a", "asset_logo_b", "asset_logo_c"]
-    _register(*[i[0] for i in images], *logo_ids)
+def test_all_images_and_repeated_occurrences_are_described_and_replayed(tmp_path: Path):
+    images = _descending_images(137)
+    ids = [row[0] for row in images]
+    _register(*ids)
+    evidence = _bounded_evidence(images + [images[0]], logos=[ids[0]])
     describer = _ScriptedDescriber()
-    sink: list[dict] = []
-    apply_descriptions(
-        _bounded_evidence(images, logo_ids),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-        diagnostics=sink,
-    )
-    expected = {i[0] for i in images[:MAX_DESCRIBED_IMAGES]} | set(logo_ids)
-    assert set(describer.seen_ids) == expected
-    # The overflow images are not failures — they are simply out of scope, so
-    # they carry no diagnostic either.
-    assert sink == []
+    apply_descriptions(evidence, describer=describer,
+                       resolve_bytes=lambda aid: (_png_bytes(), "image/png"), reporter=_noop)
+    assert set(describer.seen_ids) == set(ids)
+    assert len(describer.seen_ids) == 137
+    assert _description_count(*ids) == 137
+    assert all(row.title for row in evidence.images)
+    apply_descriptions(evidence, describer=describer,
+                       resolve_bytes=lambda aid: (_png_bytes(), "image/png"), reporter=_noop)
+    assert len(describer.seen_ids) == 137
 
-
-def test_image_beyond_the_area_cap_is_never_described(tmp_path: Path) -> None:
-    """The (cap+1)-th image BY AREA is not described — even though it is listed
-    FIRST in the evidence, so ordering cannot smuggle it in."""
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    smallest = ("asset_img_tiny", 8, 8)
-    images = [smallest, *_descending_images(MAX_DESCRIBED_IMAGES)]
-    _register(*[i[0] for i in images])
-    describer = _ScriptedDescriber()
-    result = apply_descriptions(
-        _bounded_evidence(images),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-    )
-    assert describer.calls == MAX_DESCRIBED_IMAGES
-    assert "asset_img_tiny" not in describer.seen_ids
-    tiny = next(i for i in result.images if i.asset_id == "asset_img_tiny")
-    assert tiny.title is None
-    assert _description_count("asset_img_tiny") == 0
-
-
-def test_images_without_dimensions_rank_last_but_fill_free_slots(tmp_path: Path) -> None:
-    """A record the capture never measured ranks LAST (area 0) — but while
-    slots remain it is still described, rather than dropped for being honest
-    about not knowing its size."""
-    images = [("asset_img_nodims", None, None), *_descending_images(3)]
-    _register(*[i[0] for i in images])
-    describer = _ScriptedDescriber()
-    apply_descriptions(
-        _bounded_evidence(images),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-    )
-    assert set(describer.seen_ids) == {i[0] for i in images}
-
-
-def test_images_without_dimensions_lose_to_measured_ones_at_the_cap(
-    tmp_path: Path,
-) -> None:
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    images = [("asset_img_nodims", None, None), *_descending_images(MAX_DESCRIBED_IMAGES)]
-    _register(*[i[0] for i in images])
-    describer = _ScriptedDescriber()
-    apply_descriptions(
-        _bounded_evidence(images),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-    )
-    assert "asset_img_nodims" not in describer.seen_ids
-
-
-def test_unselected_images_still_stamp_their_cached_descriptions(
-    tmp_path: Path,
-) -> None:
-    """The bound governs MODEL CALLS, not stamping: an image already in the
-    description store keeps its caption even when it is far past the cap.
-
-    The cached asset here is one of the LARGEST, not the tiny one — caching the
-    tiny one would leave exactly MAX_DESCRIBED_IMAGES images pending, at which
-    point ranking-over-pending and ranking-over-all-images agree and the test
-    cannot tell a correct bound from a broken one.
-    """
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    largest, *rest = _descending_images(MAX_DESCRIBED_IMAGES)
-    images = [("asset_img_tinyc", 4, 4), largest, *rest]
-    _register(*[i[0] for i in images])
-    DescriptionStore().put_ai(
-        DescribeResult(largest[0], "Cached hero", "A cached hero image.", "Use big.", []),
-        "some/model",
-    )
-    describer = _ScriptedDescriber()
-    result = apply_descriptions(
-        _bounded_evidence(images),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-    )
-    # The cache hit stamps without a model call...
-    assert largest[0] not in describer.seen_ids
-    hero = next(i for i in result.images if i.asset_id == largest[0])
-    assert hero.title == "Cached hero"
-    # ...and the slot it vacates does NOT trickle down to the 17th image.
-    assert "asset_img_tinyc" not in describer.seen_ids
-    assert len(describer.seen_ids) == MAX_DESCRIBED_IMAGES - 1
-
-
-def test_a_reharvest_does_not_caption_the_images_the_bound_excluded(
-    tmp_path: Path,
-) -> None:
-    """The bound ranks the IMAGE SET, never the cache-miss set.
-
-    Asset ids are content-addressed, so re-ingesting the same site turns run 1's
-    captions into cache hits and leaves only the images the bound deliberately
-    excluded outstanding. Ranking the miss list would then promote every one of
-    them — run 2 captions the whole tail, and a kit re-harvested enough times
-    ends up fully described despite the bound. Nothing outside the top
-    MAX_DESCRIBED_IMAGES by area may ever be captioned, however many runs it
-    takes.
-    """
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    top = _descending_images(MAX_DESCRIBED_IMAGES)
-    tail = [(f"asset_img_tail_{n}", 30 - n, 30 - n) for n in range(3)]
-    images = [*top, *tail]
-    _register(*[i[0] for i in images])
-    # Run 1 described exactly the bound; run 2 finds them all cached.
-    store = DescriptionStore()
-    for asset_id, _w, _h in top:
-        store.put_ai(
-            DescribeResult(asset_id, f"Run1 {asset_id}", "From run 1.", "Use it.", []),
-            "some/model",
-        )
-    describer = _ScriptedDescriber()
-    sink: list[dict] = []
-    apply_descriptions(
-        _bounded_evidence(images),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-        diagnostics=sink,
-    )
-    assert describer.calls == 0, describer.seen_ids
-    assert sink == []
-
-
-def test_every_logo_is_described_however_many_images_crowd_the_kit(
-    tmp_path: Path,
-) -> None:
-    from lumen_ingestion.describe import MAX_DESCRIBED_IMAGES
-
-    images = _descending_images(MAX_DESCRIBED_IMAGES + 10)
-    logo_ids = [f"asset_logo_{i:02d}" for i in range(6)]
-    _register(*[i[0] for i in images], *logo_ids)
-    describer = _ScriptedDescriber()
-    apply_descriptions(
-        _bounded_evidence(images, logo_ids),
-        describer=describer,
-        resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
-        reporter=_noop,
-    )
-    assert set(logo_ids) <= set(describer.seen_ids)
-
-
-# --------------------------------------------------------------------------- #
-# W1.4: SVG logos ride W1.2's stored raster thumbnail
-# --------------------------------------------------------------------------- #
 
 _SVG_BYTES = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'
 
@@ -1202,14 +1035,15 @@ def test_a_vector_thumbnail_is_not_mistaken_for_a_raster(tmp_path: Path) -> None
 # --------------------------------------------------------------------------- #
 
 
-def test_describe_is_on_by_default_with_the_probed_cheap_vision_model() -> None:
+def test_describe_is_on_by_default_with_the_configured_model(monkeypatch) -> None:
     """R4: descriptions run by default; the model is the cheap vision model the
     2026-08-23 live OpenRouter probe chose (see `.env.example`)."""
     from py_lumen_config.config import Settings
 
+    monkeypatch.delenv("LUMEN_INGESTION_DESCRIBE", raising=False)
     isolated = Settings(_env_file=None)
     assert isolated.lumen_ingestion_describe is True
-    assert isolated.lumen_ingestion_describe_model == "google/gemini-2.5-flash-lite"
+    assert isolated.lumen_ingestion_describe_model == "deepseek/deepseek-v4.1-flash"
     # No shared-model coupling: brief/vision/assist keep their own model.
     assert isolated.lumen_ingestion_vision_model != isolated.lumen_ingestion_describe_model
     assert isolated.lumen_ingestion_brief_model != isolated.lumen_ingestion_describe_model
