@@ -130,3 +130,12 @@ Record both here when they run.
   `ToolInvoker.invoke` does not enforce `pin_requirements` on this seam (same as the other reads).
 - Task 7: the scene-tools skill paragraph keeps one em dash (house style of the design knowledge
   docs); `prompts.py` carries 9 pre-existing E501s, untouched.
+
+## Close-out (controller, 2026-09-22, after Task 8)
+Tenth commit `be8024cbb` (final fix wave: spec status names the feature branch; `_search_result`
+docstring). Full focused gate run FIRST-HAND by the controller against the throwaway
+`clue_lome_sdd`@55040: 211 passed in 55 s across 16 files (platform + design runtime), `make
+manual-check` current. Branch `feat/add-general-purpose-web-search-exa`, 10 commits
+722814d91..be8024cbb, local only. Owed: the two live proofs (spec §4.5–4.6), founder-triggered;
+the first live call also settles whether Exa accepts `contents.highlights: {}` (fallback
+`{"maxCharacters": 2000}`).
