@@ -1,5 +1,6 @@
 "use client";
 
+import { AssetUploadDialog } from "./asset-upload-dialog";
 import { ApplicationShell } from "@/components/shell/application-shell";
 import { useBrandContextController } from "../hooks/use-brand-context-controller";
 import { useBrandKitActions } from "../hooks/use-brand-kit-actions";
@@ -52,6 +53,7 @@ export function BrandContextScreen({
           </div>
         </main>
       </div>
+      <AssetUploadDialog controller={controller} />
       <AssetDetailDialog controller={controller} />
       <NewTypefaceDialog controller={controller} />
       <NewStyleDialog controller={controller} />

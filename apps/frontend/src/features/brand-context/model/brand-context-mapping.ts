@@ -483,6 +483,7 @@ export function toRegistryAssets(
     const createdAt = record.provenance?.created_at ?? "";
     out.push({
       category: registryCategory(record),
+      sources: [record.source.kind === "uploaded" ? "user_upload" : record.source.kind === "generated" ? "generated" : record.source.kind === "website" ? "website" : "unknown"],
       createdAt,
       createdLabel: dateLabel(createdAt),
       // The registry stores no prose about an asset; an invented caption would

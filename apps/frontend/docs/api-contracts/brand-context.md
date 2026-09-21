@@ -674,3 +674,48 @@ a separate contract and migration integration, not a presentation update.
 Presentation changes do not rerun ingestion or increase source coverage. Current
 website capture visits the entry URL plus explicitly supplied `page_urls`; it
 does not discover linked pages. Ad-library harvesting remains a separate job.
+
+## Asset context and bulk upload (ratified 2026-09-21)
+
+Implementation follows the founder-authorized
+[asset-context design](../../../../docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md).
+The engine's asset record remains authoritative for custody, licensing and placement.
+`design_asset_description` owns one generated analysis and field-level human overrides.
+
+- `GET /assets/upload-capabilities` returns `max_bytes` and supported `formats`.
+  The dialog reads the configured server limit. Advertised formats are PNG, JPEG,
+  WebP, SVG and GIF. AVIF is not advertised. Animated originals are retained;
+  visual analysis inspects the first frame and records that transformation.
+- Multipart `POST /assets` accepts `Idempotency-Key`, `creative_type`, JSON-array
+  `usage_roles`, `user_note`, and optional `brand_kit_id`. Brand association is
+  explicit and workspace-validated. Registration, overrides, enrichment job and
+  fleet offer commit together after byte custody. An identical replay returns
+  the same asset/job; changed content or metadata under that key returns 409.
+  The existing response adds `enrichment`, the effective metadata/status row.
+- `GET /assets/descriptions?asset_ids=...` adds generated `analysis`, effective
+  human-reference fields, `creative_type`, `usage_roles`, `classification_origin`,
+  `overrides`, `source_occurrences`, `agent_context`, `revision`, `status`, and
+  optional `diagnostic`. Reads batch up to 100 IDs. Legacy four-field readers remain valid.
+- `PUT /assets/{id}/description` accepts partial title/description/usage/tags,
+  type/roles, avoid/placement guidance and user note. Omitted fields survive.
+  `reset_fields` removes named overrides; unknown fields or simultaneous assign/reset
+  are rejected with 422. Changing a note marks prior analysis stale; a subsequent
+  analysis receives the updated note. Human wording/classification never blocks
+  refresh of other generated fields.
+- `POST /assets/{id}/analysis/retry` returns the durable ingestion job. Active work
+  returns 409; failed/stale assets reuse their stored originals and source history.
+  `queued`, `analyzing`, `ready`, `failed`, `unsupported` and legacy `stale` are
+  description states, independent of whether an asset's bytes are usable.
+- Browser mutations use the authenticated design BFF. `X-Expected-Workspace-Id`
+  is a precondition compared with the server-authorized workspace, never an
+  authorization selector or forwarded credential. A workspace switch returns 409
+  for pending requests selected in the previous workspace.
+
+The repository reads every registry page independently of brand-kit existence,
+joins metadata in batches, and supplies separate Type / Used as / Source filters.
+The screen owns a three-transfer queue outside the floating dialog. Closing it
+keeps transfers alive; per-file retries retain their idempotency key. Successful
+files survive another file's failure. Server analysis continues through fleet
+jobs after upload, independently of the browser. Reload reads persisted metadata.
+Fixture and HTTP adapters implement the same operations; fixtures do not simulate
+successful provider analysis.

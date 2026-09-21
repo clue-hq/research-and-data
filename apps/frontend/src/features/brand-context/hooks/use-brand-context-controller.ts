@@ -1,3 +1,5 @@
+import { useAssetLibrary } from "./use-asset-library";
+import type { CreativeType } from "../model/asset-context";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useKnowledgeEditor } from "./use-knowledge-editor";
@@ -45,6 +47,11 @@ export function useBrandContextController({
   canWriteKnowledge: boolean;
 }) {
   const router = useRouter();
+  const assetLibrary = useAssetLibrary(workspace.assets, scopeKey, canWriteKnowledge);
+  const assets = assetLibrary.assets;
+  const [creativeTypeFilter, setCreativeTypeFilter] = useState("all");
+  const [usageFilter, setUsageFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const defaultDocument = workspace.knowledgeFolders
     .flatMap((folder) => folder.documents)
@@ -70,7 +77,7 @@ export function useBrandContextController({
     () => new Set(),
   );
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
-    workspace.assets.some((asset) => asset.id === initial.assetId)
+    assets.some((asset) => asset.id === initial.assetId)
       ? initial.assetId ?? null
       : null,
   );
@@ -142,18 +149,21 @@ export function useBrandContextController({
     ?? allDocuments[0];
   const knowledgeEditor = useKnowledgeEditor(selectedDocument, { scopeKey, canWrite: canWriteKnowledge });
   const selectedAsset = selectedAssetId
-    ? workspace.assets.find((asset) => asset.id === selectedAssetId) ?? null
+    ? assets.find((asset) => asset.id === selectedAssetId) ?? null
     : null;
   const filteredAssets = useMemo(() => {
     const query = assetQuery.trim().toLocaleLowerCase();
-    const visibleAssets = workspace.assets
+    const visibleAssets = assets
       .filter((asset) => !hiddenAssetIds.has(asset.id))
       .map((asset) => ({
         ...asset,
         name: assetDrafts[asset.id]?.name ?? asset.name,
       }))
       .filter((asset) => assetCategoryFilter === "all" || asset.category === assetCategoryFilter)
-      .filter((asset) => !query || `${asset.name} ${asset.type}`.toLocaleLowerCase().includes(query));
+      .filter((asset) => creativeTypeFilter === "all" || (asset.context?.creative_type ?? "unknown") === creativeTypeFilter)
+      .filter((asset) => usageFilter === "all" || asset.context?.usage_roles.includes(usageFilter as never))
+      .filter((asset) => sourceFilter === "all" || asset.sources?.includes(sourceFilter as never))
+      .filter((asset) => !query || `${asset.name} ${asset.description} ${asset.type} ${asset.context?.creative_type ?? ""} ${asset.context?.tags.join(" ") ?? ""}`.toLocaleLowerCase().includes(query));
 
     return [...visibleAssets].sort((left, right) => {
       let comparison = 0;
@@ -163,7 +173,7 @@ export function useBrandContextController({
       if (assetSortKey === "created") comparison = Date.parse(left.createdAt) - Date.parse(right.createdAt);
       return assetSortDirection === "ascending" ? comparison : -comparison;
     });
-  }, [assetCategoryFilter, assetDrafts, assetQuery, assetSortDirection, assetSortKey, hiddenAssetIds, workspace.assets]);
+  }, [assetCategoryFilter, assetDrafts, assetQuery, assetSortDirection, assetSortKey, hiddenAssetIds, assets, creativeTypeFilter, usageFilter, sourceFilter]);
   const filteredTypefaces = useMemo(() => {
     const query = fontSearch.trim().toLocaleLowerCase();
     return typefaces.filter((typeface) =>
@@ -222,17 +232,17 @@ export function useBrandContextController({
   }
 
   function beginAssetRename(assetId: string) {
-    const asset = workspace.assets.find((item) => item.id === assetId);
+    const asset = assets.find((item) => item.id === assetId);
     if (!asset) return;
     setAssetRenameId(assetId);
     setAssetRenameValue(assetDrafts[assetId]?.name ?? asset.name);
     setAssetMenuId(null);
   }
 
-  function commitAssetRename() {
+  async function commitAssetRename() {
     if (!assetRenameId) return;
     const nextName = assetRenameValue.trim();
-    if (nextName) {
+    if (nextName && await assetLibrary.save(assetRenameId, {title: nextName})) {
       setAssetDrafts((current) => ({
         ...current,
         [assetRenameId]: { ...current[assetRenameId], name: nextName },
@@ -312,6 +322,24 @@ export function useBrandContextController({
   }
 
   return {
+    assetLibrary,
+    creativeTypeFilter, setCreativeTypeFilter, usageFilter, setUsageFilter, sourceFilter, setSourceFilter,
+    async saveAssetDraft() {
+      if (!selectedAsset) return;
+      const draft = assetDrafts[selectedAsset.id];
+      if (!draft) return;
+      const saved = await assetLibrary.save(selectedAsset.id, {
+        ...(draft.name !== undefined ? {title: draft.name} : {}),
+        ...(draft.description !== undefined ? {description: draft.description} : {}),
+      });
+      if (saved) {
+        setAssetDrafts(prior => {const next = {...prior}; delete next[selectedAsset.id]; return next;});
+        setAssetEditingField(null);
+      }
+    },
+    setCreativeType(value: CreativeType) {
+      if (selectedAsset) void assetLibrary.save(selectedAsset.id, {creative_type: value});
+    },
     addCustomFont,
     assetDraft: selectedAsset ? {
       description: selectedAsset.description,
