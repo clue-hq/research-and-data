@@ -554,6 +554,44 @@ def test_the_background_fan_out_respects_the_concurrency_cap() -> None:
     assert exa.peak <= 3  # 2 background + at most one lingering fast call
 
 
+def test_product_research_runs_once_per_resolved_product_and_keeps_the_first_name() -> None:
+    """Catalog aliases keep separate lineage rows but share one research step and spend."""
+    exa = _all_answers()
+    store = FakeStore()
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn, kw
+        return (
+            ProductLink("prd_magicflow", "MagicFlow", "created", 0, uuid4()),
+            ProductLink(None, "Unresolved", "unresolved_ambiguous", 2, uuid4()),
+            ProductLink("prd_second", "Second Product", "created", 0, uuid4()),
+            ProductLink("prd_magicflow", "Magic Flow", "alias_reused", 1, uuid4()),
+            ProductLink("prd_second", "Second Platform", "model_reused", 1, uuid4()),
+        )
+
+    result = asyncio.run(_handler(exa, store, links=fake_sync).handle(_context(uuid4())))
+
+    assert result.outcome == "completed"
+    assert sorted(call for call in exa.calls if call.startswith("product_research")) == [
+        "product_research:prd_magicflow",
+        "product_research:prd_second",
+    ]
+    assert [event for event in store.events if event[:2] == ("start_step", "product_research")] == [
+        ("start_step", "product_research", "prd_magicflow"),
+        ("start_step", "product_research", "prd_second"),
+    ]
+    product_paths = [
+        event[1]
+        for event in store.events
+        if event[0] == "open_document" and event[1].startswith("product/")
+    ]
+    assert product_paths == [
+        "product/catalog.md",
+        "product/magicflow.md",
+        "product/second-product.md",
+    ]
+
+
 def test_an_unexpected_exception_is_contained_and_fails_the_run_row() -> None:
     """A defect in the driver's OWN machinery — not a provider outcome — still lands the run.
 

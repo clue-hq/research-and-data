@@ -40,7 +40,10 @@ pytestmark = pytest.mark.usefixtures("require_profiling_db")
 USER = "usr_o3_driver"
 
 
-def test_a_run_publishes_readable_documents_and_products_and_status() -> None:
+@pytest.mark.parametrize("product_names", [("MagicFlow",), ("MagicFlow", "Magic Flow™")])
+def test_a_run_publishes_readable_documents_and_products_and_status(
+    product_names: tuple[str, ...],
+) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
             ws = "ws-o3-driver-db"
@@ -69,10 +72,11 @@ def test_a_run_publishes_readable_documents_and_products_and_status() -> None:
                 _deep(
                     [
                         {
-                            "name": "MagicFlow",
+                            "name": name,
                             "short_description": "Orchestration.",
                             "offering_kind": "platform",
                         }
+                        for name in product_names
                     ]
                 ),
             )
@@ -113,6 +117,24 @@ def test_a_run_publishes_readable_documents_and_products_and_status() -> None:
                 key[0] == "product_research" and value == "completed"
                 for key, value in kinds.items()
             )
+            product_steps = [step for step in status.steps if step.kind == "product_research"]
+            assert len(product_steps) == 1
+            assert len([call for call in exa.calls if call.startswith("product_research")]) == 1
+            lineage = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT product_id FROM onboarding_product_lineage "
+                            "WHERE workspace_id = :ws ORDER BY entry_ordinal"
+                        ),
+                        {"ws": ws},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(lineage) == len(product_names)
+            assert set(lineage) == {product_steps[0].subject_ref}
             listed = await list_documents(conn, workspace_id=ws, brand_id=project.brand_id)
             documents = {document.path: document for document in listed}
             assert documents["company/overview.md"].status == "ready"

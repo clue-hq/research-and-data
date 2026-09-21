@@ -531,9 +531,14 @@ class OnboardingRunWorkHandler:
         # The ICP turn reads what the fast lane published and does not wait for the per-product
         # reports, so it starts alongside the fan-out rather than after it.
         synthesis_task = asyncio.create_task(self._synthesis_step(scope))
-        background = [
-            self._product_research(scope, link) for link in links if link.product_id is not None
-        ]
+        # Lineage keeps every catalog entry, including aliases resolving to the same product.
+        # Research steps are keyed by product_id, so schedule each resolved product once and
+        # retain its first catalog name for the query and document path.
+        products_by_id: dict[str, ProductLink] = {}
+        for link in links:
+            if link.product_id is not None:
+                products_by_id.setdefault(link.product_id, link)
+        background = [self._product_research(scope, link) for link in products_by_id.values()]
         if not reviews_fast:
             background.append(self._reviews(scope, phase="background"))
         semaphore = asyncio.Semaphore(self._settings.onboarding_max_parallel_runs)
