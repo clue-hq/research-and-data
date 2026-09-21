@@ -143,6 +143,9 @@ class ExaSearchResult:
     raw_ref: str | None
     ledger_row_id: str
     cost: CallCost
+    #: The written answer a ``type="deep-lite"`` search returns under ``output`` when the caller
+    #: sent an ``outputSchema``; ``None`` for every other search. Read with :func:`_read_output`.
+    output_text: str | None = None
 
     @property
     def n_results(self) -> int:
@@ -403,12 +406,14 @@ def search_body(
     type: str = "auto",
     num_results: int = 8,
     include_domains: Sequence[str] | None = None,
+    exclude_domains: Sequence[str] | None = None,
     include_text: Sequence[str] | None = None,
     start_published_date: str | None = None,
     end_published_date: str | None = None,
     category: str | None = None,
     text_max_chars: int = 1500,
     highlights: Mapping[str, object] | None = None,
+    output_schema: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/search`` body. Every optional key is absent unless the caller passed it.
 
@@ -424,6 +429,8 @@ def search_body(
     }
     if include_domains is not None:
         body["includeDomains"] = list(include_domains)
+    if exclude_domains is not None:
+        body["excludeDomains"] = list(exclude_domains)
     if include_text is not None:
         body["includeText"] = list(include_text)
     if start_published_date is not None:
@@ -434,6 +441,9 @@ def search_body(
         body["category"] = category
     if highlights is not None:
         body["contents"]["highlights"] = dict(highlights)
+    if output_schema is not None:
+        # Copied, never aliased: the same rule ``agent_run_body`` keeps for its schema.
+        body["outputSchema"] = dict(output_schema)
     return body
 
 
@@ -813,6 +823,37 @@ def _is_richer(candidate: ExaDeepResult, incumbent: ExaDeepResult) -> bool:
     )
 
 
+def _search_result(
+    body: Mapping[str, Any],
+    *,
+    status: int,
+    cost: CallCost,
+    request_id: str | None,
+    cost_usd: Decimal | None = None,
+    raw_ref: str | None = None,
+    ledger_row_id: str = "",
+) -> ExaSearchResult:
+    """Shape a ``/search`` body. ``output`` is present only for a deep-lite search that sent an
+    ``outputSchema``; an empty string is reported as ``None`` so callers test one thing.
+
+    ``cost_usd`` is the provider's *own reading* — ``CallResult.cost.cost_usd``, which is ``None``
+    when Exa reported no total — and is deliberately not taken from ``cost``, whose ``cost_usd``
+    is the settled ledger number that falls back to the pre-spend estimate. The two differ exactly
+    when Exa said nothing, and this field has always meant "what Exa charged, or we don't know".
+    """
+    text, _parsed, _grounding = _read_output(body)
+    return ExaSearchResult(
+        results=_hits(body.get("results")),
+        status=status,
+        cost_usd=cost_usd,
+        request_id=request_id,
+        raw_ref=raw_ref,
+        ledger_row_id=ledger_row_id,
+        cost=cost,
+        output_text=text or None,
+    )
+
+
 # -- the client --------------------------------------------------------------------------------
 
 
@@ -843,12 +884,14 @@ class ExaClient:
         type: str = "auto",
         num_results: int = 8,
         include_domains: Sequence[str] | None = None,
+        exclude_domains: Sequence[str] | None = None,
         include_text: Sequence[str] | None = None,
         start_published_date: str | None = None,
         end_published_date: str | None = None,
         category: str | None = None,
         text_max_chars: int = 1500,
         highlights: Mapping[str, object] | None = None,
+        output_schema: Mapping[str, object] | None = None,
         label: str = "exa-search",
         timeout_s: float = 180.0,
     ) -> ExaSearchResult:
@@ -862,25 +905,27 @@ class ExaClient:
                 type=type,
                 num_results=num_results,
                 include_domains=include_domains,
+                exclude_domains=exclude_domains,
                 include_text=include_text,
                 start_published_date=start_published_date,
                 end_published_date=end_published_date,
                 category=category,
                 text_max_chars=text_max_chars,
                 highlights=highlights,
+                output_schema=output_schema,
             ),
             estimate=SpendEstimate(usd=SEARCH_ESTIMATE_USD),
             timeout_s=timeout_s,
         )
         body = _body_json(result.response)
-        return ExaSearchResult(
-            results=_hits(body.get("results")),
+        return _search_result(
+            body,
             status=result.response.status,
-            cost_usd=result.cost.cost_usd,
+            cost=result.call_cost,
             request_id=result.cost.provider_request_id,
+            cost_usd=result.cost.cost_usd,
             raw_ref=result.raw_ref,
             ledger_row_id=result.ledger_row_id,
-            cost=result.call_cost,
         )
 
     def contents(

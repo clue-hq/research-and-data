@@ -151,6 +151,58 @@ def test_a_search_body_puts_every_option_on_the_wire_when_it_is_passed() -> None
     }
 
 
+def test_a_search_body_omits_exclude_domains_and_output_schema_unless_passed() -> None:
+    body = search_body("acme conference 2026")
+    assert "excludeDomains" not in body
+    assert "outputSchema" not in body
+
+
+def test_a_search_body_carries_exclude_domains_and_output_schema_when_passed() -> None:
+    body = search_body(
+        "acme conference 2026",
+        type="deep-lite",
+        exclude_domains=["pinterest.com"],
+        output_schema={"type": "text"},
+        highlights={},
+    )
+    assert body["type"] == "deep-lite"
+    assert body["excludeDomains"] == ["pinterest.com"]
+    assert body["outputSchema"] == {"type": "text"}
+    assert body["contents"]["highlights"] == {}
+
+
+def test_a_search_result_carries_the_written_answer_when_exa_returns_one() -> None:
+    """``/search`` with ``type=deep-lite`` and an ``outputSchema`` answers with ``output``."""
+    from clue_api.arv2.exa_client import ExaSearchResult, _search_result
+
+    body = {
+        "results": [{"url": "https://a.example", "title": "A", "highlights": ["h1"]}],
+        "output": "Acme runs its conference in May.",
+    }
+    result = _search_result(
+        body,
+        status=200,
+        cost=CallCost(
+            cost_usd=Decimal("0.01"),
+            credits=Decimal(0),
+            media_seconds=0,
+            cost_source="metered",
+            provider="exa",
+            operation="search",
+            raw_ref="raw/s",
+            ledger_row_id="row-s",
+        ),
+        request_id="req_s",
+    )
+    assert isinstance(result, ExaSearchResult)
+    assert result.output_text == "Acme runs its conference in May."
+    assert result.results[0].highlights == ("h1",)
+    assert (
+        _search_result({"results": []}, status=200, cost=result.cost, request_id=None).output_text
+        is None
+    )
+
+
 def test_an_empty_include_domains_list_is_still_sent() -> None:
     """``[]`` is a caller decision, not an absence — only ``None`` means "do not filter"."""
     assert search_body("q", include_domains=[])["includeDomains"] == []
