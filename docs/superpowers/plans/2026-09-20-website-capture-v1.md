@@ -14,6 +14,15 @@
 - Generated artwork can support brand aesthetics, but cannot count as source-fidelity evidence.
 - Every new environment setting is documented in root and subsystem examples; existing operator values win.
 
+## Current live-test constraint — 2026-09-21
+
+The user suspended the four older instances and restricted live testing to Conduit
+Fresh on port 3020. The latest ordinary-prompt attempt is terminal (cancelled by
+request). The user asked for no repeated prompts: do not launch a new generation,
+research, or ingestion test automatically. The four-brand benchmark remains open;
+old-workspace results do not satisfy fresh-ingestion acceptance. Local code and
+regression work can continue without restarting the platform.
+
 ## Review focus
 Reference-resolution security; deduplicated fragment lineage across kit ingestions; media byte custody; bounded multipage coverage; no fabricated customer/contact evidence; visual fidelity at desktop and mobile.
 
@@ -162,3 +171,21 @@ the existing pages and test new changes as native artifacts/versions.
   Account-researched, contact, event, scaling and motion qualification remain open.
   Google recovered a transient CSS namespace defect during raw variant/repair;
   general raw-repair correctness remains a separate reliability follow-up.
+
+## Screenshot evidence checkpoint — 2026-09-21
+
+- Shared bounded image readiness now warms below-fold lazy images before full-page
+  previews/review, waits for decode, restores scroll and reports failures. Fully
+  clipped inactive images do not delay a capture. No asset/source substitutions.
+- Missing or unready image observations keep desktop/mobile findings advisory and
+  suppress permanent degraded markers; reduced-motion comparison also waits for
+  ready media on both sides. Incomplete previews do not qualify for cache reuse.
+- Eight real-browser regressions pass, including an independent mutation control
+  that reproduces the blank screenshot when warmup is disabled. The final review
+  gates pass 101 checks. Full runtime: 2,729 passed, seven skipped, one unchanged
+  exact-docstring assertion failed (recorded in the operational note).
+- This is a local implementation checkpoint, not live rollout or source-fidelity
+  acceptance. Responsive-only React content was absent from the captured desktop
+  HTML; the helper cannot recover it. Preserve separate viewport/state originals
+  before adding responsive recapture. CSS-background/video readiness, interactive
+  source state recovery and the fresh-brand reproduction benchmark remain open.

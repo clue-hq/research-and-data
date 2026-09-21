@@ -357,6 +357,7 @@ def _fake_walk(
     console=(),
     mobile_made: bool = True,
     styles_ready: object = True,
+    media_ready: object = True,
 ) -> BehaviouralWalk:
     shot = tmp_path / "walk_full_page.png"
     shot.parent.mkdir(parents=True, exist_ok=True)
@@ -381,7 +382,10 @@ def _fake_walk(
                     walk_class=WALK_CLASS_MOBILE,
                     made=True,
                     measurements=mobile,
-                    notes={"styles_ready": styles_ready},
+                    notes={
+                        "styles_ready": styles_ready,
+                        "media_readiness": {"settled": media_ready},
+                    },
                 )
                 if mobile_made
                 else abstained(WALK_CLASS_MOBILE, "timed_out")
@@ -391,7 +395,7 @@ def _fake_walk(
                 walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
                 made=True,
                 measurements=desktop,
-                notes={"styles_ready": styles_ready},
+                notes={"styles_ready": styles_ready, "media_readiness": {"settled": media_ready}},
             ),
             WalkObservation(walk_class=WALK_CLASS_REDUCED_MOTION, made=True, notes={}),
         )
@@ -629,7 +633,10 @@ def test_a_workspace_with_no_reference_capture_says_which_half_is_missing(
 # =================================================================================================
 
 
-def test_an_unsettled_walk_reports_the_finding_and_writes_nothing(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("styles_ready,media_ready", [(False, True), (True, False), (True, None)])
+def test_an_unsettled_walk_reports_the_finding_and_writes_nothing(
+    tmp_path, monkeypatch, styles_ready, media_ready
+) -> None:
     """The false `mobile_unusable` the review found: a page whose utilities have not compiled
     overflows 375px trivially, and the marker it would write can never be cleared."""
     registry = FakeRegistry()
@@ -644,7 +651,8 @@ def test_an_unsettled_walk_reports_the_finding_and_writes_nothing(tmp_path, monk
                     viewport="mobile", width_px=375.0, scroll_width_px=900.0, height_px=600.0
                 ),
             ),
-            styles_ready=False,
+            styles_ready=styles_ready,
+            media_ready=media_ready,
         ),
     )
 

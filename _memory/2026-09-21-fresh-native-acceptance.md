@@ -80,3 +80,86 @@
   the actual three security assets, which load correctly in the native preview.
 - Preserve this directed output as the review baseline. Run ordinary-input
   acceptance separately; do not count this heavily guided run as that gate.
+
+## Ordinary-input attempt and user steering
+
+- Submitted exactly one new native request: "Create a Conduit landing page for
+  Hyatt." Project prj_be16c8d37cf055d9a5b8aa15a183d333, thread
+  thr_bc7c11b23f315f91a226178426310192. Head opened generation without a second
+  confirmation prompt. Run run_fd655b9b17db5f0fa65fd10d395c67b4 selected the correct
+  fresh kit, read 13 skill/reference paths, inspected source sections and logos.
+- Durable result then became failed with "cancelled by request" at 15:36:50 local.
+  Only asset upserts had completed; no authored page layout. This is not generation
+  quality evidence. The parent did not request the cancellation and did not retry.
+- User explicitly said no more repeated prompts: wait and watch the existing run.
+  Do not start another generation automatically after this cancellation. Existing
+  directed output remains intact; no research or publishing was launched.
+- Responsive root cause verified separately: frozen desktop snapshot's mobile
+  product branch contains only the background image. At 375px the real source
+  mounts a complete chat demo into that branch. This content was never present in
+  our desktop capture; CSS repair alone cannot recover it. Source procedure buttons
+  also switch aria-pressed and imagery, unlike the saved static fragment.
+- A bounded read-only audit found responsive snapshot custody currently keys only
+  on (job, page URL); a naive second viewport would overwrite desktop evidence.
+  Requires explicit viewport/state identity and variant selection, not seeded markup.
+- Media-readiness subagent patch is uncommitted and not loaded into services.
+  Six new local browser regressions pass; wider focused verification pending.
+  User steering stops expansion and new live submissions while retaining this work.
+
+## Capture-readiness implementation review
+
+- Continued only local verification after the user stopped further prompt submissions.
+  No generation, ingestion, research, service reload, or remote push in this slice.
+- Shared screenshot helper now walks lazy images under a bounded deadline, waits
+  for decode, restores scroll, and reports unresolved media. Full-page agent
+  previews and clone-review desktop/mobile/reduced-motion passes use it.
+- Moved readiness enforcement into the shared critique, requiring an explicit ready
+  media report from every measurement-producing desktop/mobile pass. Missing or
+  malformed reports keep findings advisory; reduced-motion height comparison also
+  requires ready images on both sides. Unready previews cannot satisfy the cache.
+- Parent reproduced eight false-settled cases and a real-browser reduced-motion
+  false-settled case before fixing them. Reviewed the delegated helper and found
+  clipped inactive images could stall captures: reproduced two browser failures,
+  then excluded fully clipped content while retaining below-fold visible images.
+- 202 initial focused checks passed. Final browser matrix: eight passed, including
+  two clipped-image cases. Full runtime suite in progress; do not claim its result
+  yet. Full API suite not run against the live DB.
+- Verification setup mistakes: first focused command named a nonexistent review
+  test file (exit 4, no tests ran); corrected test_web_review_gate.py passes. New
+  helper/browser-test Ruff clean, compileall and diff whitespace clean; existing
+  touched-file lint debt remains.
+- Limits: this fixes screenshot evidence, not source ingestion or uncaptured
+  mobile React branches. Video/CSS-background readiness and viewport-only modal
+  snapshots are not certified by this helper. Responsive capture identity/custody
+  and source interaction capture remain required follow-ups. No seeded repairs.
+- Final focused gates: 101 passed (API critique + runtime durable-write behavior).
+  Parent mutation control disabled warmup only inside a test process: the real
+  browser rendered a white pixel where the delayed image should be red, and the
+  screenshot regression failed as intended. Production files were unchanged.
+- Full runtime command uses the existing repo venv/PYTHONPATH, local Chromium
+  escalation and /private/tmp/clue-media-runtime-full-20260921.log. It collected
+  2,737 tests and is progressing through existing slow retokenize tests.
+- Checkpoint handoff: full runtime execution handle 36344 is confirmed live;
+  last progress passed the slow typography section (47%+). Re-poll the same
+  handle/log, do not start a duplicate suite. Local commit is still pending its
+  result. HEAD remains 8d3842b7; all current changes are scoped to this capture fix
+  and its operational note. No API/frontend/worker restart and no new live prompt.
+
+## Capture-readiness verification closed
+
+- Full runtime handle 36344 finished exit 1: 2,729 passed, seven skipped, one
+  pre-existing failure: test_web_recreate_and_repair.py::
+  test_the_tool_docstrings_carry_the_amendment_too. It asserts an exact phrase in
+  search_cloned_sections; AST comparison confirms that docstring is identical to
+  HEAD before this patch. No test was weakened or production wording changed to
+  appease it. Full suite is not green.
+- Final local browser tests: eight passed. Final API-critique/runtime-review gates:
+  101 passed. Preview/substrate checks also passed in the earlier focused run.
+  New helper and browser test Ruff, compileall and git diff --check passed.
+- Ready for scoped local commit; no running verification handle remains. Services
+  still use the prior loaded code until a separately scheduled idle reload.
+- Next source-fidelity gap verified in current code: SiteSnapshot and durable DAL
+  both represent a single state per (job,page URL). A second responsive capture
+  must not overwrite the desktop original. Capture-state custody and selection
+  need an explicit implementation before recapture; no native rerun is authorized
+  by the user's latest wait-and-watch instruction.

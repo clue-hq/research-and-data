@@ -1308,6 +1308,7 @@ def _seed_page_capture(tmp_path: Path, tools: LumenWebTools, width: int, size) -
     tools._preview_by_width[width] = str(path)
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
 
 
 def test_web_view_preview_clamps_to_the_many_image_ceiling(tmp_path: Path):
@@ -1360,6 +1361,7 @@ def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
         tools._preview_by_width[width] = str(tmp_path / f"preview_{width}.png")
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
     iteration_before = tools.iteration
 
     def _must_not_render(*args, **kwargs):
@@ -1392,6 +1394,23 @@ def test_render_web_preview_unchanged_guard(tmp_path: Path, monkeypatch):
     after = json.loads(tools.render_web_preview())
     assert after["status"] == "error"
     assert after["error_code"] == "web_render.failed"
+
+
+def test_unsettled_media_preview_is_not_reused_for_an_unchanged_document(tmp_path, monkeypatch):
+    tools = _bare_tools(tmp_path)
+    for width in ws._PREVIEW_WIDTHS:
+        tools._preview_by_width[width] = str(tmp_path / f"preview_{width}.png")
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_media_ready = False
+    from lumen_api.core import CoreError
+
+    def failed_render(*args, **kwargs):
+        raise CoreError("helper.unavailable", "render retry reached", [])
+
+    monkeypatch.setattr(tools.core, "web_render", failed_render)
+    result = json.loads(tools.render_web_preview())
+    assert result.get("unchanged") is not True
+    assert result["error_code"] == "web_render.failed"
 
 
 # --- between-renders edit budget + role-aware stale views --------------------

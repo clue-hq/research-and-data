@@ -38,6 +38,7 @@ from selectolax.parser import HTMLParser
 from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.agent_account_logos import AccountLogoRefused, is_fetched_logo
+from lumen_api.capture_readiness import prepare_capture_media
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -1128,6 +1129,8 @@ class LumenWebTools:
         # refuses a preview older than the current doc.
         self._doc_version = 0
         self._preview_doc_version: Optional[int] = None
+        self._preview_media_ready = False
+        self._preview_media_readiness: Dict[str, JsonObject] = {}
         # Between-renders edit budget (live failure 2026-07-29: an author round
         # never returned control — 16 blind subtree rewrites over 14 minutes).
         # Every MUTATING tool call charges it; once exhausted, mutating tools
@@ -8933,6 +8936,10 @@ class LumenWebTools:
         # so believing it would write unclearable `mobile_unusable` markers across a healthy
         # library — the exact damage R19-1 exists to prevent.
         settled = (critique.settled if critique is not None else False) and not tailwind_missing
+        media_reports = [
+            observation.notes["media_readiness"] for observation in walk.observations
+            if "media_readiness" in observation.notes
+        ]
         marked, mark_failures = (
             self._record_broken_clones(registry, broken) if settled else ([], [])
         )
@@ -8945,9 +8952,10 @@ class LumenWebTools:
                 observation.as_result() for observation in walk.observations
             ],
             "broken_clones": [item.as_result() for item in broken],
-            # False means the findings above are ADVICE ONLY this round: the page's styling had
-            # not settled when the walk measured it, so nothing was written down (R19-1).
+            # Unsettled styling or images makes these findings ADVICE ONLY this round;
+            # nothing was written down (R19-1).
             "evidence_settled": settled,
+            "media_readiness": media_reports,
             "marked_degraded": marked,
             "page_findings": (
                 [item.as_result() for item in critique.page_findings]
@@ -9133,7 +9141,7 @@ class LumenWebTools:
                         (
                             "Each one is recorded on the section itself. "
                             if settled
-                            else "NOTHING was recorded: the page's styling had not settled when "
+                            else "NOTHING was recorded: styling or images had not settled when "
                             "the walk measured it, so these are advice this round and a re-run "
                             "is what settles them. "
                         )
@@ -9657,6 +9665,7 @@ class LumenWebTools:
         if (
             self._preview_doc_version is not None
             and self._preview_doc_version == self._doc_version
+            and self._preview_media_ready
             and all(width in self._preview_by_width for width in _PREVIEW_WIDTHS)
         ):
             paths = [self._preview_by_width[width] for width in _PREVIEW_WIDTHS]
@@ -9675,6 +9684,7 @@ class LumenWebTools:
                     "state_captures": list(self._state_captures),
                     "diagnostics": [],
                     "unchanged": True,
+                    "media_readiness": dict(self._preview_media_readiness),
                 },
                 indent=2,
             )
@@ -9750,6 +9760,7 @@ class LumenWebTools:
             "preview_paths": paths,
             "state_captures": list(self._state_captures),
             "diagnostics": diagnostics,
+            "media_readiness": dict(self._preview_media_readiness),
         }
         if tailwind_missing:
             preflight_unverified = any(
@@ -9872,10 +9883,23 @@ class LumenWebTools:
         # Reset per pass so a dead-browser retry does not accumulate stale
         # captures on top of a half-finished first attempt.
         self._state_captures = []
+        self._preview_media_ready = False
+        self._preview_media_readiness = {}
         for width in _PREVIEW_WIDTHS:
             page = browser.new_page(viewport={"width": width, "height": 1200})
             page.set_content(html, wait_until="load")
             page.wait_for_timeout(400)
+            media = prepare_capture_media(page)
+            self._preview_media_readiness[str(width)] = media
+            if not media.get("settled"):
+                diagnostics.append({
+                    "code": "web_preview.media_unsettled", "severity": "warning",
+                    "message": (
+                        f"Media readiness is incomplete at {width}px; "
+                        "inspect unresolved media before judging missing imagery."
+                    ),
+                    "media_readiness": media,
+                })
             dest = iter_dir / f"preview_{width}.png"
             page.screenshot(path=str(dest), full_page=True)
             page.close()
@@ -9894,6 +9918,9 @@ class LumenWebTools:
                 output_summary=f"state capture degraded: {state_capture_error}",
                 diagnostics=diagnostics,
             )
+        self._preview_media_ready = all(
+            report.get("settled") is True for report in self._preview_media_readiness.values()
+        ) and state_capture_error is None
         return paths, state_capture_error, omitted
 
     def _capture_states(self, browser, html: str, iter_dir: Path) -> JsonObject:
@@ -9956,6 +9983,7 @@ class LumenWebTools:
                 )
                 page.wait_for_timeout(250)
                 dest = iter_dir / f"state_{width}_accordion.png"
+                self._preview_media_readiness[f"accordion:{width}"] = prepare_capture_media(page)
                 page.screenshot(path=str(dest), full_page=True)
                 page.close()
                 self._state_captures.append(
@@ -10006,6 +10034,7 @@ class LumenWebTools:
             )
             page.wait_for_timeout(250)
             dest = iter_dir / f"state_1440_tabs_{node_id}.png"
+            self._preview_media_readiness[f"tabs:{node_id}"] = prepare_capture_media(page)
             page.screenshot(path=str(dest), full_page=True)
             page.close()
             self._state_captures.append(

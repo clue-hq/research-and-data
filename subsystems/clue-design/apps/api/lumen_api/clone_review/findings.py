@@ -468,7 +468,7 @@ class CloneReviewCritique:
     broken: tuple[BrokenClone, ...]
     page_findings: tuple[PageFinding, ...]
     comparison: Mapping[str, Any] | None = None
-    #: Whether the numbers behind ``broken`` were taken from a page whose styling had SETTLED
+    #: Whether the numbers behind ``broken`` were taken after styling and images settled
     #: (ruling R19-1). ``False`` does not make the findings wrong — it makes them unfit to be
     #: written down: the caller reports them as advice and records no durable marker. See
     #: :func:`evidence_settled`.
@@ -487,7 +487,7 @@ class CloneReviewCritique:
 
 
 def evidence_settled(walk: BehaviouralWalk) -> bool:
-    """Were these numbers taken from a page that had finished styling itself? (Ruling R19-1.)
+    """Were these numbers taken after styling and image loading settled? (Ruling R19-1.)
 
     The gate walks the EDITOR render, whose utility CSS is compiled IN THE BROWSER by our
     vendored Tailwind JIT. Before that compile lands the page has no layout utilities at all: a
@@ -500,13 +500,17 @@ def evidence_settled(walk: BehaviouralWalk) -> bool:
     for 400ms. Every probe pass reports `styles_ready` as a tri-state, and only ``True`` from
     every pass that contributed measurements counts. ``False`` (not compiled) and ``None`` (the
     check could not run) both mean unsettled, so every way the signal can be wrong errs toward
-    writing nothing.
+    writing nothing. Lazy images must also have loaded and decoded under a bounded
+    scroll pass; an absent media observation is not evidence of readiness.
     """
     for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE):
         observation = walk.by_class(walk_class)
         if not observation.made or not observation.measurements:
             continue
         if observation.notes.get("styles_ready") is not True:
+            return False
+        media = observation.notes.get("media_readiness")
+        if not isinstance(media, Mapping) or media.get("settled") is not True:
             return False
     return True
 
@@ -537,12 +541,16 @@ def compose_critique(
                 severity="warning",
                 message=(
                     f"the walk measured {len(broken)} cloned section(s) as broken, but the page's "
-                    "styling had not finished compiling when it looked — so NOTHING was recorded "
+                    "styling or images had not settled when it looked — so NOTHING was recorded "
                     "in the library. Treat these as advice: look at the captures, and re-run the "
                     "review before briefing a repair on the strength of them"
                 ),
                 detail={
                     "fragment_ids": [item.fragment_id for item in broken],
+                    "media_readiness": {
+                        walk_class: walk.by_class(walk_class).notes.get("media_readiness")
+                        for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE)
+                    },
                     "styles_ready": {
                         walk_class: walk.by_class(walk_class).notes.get("styles_ready")
                         for walk_class in (WALK_CLASS_HEIGHT_COLLAPSE, WALK_CLASS_MOBILE)

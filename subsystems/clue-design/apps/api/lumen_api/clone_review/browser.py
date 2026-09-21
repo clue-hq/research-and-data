@@ -35,6 +35,7 @@ from typing import Any
 
 from py_lumen_obs import get_logger
 
+from lumen_api.capture_readiness import prepare_capture_media
 from lumen_api.qa_render_ua import qa_render_context_kwargs
 
 from .walk import (
@@ -107,6 +108,7 @@ class _PassOutcome:
     observations: dict[str, WalkObservation] = field(default_factory=dict)
     document_height: float | None = None
     styles_ready: bool | None = None
+    media_ready: bool = False
 
 
 def run_walk(
@@ -269,12 +271,14 @@ def _desktop_pass(
         # hands `_scroll_through` the unstyled document's height — several captions, one clamped
         # position (the M3 defect back again), or a page whose bottom is never photographed.
         outcome.styles_ready = _styles_ready(page)
+        media = prepare_capture_media(page)
+        outcome.media_ready = media.get("settled") is True
         geometry = _geometry(page)
         outcome.document_height = geometry.get("height")
 
         outcome.observations[WALK_CLASS_FULL_PAGE] = _try(
             WALK_CLASS_FULL_PAGE,
-            lambda: _full_page(page, plan, output_dir, geometry),
+            lambda: _full_page(page, plan, output_dir, geometry, media),
         )
         outcome.observations[WALK_CLASS_SCROLL_THROUGH] = _try(
             WALK_CLASS_SCROLL_THROUGH,
@@ -282,14 +286,16 @@ def _desktop_pass(
         )
         outcome.observations[WALK_CLASS_HEIGHT_COLLAPSE] = _try(
             WALK_CLASS_HEIGHT_COLLAPSE,
-            lambda: _height_collapse(page, plan, probes, outcome.styles_ready),
+            lambda: _height_collapse(page, plan, probes, outcome.styles_ready, media),
         )
     finally:
         page.context.close()
     return outcome
 
 
-def _full_page(page: Any, plan: WalkPlan, output_dir: Path, geometry: dict) -> WalkObservation:
+def _full_page(
+    page: Any, plan: WalkPlan, output_dir: Path, geometry: dict, media: dict
+) -> WalkObservation:
     destination = output_dir / "walk_full_page.png"
     page.screenshot(path=str(destination), full_page=True)
     return WalkObservation(
@@ -303,7 +309,7 @@ def _full_page(page: Any, plan: WalkPlan, output_dir: Path, geometry: dict) -> W
                 viewport_width=plan.desktop.width,
             ),
         ),
-        notes={"document_height_px": geometry.get("height")},
+        notes={"document_height_px": geometry.get("height"), "media_readiness": media},
     )
 
 
@@ -358,14 +364,18 @@ def _scroll_through(
 
 
 def _height_collapse(
-    page: Any, plan: WalkPlan, probes: list[dict[str, str]], styles_ready: bool | None
+    page: Any, plan: WalkPlan, probes: list[dict[str, str]],
+    styles_ready: bool | None, media: dict,
 ) -> WalkObservation:
     raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []
     return WalkObservation(
         walk_class=WALK_CLASS_HEIGHT_COLLAPSE,
         made=True,
         measurements=measurements_from_probe(raw, viewport=plan.desktop.name),
-        notes={"sections_probed": len(probes), "styles_ready": styles_ready},
+        notes={
+            "sections_probed": len(probes), "styles_ready": styles_ready,
+            "media_readiness": media,
+        },
     )
 
 
@@ -390,6 +400,8 @@ def _mobile_pass(
         page.wait_for_timeout(plan.settle_ms)
         # Same order as the desktop pass: the width note must be the compiled page's.
         outcome.styles_ready = _styles_ready(page)
+        media = prepare_capture_media(page)
+        outcome.media_ready = media.get("settled") is True
         geometry = _geometry(page)
         destination = output_dir / "walk_mobile.png"
         page.screenshot(path=str(destination), full_page=True)
@@ -407,6 +419,7 @@ def _mobile_pass(
             ),
             measurements=measurements_from_probe(raw, viewport=plan.mobile.name),
             notes={
+                "media_readiness": media,
                 "viewport_width": plan.mobile.width,
                 "document_scroll_width_px": geometry.get("width"),
                 "styles_ready": outcome.styles_ready,
@@ -454,14 +467,20 @@ def _reduced_motion_pass(
         # clock (round-3 re-review), so the pair records whether both halves were settled and
         # `reduced_motion_findings` refuses to compare an unsettled pair.
         outcome.styles_ready = _styles_ready(page)
+        media = prepare_capture_media(page)
+        outcome.media_ready = media.get("settled") is True
         geometry = _geometry(page)
         destination = output_dir / "walk_reduced_motion.png"
         page.screenshot(path=str(destination), full_page=True)
         raw = page.evaluate(SECTION_PROBE_SCRIPT, probes) if probes else []
         notes: dict[str, Any] = {
+            "media_readiness": media,
             "document_height_px": geometry.get("height"),
             "styles_ready": outcome.styles_ready,
-            "heights_settled": desktop.styles_ready is True and outcome.styles_ready is True,
+            "heights_settled": (
+                desktop.styles_ready is True and outcome.styles_ready is True
+                and desktop.media_ready and outcome.media_ready
+            ),
         }
         if desktop.document_height:
             notes["motion_document_height_px"] = desktop.document_height
