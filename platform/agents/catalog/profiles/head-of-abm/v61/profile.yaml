@@ -213,7 +213,7 @@ role: head_of_abm
 prompt:
   name: head-of-abm
   version: v14
-  sha256: 9495768702287a3ea4dcb94c8fcbb865d29a3a72df27f8471eb71dd224191890
+  sha256: 717a4ab82b537885b2b513f4b632e71b674adad1c81fa44c7d35f46d5a423718
 skills:
   - name: stage0-interview
     version: v34
@@ -261,7 +261,7 @@ skills:
     sha256: dc9132b180e2f338fa19f60bbe1b5d2b2d211a10412fc37b86c8ad05838f5d5d
   - name: manual-tools
     version: v8
-    sha256: 1c4d3a6e2c53a09be58e8ae0655a097b65f55d7bdfe3edd7f71b3dc3de8e0102
+    sha256: 1b8a53b8a4ecd8713e7a8a946217919135df3b7f05d4ca75c844b5ce3bb82563
   - name: manual-fields
     version: v8
     sha256: bafcd55e84c9aea86a5f1eaa6964a2bb2b0520364ebd961a917c8f8021d7742a
@@ -447,8 +447,8 @@ tools:
   # Digests read off the live descriptor.
   - name: web_search
     version: "1"
-    input_schema_sha256: f9a499ca74d3b3dc432465fba3942b3a585c4b519670e371e4599e63231945de
-    output_schema_sha256: 4286c58ec02317033fd03b626cb617bb0107b43b1add8da87552fe09e6cfc643
+    input_schema_sha256: 61f98fac6f56398866ea7e61539ede2f836d4e23b9a2a54ea8897a0eb80084a6
+    output_schema_sha256: 45a58c07eb605b0f248bb7e60b9b30ec604a15202d5b1b3e0e0819f9b7f20599
 model:
   model_id: x-ai/grok-4.6
   timeout_s: 30.0

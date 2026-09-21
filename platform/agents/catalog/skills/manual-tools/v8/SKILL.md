@@ -1239,31 +1239,31 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 | Field | Type | Default | Bounds | What it is |
 | --- | --- | --- | --- | --- |
-| `query` | `str` | required | min_length=1, max_length=400 | — |
-| `num_results` | `int` | `10` | ge=1, le=10 | — |
-| `include_domains` | `list[str]` | (built per call) | max_length=10 | — |
-| `exclude_domains` | `list[str]` | (built per call) | max_length=10 | — |
-| `start_published_date` | `str or None` | `None` | max_length=32 | — |
-| `end_published_date` | `str or None` | `None` | max_length=32 | — |
+| `query` | `str` | required | min_length=1, max_length=400 | The question or topic to search for, in plain words. Up to 400 characters. |
+| `num_results` | `int` | `10` | ge=1, le=10 | How many results to read back, 1 to 10. Ten is the default. |
+| `include_domains` | `list[str]` | (built per call) | max_length=10 | Only these sites, up to ten. Leave empty to search the whole web. |
+| `exclude_domains` | `list[str]` | (built per call) | max_length=10 | Never these sites, up to ten. Leave empty to exclude nothing. |
+| `start_published_date` | `str or None` | `None` | max_length=32 | Only pages published on or after this date, as a plain ISO date such as 2026-01-01. Leave empty for no lower bound. |
+| `end_published_date` | `str or None` | `None` | max_length=32 | Only pages published on or before this date, as a plain ISO date. Leave empty for no upper bound. |
 
 **Outputs**
 
 | Field | Type | What it is |
 | --- | --- | --- |
-| `answer` | `str or None` | — |
-| `results` | `list[WebSearchResultItem]` | — |
-| `rendered` | `str` | — |
-| `cost_usd` | `str` | — |
-| `request_id` | `str or None` | — |
+| `answer` | `str or None` | The short written answer the search produced, or null when it produced none. |
+| `results` | `list[WebSearchResultItem]` | Up to ten results, most relevant first. |
+| `rendered` | `str` | The whole result as one text: the answer, then one numbered block per result. This is what you read. |
+| `cost_usd` | `str` | What the search cost, as Exa metered it. |
+| `request_id` | `str or None` | Exa's id for this request, for the ledger. |
 
-*WebSearchResultItem*: One row.
+*WebSearchResultItem*: One search result: what the page is called, where it is, when it was published, and the passages that matched.
 
 | Field | Type | What it is |
 | --- | --- | --- |
-| `title` | `str or None` | — |
-| `url` | `str or None` | — |
-| `published_date` | `str or None` | — |
-| `highlights` | `list[str]` | — |
+| `title` | `str or None` | The page's title, when Exa reported one. |
+| `url` | `str or None` | The page's address. |
+| `published_date` | `str or None` | When the page was published, when known. |
+| `highlights` | `list[str]` | The passages from the page that matched the query. |
 
 **Refusals**
 

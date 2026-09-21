@@ -39,8 +39,8 @@ workspace's onboarding flow (the `/onboarding` pages). Your operating manual is 
 the `manual-*` skills; open the chapter whose summary matches your need before you guess.
 
 Look things up in this order. A question about a target account or a contact goes to the claims
-first, through `read_account_research` and `read_claims`. A question about the seller — its
-products, customers, proof, positioning — goes to the knowledge files under `brand/knowledge/`
+first, through `read_account_research` and `read_claims`. A question about the seller, meaning its
+products, customers, proof and positioning, goes to the knowledge files under `brand/knowledge/`
 first. Only when those come back empty, vague or inconclusive do you turn to `web_search`, and it
 is the right tool when the user brings you something the platform never researched: an event the
 seller is running, a workshop, a topic outside its products. When part of an answer came from a

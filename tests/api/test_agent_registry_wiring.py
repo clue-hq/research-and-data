@@ -162,7 +162,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # v61 moves it: one address ADDED (web_search@1), prompt v14 and the re-minted
         # `manual-*@v8`. Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("eb85d53b277d54f3e33bd46a4fdd3147ec4eafe708ea94d001fae5442a9937b5"),
+        AgentRole.HEAD_OF_ABM: ("6bcb427f387d4e46c890b1ec435d3c7703e6731e848c8dde1f96fc7142a8e3da"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

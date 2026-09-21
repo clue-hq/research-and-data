@@ -84,27 +84,70 @@ class ExaSearchSurface(Protocol):
 
 
 class WebSearchInput(ToolInput):
-    query: str = Field(min_length=1, max_length=400)
-    num_results: int = Field(default=_MAX_RESULTS, ge=1, le=_MAX_RESULTS)
-    include_domains: list[str] = Field(default_factory=list, max_length=10)
-    exclude_domains: list[str] = Field(default_factory=list, max_length=10)
-    start_published_date: str | None = Field(default=None, max_length=32)
-    end_published_date: str | None = Field(default=None, max_length=32)
+    query: str = Field(
+        min_length=1,
+        max_length=400,
+        description="The question or topic to search for, in plain words. Up to 400 characters.",
+    )
+    num_results: int = Field(
+        default=_MAX_RESULTS,
+        ge=1,
+        le=_MAX_RESULTS,
+        description="How many results to read back, 1 to 10. Ten is the default.",
+    )
+    include_domains: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Only these sites, up to ten. Leave empty to search the whole web.",
+    )
+    exclude_domains: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Never these sites, up to ten. Leave empty to exclude nothing.",
+    )
+    start_published_date: str | None = Field(
+        default=None,
+        max_length=32,
+        description=(
+            "Only pages published on or after this date, as a plain ISO date such as "
+            "2026-01-01. Leave empty for no lower bound."
+        ),
+    )
+    end_published_date: str | None = Field(
+        default=None,
+        max_length=32,
+        description=(
+            "Only pages published on or before this date, as a plain ISO date. Leave empty "
+            "for no upper bound."
+        ),
+    )
 
 
 class WebSearchResultItem(ToolOutput):
-    title: str | None
-    url: str | None
-    published_date: str | None
-    highlights: list[str]
+    """One search result: what the page is called, where it is, when it was published, and the
+    passages that matched."""
+
+    title: str | None = Field(description="The page's title, when Exa reported one.")
+    url: str | None = Field(description="The page's address.")
+    published_date: str | None = Field(description="When the page was published, when known.")
+    highlights: list[str] = Field(description="The passages from the page that matched the query.")
 
 
 class WebSearchOutput(ToolOutput):
-    answer: str | None
-    results: list[WebSearchResultItem]
-    rendered: str
-    cost_usd: str
-    request_id: str | None
+    answer: str | None = Field(
+        description=("The short written answer the search produced, or null when it produced none.")
+    )
+    results: list[WebSearchResultItem] = Field(
+        description="Up to ten results, most relevant first."
+    )
+    rendered: str = Field(
+        description=(
+            "The whole result as one text: the answer, then one numbered block per result. "
+            "This is what you read."
+        )
+    )
+    cost_usd: str = Field(description="What the search cost, as Exa metered it.")
+    request_id: str | None = Field(description="Exa's id for this request, for the ledger.")
 
 
 def render_web_search(answer: str | None, results: Sequence[WebSearchResultItem]) -> str:
