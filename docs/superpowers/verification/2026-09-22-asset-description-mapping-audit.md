@@ -8,6 +8,8 @@ The investigation found **no asset-ID, stored-byte, preview-fingerprint, or fron
 
 This was a read-only review of the running application and its data. No application code, descriptions, overrides, model configuration, or live ingestion state changed. No paid model replay was performed.
 
+Subsequent user-approved live testing is recorded separately in [the four-call replay report](2026-09-22-asset-vision-replay.md). All four new calls recognized the logos; the original unrelated-subject failures did not reproduce. That follow-up does not change the observed bad stored results documented here.
+
 ## Scope and snapshot
 
 - Checkout: `san-diego`, branch `asset-ingestion/improvements`, application baseline `32c029b5e`.
