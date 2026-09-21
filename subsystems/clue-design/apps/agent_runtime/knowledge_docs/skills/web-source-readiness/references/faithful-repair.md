@@ -157,7 +157,13 @@ A repair fixes THE DEFECT. It is not a redesign opportunity:
   broken and what the replacement does.
 - **A vocabulary-lane repair is born UNRELEASED, and kit approval does not
   release it.** Releasing is the user's individual decision, in chat, after
-  you explain what the repair is and ask. "They didn't object" is not
+  you explain why it exists, which rung it uses, what changed or was lost,
+  and its effect on future pins. Show `view("cloned_section:<id>")` evidence
+  before asking to release that specific repair; if the preview is missing,
+  obtain it through the supported role/tool path. There is no approval button.
+  Wait for an explicit yes before `release_repair(fragment_id)`; an author
+  unable to ask hands the explanation/request to the director. Existing approval
+  for this specific repair stands; do not ask again. "They didn't object" is not
   approval; an unreleased draft is not lost, it is waiting. (A RAW-lane
   repair is released at mint — see the two-lanes section; its release is
   reported, not requested.)

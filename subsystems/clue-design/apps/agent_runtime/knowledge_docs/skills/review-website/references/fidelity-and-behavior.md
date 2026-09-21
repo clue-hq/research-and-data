@@ -40,10 +40,14 @@ text bands, unexplained mobile gaps and decorative repetition weaken the page.
 
 The brand anchor needs a concrete expression in composition, type or imagery,
 not just a matching palette. Apply the logo-off test to new or adapted sections
-between their actual neighbors. Where a supplied Creative Brief states constraints,
-check each in pixels. User-requested departures must be explicit. Geometry that
-materially violates requested source fidelity is a requirement failure, not
-invariably an advisory nitpick. Smaller optional polish can remain advisory.
+between their actual neighbors. If no concrete element expresses the anchor,
+report "brand expression generic" and name the band; this is advisory unless
+it also violates a source requirement or brief constraint. Where a supplied
+Creative Brief states constraints, check each in pixels: a violation is a
+reportable defect. Name the constraint, viewport and section id. User-requested
+departures must be explicit. Geometry that materially violates requested source
+fidelity is a requirement failure, not invariably an advisory nitpick. Smaller
+optional polish can remain advisory.
 Compare background rhythm and intentional color emphasis with the source/brief;
 not every band alternates color, uses cards or shares an identical max-width.
 
@@ -52,9 +56,10 @@ not every band alternates color, uses cards or shares an identical max-width.
 For every returned width, inspect horizontal overflow, collisions, clipping,
 content order, text measure, image-to-copy balance and mobile navigation usability.
 Read the actual support and closing copy at placement scale; enlarging a preview
-to decipher it does not establish legibility. Check text against image/gradient,
-logo against its band, and button label against fill. Respect the source's
-responsive composition; one column is not universally required.
+to decipher it does not establish legibility. Trace the contrast chain: body and
+muted text against their band or image/gradient, button label against its fill,
+and logo against its band. An unreadable logo or text is blocking. Respect the
+source's responsive composition; one column is not universally required.
 
 Each image needs a message role and suitable crop, focal point, aspect and decoded
 resolution for its rendered size/pixel density. A low-resolution avatar or photo
@@ -64,13 +69,21 @@ a source label are not visual proof. Keep authentic source media, generated
 derivatives and reference-only imagery distinct. Never substitute a generated
 customer photo or redrawn product screenshot for a missing real one.
 
-Check promised imagery against what actually renders. Flat placeholders and
-missing required media are failures. Text-forward composition can be deliberate
-when it serves the brief; no-imagery is not automatically wrong. Brand-generic
-imagery is advisory unless it violates the source/request or fails to explain the
-adjacent claim. Use only the actual seller/target logo pixels and correct surface
-variant; wrong company/program, incomplete required wordmark, poor contrast or
-missing requested identity remains a gap. Omit optional empty account bands
+## Imagery — the decision check
+
+Check the director's per-band imagery decision (real asset, generate, or deliberately
+none with a reason) against what actually renders. Name the section when promised
+imagery is missing. Flat placeholders and missing required media are failures.
+A text-forward posture can be deliberate when the brief and composed content
+support it. An unexplained bare stack of text bands is a finding; do not score
+restraint as failure or bareness as restraint. Brand-generic imagery is advisory
+unless it violates the source/request or fails to explain the adjacent claim.
+
+A branded page shows the seller's real mark. No logo anywhere is blocking, not
+advisory; a drawn or typeset stand-in for an available real logo is the same miss.
+Use only the actual seller/target logo pixels and correct surface variant; wrong
+company/program, incomplete required wordmark, poor contrast or missing requested
+identity remains a gap. Omit optional empty account bands
 cleanly; never leave stale example names, unresolved markers or half-populated
 proof masquerading as personalization.
 

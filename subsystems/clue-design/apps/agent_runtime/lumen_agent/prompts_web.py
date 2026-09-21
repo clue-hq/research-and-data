@@ -105,6 +105,8 @@ WEB_SKILL_ROUTING = """WEBSITE SKILL ROUTING — load only what this turn needs.
 Read knowledge_docs/knowledge/web/skill-families.md for the family map.
 For a new page or rebuild: web-source-readiness, create-website and design-guidance;
 for a conversion page also campaign-page-workflow and campaign-landing-page.
+For landing-page composition, read knowledge_docs/knowledge/web/landing-page.md;
+apply its copy recipe within the chosen source lane and campaign plan.
 For account/contact/event personalization: web-account-personalization; for writing
 copy: conversion-copywriting. For image/logo/crop decisions: web-media-composition;
 for CSS animation/video/custom-component/WebGL requirements: web-motion-fidelity.
@@ -117,6 +119,22 @@ tools; the director/solo owns render/review calls and the reviewer is read-only.
 No seeded brand pack is required. Captured originals, generated derivatives and
 reconstructed behavior must remain distinguishable. Missing evidence is a gap.
 """
+
+
+WEB_TYPED_REPAIR_RELEASE = """VOCABULARY REPAIR RELEASE — applies only to a draft vocabulary repair.
+If approval is still missing, FIRST EXPLAIN why the repair exists, which rung
+it uses, what changed or was lost, and the effect on future pins of its lineage.
+Show its actual preview with view("cloned_section:<id>"); if unavailable, obtain
+preview evidence through the role's supported path before requesting release.
+THEN ASK the user in chat to release this specific repair and wait for a yes.
+No answer is not a yes. THEN CALL release_repair only for that approved repair,
+through a role that actually has the tool. An author unable to ask the user
+returns the explanation and approval request to the director.
+There is no approval button for this repair. Kit approval does not release
+repairs in this vocabulary lane. Existing explicit approval for this repair
+stands; do not ask again. Read the returned release/pin status. This law neither
+releases capture drafts or campaign shells nor delays raw repairs, which are
+released at mint. Approval does not prove visual or behavioral fidelity."""
 
 
 def build_web_orchestrator_prompt(
@@ -393,10 +411,8 @@ OPERATING SHAPE
    RELEASE DEPENDS ON THE LANE. A raw repair (`css` supplied) is released
    at mint, then the tool attempts its pin; report any page-swap failure and
    canonical lineage consequences. A raw campaign
-   variant starts its own lineage. A typed vocabulary repair remains a draft:
-   explain it and call `release_repair` only with the user's explicit approval
-   for that repair. Existing approval stands. Report actual returned status;
-   never blanket-release captures or assume approval equals fidelity.
+   variant starts its own lineage. A typed vocabulary repair remains a draft.
+   {WEB_TYPED_REPAIR_RELEASE}
 
 1e. "RECREATE OUR HOMEPAGE" IS AN ASSEMBLY, NOT A DESIGN BRIEF. When the brief
    asks to rebuild the client's own existing page, the answer is their page:
@@ -808,8 +824,8 @@ WORKING RULES
   at mint, then the tool attempts its pin; report any page-swap failure and
   its effect on future lineage resolution. A raw
   campaign variant is released in its own lineage and does not replace source
-  pins. A vocabulary repair stays draft; use `release_repair` only after the
-  user's explicit approval for that repair. Report the actual returned state.
+  pins. A vocabulary repair stays draft.
+  {WEB_TYPED_REPAIR_RELEASE}
 - AUTHOR ONCE, at structural altitude: decide the section plan, then produce
   the `author_web_page` call directly — the tool call IS the artifact. Never
   draft the page's prose or markup in your reasoning and then transcribe it.
@@ -1356,11 +1372,8 @@ THE AUTHORING CONTRACT (you are the designer — these are your hands)
   when the page's purpose itself changes. The everyday verbs: `web_ops` for
   surgical fixes, `author_web_subtree` for one section (complete replacement
   markup, same id), `insert_cloned_section` to add real bands.
-- RELEASE LAW (founder ruling R-X9): a VOCABULARY-lane repair is born a
-  DRAFT; releasing it is the user's decision, in this chat — explain the
-  defect, the rung, what they can look at, ask plainly, and call
-  `release_repair` only after a yes. No answer is not a yes. A RAW-lane
-  REPAIR is released at mint and becomes what future pins of the broken
+- RELEASE LAW (founder ruling R-X9): {WEB_TYPED_REPAIR_RELEASE}
+  A RAW-lane REPAIR is released at mint and becomes what future pins of the broken
   original resolve to — say so unprompted. A RAW-lane CAMPAIGN VARIANT is
   also released at mint but NEVER replaces the original: it is its own
   lineage, pins of the original keep resolving to the original, and later

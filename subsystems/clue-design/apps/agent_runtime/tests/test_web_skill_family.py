@@ -25,6 +25,29 @@ SKILLS = (
 )
 
 
+def read_required_skill_reference(tmp_path, skill, label, *, before="Read ", after="."):
+    """Follow an explicit read instruction in the real materialized skill.
+
+    This checks availability at the skill boundary, not whether a model follows
+    the instruction. A reference merely present elsewhere in the tree cannot pass.
+    """
+    config = SimpleNamespace(workspace_root=tmp_path)
+    materialize_agent_workspace(config)
+    assert skill in dict(_materialized_skill_index(config))
+    entry = tmp_path / ".deepagent" / "skills" / skill / "SKILL.md"
+    text = entry.read_text()
+    matches = re.findall(r"\[" + re.escape(label) + r"\]\(([^)]+)\)", text)
+    assert len(matches) == 1, (skill, label)
+    link = matches[0]
+    assert f"{before}[{label}]({link}){after}" in text
+    target = (entry.parent / link).resolve()
+    assert target.is_relative_to(tmp_path / ".deepagent" / "skills")
+    relative = target.relative_to(tmp_path / ".deepagent" / "skills")
+    assert target.read_bytes() == (ROOT / "skills" / relative).read_bytes()
+    assert target.read_bytes() == (tmp_path / "knowledge_docs" / "skills" / relative).read_bytes()
+    return target.read_text()
+
+
 def test_every_family_is_discoverable_and_nested_references_survive_materialization(tmp_path):
     config = SimpleNamespace(workspace_root=tmp_path)
     materialize_agent_workspace(config)
