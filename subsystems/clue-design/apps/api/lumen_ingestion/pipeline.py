@@ -1171,6 +1171,7 @@ def _mint_page_fragments(
     from lumen_ingestion.sections import mint as section_mint
     from lumen_ingestion.sections.segment import segment_snapshot
 
+    from .capture.geometry import captured_font_context
     from .capture.page_plan import MAX_CAPTURE_PAGES
 
     refs: list[JsonObject] = []
@@ -1232,6 +1233,9 @@ def _mint_page_fragments(
                 segmentation,
                 html=snapshot.html,
                 stylesheets=list(getattr(snapshot, "stylesheets", None) or []),
+                initial_font_px=captured_font_context(getattr(snapshot, "geometry", None)).get(
+                    "initial_font_px"
+                ),
                 captured=section_mint.captured_assets(snapshot),
                 screenshot=_screenshot_bytes(snapshot),
                 source_kit_id=brand_kit_id,

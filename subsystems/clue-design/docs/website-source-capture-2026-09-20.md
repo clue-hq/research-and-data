@@ -117,3 +117,69 @@ claim the AWS layout or support-widget contamination is fixed.
 - case-study: [https://cloud.google.com/customers/fairpricegroup](https://cloud.google.com/customers/fairpricegroup) — captured
 - case-study: [https://cloud.google.com/customers/hershey](https://cloud.google.com/customers/hershey) — captured
 
+
+## Root-unit verification checkpoint
+
+AWS source sets the root font to 62.5% (10px in the captured browser). Moving that
+rule onto a fragment wrapper left `rem` values tied to the host root and inflated
+text by 1.6x. The isolated mint path now transports declaration-level rem values
+through a source-local CSS variable, preserving simple literal html/:root size
+rules and responsive media/supports overrides. Media-query thresholds, source
+URLs and strings are unchanged. No application root is resized.
+
+New captures measure browser-medium and computed source-root fonts; the initial
+font measurement survives snapshot persistence and reaches minting. Legacy
+snapshots explicitly record their Chromium-default fallback. Mixed root
+specificity, inline root fonts, variable/expression/shorthand root values and
+layered/stateful root rules remain unsupported and produce a diagnostic instead
+of a guessed conversion. Malformed declarations fall back to existing custody
+and sanitizer checks. This is a bounded repair, not a universal CSS-context clone.
+
+Frozen AWS source comparison (network fully intercepted) now matches font size
+and line height for **41/43 desktop** and **38/40 mobile** matched text nodes;
+previously zero did. The hero is restored from 64px to source 40px on desktop,
+and 44.8px to source 28px on mobile. Twelve sections still admit. Two region
+statistic headings, container sizing, overflow, source support-chat overlays,
+interaction and production rendering remain unresolved; full fidelity has not
+passed. Evidence is in the ignored `fragment-probe-20260920-root-units` directory.
+
+## Conduit low-resolution assets: verified user report
+
+Both screenshot assets were traced by exact byte digest through frozen capture
+files and read-only, workspace-scoped live asset records. These are downloaded
+Next.js image-optimizer renditions, not generated images:
+
+| Image | Screenshot rendition | Better rendition already in live Conduit | Appropriate interpretation |
+|---|---|---|---|
+| Building/customer photo | 48 × 72, 1,081 bytes | 480 × 720, 34,718 bytes; `asset_ing_282b54e63d47474d` | Use the better crop only where its actual pixels are sufficient. A larger original requires separate verified acquisition. |
+| Product-UI avatar | 64 × 64, 795 bytes | 128 × 128, 1,068 bytes; `asset_ing_070d4c876227dd82` | Small avatar/UI detail; unsuitable for a large hero or portrait. |
+
+The selected thumbnail ids are `asset_ing_003f6eed4d16288f` and
+`asset_ing_02864e0af158f252`. All four records are currently `ready`, tagged only
+`brand-ingestion`/`image`, with generic optimizer-derived filenames. The source
+URLs request multiple widths, but actual decoded dimensions cap at 480 × 720
+and 128 × 128 respectively; a URL parameter of 2048 is not proof of 2048 pixels.
+The live records date to the earlier ingestion, not this isolated probe.
+
+The gallery modal applies width/height 100% with object-fit contain, so it
+magnifies small assets. Current web-agent search includes dimensions and ranks
+pixel area after textual relevance; it does not yet represent a source rendition
+family or enforce suitability for the requested placement. Do not call the agent
+blind to dimensions, or call these two thumbnails proof that all capture is blurry.
+
+Required next work at the asset-library seam:
+- Group proven same-source, same-crop renditions; lead with the best decoded
+  resolution. Preserve all original bytes and exact component references.
+- Distinguish UI avatars/icons, customer photography, product screenshots and
+  decorative backgrounds, with source-page role and usage restrictions.
+- Expose intrinsic size and an honest natural-size preview; do not present small
+  renditions as independent full-size creative choices.
+- Before placement, compare available pixels with rendered size and output pixel
+  density. Retrieve an observed better source, choose a suitable alternative, or
+  report the gap. Never fabricate a sharper original or silently replace a real
+  customer photo with generated material.
+- Preserve crop/focal-point parameters. Source-family grouping is not permission
+  to strip query strings or bypass URL/custody checks.
+
+This finding remains open in the live UI. No existing assets were deleted,
+replaced or reclassified during the audit.

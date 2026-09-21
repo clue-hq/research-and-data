@@ -431,7 +431,11 @@ def test_the_website_ingestion_job_mints_the_sections_it_captured(
 
     async def _capture(url, *, reporter, force_render=False, page_urls=None):
         reporter("Visiting your website…", 0.05)
-        return _FakeOutcome([_snapshot()])
+        snapshot = _snapshot()
+        snapshot.geometry = {"initial_font_px": 18, "root_font_px": 9}
+        from lumen_ingestion.capture.snapshot import Stylesheet
+        snapshot.stylesheets.append(Stylesheet(url="inline:root", text="html{font-size:50%}"))
+        return _FakeOutcome([snapshot])
 
     run_website_ingestion(
         str(tmp_path / "engine-cache"),
@@ -447,6 +451,7 @@ def test_the_website_ingestion_job_mints_the_sections_it_captured(
     rows = list_web_fragments(workspace_id=workspace_id)
     assert {row["section_role"] for row in rows} >= {"nav", "hero", "footer"}
     assert all(row["status"] == "draft" for row in rows)
+    assert all(row["provenance"]["css"]["root_units"]["initial_font_px"] == 18 for row in rows)
     assert all(row["source_kit_id"] == job["brand_kit_id"] for row in rows)
     assert all(row["source_kit_version"] == job["brand_kit_version"] for row in rows)
     # And the job itself says what it cloned, so "what did this ingestion keep?" is answerable

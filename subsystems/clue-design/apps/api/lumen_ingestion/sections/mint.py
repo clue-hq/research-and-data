@@ -70,6 +70,7 @@ from .deadheight import (
     DeadHeightAssessment,
     assess_dead_height,
 )
+from .rootunits import RootUnits, prepare_root_units
 from .segment import SectionRecord, SectionSegmentation, recovery_sections, resolve_section
 from .slotdetect import detect_slots
 
@@ -548,6 +549,7 @@ def mint_sections(
     dormant_limit: int = SECTION_MINT_CAP,
     mark_degraded: Callable[..., dict[str, Any]] | None = None,
     weight: PageWeight | None = None,
+    initial_font_px: float | None = None,
 ) -> MintOutcome:
     """Mint every section of one captured page. Never raises.
 
@@ -582,6 +584,13 @@ def mint_sections(
     # and never mutates, and a marketing page's html runs to megabytes — re-parsing it twelve
     # times to extract twelve subtrees would be the most expensive thing this module does.
     tree = SectionParser(html or "")
+    root_units = prepare_root_units(stylesheets, html=html, initial_font_px=initial_font_px)
+    if root_units.notes:
+        diagnostics.append(_diag(
+            "LUMI0540",
+            "source root-unit context was not normalized: " + "; ".join(root_units.notes),
+            reason="unsupported_root_units", page_url=segmentation.page_url,
+        ))
     recovery_plan = _recovery_plan(segmentation, tree)
     recovery_parents = {
         child.index: parent
@@ -607,7 +616,8 @@ def mint_sections(
                     segmentation,
                     record,
                     tree=tree,
-                    stylesheets=stylesheets,
+                    stylesheets=root_units.stylesheets,
+                    root_units=root_units,
                     captured=captured,
                     screenshot=screenshot,
                     source_kit_id=source_kit_id,
@@ -728,6 +738,7 @@ def _mint_one(
     *,
     tree: SectionParser,
     stylesheets: Sequence[Any],
+    root_units: RootUnits,
     captured: Mapping[str, CapturedAsset],
     screenshot: bytes | None,
     source_kit_id: str | None,
@@ -754,7 +765,7 @@ def _mint_one(
             )
         )
         return None
-    subtree = node.html or ""
+    subtree = root_units.markup(node.html or "")
 
     root_classes = ((tree.root.attributes.get("class") or "").split() if tree.root else ())
     matched = rules_for_subtree(
@@ -863,6 +874,7 @@ def _mint_one(
         assessment,
         preview_refused_by=preview_refused_by,
     )
+    provenance["css"]["root_units"] = root_units.provenance()
     if recovery_parent is not None:
         provenance["recovery"] = {
             "mode": "authored-descendant-after-refusal",

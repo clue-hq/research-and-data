@@ -92,6 +92,7 @@ def test_persisting_a_snapshot_writes_one_row_four_blobs_and_round_trips(
 ) -> None:
     job_id = _job(workspace_id)
     snapshot = _snapshot()
+    snapshot.geometry.update(initial_font_px=18, root_font_px=9)
 
     refs = persist_site_snapshots(
         [snapshot], workspace_id=workspace_id, job_id=job_id, storage=design_storage
@@ -136,6 +137,7 @@ def test_persisting_a_snapshot_writes_one_row_four_blobs_and_round_trips(
     assert loaded.meta["meta"]["title"] == "Insight"
     assert loaded.meta["final_url"] == snapshot.final_url
     assert loaded.meta["tier"] == "rendered"
+    assert loaded.meta["font_context"] == {"initial_font_px": 18, "root_font_px": 9}
 
 
 def test_static_tier_snapshot_has_no_screenshot_and_no_phantom_blob(

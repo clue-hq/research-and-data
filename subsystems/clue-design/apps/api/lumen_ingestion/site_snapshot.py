@@ -36,6 +36,7 @@ from clue_design.storage import SOURCE_KEY_SITE_SNAPSHOT, read_design_bytes, reg
 from clue_storage import StorageBackend
 from lumen_api.design_store import DesignStoreBridge
 
+from .capture.geometry import captured_font_context
 from .sections.bands import (
     SNAPSHOT_META_BANDS_KEY,
     SNAPSHOT_META_SKIPPED_KEY,
@@ -380,6 +381,7 @@ def _meta(snapshot: Any) -> dict[str, Any]:
     return {
         "meta": dict(getattr(snapshot, "meta", None) or {}),
         "tier": getattr(snapshot, "tier", None),
+        "font_context": captured_font_context(getattr(snapshot, "geometry", None)),
         "requested_url": getattr(snapshot, "requested_url", None),
         "final_url": getattr(snapshot, "final_url", None),
         "fetched_at": getattr(snapshot, "fetched_at", None),
