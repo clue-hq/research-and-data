@@ -100,3 +100,13 @@ The registry read returned **152 asset records** and the run admitted **66 draft
 Evidence: `.local-setup/website-capture/fresh-url-linear-product-20260920/{scope,result,latest-job,verification}.json`, sibling log/script, and `semantic-discovery-parent-tests.xml`. The initial readback used an incorrect top-level asset-kind field (records wrap their asset payload); that diagnostic field was removed, while the verified record count remains 152.
 
 This closes the observed unfamiliar-product-slug gap, not every discovery case. Unlabelled or nonstandard navigation can still be missed; labels currently use the existing English role vocabulary. Supporting-page redirects can change the origin used by subsequent discovery, a separate existing issue. Missing media/sections, source reproduction, supporting-media descriptions and live four-brand acceptance remain open.
+
+## Customer-image enumeration repair
+
+The stored customer-index snapshot exposed twelve missing wordmarks whose URLs were carried by CSS custom properties. The candidate collector now tokenizes inline declarations, nested rules and registered custom-property initial values through the existing bounded asset-acquisition path. It preserves declaration order, each stylesheet's URL base, exact query identity, deduplication and the existing identity-first asset budget. Strings/comments that merely resemble `url()` are not fetch candidates. No company names or routes are special-cased.
+
+The implementer ran 54 focused checks (12 new custom-property cases, 36 existing asset-slurp cases and 6 media cases); parent independently reran 18 custom-property/media checks. Peer review reproduced three extra edge cases (escaped URL function identifiers, registered defaults, malformed URLs), then verified all were fixed. Ruff and diff checks pass.
+
+A frozen, hash-verified replay of `snap_79578c160535ad71` compared previous/current enumeration: 35 → 47 URLs, exactly twelve missing SVG references added, zero removed, no budget diagnostic. Evidence is `.local-setup/website-capture/custom-property-frozen-replay.json`. This proves enumeration, not a fresh download or visual acceptance. It used existing disposable-workspace source bytes; no new sources were fetched and no workspace assets were seeded.
+
+Separate unresolved findings: external SVG/MP4 fragment suffixes need correct resource lookup and retained output suffixes; one video was correctly refused by the 50 MiB per-video cap. Those issues are not claimed fixed by custom-property enumeration.
