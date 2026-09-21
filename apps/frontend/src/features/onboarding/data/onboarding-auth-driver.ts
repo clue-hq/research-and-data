@@ -1,9 +1,42 @@
 import type {
   InvitationSignUpInput,
   OnboardingAuthResult,
+  OnboardingGoogleAuthResult,
 } from "../model/onboarding";
 
 export const CLERK_CALL_TIMEOUT_MS = 15_000;
+
+export async function startGoogleSignIn(
+  signIn: {
+    authenticateWithRedirect(params: {
+      strategy: "oauth_google";
+      redirectUrl: string;
+      redirectUrlComplete: string;
+      continueSignIn: boolean;
+    }): Promise<void>;
+  } | undefined,
+  timeoutMs = CLERK_CALL_TIMEOUT_MS,
+): Promise<OnboardingGoogleAuthResult> {
+  if (!signIn) {
+    return { status: "error", message: "Sign-in is still loading. Please try again in a moment." };
+  }
+  // Future sso() can reuse an expired attempt and return no error without redirecting.
+  // The public redirect API explicitly starts fresh and matches our existing callback.
+  // Never reset then reuse a captured Future resource: its hook can retain the old attempt.
+  const started = await runClerkStep(
+    async () => {
+      await signIn.authenticateWithRedirect({
+        strategy: "oauth_google",
+        redirectUrl: "/onboarding/sso-callback",
+        redirectUrlComplete: "/session/establish",
+        continueSignIn: false,
+      });
+      return { error: null };
+    },
+    timeoutMs,
+  );
+  return started.ok ? { status: "redirecting" } : started.result;
+}
 
 type ClerkErrorLike = {
   message: string;
