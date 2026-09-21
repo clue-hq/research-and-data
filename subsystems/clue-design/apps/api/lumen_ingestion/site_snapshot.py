@@ -83,6 +83,11 @@ class SiteSnapshotRef:
 class LoadedStylesheet:
     url: str
     text: str
+    raw_text: str | None = None
+    source_order: tuple[int, ...] | None = None
+    media: str | None = None
+    disabled: bool = False
+    imported_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -181,9 +186,24 @@ async def _persist_one(
             media_type=_CSS_MEDIA_TYPE,
             source_key=SITE_SNAPSHOT_SOURCE_KEY,
         )
-        stylesheets.append(
-            {"url": sheet.url, "digest": sheet_digest, "byte_length": len(sheet_bytes)}
-        )
+        entry = {"url": sheet.url, "digest": sheet_digest, "byte_length": len(sheet_bytes)}
+        raw_text = getattr(sheet, "raw_text", None)
+        if raw_text is not None:
+            raw_bytes = raw_text.encode("utf-8")
+            await register_design_bytes(
+                conn,
+                storage,
+                workspace_id=workspace_id,
+                data=raw_bytes,
+                media_type=_CSS_MEDIA_TYPE,
+                source_key=SITE_SNAPSHOT_SOURCE_KEY,
+            )
+            entry["raw_digest"] = _digest(raw_bytes)
+        for name in ("source_order", "media", "disabled", "imported_from"):
+            value = getattr(sheet, name, None)
+            if value is not None and value is not False:
+                entry[name] = value
+        stylesheets.append(entry)
 
     screenshot = _screenshot_download(snapshot)
     screenshot_digest: str | None = None
@@ -219,15 +239,17 @@ async def _persist_one(
             media_type=media_type,
             source_key=SITE_SNAPSHOT_SOURCE_KEY,
         )
-        assets.append({
-            "url": download.url,
-            "digest": digest,
-            "kind": download.kind,
-            "content_type": media_type,
-            "byte_length": len(data),
-            "origin": download.origin,
-            "dark_scheme": download.dark_scheme,
-        })
+        assets.append(
+            {
+                "url": download.url,
+                "digest": digest,
+                "kind": download.kind,
+                "content_type": media_type,
+                "byte_length": len(data),
+                "origin": download.origin,
+                "dark_scheme": download.dark_scheme,
+            }
+        )
     meta = _meta(snapshot)
     from .capture.page_plan import motion_inventory
 
@@ -271,9 +293,7 @@ async def load_site_snapshot(
     """
     row = await dal.get_site_snapshot(conn, workspace_id=workspace_id, snapshot_id=snapshot_id)
     html = (
-        await read_design_bytes(
-            conn, storage, workspace_id=workspace_id, sha256=row["html_digest"]
-        )
+        await read_design_bytes(conn, storage, workspace_id=workspace_id, sha256=row["html_digest"])
     ).decode("utf-8", errors="replace")
 
     stylesheets: list[LoadedStylesheet] = []
@@ -281,8 +301,25 @@ async def load_site_snapshot(
         data = await read_design_bytes(
             conn, storage, workspace_id=workspace_id, sha256=sheet["digest"]
         )
+        raw_text = None
+        if sheet.get("raw_digest"):
+            raw_text = (
+                await read_design_bytes(
+                    conn, storage, workspace_id=workspace_id, sha256=sheet["raw_digest"]
+                )
+            ).decode("utf-8", errors="replace")
         stylesheets.append(
-            LoadedStylesheet(url=sheet["url"], text=data.decode("utf-8", errors="replace"))
+            LoadedStylesheet(
+                url=sheet["url"],
+                text=data.decode("utf-8", errors="replace"),
+                raw_text=raw_text,
+                source_order=tuple(sheet["source_order"])
+                if sheet.get("source_order") is not None
+                else None,
+                media=sheet.get("media"),
+                disabled=bool(sheet.get("disabled")),
+                imported_from=sheet.get("imported_from"),
+            )
         )
 
     screenshot: bytes | None = None
@@ -317,18 +354,14 @@ def list_site_snapshot_refs(*, workspace_id: str, job_id: str) -> list[SiteSnaps
     """Every page one job captured, in capture order — refs only, no bytes read."""
 
     async def _list(conn: Any) -> list[SiteSnapshotRef]:
-        rows = await dal.list_site_snapshots_for_job(
-            conn, workspace_id=workspace_id, job_id=job_id
-        )
+        rows = await dal.list_site_snapshots_for_job(conn, workspace_id=workspace_id, job_id=job_id)
         return [
             SiteSnapshotRef(
                 snapshot_id=row["snapshot_id"],
                 page_url=row["page_url"],
                 page_index=row["page_index"],
                 html_digest=row["html_digest"],
-                stylesheet_digests=tuple(
-                    sheet["digest"] for sheet in (row["stylesheets"] or [])
-                ),
+                stylesheet_digests=tuple(sheet["digest"] for sheet in (row["stylesheets"] or [])),
                 screenshot_digest=row["screenshot_digest"],
             )
             for row in rows

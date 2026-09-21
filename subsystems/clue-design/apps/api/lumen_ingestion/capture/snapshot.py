@@ -25,6 +25,11 @@ class Stylesheet(BaseModel):
 
     url: str
     text: str
+    raw_text: str | None = None
+    source_order: list[int] | None = None
+    media: str | None = None
+    disabled: bool = False
+    imported_from: str | None = None
 
 
 class Download(BaseModel):
