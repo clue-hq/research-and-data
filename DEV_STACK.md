@@ -24,6 +24,15 @@ Then open **http://localhost:3020** and sign in:
 
 ## Running the same stack from another worktree (added 2026-09-11)
 
+**San Diego (2026-09-21):** run `bash scripts/dev_stack_san_diego.sh up|down|status`
+(`restart-api` and `restart-workers` are supported too). The launcher validates the local
+environment and refuses `up` if any application port or San Diego worker is already running.
+Frontend: `http://localhost:3033`; design API: `8013`; platform APIs: `8023` and `8033`.
+The isolated database is `clue_san_diego` on `55170`, Redis is on `65170`, durable storage
+is this checkout's `.artifacts/`, and logs are `/tmp/san-diego_*.log`. The configured fleet
+has four processes with three slots each. The common launcher honors `LUMEN_CORE_HELPER`
+from `.env`, falling back to the release binary when unset.
+
 `scripts/dev_stack.sh` reads five `DEV_STACK_*` knobs, each defaulting to exactly what the
 istanbul checkout always did, so a lane can run the identical five processes on the identical
 ports against **its own** database without copying the script:

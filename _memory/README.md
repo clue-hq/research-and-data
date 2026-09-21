@@ -27,6 +27,8 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-21-san-diego-stack-startup.md` — isolated live San Diego stack on
+  3033/8013/8023/8033; four fleet workers, restored blobs, and authority/recipe boot fixes.
 - `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
   sandbox and project-management authority tests; isolated database migration smoke.
 - `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names
