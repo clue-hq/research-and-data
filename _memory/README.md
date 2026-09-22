@@ -30,6 +30,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+
+- `2026-09-22-arv3-premier-live.md` — authorized isolated Premier v3 run, six-worker fleet,
+  completed research/display and tracing, with identity, evidence and seller-context quality defects.
 - `2026-09-22-arv3-cumulative-quality-review.md` — Premier v1 / Probook-Zafran v3
   comparison, completed historical read-only join, shared extraction/correction defects,
   and conditional Deep Agent specialist design; discussion only.

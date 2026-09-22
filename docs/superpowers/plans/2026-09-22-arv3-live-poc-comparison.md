@@ -267,3 +267,9 @@ Exa results for Probook and 15,131 / 20 for Zafran. Each account's two extractio
 not a measured loss percentage: the parent can also use the report in direct claim writes.
 The v3 test did not exercise display pages; Premier's display defects must not be presented as
 measured v3 UI results. All original run/recovery totals and exclusions above remain unchanged.
+
+## Premier follow-up
+
+The subsequently authorized same-account Premier v3 run is tracked separately in
+[Premier v3 live comparison](2026-09-22-arv3-premier-live-comparison.md). Its records and costs
+are separate from every Probook/Zafran total above.
