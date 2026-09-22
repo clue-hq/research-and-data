@@ -197,6 +197,7 @@ class PageRead:
     degraded_reason: str | None
     unavailable_message: str | None = None
     pending: tuple[str, ...] = ()
+    research_quality: dict[str, Any] | None = None
 
 
 #: The failures a read absorbs. ``Arv2Error`` covers the lane's own typed failures (a halted or
@@ -320,6 +321,9 @@ class DisplayPages:
         subject_id: str,
         page: Page,
         generate: bool = True,
+        project_id: str | None = None,
+        context_id: uuid.UUID | None = None,
+        account_id: uuid.UUID | None = None,
     ) -> PageRead:
         """This subject's page: stored sections always, missing ones written when we can.
 
@@ -339,6 +343,42 @@ class DisplayPages:
         is still computed and reported, since saying so costs nothing and a caller may want to
         know. A read that *does* want the page repaired simply leaves ``generate`` at its default.
         """
+        from clue_api.arv2.quality_pages import read_page
+        from clue_api.arv2.quality_read import select_quality_context
+
+        selection = await select_quality_context(
+            conn,
+            workspace_id=workspace_id,
+            subject_id=uuid.UUID(subject_id),
+            subject_kind=subject_kind,
+            account_id=account_id,
+            project_id=project_id,
+            context_id=context_id,
+        )
+        if selection is not None:
+            if selection.scope is not None and selection.context_id is not None:
+                try:
+                    value = await read_page(
+                        conn, selection.scope, context_id=selection.context_id, page=page
+                    )
+                    value["research_quality"]["contexts"] = selection.metadata["contexts"]
+                    return PageRead(**value)
+                except ValueError:
+                    # A stopped or not-yet-started generation has no usable narrative. Never
+                    # fall through to the unscoped Luna owner because a quality page is pending.
+                    pass
+            recipes = await read_recipes(conn, page, workspace_id=workspace_id)
+            block = compose_display_block(page, recipes, {})
+            metadata = {k: v for k, v in selection.metadata.items() if k != "committee"}
+            block["researchQuality"] = metadata
+            return PageRead(
+                display_block=block,
+                cited_claim_ids=(),
+                generated=(),
+                stale=(),
+                degraded_reason=None,
+                research_quality=metadata,
+            )
         recipes = await read_recipes(conn, page, workspace_id=workspace_id)
         expansion = await _expansion(
             conn, workspace_id=workspace_id, subject_kind=subject_kind, subject_id=subject_id
@@ -454,6 +494,12 @@ class DisplayPages:
             for section in display_block["sections"]:
                 if section["empty"] and section["key"] not in blocks:
                     section["emptyMessage"] = unavailable
+        display_block["researchQuality"] = {
+            "qualityState": "legacy",
+            "refreshPending": bool(pending),
+            "gaps": [],
+            "contexts": [],
+        }
         return PageRead(
             display_block=display_block,
             cited_claim_ids=cited_claim_ids(recipes, blocks, shared),
@@ -462,6 +508,12 @@ class DisplayPages:
             degraded_reason=degraded_reason,
             unavailable_message=unavailable,
             pending=pending,
+            research_quality={
+                "qualityState": "legacy",
+                "refreshPending": bool(pending),
+                "gaps": [],
+                "contexts": [],
+            },
         )
 
     # -- scheduling: the fleet writes the page, this read only offers it -----------------------
@@ -671,6 +723,15 @@ class DisplayPages:
         offers landed. A seam with no queue offers nothing."""
         if not self.schedules:
             return 0
+        from clue_api.arv2.quality_read import select_quality_context
+
+        if (
+            await select_quality_context(
+                conn, workspace_id=workspace_id, subject_id=uuid.UUID(account_id)
+            )
+            is not None
+        ):
+            return 0  # Quality generations own all page refreshes, including person pages.
         members = await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
         if not members:
             return 0
@@ -825,7 +886,12 @@ async def _expansion(
 
 
 async def committee(
-    conn: AsyncConnection, *, workspace_id: str, account_id: str
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_id: str,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
 ) -> list[SubjectRef]:
     """The account's committee, in the order the screens show it: persona rank, then name.
 
@@ -834,7 +900,42 @@ async def committee(
     a generated page start listing one account's committee two different ways. This name stays so
     the read surface has one committee entry point of its own to import.
     """
-    return await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
+    from clue_api.arv2.quality_read import select_quality_context
+    from clue_api.arv2.quality_relationships import CommitteeMember as QualityMember
+
+    selection = await select_quality_context(
+        conn,
+        workspace_id=workspace_id,
+        subject_id=uuid.UUID(account_id),
+        project_id=project_id,
+        context_id=context_id,
+    )
+    if selection is None:
+        return await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
+    if selection.scope is None:
+        return []
+    states = [
+        QualityMember.model_validate(m)
+        for m in selection.metadata["committee"]
+        if m["state"] != "excluded"
+    ]
+    people = await get_contacts(conn, [EntityId(m.contact_id) for m in states])
+    return [
+        SubjectRef(
+            kind="contact",
+            id=str(m.contact_id),
+            name=people[EntityId(m.contact_id)].full_name or str(m.contact_id),
+            account_id=account_id,
+            account_name=selection.scope.account_name,
+            account_domain=selection.scope.account_domain,
+            persona=m.proposed_role if m.state == "supported" else m.state,
+            membership_state=m.state,
+            membership_gaps=m.gaps,
+            outreach_eligible=m.outreach_eligible,
+        )
+        for m in states
+        if EntityId(m.contact_id) in people
+    ]
 
 
 async def committee_claims(
@@ -973,7 +1074,14 @@ async def buying_committee(
                 email=facts.label,
                 email_claim_id=facts.claim_id,
                 linkedin_url=url if safe_public_url(url) else None,
-                why_they_matter=_why_they_matter(
+                membership_state=member.membership_state,
+                membership_gaps=member.membership_gaps,
+                outreach_eligible=member.outreach_eligible,
+                why_they_matter=(
+                    "; ".join(member.membership_gaps) or "Candidate requiring verification"
+                )
+                if member.membership_state not in (None, "supported")
+                else _why_they_matter(
                     displayable(latest.get((member.id, ROLE_KEY)), policy),
                     title=title,
                     persona=persona,

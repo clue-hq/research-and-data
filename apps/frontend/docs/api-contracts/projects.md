@@ -2891,3 +2891,12 @@ While an ad design leg is open, images attached through `+` or dropped on the ch
 existing design-reference route (design API upload, `design_asset` context refs, at most 4); text
 and document files take the attachment route above. The two caps apply separately; the design
 refusal is shown first.
+
+## Research quality context pins — approved 2026-09-22, implementation in progress
+
+Research pins the exact project ICP and compatible persona documents, whether inherited from the
+brand or explicitly overridden by project variants, along with selected product/capability evidence.
+All account, person and narrative work in a run consumes this immutable context. Quality pages and
+refreshes carry project/context/generation identity as described in the accounts contract's
+“Research quality generations” amendment. Changing project targeting creates a new context; it
+cannot silently rewrite the meaning of an old run or replace another project's narrative.

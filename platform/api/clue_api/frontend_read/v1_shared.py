@@ -66,7 +66,7 @@ from clue_api.frontend_read.contract_v1 import (
 )
 from clue_api.url_safety import safe_public_url
 from clue_config import Settings
-from clue_core import Claim, ClaimId, EntityId, EntityType, UseClass, decode_jsonb_scalar
+from clue_core import Claim, ClaimId, EntityId, decode_jsonb_scalar
 from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.compliance import WorkspacePolicy
 
@@ -147,15 +147,14 @@ def arv2_display_allowed(claim: Claim, policy: WorkspacePolicy) -> bool:
     ``identity_binding`` is **never** consulted (ruling S10); see the module docstring.
     """
 
-    if claim.entity_type is EntityType.ACCOUNT:
-        return True
-    if claim.use_class is UseClass.SENSITIVE:
-        return policy.display_sensitive
-    if claim.outreach_safe is False:
-        return False
-    if claim.use_class is UseClass.PERSONAL_PUBLIC_NON_SENSITIVE:
-        return policy.display_personal_public_non_sensitive
-    return policy.display_professional_public
+    from clue_research.compliance.display import research_display_allowed
+
+    return research_display_allowed(
+        entity_type=claim.entity_type,
+        use_class=claim.use_class,
+        outreach_safe=claim.outreach_safe,
+        policy=policy,
+    )
 
 
 # --- the label maps -------------------------------------------------------------------------------
@@ -1344,6 +1343,16 @@ async def research_evidence_for(
     if not ids:
         return []
     refs = await evidence_for_ids(conn, workspace_id=workspace_id, claim_ids=ids)
+    # A value argument exposes its account-side support as inspectable source cards too.
+    # This is a bounded reference expansion, not an extraction or a model call.
+    seen = {r.claim_id for r in refs}
+    for _ in range(3):
+        support_ids = sorted({cid for r in refs for cid in r.supporting_claim_ids} - seen)
+        if not support_ids:
+            break
+        extra = await evidence_for_ids(conn, workspace_id=workspace_id, claim_ids=support_ids[:300])
+        refs.extend(extra)
+        seen.update(support_ids)
     served: list[ResearchEvidence] = []
     for ref in refs:
         wire: dict[str, Any] = dict(ref.to_wire())

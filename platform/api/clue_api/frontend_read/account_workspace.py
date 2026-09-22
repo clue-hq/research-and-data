@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.blocks import insight_summary
@@ -60,6 +61,8 @@ async def read_account_workspace(
     account_id: uuid.UUID,
     display: DisplayPages,
     now: datetime,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
 ) -> AccountWorkspaceResponseV1:
     """One account's workspace payload in contract v1, or :class:`AccountNotFound`.
 
@@ -75,13 +78,21 @@ async def read_account_workspace(
     if account is None or account.workspace_id != workspace_id or canonical == client_entity_id:
         raise AccountNotFound(str(account_id))
 
-    members = await committee(conn, workspace_id=workspace_id, account_id=str(canonical))
+    members = await committee(
+        conn,
+        workspace_id=workspace_id,
+        account_id=str(canonical),
+        project_id=project_id,
+        context_id=context_id,
+    )
     page = await display.page(
         conn,
         workspace_id=workspace_id,
         subject_kind="account",
         subject_id=str(canonical),
         page=INSIGHTS_PAGE,
+        project_id=project_id,
+        context_id=context_id,
     )
     evidence = await research_evidence_for(
         conn, workspace_id=workspace_id, claim_ids=page.cited_claim_ids
@@ -119,7 +130,10 @@ def register_account_workspace_routes(
 
     @router.get("/accounts/{account_id}/workspace")
     async def get_account_workspace(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> AccountWorkspaceResponseV1:
         async with conn_factory() as conn:
             try:
@@ -129,6 +143,8 @@ def register_account_workspace_routes(
                     account_id=account_id,
                     display=display,
                     now=datetime.now(tz=UTC),
+                    project_id=project_id,
+                    context_id=context_id,
                 )
             except AccountNotFound as exc:
                 # The 404 the other Account routes already answer with, imported rather than

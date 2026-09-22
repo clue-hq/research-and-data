@@ -1,3 +1,4 @@
+import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountWorkspaceResponseSchema,
   type AccountWorkspace,
@@ -8,7 +9,7 @@ import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountWorkspaceRepository {
-  get(accountId: string): Promise<AccountWorkspace | null>;
+  get(accountId: string, context?: ResearchContextQuery): Promise<AccountWorkspace | null>;
 }
 
 export const fixtureAccountWorkspaceRepository: AccountWorkspaceRepository = {
@@ -31,9 +32,9 @@ export function createHttpAccountWorkspaceRepository(
   read: typeof fetchRead = fetchRead,
 ): AccountWorkspaceRepository {
   return {
-    async get(accountId) {
+    async get(accountId, context) {
       const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/workspace`,
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/workspace`, context),
         { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
@@ -45,9 +46,10 @@ export function createHttpAccountWorkspaceRepository(
 export async function getAccountWorkspace(
   accountId: string,
   read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
 ): Promise<AccountWorkspace | null> {
   const repository = accountsFixtureMode()
     ? fixtureAccountWorkspaceRepository
     : createHttpAccountWorkspaceRepository(read);
-  return repository.get(accountId);
+  return repository.get(accountId, context);
 }

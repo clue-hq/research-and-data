@@ -137,8 +137,11 @@ export function SourceChip({
             <span>{activeLabel || "Private record"}</span>
           </span>
           <span className={styles.popoverTitle}>
-            {activeEvidence.title ?? "Verified private record"}
+            {activeEvidence.title ?? (activeEvidence.sourceKind === "inference" ? "Research interpretation" : "Source record")}
           </span>
+          {activeEvidence.sourceExcerpt ? <span className={styles.popoverQuote}><span className={styles.sendLineChannel}>Research report excerpt</span>{activeEvidence.sourceExcerpt}</span> : null}
+          {activeEvidence.qualifications?.map((q) => <span className={styles.popoverMeta} key={q}>{q}</span>)}
+          {activeEvidence.sellerPassages?.map((s) => <span className={styles.popoverQuote} key={`${s.documentId}:${s.start}`}><span className={styles.sendLineChannel}>Selected seller capability</span>“{s.quote}”</span>)}
           {activeEvidence.quote ? (
             <span className={styles.popoverQuote}>
               “{activeEvidence.quote}”
@@ -146,7 +149,7 @@ export function SourceChip({
           ) : null}
           {activeEvidence.researchExcerpt && !activeEvidence.quote ? (
             <span className={styles.popoverQuote}>
-              <span className={styles.sendLineChannel}>Research excerpt</span>
+              <span className={styles.sendLineChannel}>{activeEvidence.sourceKind === "inference" ? "Interpretation" : "Research excerpt"}</span>
               {activeEvidence.researchExcerpt}
             </span>
           ) : null}

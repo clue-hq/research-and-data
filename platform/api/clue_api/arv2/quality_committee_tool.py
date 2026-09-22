@@ -9,10 +9,11 @@ from uuid import UUID
 from pydantic import Field
 from sqlalchemy import text
 
-from clue_api.arv2.account_research_catalog import arv2_person_profile_sha256
+from clue_api.arv2.account_research_catalog import bundle_pin
 from clue_api.arv2.account_research_launch import quality_person_job_id
 from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.committee_discovery import read_candidate, reference_data
+from clue_api.arv2.quality_catalog import load_quality_resources
 from clue_api.arv2.quality_claims import ClaimProposal, SemanticAssessment, submit_proposal
 from clue_api.arv2.quality_evidence import JsonSupport, resolve_source
 from clue_api.arv2.quality_generation import ensure_generation, register_child
@@ -196,7 +197,12 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 account_entity_id=self.scope.account_id,
                 subject_type="person",
                 subject_entity_id=contact,
-                profile_sha256=arv2_person_profile_sha256(version=self.scope.catalog_version),
+                profile_sha256=bundle_pin(
+                    load_quality_resources(
+                        "arv2-person",
+                        version=int((self.scope.input_refs or {}).get("quality_recipe_version", 3)),
+                    )
+                ),
                 profile_ref=f"agent-profile:arv2-person:{self.scope.catalog_version}",
                 input_refs=refs,
             )

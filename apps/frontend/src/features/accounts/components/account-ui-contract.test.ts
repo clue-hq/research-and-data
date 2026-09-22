@@ -93,7 +93,7 @@ test("contact profiles retain workspace navigation and all account sections", ()
   assert.match(contactPage, /showDetailsToggle=\{false\}/);
   assert.match(contactPage, /copyLinkLabel="Copy contact link"/);
   assert.doesNotMatch(contactPage, /<header|<ApplicationShell/);
-  assert.match(contactRoute, /getAccountDetails\(accountId\)/);
+  assert.match(contactRoute, /getAccountDetails\(accountId, undefined, context\)/);
   assert.match(contactRoute, /if \(!account \|\| !contact\) notFound\(\)/);
   assert.match(contactRoute, /<ContactFullScreen account=\{account\} contact=\{contact\}/);
   assert.match(layout, /<ApplicationShell activeHref="\/accounts">/);

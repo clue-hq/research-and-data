@@ -1,5 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "./research-link";
+import { ResearchQualityNotice } from "./research-quality-notice";
 import {
   AtSign,
   BookOpen,
@@ -148,7 +149,8 @@ export function ContactDetailsList({
             <span className="flex flex-wrap items-center gap-1.5">
               <a
                 className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
-                href={`mailto:${contact.emailLabel}`}
+                href={contact.outreachEligible === false ? undefined : `mailto:${contact.emailLabel}`}
+                aria-disabled={contact.outreachEligible === false || undefined}
               >
                 {contact.emailLabel}
               </a>
@@ -259,7 +261,9 @@ export function ContactProfileContent({
 
   return (
     <div>
+      <ResearchQualityNotice quality={contact.contactDisplay?.researchQuality} path={`/accounts/${contact.accountId}/contacts/${contact.id}`} />
       <ContactIdentity contact={contact} />
+      {contact.membershipState && contact.membershipState !== "supported" ? <p>{contact.membershipState === "candidate" ? "Committee candidate" : "Committee membership needs verification"}. {contact.membershipGaps?.join(" ")}</p> : null}
       {showDetails ? (
         <div className="mt-9">
           <ContactDetailsList contact={contact} />

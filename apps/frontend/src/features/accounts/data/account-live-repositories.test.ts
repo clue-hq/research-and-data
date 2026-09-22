@@ -457,3 +457,30 @@ test("the fixture flag is read in exactly one module", () => {
 
   assert.deepEqual(offenders, []);
 });
+
+test("research reads preserve exact project context and provisional membership", async () => {
+  const context = { projectId: "project / clinical", contextId: "e22896f9-85b9-46b1-8001-3243f18c1c1e" };
+  const quality = { projectId: context.projectId, contextId: context.contextId,
+    qualityState: "provisional", refreshPending: true, gaps: ["Employment remains unresolved"],
+    contexts: [{ ...context, projectName: "Clinical intake", accountId: "account-1" }] };
+  const { read, calls } = recordingRead([
+    { data: { ...ACCOUNT_DETAIL, overviewDisplay: { page: "overview", sections: [], researchQuality: quality } } },
+    { data: { ...ACCOUNT_WORKSPACE, insightsDisplay: { page: "insights", sections: [], researchQuality: quality } } },
+    { data: [{ ...CONTACT_SUMMARY, membershipState: "needs_verification", outreachEligible: false, membershipGaps: quality.gaps }] },
+    { data: { ...CONTACT_DETAIL, membershipState: "needs_verification", outreachEligible: false,
+      contactDisplay: { page: "contact", sections: [], researchQuality: quality } } },
+  ]);
+  const account = await createHttpAccountDetailsRepository(read).get("account-1", context);
+  const workspace = await createHttpAccountWorkspaceRepository(read).get("account-1", context);
+  const contacts = await createHttpAccountContactsRepository(read).list("account-1", context);
+  const contact = await createHttpAccountContactsRepository(read).get("account-1", "contact-1", context);
+  for (const call of calls) {
+    const url = new URL(call.path, "http://test");
+    assert.equal(url.searchParams.get("projectId"), context.projectId);
+    assert.equal(url.searchParams.get("contextId"), context.contextId);
+  }
+  assert.equal(account?.overviewDisplay?.researchQuality?.qualityState, "provisional");
+  assert.equal(workspace?.insightsDisplay?.researchQuality?.contexts[0]?.projectName, "Clinical intake");
+  assert.equal(contacts?.[0]?.outreachEligible, false);
+  assert.equal(contact?.membershipState, "needs_verification");
+});

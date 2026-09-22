@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "./research-link";
 import motion from "./account-motion.module.css";
 import type { AccountDetail, AccountInsight } from "../model/account-detail";
 import readability from "./account-readability.module.css";

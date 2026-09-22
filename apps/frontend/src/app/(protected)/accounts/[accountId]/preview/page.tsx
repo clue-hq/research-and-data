@@ -1,3 +1,5 @@
+import { ResearchNavigationProvider } from "@/features/accounts/components/research-link";
+import { researchContextQuery } from "@/features/accounts/model/research-context";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AccountPreviewDrawer } from "@/features/accounts/components/account-preview-drawer";
@@ -11,15 +13,17 @@ export const dynamic = "force-dynamic";
 
 export default async function AccountPreviewPage({
   params,
+  searchParams,
 }: PageProps<"/accounts/[accountId]/preview">) {
   const { accountId } = await params;
-  const account = await getAccountDetails(accountId);
+  const context = researchContextQuery(await searchParams);
+  const account = await getAccountDetails(accountId, undefined, context);
 
   if (!account) {
     notFound();
   }
 
   return (
-    <AccountPreviewDrawer account={account} />
+    <ResearchNavigationProvider accountId={accountId} context={context}><AccountPreviewDrawer account={account} /></ResearchNavigationProvider>
   );
 }

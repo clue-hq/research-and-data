@@ -126,3 +126,23 @@
 - Remaining work includes Q6 contextual narrative/display/frontend, Q7 transcript/hiring qualification,
   artifact privacy closure, full offline/load/browser/frozen-source acceptance. Live defaults remain v2;
   v4 is only a development composition, not activated. No paid calls or shared data repairs.
+
+- Q6 checkpoint: narrative specialist now writes shared two-sided value narratives and contextual
+  pages through governed tools. Immutable resource revision 3 composes the actual parent/child
+  runtime; replay avoids another model call. Seller passages resolve exact context document hashes
+  and offsets; target claims retain support lineage. Page publication locks dependency inputs and
+  refuses stale generations. Read projection suppresses corrected statements immediately, retains
+  unaffected sections, labels gaps/interpretations/report excerpts, and exposes explicit project
+  selection. Same-account pages in two projects coexist without overwriting one another.
+- Frontend repository/schema/navigation changes preserve project/context through account, contact,
+  preview and workspace links. Provisional committee members are visible with verification status;
+  email actions are disabled where outreach is ineligible. Contact display classification uses the
+  shared policy. New migration 16bfa50620f4 was applied only to the isolated quality DB.
+- Verification: 24 backend narrative/page/runtime/generation/evidence cases passed; 179 account
+  frontend tests passed. Frontend lint has only two existing design-editor warnings. Production
+  build passed before the final small preview/citation changes; final combined build remains owed.
+  Repaired a preview repository import caught by lint by moving acquisition into its controller
+  hook. Raw frontend typecheck reports unrelated existing test-file errors. No live paid calls.
+- Not complete: Q7 media attribution/version repair, hiring freshness, measured coverage/refusal
+  recovery; artifact/privacy and failure-meter closure; Q8 combined migration/load/browser proofs.
+  Defaults remain v2 and the opt-in v4 composition has not been activated or live accepted.

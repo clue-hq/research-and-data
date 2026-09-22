@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "../../components/research-link";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { ContactAvatar } from "../../components/contact-avatar";
 import type { AccountContactSummary } from "../../model/account-contact";
@@ -134,7 +134,8 @@ export function ContactRow({
         {shownContact.emailLabel ? (
           <a
             className="truncate underline decoration-[var(--clue-border-neutral)] underline-offset-2 hover:text-[var(--clue-content-default)]"
-            href={`mailto:${shownContact.emailLabel}`}
+            href={shownContact.outreachEligible === false ? undefined : `mailto:${shownContact.emailLabel}`}
+                aria-disabled={shownContact.outreachEligible === false || undefined}
           >
             {shownContact.emailLabel}
           </a>

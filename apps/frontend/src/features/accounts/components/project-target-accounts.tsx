@@ -182,7 +182,7 @@ function ProjectAccountsTable({ data, onAddToChat, onReread, projectId, projectT
         </div>
       </footer>
       {adding ? <AddProjectAccountsDialog accounts={available} onAdd={(accounts) => { void addAccounts(accounts); }} onClose={() => setAdding(false)} projectTitle={projectTitle} /> : null}
-      {preview ? <ProjectAccountPreview account={preview} key={preview.id} onClose={() => setPreview(null)} /> : null}
+      {preview ? <ProjectAccountPreview projectId={projectId} account={preview} key={preview.id} onClose={() => setPreview(null)} /> : null}
     </section>
   );
 }

@@ -6,13 +6,26 @@ import hashlib
 import json
 from pathlib import Path
 
-from clue_api.arv2.account_research_catalog import CatalogResource, ResourceBundle
+from clue_api.arv2.account_research_catalog import CatalogResource, ResourceBundle, bundle_pin
 
 ROOT = Path(__file__).parents[3] / "agents" / "catalog" / "research-quality"
 
 
-def load_quality_resources(agent: str) -> ResourceBundle:
-    raw = (ROOT / "launch-v4.json").read_text()
+CURRENT_RECIPE_VERSION = 3
+
+
+def load_quality_resources(
+    agent: str, *, version: int = CURRENT_RECIPE_VERSION, expected_pin: str | None = None
+) -> ResourceBundle:
+    if expected_pin is not None:
+        for candidate in (3, 2):
+            bundle = load_quality_resources(agent, version=candidate)
+            if bundle_pin(bundle) == expected_pin:
+                return bundle
+        raise ValueError("governed research launch resource pin is unavailable")
+    if version not in (2, 3):
+        raise ValueError("unknown governed research resource revision")
+    raw = (ROOT / ("launch-v4.json" if version == 2 else f"launch-v4-r{version}.json")).read_text()
     manifest = json.loads(raw)
     resources = manifest["resources"]
     result = []

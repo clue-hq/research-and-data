@@ -78,6 +78,8 @@ from clue_api.arv2.quality_execution import (
     runtime_remaining,
 )
 from clue_api.arv2.quality_mapping import QualityProviderWriter
+from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
+from clue_api.arv2.quality_page_tools import PublishResearchPageTool, ReadPageInputsTool
 from clue_api.arv2.quality_provider_tools import AcquireResearchTool
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
@@ -176,19 +178,27 @@ def quality_tools(
         SearchEvidenceTool,
         ProcessingDispositionTool,
         NominateCommitteeTool,
+        SubmitValueNarrativeTool,
+        ReadPageInputsTool,
+        PublishResearchPageTool,
     ):
         registry.register(cls(scope, storage, purge_unevidenced=purge), make_default=True)
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
     return registry
 
 
-def quality_profiles(tools: ToolRegistry, root: Path = CATALOG_ROOT) -> AgentProfileRegistry:
+def quality_profiles(
+    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 3
+) -> AgentProfileRegistry:
     authority = {
         descriptor.address: (
             frozenset({AgentRole.ACCOUNT_RESEARCH})
             if descriptor.name in {"acquire_research_evidence", "nominate_committee_candidate"}
+            else frozenset({AgentRole.RESEARCH_NARRATIVE})
+            if descriptor.name in {"submit_value_narrative", "publish_research_page"}
             else ROLES
-            if descriptor.name in {"submit_research_claim", "search_evidence"}
+            if descriptor.name
+            in {"submit_research_claim", "search_evidence", "read_research_page_inputs"}
             else frozenset({AgentRole.ACCOUNT_RESEARCH, AgentRole.RESEARCH_CLAIMS})
         )
         for descriptor in tools.all_descriptors()
@@ -213,7 +223,7 @@ def quality_profiles(tools: ToolRegistry, root: Path = CATALOG_ROOT) -> AgentPro
         tool_inventory=inventory,
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
-        selected_profile_versions=dict.fromkeys(ROLES, "v2"),
+        selected_profile_versions=dict.fromkeys(ROLES, f"v{version}"),
     )
 
 
@@ -388,7 +398,8 @@ class ResearchUnitRuntime:
             )
         self.artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=connections)
         self.turns = DbAgentTurnJournal(conn_factory=connections)
-        self.profiles = quality_profiles(tools)
+        self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 3))
+        self.profiles = quality_profiles(tools, version=self.resource_version)
         self.checkpointer_factory = checkpointer_factory
         self.plans = DbAgentPlanJournal(conn_factory=connections)
         self.contexts = _Contexts(self)
@@ -427,7 +438,7 @@ class ResearchUnitRuntime:
 
     async def install(self) -> None:
         definition = RecipeDefinition.model_validate_json(
-            (CATALOG_ROOT / "recipe-v2.json").read_bytes()
+            (CATALOG_ROOT / f"recipe-v{self.resource_version}.json").read_bytes()
         )
         await seed_system_recipes(
             repository=DbRecipeRepository(conn_factory=self.connections),
@@ -443,7 +454,10 @@ class ResearchUnitRuntime:
         task_ref: ArtifactRef | None = None,
     ) -> None:
         recipe = await self.recipes.get_by_identity(
-            scope_type=RecipeScopeType.SYSTEM, workspace_id=None, recipe_key=RECIPE, version=2
+            scope_type=RecipeScopeType.SYSTEM,
+            workspace_id=None,
+            recipe_key=RECIPE,
+            version=self.resource_version,
         )
         if recipe is None:
             raise RuntimeError("research quality recipe is not installed")

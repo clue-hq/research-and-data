@@ -16,7 +16,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_core import ClaimId, EntityId, ResearchScope, resolve_research_scope
+from clue_core import Claim, ClaimId, EntityId, ResearchScope, resolve_research_scope
 from clue_obs import get_logger
 from clue_research.claimstore.claims import supersede_with_existing
 from clue_research.claimstore.registry import FieldRegistryScope, get_effective_field
@@ -83,6 +83,25 @@ def _own_eligible_sql(claim_alias: str) -> str:
         JOIN claim_quality_support s ON s.assessment_id=q.assessment_id
         JOIN artifact a ON a.storage_key=s.artifact_key
         WHERE q.claim_id={claim_alias}.id AND
+          (a.erased_at IS NOT NULL OR a.privacy_erased OR a.expires_at<=now()))
+    )"""
+
+
+def inspectable_sql(claim_alias: str = "claim") -> str:
+    """Qualified research may be read explicitly, never invalid or erased support lineage."""
+    return f"""NOT EXISTS (
+      WITH RECURSIVE dependencies(id) AS (
+        SELECT {claim_alias}.id UNION
+        SELECT d.supporting_claim_id FROM claim_derivation d JOIN dependencies p
+          ON d.derived_claim_id=p.id WHERE d.support_required
+      )
+      SELECT 1 FROM dependencies dep JOIN claim support ON support.id=dep.id
+      LEFT JOIN claim_quality_current sq ON sq.claim_id=support.id
+      WHERE support.superseded_by IS NOT NULL OR sq.conclusion='invalid'
+        OR EXISTS(SELECT 1 FROM lawful_basis_record retention WHERE retention.claim_id=support.id
+          AND retention.retention_until<=now())
+        OR EXISTS(SELECT 1 FROM claim_quality_support s JOIN artifact a
+          ON a.storage_key=s.artifact_key WHERE s.assessment_id=sq.assessment_id AND
           (a.erased_at IS NOT NULL OR a.privacy_erased OR a.expires_at<=now()))
     )"""
 
@@ -385,6 +404,38 @@ async def uncertain_findings(
         .all()
     )
     return tuple(dict(r) for r in rows)
+
+
+async def inspectable_claims_by_ids(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    claim_ids: Sequence[UUID],
+) -> dict[ClaimId, Claim]:
+    """Explicit cited-evidence reads include qualified observations, never retired/invalid rows."""
+    from clue_research.claimstore.claims import claims_by_ids
+    from clue_research.claimstore.tenancy import WorkspaceScope
+
+    ids = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT c.id FROM claim c WHERE c.workspace_id=:ws AND c.id=ANY(:ids) "
+                    "AND c.superseded_by IS NULL AND " + inspectable_sql("c")
+                ),
+                {"ws": workspace_id, "ids": list(claim_ids)},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return await claims_by_ids(
+        conn,
+        [ClaimId(id) for id in ids],
+        scope=WorkspaceScope.for_workspace(workspace_id),
+        include_superseded=True,
+        include_expired=False,
+    )
 
 
 async def deliver_invalidations(

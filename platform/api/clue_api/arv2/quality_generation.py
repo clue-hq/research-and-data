@@ -1,10 +1,9 @@
 """Account continuation coordination. Claims own membership; fleet owns leases.
 
 A completed initial job is immutable history. A generation records only dependencies,
-        child result
-references and a monotonic input revision. Signals commit with their source effects;
-        queue offers
-can be retried from the same revision after an outage without replaying initial paid research.
+child result references and a monotonic input revision. Signals commit with their source effects;
+queue offers can be retried from the same revision after an outage without replaying
+initial paid research.
 """
 
 from __future__ import annotations
@@ -241,15 +240,57 @@ async def record_child_result(
 
 
 async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) -> None:
+    # Publishing a new narrative is an output of reconciliation, not another input round.
+    # Corrections/withdrawals still invalidate dependent pages and require reconciliation.
+    output_created = (
+        await conn.execute(
+            text("""SELECT EXISTS(
+        SELECT 1 FROM claim c JOIN claim_quality_operation o ON o.claim_id=c.id
+        JOIN claim_quality_assessment a ON a.assessment_id=o.assessment_id
+        WHERE c.id=:claim AND o.operation_id=:event AND c.workspace_id=:ws
+          AND c.field_key='account.value_narrative' AND o.kind='assessment' AND a.revision=1)
+        """),
+            {
+                "claim": event.get("claim_id"),
+                "event": event["event_id"],
+                "ws": event["workspace_id"],
+            },
+        )
+    ).scalar_one()
+    if output_created:
+        return
+    from clue_core import ResearchScope, resolve_research_scope
+    from clue_research.claimstore.registry import FieldRegistryScope, get_effective_field
+
+    context_id = None
+    if event.get("claim_id"):
+        row = (
+            await conn.execute(
+                text("""SELECT c.field_key,q.context_id FROM claim c
+            JOIN claim_quality_current q ON q.claim_id=c.id
+            WHERE c.id=:claim AND c.workspace_id=:ws"""),
+                {"claim": event["claim_id"], "ws": event["workspace_id"]},
+            )
+        ).one_or_none()
+        if row:
+            field = await get_effective_field(
+                conn,
+                scope=FieldRegistryScope.for_workspace(event["workspace_id"]),
+                field_key=row.field_key,
+            )
+            if field and resolve_research_scope(field.field_def) is ResearchScope.PROJECT_RELATIVE:
+                context_id = row.context_id
     rows = (
         (
             await conn.execute(
                 text("""SELECT g.generation_id FROM arv2_account_research_generation g
-        WHERE g.workspace_id=:ws AND (g.account_id=:subject OR EXISTS(
+        WHERE g.workspace_id=:ws
+          AND (CAST(:context AS uuid) IS NULL OR g.context_id=CAST(:context AS uuid))
+          AND (g.account_id=:subject OR EXISTS(
             SELECT 1 FROM arv2_generation_child c WHERE c.generation_id=g.generation_id
         AND c.contact_id=:subject))
         ORDER BY g.generation_id"""),
-                {"ws": event["workspace_id"], "subject": event["entity_id"]},
+                {"ws": event["workspace_id"], "subject": event["entity_id"], "context": context_id},
             )
         )
         .scalars()

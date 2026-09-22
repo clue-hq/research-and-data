@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import ALWAYS_UNSAFE_FIELDS, JobScope
 from clue_api.arv2.claim_writer import ClaimDraft, DerivedClaimInput, LenientClaimWriter
-from clue_api.arv2.quality_context import read_context
+from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_evidence import (
     EvidenceGrant,
     EvidenceUnavailable,
@@ -100,20 +100,43 @@ class SemanticAssessment(BaseModel):
         return "qualified" if self.qualifications else "supported"
 
 
-class ClaimProposal(BaseModel):
+SupportT = TypeVar("SupportT")
+
+
+class _ProposalBase(BaseModel, Generic[SupportT]):  # noqa: UP046 -- keep pinned tool schema names
     model_config = ConfigDict(extra="forbid", frozen=True)
     operation_key: str = Field(min_length=1, max_length=200)
     field_key: str = Field(min_length=1, max_length=200)
     field_version: int | None = Field(default=None, ge=1)
     value: JsonValue
     claim_kind: Literal["observation", "attributed_statement", "inference"] = "observation"
-    support: tuple[
-        Annotated[TextSupport | JsonSupport | ClaimSupport, Field(discriminator="kind")], ...
-    ] = Field(min_length=1, max_length=30)
+    support: tuple[SupportT, ...] = Field(min_length=1, max_length=30)
     assessment: SemanticAssessment
     identity_binding: IdentityBinding | None = None
     use_class: UseClass | None = None
     outreach_safe: bool = True
+
+
+class ClaimProposal(
+    _ProposalBase[Annotated[TextSupport | JsonSupport | ClaimSupport, Field(discriminator="kind")]]
+):
+    pass
+
+
+class SellerDocumentSupport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["seller_document"] = "seller_document"
+    document_id: UUID
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    quote: str = Field(min_length=1, max_length=8000)
+
+
+class NarrativeProposal(
+    _ProposalBase[Annotated[ClaimSupport | SellerDocumentSupport, Field(discriminator="kind")]]
+):
+    pass
 
 
 @dataclass(frozen=True)
@@ -130,7 +153,7 @@ async def submit_proposal(
     storage: StorageBackend,
     scope: JobScope,
     grant: EvidenceGrant,
-    proposal: ClaimProposal,
+    proposal: ClaimProposal | NarrativeProposal,
     *,
     context_id: UUID,
     actor_ref: str,
@@ -179,6 +202,9 @@ async def submit_proposal(
     refs: list[SourceRef] = []
     support_keys: set[str] = set()
     supporting: dict[UUID, ResearchSupportRole] = {}
+    inherited_safe = True
+    inherited_class = proposal.use_class
+    inherited_binding = proposal.identity_binding
     error = None
     assessment = proposal.assessment.conclusion()
     field = await get_effective_field(
@@ -225,6 +251,29 @@ async def submit_proposal(
         or catalog_pin.description != field.description
     ):
         error = "field_definition_changed"
+    if proposal.field_key == "account.value_narrative" and (
+        not isinstance(proposal, NarrativeProposal)
+        or proposal.claim_kind != "inference"
+        or not any(isinstance(s, SellerDocumentSupport) for s in proposal.support)
+        or not any(isinstance(s, ClaimSupport) for s in proposal.support)
+    ):
+        error = "narrative_requires_both_sides"
+    if isinstance(proposal, NarrativeProposal):
+        run_pin = (
+            await conn.execute(
+                text("SELECT icp_key,icp_version FROM arv2_research_run WHERE run_id=:run"),
+                {"run": scope.run_id},
+            )
+        ).one()
+        value = proposal.value
+        if not isinstance(value, dict) or (
+            value.get("project_id") != scope.project_id
+            or value.get("context_id") != str(context_id)
+            or value.get("icp_key") != run_pin.icp_key
+            or value.get("icp_spec_version") != run_pin.icp_version
+            or value.get("product_ids") != [str(p) for p in sorted(context.products)]
+        ):
+            error = "narrative_context_mismatch"
     relationship = None
     try:
         relationship = await validate_relationship(
@@ -248,7 +297,9 @@ async def submit_proposal(
                     raise EvidenceUnavailable(
                         "claim references require an explicitly labelled inference"
                     )
-                if len(proposal.support) != 1:
+                if sum(isinstance(s, ClaimSupport) for s in proposal.support) != 1 or (
+                    isinstance(proposal, ClaimProposal) and len(proposal.support) != 1
+                ):
                     raise EvidenceUnavailable("use one complete claim support set for an inference")
                 claims = await claims_by_ids(
                     conn,
@@ -258,6 +309,29 @@ async def submit_proposal(
                 if len(claims) != len(set(support.claim_ids)):
                     raise EvidenceUnavailable("supporting claim is no longer applicable")
                 for claim in claims.values():
+                    inherited_safe = inherited_safe and claim.outreach_safe
+                    if claim.entity_type is EntityType.CONTACT:
+                        # Moving personal evidence into an account argument must not strip
+                        # its use restrictions. Account summaries have no personal-use gate.
+                        if scope.subject_kind != "person" and (
+                            claim.use_class is not UseClass.PROFESSIONAL_PUBLIC
+                            or claim.identity_binding is not IdentityBinding.STRONG
+                        ):
+                            raise EvidenceUnavailable(
+                                "personal support cannot become account truth"
+                            )
+                        ranks = {
+                            None: -1,
+                            UseClass.PROFESSIONAL_PUBLIC: 0,
+                            UseClass.PERSONAL_PUBLIC_NON_SENSITIVE: 1,
+                            UseClass.SENSITIVE: 2,
+                        }
+                        if claim.use_class is None:
+                            raise EvidenceUnavailable("personal support lacks a use classification")
+                        if ranks[claim.use_class] > ranks[inherited_class]:
+                            inherited_class = claim.use_class
+                        if claim.identity_binding is not IdentityBinding.STRONG:
+                            inherited_binding = IdentityBinding.WEAK
                     committee_support = (
                         isinstance(relationship, CommitteeAssessment)
                         and claim.entity_id == relationship.contact_id
@@ -291,6 +365,30 @@ async def submit_proposal(
                     marker_context = (claim.write_markers or {}).get("context_id")
                     if marker_context and marker_context != str(context_id):
                         raise EvidenceUnavailable("supporting claim has another context")
+            elif isinstance(support, SellerDocumentSupport):
+                if (
+                    not isinstance(proposal, NarrativeProposal)
+                    or proposal.field_key != "account.value_narrative"
+                ):
+                    raise EvidenceUnavailable("seller support belongs only to value arguments")
+                pin = next(
+                    (p for p in context.seller_documents if p.document_id == support.document_id),
+                    None,
+                )
+                if pin is None or pin.sha256 != support.sha256:
+                    raise EvidenceUnavailable(
+                        "seller document is not in the selected project context"
+                    )
+                original = await read_document(
+                    conn, storage, workspace_id=scope.workspace_id, pin=pin
+                )
+                if (
+                    support.end <= support.start
+                    or support.end > len(original)
+                    or original[support.start : support.end] != support.quote
+                ):
+                    raise EvidenceUnavailable("seller passage does not match its pinned original")
+                support_keys.add(pin.artifact_key)
             else:
                 ref = await validate_support(conn, storage, grant, support)
                 if ref.kind == "seller_document":
@@ -401,9 +499,10 @@ async def submit_proposal(
             artifact_key=first.artifact_key if first else key,
             observed_at=first.observed_at if first else None,
             confidence=0.5,
-            identity_binding=proposal.identity_binding,
-            use_class=proposal.use_class,
+            identity_binding=inherited_binding,
+            use_class=inherited_class,
             outreach_safe=proposal.outreach_safe
+            and inherited_safe
             and assessment == "supported"
             and proposal.field_key not in ALWAYS_UNSAFE_FIELDS
             and (
@@ -459,6 +558,19 @@ async def submit_proposal(
                 support_artifacts=tuple(sorted(support_keys)),
                 context_id=context_id,
             )
+            if isinstance(proposal, NarrativeProposal):
+                from clue_research.narrative.support import write_claim_support
+
+                await write_claim_support(
+                    conn,
+                    ClaimId(cid),
+                    account_evidence_ids=[ClaimId(id) for id in supporting],
+                    client_knowledge_ids=[
+                        f"document:{s.document_id}@{s.sha256}:{s.start}:{s.end}"
+                        for s in proposal.support
+                        if isinstance(s, SellerDocumentSupport)
+                    ],
+                )
             for ref in refs:
                 await record_disposition(
                     conn,

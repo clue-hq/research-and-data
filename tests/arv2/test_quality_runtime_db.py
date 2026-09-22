@@ -241,3 +241,228 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
             assert models.builds == ["account_research", "research_claims"]
 
     run_async(case())
+
+
+class PageModels:
+    """Deterministic model responds to real tool receipts; never predicts DB identifiers."""
+
+    def __init__(self, scope, cid, claim_id):
+        self.scope, self.cid, self.claim_id = scope, cid, claim_id
+        self.builds = []
+
+    def build(self, **kwargs):
+        role = kwargs["role"]
+        self.builds.append(role)
+        if role == "account_research":
+            return ScriptedAgentChatModel(
+                responses=[
+                    call(
+                        "delegate_specialist",
+                        {
+                            "role": "research_narrative",
+                            "goal": "Publish the supported account page.",
+                            "instructions": (
+                                "Read exact context and page dependencies. Publish the overview "
+                                "with a supported finding and explicit gaps."
+                            ),
+                        },
+                        "delegate-page",
+                    ),
+                    call(
+                        "write_file",
+                        {
+                            "file_path": "outputs/research.json",
+                            "content": json.dumps(
+                                {
+                                    "schema_version": "research-unit-v1",
+                                    "job_id": str(self.scope.job_id),
+                                    "context_id": str(self.cid),
+                                    "summary": "Published the scoped overview.",
+                                    "claim_ids": [str(self.claim_id)],
+                                    "gaps": ["No committee researched in this fixture"],
+                                }
+                            ),
+                        },
+                        "root-report",
+                    ),
+                    call(
+                        "finalize_turn",
+                        {"status": "completed", "user_message": "Page published."},
+                        "root-final",
+                    ),
+                ]
+            )
+        assert role == "research_narrative"
+        claim_id = self.claim_id
+
+        class PageModel(ScriptedAgentChatModel):
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                from langchain_core.messages import ToolMessage
+                from langchain_core.outputs import ChatGeneration, ChatResult
+
+                result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                message = result.generations[0].message
+                if message.tool_calls and message.tool_calls[0]["name"] == "publish_research_page":
+                    receipt = next(m for m in reversed(messages) if isinstance(m, ToolMessage))
+                    payload = json.loads(receipt.content)
+
+                    def find(value):
+                        if isinstance(value, dict):
+                            if "dependency_sha256" in value:
+                                return value
+                            for v in value.values():
+                                found = find(v)
+                                if found:
+                                    return found
+                        return None
+
+                    current = find(payload)
+                    assert current, payload
+                    draft = {
+                        "page": "overview",
+                        "expected_dependency_sha256": current["dependency_sha256"],
+                        "sections": [
+                            {
+                                "key": key,
+                                "intro": [
+                                    {
+                                        "text": "Manual referral entry creates work.",
+                                        "kind": "fact",
+                                        "claimIds": [str(claim_id)],
+                                    }
+                                ]
+                                if key == "why-they-fit"
+                                else [],
+                                "gaps": []
+                                if key == "why-they-fit"
+                                else ["Not established by saved evidence"],
+                            }
+                            for key in current["section_keys"]
+                        ],
+                    }
+                    return ChatResult(
+                        generations=[
+                            ChatGeneration(
+                                message=call("publish_research_page", {"draft": draft}, "publish")
+                            )
+                        ]
+                    )
+                return result
+
+        return PageModel(
+            responses=[
+                call("read_file", {"file_path": "/research/context.json"}, "read-context"),
+                call("read_research_page_inputs", {"page": "overview"}, "page-inputs"),
+                call("publish_research_page", {}, "template"),
+                call(
+                    "write_file",
+                    {
+                        "file_path": "outputs/research-narrative.json",
+                        "content": '{"status":"published","gaps":["Committee not researched"]}',
+                    },
+                    "page-output",
+                ),
+                call(
+                    "finalize_turn",
+                    {"status": "completed", "user_message": "Overview published with gaps."},
+                    "page-final",
+                ),
+            ]
+        )
+
+
+def test_real_narrative_child_publishes_into_contextual_page(tmp_path):
+    async def case():
+        from uuid import uuid4
+
+        from clue_api.arv2.quality_claims import ClaimProposal, submit_proposal
+        from clue_api.arv2.quality_evidence import TextSupport, grant_manifest
+        from clue_api.arv2.quality_pages import read_page
+        from tests.arv2.test_quality_pages_db import clinical_context
+
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path / "blobs")
+            op, scope, _, cid, _, _ = await clinical_context(conn, storage)
+            source = await save(conn, storage, op, "Manual referral entry creates work.")
+            grant = await grant_manifest(conn, op, consumer_id=uuid4())
+            claim = await submit_proposal(
+                conn,
+                storage,
+                scope,
+                grant,
+                ClaimProposal(
+                    operation_key="manual-entry",
+                    field_key="account.operational_pain",
+                    value="Manual referral entry",
+                    assessment=assessment(),
+                    support=(
+                        TextSupport(
+                            source_id=source.source_id,
+                            start=0,
+                            end=35,
+                            quote="Manual referral entry creates work.",
+                        ),
+                    ),
+                ),
+                context_id=cid,
+                actor_ref="offline-claim-specialist",
+            )
+            assert claim.status == "supported", claim
+            connection_lock = asyncio.Lock()
+
+            @asynccontextmanager
+            async def connections():
+                async with connection_lock, conn.begin_nested():
+                    yield conn
+
+            checkpointer = InMemorySaver()
+
+            @asynccontextmanager
+            async def checkpoints(execution_id):
+                yield checkpointer
+
+            for directory in ("source", "home"):
+                (tmp_path / directory).mkdir(mode=0o700)
+            workspaces = AgentWorkspaceFactory(
+                prepared_root=WorkspaceRootPolicy(
+                    configured_root=tmp_path / "runtime",
+                    source_root=tmp_path / "source",
+                    home_root=tmp_path / "home",
+                ).prepare(),
+                artifact_sink=DurableAgentArtifactStore(storage=storage, conn_factory=connections),
+            )
+            models = PageModels(scope, cid, claim.claim_id)
+            runtime = ResearchUnitRuntime(
+                scope=scope,
+                context_id=cid,
+                settings=load_settings(_env_file=None),
+                storage=storage,
+                connections=connections,
+                models=models,
+                workspaces=workspaces,
+                tools=quality_tools(scope, storage, purge=True),
+                limits=Allowance(20, 30, 4),
+                checkpointer_factory=checkpoints,
+            )
+            result = await runtime.run(
+                objective="Delegate page synthesis with exact claims and gaps."
+            )
+            assert result.status is AgentExecutionStatus.COMPLETED, result
+            visible = await read_page(conn, scope, context_id=cid, page="overview")
+            assert visible["cited_claim_ids"] == (str(claim.claim_id),)
+            assert not visible["research_quality"]["refreshPending"], visible
+            assert models.builds == ["account_research", "research_narrative"]
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM agent_model_call WHERE execution_id=:id"),
+                    {"id": result.execution_id},
+                )
+            ).scalar_one() == 3
+            replay = await runtime.run(
+                objective="Delegate page synthesis with exact claims and gaps."
+            )
+            assert replay.execution_id == result.execution_id
+            assert models.builds == ["account_research", "research_narrative"]
+            workspaces.close()
+
+    run_async(case())

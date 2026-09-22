@@ -1,3 +1,4 @@
+import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountContactDetailResponseSchema,
   AccountContactsResponseSchema,
@@ -17,10 +18,11 @@ import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountContactsRepository {
   /** `null` means "no such account" — an account with no committee is `[]`. */
-  list(accountId: string): Promise<AccountContactSummary[] | null>;
+  list(accountId: string, context?: ResearchContextQuery): Promise<AccountContactSummary[] | null>;
   get(
     accountId: string,
     contactId: string,
+    context?: ResearchContextQuery,
   ): Promise<AccountContactDetail | null>;
 }
 
@@ -63,17 +65,17 @@ export function createHttpAccountContactsRepository(
   read: typeof fetchRead = fetchRead,
 ): AccountContactsRepository {
   return {
-    async list(accountId) {
+    async list(accountId, context) {
       const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts`,
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/contacts`, context),
         { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
       return AccountContactsResponseSchema.parse(body).data;
     },
-    async get(accountId, contactId) {
+    async get(accountId, contactId, context) {
       const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`, context),
         { recordNotFoundAllowed: true },
       );
       if (body === null) return null;
@@ -91,14 +93,16 @@ function repository(read: typeof fetchRead): AccountContactsRepository {
 export function getAccountContacts(
   accountId: string,
   read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
 ) {
-  return repository(read).list(accountId);
+  return repository(read).list(accountId, context);
 }
 
 export function getAccountContact(
   accountId: string,
   contactId: string,
   read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
 ) {
-  return repository(read).get(accountId, contactId);
+  return repository(read).get(accountId, contactId, context);
 }

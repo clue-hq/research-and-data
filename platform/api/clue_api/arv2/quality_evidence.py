@@ -561,6 +561,7 @@ async def validate_support(
             )
         if (
             support.end <= support.start
+            or support.end > len(raw.decode())
             or raw.decode()[support.start : support.end] != support.quote
         ):
             raise EvidenceUnavailable("quote must match the exact contiguous source range")

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "../../components/research-link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useDrawerTransition } from "../../hooks/use-drawer-transition";

@@ -999,7 +999,16 @@ class Arv2AccountResearchWorkHandler:
             ]
         )
         person = job.subject_type == "person"
-        bundle = (load_person_resources if person else load_account_resources)(version="v4")
+        from clue_api.arv2.quality_catalog import load_quality_resources
+
+        bundle = load_quality_resources(
+            "arv2-person" if person else "arv2-account",
+            expected_pin=job.profile_sha256 if person else run.profile_sha256,
+        )
+        quality_input_refs = {
+            **(job.input_refs or {}),
+            "quality_recipe_version": json.loads(bundle.profile.body)["recipe_version"],
+        }
         if bundle_pin(bundle) != (job.profile_sha256 if person else run.profile_sha256):
             raise _ProfilePinMismatch("governed research resources differ from the launch pin")
         if person:
@@ -1012,7 +1021,7 @@ class Arv2AccountResearchWorkHandler:
                 icp_gate_keys=gates,
                 persona_markdown=persona,
             )
-            scope = replace(scope, catalog_version="v4", input_refs=job.input_refs)
+            scope = replace(scope, catalog_version="v4", input_refs=quality_input_refs)
         else:
             account = await get_account(conn, EntityId(job.account_entity_id))
             if account is None or account.workspace_id != run.workspace_id:
@@ -1034,7 +1043,7 @@ class Arv2AccountResearchWorkHandler:
                 today=self._clock().date(),
                 icp_gate_keys=gates,
                 catalog_version="v4",
-                input_refs=job.input_refs,
+                input_refs=quality_input_refs,
             )
             await ensure_generation(
                 conn,

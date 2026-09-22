@@ -1868,3 +1868,27 @@ open thread opens the surface once (`chat-shell/model/discovery-launch-signal.ts
 the driver now lists the webset on every poll tick and verifies new items in a bounded pool
 (`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
 a row still appears only after every gate is verified.
+
+## Research quality generations — approved 2026-09-22, implementation in progress
+
+The research-quality design §10.2 and its implementation authorization govern this additive
+contract. Existing account/contact layouts remain. New quality-profile reads carry `projectId`,
+`contextId`, `generationId` and `qualityState` separately from job execution status. Account,
+Insights and Contact reads accept `projectId` and `contextId`; an omitted context is resolved only
+when unambiguous and returned explicitly. Ambiguity yields `context_required` with project choices,
+never another project's narrative. Legacy unscoped output is labelled `legacy`.
+
+`researchQuality` includes those identities, `qualityState` (researching/provisional/reconciled/
+partial/needs_review/suspended/privacy_stopped/context_required/legacy), `refreshPending`, ordinary
+non-sensitive `gaps`, and `contexts` choices. `DisplayBlock` carries the same metadata. Missing or
+invalidated content remains visibly pending/qualified; privacy restrictions remain separate.
+Committee members carry `membershipState` (candidate/supported/needs_verification/excluded),
+`outreachEligible` and `membershipGaps`. Only supported current employment plus supported remit may
+be presented as an established buying role. Counts use the same assessed membership reader.
+
+Cited sentences additionally carry `kind` (fact/inference/quote/qualified/gap) and qualifications.
+An attributed provider report excerpt is not a primary quote. A value argument cites a narrative
+claim backed by both account claims and exact pinned seller-document passages. Invalid historical
+observations remain auditable but are unavailable to ordinary factual summaries. Stale writes are
+refused atomically; rejected claims and revoked memberships are suppressed before asynchronous
+refresh. Read requests do not invoke the old Luna writer for a quality generation.

@@ -449,3 +449,6 @@ async def load_arv2_pack(conn: AsyncConnection) -> None:
     from clue_api.arv2.quality_relationships import load_relationship_fields
 
     await load_relationship_fields(conn)
+    from clue_research.narrative.fields import load_narrative_pack
+
+    await load_narrative_pack(conn)
