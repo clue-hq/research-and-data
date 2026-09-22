@@ -31,6 +31,8 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-22-arv3-research-quality-spec.md` — detailed review proposal and ordered plan for exact
+  project context, evidence access, claim corrections, specialist ownership and committee reconciliation.
 - `2026-09-22-arv3-premier-live.md` — authorized isolated Premier v3 run, six-worker fleet,
   completed research/display and tracing, with identity, evidence and seller-context quality defects.
 - `2026-09-22-arv3-cumulative-quality-review.md` — Premier v1 / Probook-Zafran v3
