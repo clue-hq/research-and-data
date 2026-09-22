@@ -1,9 +1,15 @@
 # ARV3 research quality — ordered implementation and acceptance plan
 
-**Status:** implementation authorized by the founder and started 2026-09-22. The proposed context,
-membership and presentation contracts are included in that authorization. Live activation and
-acceptance remain separate. Latest origin fetched; feature upstream and `origin/research-streaming`
-are contained in local base `a14ccbee0`; fast-forward pull required no merge.
+**Status, 2026-09-23:** Q1–Q7 implementation completed and checkpointed locally. Q8 offline
+verification, including the 100-account/200-person load, migration, storage, browser-component and
+telemetry proofs, is recorded in the [acceptance report](2026-09-23-arv3-quality-acceptance.md), with
+test failures and measurement limitations retained. Q23 paid comparison, Q24 fresh live/application
+acceptance and default-profile promotion remain pending. **Paused before paid calls at the founder's
+request.** Public launch default remains v2; the new quality composition is internally v4.
+
+Implementation was authorized on 2026-09-22, including the proposed context, membership and
+presentation contracts. Before implementation, latest origin was fetched; feature upstream and
+`origin/research-streaming` were contained in local base `a14ccbee0`; fast-forward pull needed no merge.
 **Design:** [research quality, evidence access and specialist ownership](../specs/2026-09-22-arv3-research-quality-design.md).
 **Inspected base:** `2dd07c55f`, `codex/ai-ark-committee-discovery-spec`, 2026-09-22.
 

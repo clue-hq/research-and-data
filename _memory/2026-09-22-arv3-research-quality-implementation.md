@@ -186,3 +186,33 @@
   Shared up/down/up migrations passed on a created-and-dropped throwaway DB; single head verified.
 - Offline load/browser/frozen-source acceptance is still running/prepared, not accepted yet.
   No live provider calls, shared data changes, activation or push. Paid testing remains paused.
+
+## 2026-09-23 closing checkpoint — implementation complete, paid acceptance paused
+
+- Q1–Q7 implemented; Q8 offline record is `docs/superpowers/plans/2026-09-23-arv3-quality-acceptance.md`.
+  Final implementation checkpoint `3584f8d1b` fixes contextual candidate influence/gap presentation,
+  continuation trace IDs, final-contract regressions and adds the explicit offline load harness.
+  Quality composition v4/resources r5 is not exposed through public settings; default stays v2.
+- Final deterministic fleet load: two workspaces/four projects, 100 accounts, 200 people, all 400
+  current pages, 519 drained fleet tasks, 978 completed agent executions, every generation reconciled.
+  Five logical workers x three slots; cold replacement; 20 cross-workspace reads refused. All 4,738
+  scripted model receipts join executions and remain unpriced; no provider calls. Proposals/pages
+  also join their job/writer. Synthetic data and a database dump retained privately under `.runtime`.
+- Report collector failed after successful load on wrong `payload` column; corrected to payload_json
+  and recovered database assertions without another load. Runtime metrics now persist before report
+  queries. Final in-memory active maximum/RSS were lost; do not invent them. Single-slot run passed;
+  final workers ran about 8m30s. Queue-delay and per-scope counts are recorded, not production SLAs.
+- Final targeted regressions 155 passed; final contextual-page cases 3 passed; frontend 179 passed,
+  token/lint/build passed. Earlier focused 103/10/38 overlap. Changed production typing 32 files passed;
+  dependency contracts 28 passed; clean migration up/down/up and one head passed. Broad suites are not
+  globally green: unrelated base failures reproduced on archived a14ccbee0, fixture/settings failures
+  isolated, exporter ordering limitations recorded. Do not rerun broad suites without new cause.
+- Synthetic browser used real read API/repositories/components to verify citations, context links,
+  provisional membership, withheld openers and immediate suppression after withdrawal. It did not
+  certify Clerk/application shell or real research output. Preview services stopped after inspection.
+- Frozen baseline inventory and conservative historical catalog dry run retained without altering
+  originals or shared data. Q23 matched comparison protocol prepared; no paid model execution.
+  Final closeout removes only task-created services/disposable setup databases, preserving evidence.
+- User explicitly requires pausing before live paid testing. Q23/Q24 semantic/live acceptance,
+  authenticated app review, provider throughput/exporter proof and profile promotion remain pending.
+  No push/PR or historical repair. Preserve unrelated cumulative-review edit and two audit folders.

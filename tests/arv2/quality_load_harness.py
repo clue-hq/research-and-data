@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import resource
+import sys
 import time
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -232,6 +233,69 @@ class LoadModels(Models):
         return ScriptedAgentChatModel(responses=script)
 
 
+async def database_metrics(conn):
+    """Read-only collector: also usable after an interrupted report-writing process."""
+    counts = {}
+    for table in (
+        "arv2_research_job",
+        "arv2_generation_child",
+        "arv2_quality_execution",
+        "claim_quality_current",
+        "arv2_research_page_current",
+        "agent_model_call",
+        "provider_call_ledger",
+    ):
+        counts[table] = (await conn.execute(text(f"SELECT count(*) FROM {table}"))).scalar_one()
+    bytes_ = (
+        await conn.execute(text("SELECT COALESCE(sum(size_bytes),0) FROM artifact"))
+    ).scalar_one()
+    unresolved = (
+        await conn.execute(
+            text(
+                "SELECT count(*) FROM arv2_account_research_generation "
+                "WHERE input_revision>reconciled_revision"
+            )
+        )
+    ).scalar_one()
+    queue_rows = (await conn.execute(text("SELECT payload_json FROM fleet_task"))).scalars()
+    queue_payloads = [json.dumps(value, sort_keys=True) for value in queue_rows]
+    allowed_payload_keys = {
+        "job_id",
+        "run_id",
+        "workspace_id",
+        "project_id",
+        "account_id",
+        "continuation",
+        "generation_id",
+        "input_revision",
+        "traceparent",
+        "tracestate",
+    }
+    # Durable work carries references, never the provider report or contact profiles.
+    assert all(set(json.loads(value)) <= allowed_payload_keys for value in queue_payloads)
+    unpriced_models = (
+        await conn.execute(text("SELECT count(*) FROM agent_model_call WHERE cost_usd IS NULL"))
+    ).scalar_one()
+    orphan_models = (
+        await conn.execute(
+            text(
+                "SELECT count(*) FROM agent_model_call m "
+                "LEFT JOIN arv2_quality_execution q "
+                "ON q.execution_id=m.execution_id AND q.workspace_id=m.workspace_id "
+                "WHERE q.execution_id IS NULL"
+            )
+        )
+    ).scalar_one()
+    return {
+        "counts": counts,
+        "artifact_bytes": int(bytes_),
+        "unreconciled_generations": unresolved,
+        "maximum_queue_payload_bytes": max(map(len, queue_payloads), default=0),
+        "unpriced_model_calls": unpriced_models,
+        "model_calls_without_research_execution": orphan_models,
+    }
+
+
 async def run(output: Path, accounts: int, workers: int, concurrency: int):
     assert (make_url(database_url()).database or "").startswith("clue_arv3_quality_load_")
     output.mkdir(parents=True, exist_ok=True)
@@ -451,6 +515,16 @@ async def run(output: Path, accounts: int, workers: int, concurrency: int):
             for worker in fleet:
                 worker.stop()
             await asyncio.gather(*tasks)
+        runtime_metrics = {
+            "max_active_research_units": maximum,
+            "cold_restart": restarted,
+            "elapsed_s": round(time.monotonic() - start, 3),
+            "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            * (1 if sys.platform == "darwin" else 1024),
+            "failed_agent_units": failures,
+            "completion_order": completed,
+        }
+        (output / "runtime-metrics.json").write_text(json.dumps(runtime_metrics, indent=2))
         async with transaction() as conn:
             # All grants are reconstructed; guessed foreign IDs cannot authorize a read.
             selected = list(scopes)
@@ -466,61 +540,7 @@ async def run(output: Path, accounts: int, workers: int, concurrency: int):
                     denied += 1
                 else:
                     raise AssertionError("cross-tenant evidence read succeeded")
-            counts = {}
-            for table in (
-                "arv2_research_job",
-                "arv2_generation_child",
-                "arv2_quality_execution",
-                "claim_quality_current",
-                "arv2_research_page_current",
-                "agent_model_call",
-                "provider_call_ledger",
-            ):
-                counts[table] = (
-                    await conn.execute(text(f"SELECT count(*) FROM {table}"))
-                ).scalar_one()
-            bytes_ = (
-                await conn.execute(text("SELECT COALESCE(sum(size_bytes),0) FROM artifact"))
-            ).scalar_one()
-            unresolved = (
-                await conn.execute(
-                    text(
-                        "SELECT count(*) FROM arv2_account_research_generation "
-                        "WHERE input_revision>reconciled_revision"
-                    )
-                )
-            ).scalar_one()
-            queue_rows = (await conn.execute(text("SELECT payload FROM fleet_task"))).scalars()
-            queue_payloads = [json.dumps(value, sort_keys=True) for value in queue_rows]
-            allowed_payload_keys = {
-                "job_id",
-                "run_id",
-                "workspace_id",
-                "project_id",
-                "account_id",
-                "continuation",
-                "generation_id",
-                "input_revision",
-                "traceparent",
-                "tracestate",
-            }
-            # Durable work carries references, never the provider report or contact profiles.
-            assert all(set(json.loads(value)) <= allowed_payload_keys for value in queue_payloads)
-            unpriced_models = (
-                await conn.execute(
-                    text("SELECT count(*) FROM agent_model_call WHERE cost_usd IS NULL")
-                )
-            ).scalar_one()
-            orphan_models = (
-                await conn.execute(
-                    text(
-                        "SELECT count(*) FROM agent_model_call m "
-                        "LEFT JOIN arv2_quality_execution q "
-                        "ON q.execution_id=m.execution_id AND q.workspace_id=m.workspace_id "
-                        "WHERE q.execution_id IS NULL"
-                    )
-                )
-            ).scalar_one()
+            db = await database_metrics(conn)
         result = {
             "schema": "quality-offline-load-v1",
             "accounts_per_workspace": accounts,
@@ -533,14 +553,9 @@ async def run(output: Path, accounts: int, workers: int, concurrency: int):
             "cold_restart": restarted,
             "cross_workspace_denials": denied,
             "elapsed_s": round(time.monotonic() - start, 3),
-            "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-            "artifact_bytes": int(bytes_),
-            "maximum_queue_payload_bytes": max(map(len, queue_payloads), default=0),
-            "unpriced_model_calls": unpriced_models,
-            "model_calls_without_research_execution": orphan_models,
-            "counts": counts,
+            "process_peak_rss_bytes": runtime_metrics["process_peak_rss_bytes"],
+            **db,
             "jobs": dict(jobs),
-            "unreconciled_generations": unresolved,
             "failed_agent_units": failures,
             "completion_order": completed,
             "limitations": [
@@ -550,14 +565,19 @@ async def run(output: Path, accounts: int, workers: int, concurrency: int):
             ],
         }
         (output / "report.json").write_text(json.dumps(result, indent=2))
+        counts = db["counts"]
         assert counts["arv2_research_job"] == accounts * 2 * 3, result
         assert counts["arv2_generation_child"] == accounts * 2 * 2, result
         assert counts["arv2_research_page_current"] == accounts * 2 * 4, result
-        assert maximum <= workers * concurrency and restarted and not failures and not unresolved, (
-            result
-        )
+        assert (
+            maximum <= workers * concurrency
+            and restarted
+            and not failures
+            and not db["unreconciled_generations"]
+        ), result
         assert counts["provider_call_ledger"] == 0, result
-        assert not orphan_models and unpriced_models == counts["agent_model_call"], result
+        assert not db["model_calls_without_research_execution"], result
+        assert db["unpriced_model_calls"] == counts["agent_model_call"], result
         print(json.dumps({k: v for k, v in result.items() if k != "completion_order"}, indent=2))
 
 
