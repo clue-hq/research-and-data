@@ -17,11 +17,13 @@ Two laws shape everything below.
   that moved since the launch mean a *new* authorization, so the job refuses and asks to be
   relaunched rather than researching against something nobody approved.
 
-The driver holds at most one database connection at a time (the O3 ``_db_lock``), and the agent's
+The driver holds at most one data connection at a time (the O3 ``_db_lock``), and the agent's
 tools are handed that same guarded factory — so a tool's claim write and the driver's own row
 writes queue behind one lock instead of racing for connections, and a single-connection test
 factory works unchanged. The composition connection is always closed *before* the agent runs, or
-the first tool write would wait on a lock the driver is still holding.
+the first tool write would wait on a lock the driver is still holding. Token-wide provider pacing
+uses an independent connection, so its long-lived lock cannot block the hop's authority reads
+or receipt writes.
 """
 
 from __future__ import annotations
@@ -672,6 +674,7 @@ class Arv2AccountResearchWorkHandler:
             settings=self._settings,
             clients=_clients_for_job(self._clients, media_budget),
             conn_factory=self._connection,
+            pacing_conn_factory=self._conn_factory,
             artifacts=self._artifacts,
             storage=self._storage,
             writer=self._writer,

@@ -559,6 +559,9 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
     )
 
     class WiredClients(Clients):
+        # Exercise the production token-wide pacing path as well as the paid operation.
+        ai_ark_token_scope = "scripted-driver-pacing-regression"
+
         def __init__(self, wire):
             self.wire = wire
 
@@ -687,10 +690,16 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                     },
                 )
 
+            # The driver owns data-connection serialization. Its underlying factory must
+            # remain independently callable by the pacing transaction while a hop runs.
+            @asynccontextmanager
+            async def raw_connection():
+                yield conn
+
             queue = Queue()
             handler = Arv2AccountResearchWorkHandler(
                 settings=Settings(_env_file=None, arv2_ai_ark_min_gap_s=0),
-                conn_factory=factory(conn),
+                conn_factory=raw_connection,
                 artifacts=Artifacts(conn, storage),
                 storage=storage,
                 clients=WiredClients(wire),
@@ -700,7 +709,7 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                 queue=queue,
             )
             scope = _Scope(job_id=job_id, run_id=run.run_id, workspace_id=run.workspace_id)
-            assert await handler._run(scope, task_attempt=1) == "completed"
+            assert await asyncio.wait_for(handler._run(scope, task_attempt=1), 10) == "completed"
             account_job = await store.read_job(conn, job_id=job_id)
             assert account_job.finalization["gaps"]
             jobs = await store.list_jobs(conn, run_id=run.run_id)
@@ -787,7 +796,7 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
 
             person_handler = Arv2AccountResearchWorkHandler(
                 settings=Settings(_env_file=None, arv2_ai_ark_min_gap_s=0),
-                conn_factory=factory(conn),
+                conn_factory=raw_connection,
                 artifacts=Artifacts(conn, storage),
                 storage=storage,
                 clients=WiredClients(person_wire),
@@ -797,9 +806,14 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                 queue=queue,
             )
             assert (
-                await person_handler._run(
-                    _Scope(job_id=child.job_id, run_id=run.run_id, workspace_id=run.workspace_id),
-                    task_attempt=1,
+                await asyncio.wait_for(
+                    person_handler._run(
+                        _Scope(
+                            job_id=child.job_id, run_id=run.run_id, workspace_id=run.workspace_id
+                        ),
+                        task_attempt=1,
+                    ),
+                    10,
                 )
                 == "completed"
             )

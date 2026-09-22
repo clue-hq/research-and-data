@@ -1,0 +1,18 @@
+# V3 live acceptance against the PoC — in progress
+
+- Founder scope: run latest v3 only using platform agents on Probook and Zafran, compare to saved PoC output. No fresh v2 control. Paid-provider spend authorized without an additional test budget cap; preserve normal production limits. Same-person comparisons follow autonomous committee discovery.
+- Base implementation: `56f612b337b148e235ac1f9f98795b25b26a8570`; v3 explicitly selected in isolated process; shared `.env` retains v2 default.
+- Shared Jerusalem services and `clue_jerusalem-v1` database remain untouched. Source database is older than media migration; current artifact reader cannot read its missing `privacy_erased` column. Test preparation uses a read-only metadata query plus blob digest verification, without migrating that source.
+- Created isolated database `clue_arv3_live_20260922_fed26981`, upgraded to current head. Private artifacts/manifests under `.artifacts/arv3-live-20260922-fed26981/`; local pointer `/tmp/arv3-live-current`. Preparation script `/tmp/arv3_live_prepare.py`.
+- Copied only seller workspace/product/project spine, two bare account identities and seller ICP/persona docs. Removed target-specific PoC paragraphs and persona example URLs from test copies; source/test digests recorded in manifest. No historical claims, contacts, jobs, ledger calls or media items copied. Initial counts all zero. Pinned the confirmed ICP only in test DB.
+- First setup attempt failed before creating a database due to source schema mismatch; second preparation succeeded. No paid calls made during preparation.
+- Evaluation must distinguish exact/partial PoC recall from correctness, freshness and identity/evidence quality. Missing unseen subjects means A06 is outside this requested cohort; do not claim complete A01–A20 acceptance from these runs.
+
+## First live attempts and pacing fix
+
+- Harness attempt `d6403dc1-044a-515c-adfe-50aab24f01ab` refused model construction before spend because the harness used `GatewayConfig()` instead of production `default_gateway_config()`. Corrected harness only.
+- Live attempt `253a5544-2b48-5bb4-9949-39f960544489` exposed a real v2/v3 deadlock: AI Ark token pacing held the driver's serialized connection, then `_perform_hop` re-entered it for authority/ledger reads. First generation and Exa/ATS calls completed but their drains waited behind the lock. No AI Ark request dispatched. Preserved Langfuse traces and forced termination of the isolated worker only.
+- Fixed ToolRuntime pacing to receive an independent underlying connection factory from the driver, retaining token-wide transaction locking and cooldown. Added `arv2.provider_pacing_acquired` with wait milliseconds and cooldown (no credential or contact data).
+- Expanded the existing v2/v3 scripted account→person database regression to exercise the real token-pacing path; both passed. Account tools/driver suite passed (163 tests). Touched Ruff checks passed. No broad repeated test loop.
+- Restarted actual v3 live research as `55658adb-41ca-5c83-842b-86a55e71b0e4`; first provider hops now progress. Original pacing attempt retained separately, not counted as quality results. Trace-derived aborted cost is $0.071542; buffered ledger/raw persistence was blocked and is explicitly marked incomplete.
+- User additionally requested thorough tracing of agent activities and reasoning to identify bottlenecks. Langfuse export verified through HTTP 200 and actual generations/tool observations (not auth alone). Private trace snapshots under run root `traces/`; analysis will use tool choices/recorded decisions and timing, with reasoning-token counts but no verbatim private reasoning in the report.

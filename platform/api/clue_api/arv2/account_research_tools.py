@@ -349,6 +349,7 @@ class ToolRuntime:
         transport_factory: Callable[[], Transport] = HttpxTransport,
         now: Callable[[], datetime] = _utcnow,
         storage: StorageBackend | None = None,
+        pacing_conn_factory: ConnFactory | None = None,
     ) -> None:
         self.storage = storage
         self.scope = scope
@@ -359,6 +360,10 @@ class ToolRuntime:
         self.catalog = catalog
         self.media_budget = media_budget
         self._conn_factory = conn_factory
+        # Pacing holds its transaction across the hop and cooldown. It must not hold the
+        # driver's serialized data-connection lock: the hop checks authority and drains
+        # receipts through that same data connection before it can finish.
+        self._pacing_conn_factory = pacing_conn_factory or conn_factory
         self._artifacts = artifacts
         self._writer = writer
         self._transport_factory = transport_factory
@@ -443,8 +448,9 @@ class ToolRuntime:
         token = getattr(self.clients, "ai_ark_token_scope", None)
         if provider != "ai_ark" or not token:
             return await self._perform_hop(provider, fn, operation)
+        started = asyncio.get_running_loop().time()
         while True:
-            async with self._conn_factory() as pacing_conn:
+            async with self._pacing_conn_factory() as pacing_conn:
                 won = (
                     await pacing_conn.execute(
                         text("SELECT pg_try_advisory_xact_lock(hashtextextended(:token,0))"),
@@ -452,6 +458,13 @@ class ToolRuntime:
                     )
                 ).scalar_one()
                 if won:
+                    log.info(
+                        "arv2.provider_pacing_acquired",
+                        job_id=str(self.scope.job_id),
+                        provider=provider,
+                        wait_ms=round((asyncio.get_running_loop().time() - started) * 1000),
+                        cooldown_s=self.settings.arv2_ai_ark_min_gap_s,
+                    )
                     try:
                         return await self._perform_hop(provider, fn, operation)
                     finally:
