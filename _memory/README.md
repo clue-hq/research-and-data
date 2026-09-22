@@ -30,6 +30,10 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-arv2-ai-ark-committee-planning.md` — planning-only SMART role discovery within
+  researched accounts; founder approved work-email + phone enrichment and continuation after
+  Exa failure. Detailed design/plan, profile reuse and identity/replay/context/erasure gaps;
+  based on pulled `8df27dd25`. No runtime implementation or live provider calls.
 - `2026-09-22-web-search-tool-design.md` — `web_search@1` **LANDED 2026-09-22**, re-minted as head-of-abm@v62 / prompt v15 / manual v9 / recipe 32 on the research-streaming merge (two base heads joined by `7c4fe6965720`; seven stale base tests fixed); (branch `feat/add-general-purpose-web-search-exa`, eight commits `722814d91`..`cd2f9ca91` plus this record): one deep-lite open-web search granted to `head-of-abm@v62` (prompt v15, recipe0-stage0@32, manual v9) and `design@v3` (the fourth tool on the platform-reads seam, both harnesses), used LAST by prompt, text never a claim, ledger row workspace-stamped. Design session rulings, verified seams, spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` (implemented; offline acceptance §4.1–4.4 green) and the eight-task plan `docs/superpowers/plans/2026-09-22-web-search-tool.md`; **the two live proofs (§4.5–4.6) are owed, founder-triggered.**
 - `2026-09-22-lome-lane-ports.md` — the lome lane (branch `research-streaming-v3`) on its own all-4 ports 3024/8014/8024/8034 via the untracked `scripts/dev_stack_lome.sh`; DB = `clue_lome`@55040, a verified `pg_dump|psql` clone of `clue_san-salvador` (founder ruling, second pass); `.artifacts/`, helper binary and `npm ci` owed before `up`.
 - `2026-09-22-on-demand-ingestion-pool.md` — dedicated ingestion coordinator and

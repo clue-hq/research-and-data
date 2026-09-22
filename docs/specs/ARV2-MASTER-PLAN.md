@@ -1,5 +1,15 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
+> **Committee-discovery follow-up, 2026-09-22 (planning only).** The founder approved account
+> research → reasoned buying roles → company-scoped AI Ark SMART people discovery → selected
+> contacts' email/phone enrichment alongside person depth, with web research for gaps. Exa
+> account-research failure must be recorded without preventing discovery. The
+> [detailed design draft](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md)
+> and [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md)
+> specify the proposed change to §3's name-scoped-only rule and R3's web-first committee rule.
+> Those runtime changes are **not implemented** by this amendment; engineering contracts remain
+> for review. R4 target-account discovery and the general-purpose `web_search@1` tool are unchanged.
+
 > **Scoped-field follow-up, 2026-09-16 (planning only).** The founder requested a detailed plan to
 > make agent-proposed research definitions workspace-local. The current lenient writer still
 > registers unknown definitions globally while keeping their claims private. The
