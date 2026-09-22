@@ -24,3 +24,21 @@
 - Migration upgrade and downgrade/upgrade passed on the isolated DB, with one head before the next
   generated evidence revision. Minor development fixes: corrected enum spellings from core, added
   scoped-registry DB policy, type-cast legacy UUID, and wrapped lint lines. No paid calls.
+
+- Q2 foundation: revision aaae5d2e1fa4 adds account/job-scoped source manifests, revocable
+  revision-pinned grants, source-unit dispositions and artifact derivations. Complete Exa report
+  and page bytes are indexed behind source IDs; model replies are not web evidence. Bounded
+  text/JSON reads and a read-only virtual evidence backend recheck authority on every read.
+  Explicit privacy erasure propagates to derived artifacts. Indexing is a separate transaction
+  after provider settlement so storage/index failures cannot erase paid-call accounting.
+- Focused combined foundation verification: 18 tests passed covering evidence/proposals, exact
+  spans, invalid observations, workspace/path isolation, revocation, inference dependencies,
+  concurrency, outbox crash recovery and existing derivation contracts. Q2 is not yet wired to
+  an active profile; S3/recovery acceptance, specialist integration and remaining phases are owed.
+- Broader shared-reader check: 27 passed, one legacy test expected unverified tier-4 exclusion
+  despite verification being disabled in the current local configuration. Reproduced the same
+  failure with the new quality SQL predicate disabled. No assertion changed to hide it.
+- Development corrections: one pytest invocation named a nonexistent test_claims.py; rerun used
+  test_claim_table.py. The draft quality migration had been applied before adding its proposal
+  table; downgrade initially failed. Repaired only the isolated test schema, then downgrade and
+  upgrade passed. No application DB or historical research data touched.

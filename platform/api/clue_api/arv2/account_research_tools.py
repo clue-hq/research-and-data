@@ -644,6 +644,23 @@ class ToolRuntime:
                     preferred_row=preferred_row,
                     semantic_empty=semantic_empty,
                 )
+        # A failed evidence normalization must never roll back the paid provider ledger.
+        # The separate transaction still completes before a source handle reaches an agent.
+        if has_capability(self.scope.catalog_version, "research_quality"):
+            async with self._conn_factory() as conn:
+                from clue_api.arv2.quality_acquisition import index_acquisition
+
+                if self.storage is None:
+                    raise RuntimeError("quality research requires durable source storage")
+                if not await operations.job_available(conn, self.operation_scope):
+                    return
+                await index_acquisition(
+                    conn,
+                    self.storage,
+                    self.operation_scope,
+                    report,
+                    operation_id=operation.operation_id if operation else None,
+                )
 
     @property
     def operation_scope(self) -> operations.OperationScope:
