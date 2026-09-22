@@ -20,6 +20,7 @@ from py_lumen_config import settings
 JOB_CONTEXT: ContextVar[tuple[str, int | None] | None] = ContextVar(
     "asset_enrichment_job", default=None
 )
+ASSET_WORK_CONTEXT: ContextVar[Any] = ContextVar("asset_work_context", default=None)
 
 
 class EnrichmentStore:
@@ -29,6 +30,11 @@ class EnrichmentStore:
 
     def _run(self, call):
         async def guarded(conn):
+            work = ASSET_WORK_CONTEXT.get()
+            if work is not None:
+                from lumen_api.ingestion_tasks import require_asset_lease
+
+                await require_asset_lease(conn, work)
             context = JOB_CONTEXT.get()
             if context and context[1] is not None:
                 from sqlalchemy import text
@@ -128,6 +134,23 @@ def enrich_assets(
     Context copies carry the existing spend/trace scope into every worker thread.
     """
     from .describe import DescribeItem, _downscale_preview, _vector_raster
+
+    context = JOB_CONTEXT.get()
+    if (
+        store is None
+        and context is not None
+        and context[1] is not None
+        and ASSET_WORK_CONTEXT.get() is None
+    ):
+        from lumen_api.ingestion_tasks import enqueue_and_collect
+
+        return enqueue_and_collect(
+            targets,
+            workspace_id=workspace_id,
+            job_id=context[0],
+            generation=context[1],
+            reporter=reporter,
+        )
 
     store = store or EnrichmentStore(workspace_id)
     limit = concurrency or settings.lumen_ingestion_describe_concurrency

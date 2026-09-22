@@ -131,9 +131,11 @@ from .database import (
     utc_now,
 )
 from . import run_stream
+from .spend import drain_safely as _drain_spend
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
+    api_engine_cache_root,
     read_public_design_blob,
     resolve_workspace_id,
 )
@@ -10496,21 +10498,6 @@ def _request_spend_scope(workspace_id: str):
             _drain_spend(scope)
 
 
-def _drain_spend(scope: Any) -> None:
-    """Land a finished unit of work's rows. LOUD on failure, never fatal.
-
-    A ledger failure must not turn a finished job into a failed one — the work really happened and
-    its result is really persisted — but it must not be silent either, because a swallowed drain is
-    money that left the building with no row behind it.
-    """
-    from . import spend as _spend
-
-    try:
-        _spend.drain_sync(scope)
-    except Exception as error:  # noqa: BLE001 - the ledger may never fail the work
-        api_logger.error("spend.drain_failed", error=str(error), exc_info=True)
-
-
 def _turn_model_call_collector(callbacks: Any) -> Tuple[Any, Any]:
     """The turn's ONE model-call collector, and the ``TurnCallbacks`` to hand the harness.
 
@@ -11765,19 +11752,6 @@ def _execute_ingestion_job(
 # now installed uv workspace members. The lazy import and its ``agent_runtime.unavailable``
 # degradation stay exactly as they were — a machine without the runtime extras must still get an
 # honest failure envelope rather than an import crash at module load.
-
-
-def api_engine_cache_root(workspace_id: str) -> Path:
-    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
-
-    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
-    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
-    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
-    purely by digest, so one shared tree would let a turn read another tenant's bytes.
-    """
-    path = settings.effective_asset_store_root / workspace_id
-    path.mkdir(parents=True, exist_ok=True)
-    return path
 
 
 def api_blob_store(workspace_id: str) -> DesignBlobStore:

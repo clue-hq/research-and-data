@@ -1,6 +1,6 @@
 #!/bin/bash
 # San Diego's isolated stack. Settings live in .env and apps/frontend/.env.local.
-# Usage: bash scripts/dev_stack_san_diego.sh up|down|restart-api|restart-workers|status
+# Usage: bash scripts/dev_stack_san_diego.sh up|down|restart-api|restart-workers|restart-ingestion|status
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 set -a
@@ -52,8 +52,8 @@ if [ "${1:-status}" = up ]; then
       exit 2
     fi
   done
-  if pgrep -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" >/dev/null; then
-    echo 'San Diego fleet workers are already running; use restart-workers if needed.' >&2
+  if pgrep -f "$ROOT/.venv/bin/python -m (clue_api.fleet_main|lumen_api.ingestion_pool)" >/dev/null; then
+    echo 'San Diego workers are already running; use restart-workers or restart-ingestion.' >&2
     exit 2
   fi
 fi

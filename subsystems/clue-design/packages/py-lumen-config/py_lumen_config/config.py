@@ -213,7 +213,11 @@ class Settings(BaseSettings):
     # the describe stage keeps its OWN model: brief/vision/assist are untouched.
     lumen_ingestion_describe: bool = True
     lumen_ingestion_describe_model: str = "deepseek/deepseek-v4.1-flash"
-    lumen_ingestion_describe_concurrency: int = Field(default=15, ge=1, le=128)
+    lumen_ingestion_describe_concurrency: int = Field(default=40, ge=1, le=128)
+    lumen_ingestion_pool_workers: int = Field(default=4, ge=1, le=32)
+    lumen_ingestion_worker_concurrency: int = Field(default=10, ge=1, le=32)
+    lumen_ingestion_pool_idle_seconds: int = Field(default=60, ge=1)
+    lumen_ingestion_pool_poll_seconds: float = Field(default=2, gt=0)
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's

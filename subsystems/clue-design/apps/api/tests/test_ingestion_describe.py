@@ -278,7 +278,7 @@ def test_per_item_isolation_17_items_17_calls(tmp_path: Path) -> None:
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=_noop,
     )
-    assert describer.calls == 17
+    assert describer.calls == 17, evidence.description_progress
     assert describer.batch_sizes == [1] * 17
 
 
@@ -587,7 +587,7 @@ def test_reporter_carries_described_summary(tmp_path: Path) -> None:
         resolve_bytes=lambda aid: (_png_bytes(), "image/png"),
         reporter=reporter,
     )
-    assert stages[-1] == "Asset descriptions: 2/3 ready; 1 failed; 15 concurrent request slots"
+    assert stages[-1] == "Asset descriptions: 2/3 ready; 1 failed; 40 concurrent request slots"
 
 
 # --------------------------------------------------------------------------- #

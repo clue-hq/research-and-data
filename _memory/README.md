@@ -30,6 +30,8 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-on-demand-ingestion-pool.md` — dedicated ingestion coordinator and
+  on-demand 4 x 10 image workers; strict routing, durable tasks and idle shutdown.
 - `2026-09-22-hide-asset-source-interpretation-rows.md` — temporarily removes Observed
   use, Logo relationship and Messaging & tone from the inspector; stored metadata retained.
 - `2026-09-22-asset-vision-replay-preparation.md` — four approved live calls completed;

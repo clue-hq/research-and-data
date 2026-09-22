@@ -388,7 +388,7 @@ async def fail_queued_analysis(
 ) -> None:
     await conn.execute(
         text("""
-        UPDATE design_asset_description SET analysis_status = 'failed',
+        UPDATE design_asset_description SET analysis_status = 'failed', analysis_token = NULL,
           analysis_diagnostic_json = CAST(:diagnostic AS jsonb), updated_at = now()
         WHERE workspace_id = :w AND (:all_assets OR asset_id = ANY(:ids))
           AND analysis_job_id = :job AND analysis_status IN ('queued', 'analyzing')
