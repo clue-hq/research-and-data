@@ -972,6 +972,14 @@ async def register_agent_research_field(
         raise WorkspaceFieldDefinitionError("Proposed research keys require account/contact scope")
     if not run_id:
         raise PermissionError("Research field proposal requires its producing run")
+    await _lock_field_registration(conn, field_key)
+    existing = await get_effective_field(
+        conn, scope=FieldRegistryScope.for_workspace(workspace_id), field_key=field_key
+    )
+    if existing is not None:
+        if not existing.active:
+            raise WorkspaceFieldRetiredError("Research field is retired")
+        return existing
     label = field_key.split(".", 1)[1].replace("_", " ").replace(".", " / ")
     return await _register_research_field(
         conn,

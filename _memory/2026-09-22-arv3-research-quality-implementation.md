@@ -42,3 +42,18 @@
   test_claim_table.py. The draft quality migration had been applied before adding its proposal
   table; downgrade initially failed. Repaired only the isolated test schema, then downgrade and
   upgrade passed. No application DB or historical research data touched.
+
+- Q3 foundation: revision 8822efd6ceae adds immutable proposal/assessment/correction history,
+  support artifact references, dependency revisions and an invalidation outbox. Typed proposals
+  resolve exact source spans/JSON values and run context; invalid authorized observations remain
+  auditable, refused references retain a redacted receipt. Inferences use the existing shared
+  DerivationStore and support edges; current quality reads traverse required support lineage.
+- Real claim readers and merge queries now honor recorded quality decisions. New quality-required
+  claims cannot appear before assessment; qualified/unresolved findings have an explicit reader;
+  legacy unassessed rows retain their existing policy. Corrections use scoped locks and expected
+  revisions; same-field replacement uses the shared supersession helper. Outbox delivery is an
+  atomic DB callback, with refresh wiring still pending Q6. Neutral field registration now handles
+  concurrent proposals without rewriting existing definitions.
+- Q3 runtime tool integration, deterministic provider mapping, transcript support and downstream
+  display/reconciliation are still pending. No profile/default activated. The 18-test foundation
+  suite includes new inference withdrawal, concurrency and crash tests; focused ruff/mypy pass.

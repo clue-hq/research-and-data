@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     Claim,
+    ClaimFlavor,
     ClaimId,
     EntityId,
     EntityType,
@@ -25,9 +26,12 @@ from clue_core import (
     FieldClass,
     FieldDef,
     IdentityBinding,
+    OperationId,
     PassKind,
     ResearchMode,
     ResearchScope,
+    ResearchSubjectRef,
+    ResearchSupportRef,
     ReuseScope,
     RunId,
     UseClass,
@@ -94,6 +98,15 @@ class WriteReceipt:
     registered_field: bool
 
 
+@dataclass(frozen=True)
+class DerivedClaimInput:
+    """Support lineage consumed by the shared derivation store, not copied into a quotation."""
+
+    target: ResearchSubjectRef
+    supports: tuple[ResearchSupportRef, ...]
+    operation_id: OperationId
+
+
 class LenientClaimWriter:
     """The one write path into the claim store for the ARV2 lane.
 
@@ -106,7 +119,13 @@ class LenientClaimWriter:
         self._lenient = lenient
         self._scoped_proposals = scoped_proposals
 
-    async def write(self, conn: AsyncConnection, draft: ClaimDraft) -> WriteReceipt:
+    async def write(
+        self,
+        conn: AsyncConnection,
+        draft: ClaimDraft,
+        *,
+        derivation: DerivedClaimInput | None = None,
+    ) -> WriteReceipt:
         if draft.entity_type is EntityType.CONTACT:
             from sqlalchemy import text
 
@@ -242,12 +261,12 @@ class LenientClaimWriter:
             entity_type=draft.entity_type,
             field_key=draft.field_key,
             value_json=draft.value_json,
-            source_url=draft.source_url,
+            source_url=None if derivation else draft.source_url,
             source_key=draft.source_key,
             artifact_key=draft.artifact_key,
             source_tier=TIER_FOR_METHOD[draft.extraction_method],
             extraction_method=draft.extraction_method,
-            evidence_span=draft.evidence_span,
+            evidence_span=None if derivation else draft.evidence_span,
             confidence=draft.confidence,
             observed_at=draft.observed_at,
             run_id=draft.run_id,
@@ -260,8 +279,23 @@ class LenientClaimWriter:
             signal_priority=draft.signal_priority,
             outreach_safe=draft.outreach_safe,
             write_markers=markers or None,
+            claim_flavor=ClaimFlavor.DERIVED if derivation else ClaimFlavor.FIELD_CLAIM,
         )
-        claim_id = await insert_claim(conn, claim, validate_field=False)
+        if derivation:
+            from clue_research.claimstore import DerivationStore, WorkspaceScope
+
+            stored = await DerivationStore().create(
+                conn,
+                claim,
+                derivation.target,
+                derivation.supports,
+                workspace_id=draft.workspace_id,
+                operation_id=derivation.operation_id,
+                scope=WorkspaceScope.for_workspace(draft.workspace_id),
+            )
+            claim_id = stored.derived_claim_id
+        else:
+            claim_id = await insert_claim(conn, claim, validate_field=False)
         return WriteReceipt(
             claim_id=claim_id,
             field_key=draft.field_key,
