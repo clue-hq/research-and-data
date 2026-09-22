@@ -1,6 +1,6 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-> **Committee discovery, 2026-09-22 — implemented; activation pending.** The v2 account
+> **Committee discovery, 2026-09-22 — implemented; v2 default by founder instruction.** The v2 account
 > agent researches the company, reasons about buying responsibilities from its ICP and pinned
 > persona, then discovers unknown people through company-scoped AI Ark SMART title search.
 > This supersedes §3's name-scoped-only rule and R2/R3's web-first committee sequence **for v2**.
@@ -8,8 +8,9 @@
 > person depth without another named search. Exhausted account Exa failure leaves a gap and
 > permits discovery. Web research fills gaps and corroborates profiles. Provider facts cite
 > saved artifacts/JSON paths; committee responsibility is the agent's separate assessment.
-> v1 resources remain intact. `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v1` remains the default until
-> the explicitly initiated Probook/Zafran live canary is reviewed. R4 account discovery, media,
+> v1 resources remain intact for historical jobs. `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v2` is now
+> the default for new launches. The Probook/Zafran live canary remains outstanding; no live
+> acceptance or deployment is implied by this default change. R4 account discovery, media,
 > model settings and general-purpose `web_search@1` are unchanged. See the
 > [design](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
 > [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md) and

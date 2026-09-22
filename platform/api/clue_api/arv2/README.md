@@ -6,7 +6,8 @@ goes through `ProviderCaller`** — no module opens a socket of its own.
 
 ## Company-scoped committee discovery (v2, 2026-09-22)
 
-Implemented behind `CLUE_ARV2_RESEARCH_CATALOG_VERSION`, default **v1**. After account Exa deep
+Implemented behind `CLUE_ARV2_RESEARCH_CATALOG_VERSION`, default **v2** by founder instruction
+on 2026-09-22. After account Exa deep
 research (or its recorded exhausted failure), the account agent plans roles and uses
 `discover_people` for exact-company SMART title searches. `read_people_result` reads full saved
 profiles. Provider, web and unfilled-role selections remain distinct. No web URL or previously
@@ -25,8 +26,10 @@ invalidated as a whole on erasure; maintenance purges them even if a colleague s
 
 Each v2 job pins its five-file bundle; old rows keep v1 semantics. Rollback selects v1 for future
 launches while retaining the additive schema and v2 readers. Apply migration `0ab01fe27c1e` before
-running the changed application. Activation awaits the separately initiated Probook/Zafran canary
-and review. Phones are stored in `core.direct_phone`; a frontend phone slot is outside this change.
+running the changed application. The separately initiated Probook/Zafran live canary and review
+remain outstanding; changing the default does not establish live acceptance. Existing processes
+must reload configuration to observe it. Phones are stored in `core.direct_phone`; a frontend
+phone slot is outside this change.
 See [acceptance](../../../../docs/superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
 
 ## Step 0 — the shared foundation (this task)

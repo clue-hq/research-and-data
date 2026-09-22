@@ -1,7 +1,8 @@
 # ARV2: company-scoped buying-committee discovery with AI Ark
 
 **Status:** implementation authorized and completed locally; offline acceptance recorded;
-live canary and activation remain pending.
+v2 is the default for new launches by the founder's later 2026-09-22 instruction. Live canary
+and deployment remain separate and unperformed in the default-change session.
 **Date:** 2026-09-22. **Inspected base:** `8df27dd25`, after pulling
 `origin/research-streaming` (includes PR #75, general-purpose web search).
 **Companion:** [implementation plan](../plans/2026-09-22-arv2-ai-ark-committee-discovery.md).
@@ -507,8 +508,9 @@ general-purpose `web_search@1`; broad identity or privacy-substrate rewrites.
 4. Validate with replayed/synthetic fixtures and an isolated database first. The live canary
    below is a separate, explicitly initiated validation run; this planning session authorizes
    neither provider spending nor deployment.
-5. Activate new launches after live results are reviewed. Rollback selects v1 for future
-   launches while retaining v2 readers and data; it does not strip columns or downgrade a live DB.
+5. **Later founder supersession, 2026-09-22:** default new launches to v2 now, with live review
+   still outstanding. Rollback selects v1 for future launches while retaining v2 readers and
+   data; it does not strip columns or downgrade a live DB.
 
 If maintaining both catalog versions is unexpectedly expensive, propose a drain-and-relaunch
 rollout before implementation; do not silently break pinned jobs on deployment.
@@ -597,5 +599,6 @@ The detailed work order, touched files and verification gates are in the compani
   do not imply verification, consent or DNC clearance. No frontend phone slot was added.
 
 The [acceptance record](../plans/2026-09-22-arv2-ai-ark-committee-acceptance.md) separates local
-proof, baseline failures, and the live release gate. The new selector remains `v1` in both
-`.env.example` and local `.env`; no historical research is re-run.
+proof, baseline failures, and outstanding live validation. The founder subsequently requested
+the v2 default: Settings, `.env.example` and local `.env` now select `v2`; no historical research
+is re-run. The media-research spec builds on this v2 behavior.

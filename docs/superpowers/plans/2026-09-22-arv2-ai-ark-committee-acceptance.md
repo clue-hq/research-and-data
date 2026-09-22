@@ -5,8 +5,10 @@ Upstream base: `8df27dd25` (`origin/research-streaming`); pulled before implemen
 up to date. Planning commit: `23ed6e7c0`. The founder then authorized the
 [implementation plan](2026-09-22-arv2-ai-ark-committee-discovery.md).
 
-**Implemented locally; not activated, deployed or live accepted.** All new launch settings remain
-on v1. No paid provider canary was run and nothing was pushed. The following evidence uses
+**Implemented locally; v2 now defaults new launches by the founder's later 2026-09-22 ruling.**
+Settings, `.env.example` and local `.env` select v2. Existing processes need configuration reload;
+historical jobs keep their pins. No deployment or live acceptance is claimed. No paid provider
+canary was run in the implementation/default-change sessions. The following evidence uses
 synthetic/scripted provider and model responses plus a disposable PostgreSQL database. It proves
 contracts and recovery behavior, not live SMART relevance, phone yield or committee recall.
 
@@ -97,8 +99,8 @@ scripted transports; it does not stub those state transitions.
   commit. The guard is not relaxed by this change.
 - Alembic: **one head `0ab01fe27c1e`**, extending `7c4fe6965720`. Upgrade → full downgrade to base
   → upgrade to head passed on disposable `clue_aiark_test_f36a3ed1d0`, not a shared/runtime DB.
-- Both `.env.example` and local `.env` have `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v1`.
-  No model settings changed. No v1 catalog resources changed.
+- At implementation completion the selectors were v1. The later founder instruction changed
+  Settings, `.env.example` and local `.env` to v2. No models or v1 catalog bytes changed.
 
 Temporary detailed logs live under `/tmp/arv2-*`; this document retains their durable conclusions.
 The complete repository `make check` is not claimed green: the two baseline failures above remain,
@@ -115,8 +117,9 @@ and no unrelated full frontend/design/live-provider validation was run.
    in controlled calls; do not automatically try several paid identities for every person.
 4. Review a current human reference set for relevance, missed roles and employment accuracy.
    Reconcile every provider attempt with the ledger; inspect channel yield, cost and latency.
-5. Only after review, select v2 for future launches with `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v2`.
-   Roll back future launches by selecting v1. Existing jobs retain their original resource pins.
+5. The founder subsequently selected v2 as the default before this live review. Complete the
+   review without claiming it already passed. Roll back future launches by selecting v1;
+   existing jobs retain their original resource pins.
 
 Out of scope: R4 company discovery, new web-search grants, media/transcript changes, outreach,
 frontend phone presentation, automatic reruns of historical committees and production activation.
