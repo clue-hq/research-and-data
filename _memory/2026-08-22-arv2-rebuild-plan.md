@@ -414,3 +414,25 @@ whole-page), $0.47 generation, ~$9 judging. Decisions:
   (client id, 500k/mo, no attribution); logo.dev needs a publishable key and attribution on the free
   tier for commercial use; Clearbit logo API is dead. Recommend resolving favicons server-side at claim
   write time and serving from our store.
+
+## Addendum 2026-09-21 — second client, second target: Conduit → Hotel Equities (run LAUNCHED)
+
+Founder asked for the Zafran recipe repeated for a different workspace client: **Conduit**
+(conduit.ai / HostAI Labs; hospitality-operations AI agents, per-unit pricing, YC W24, $3.1M seed,
+June-2026 two-way Oracle OPERA integration, V3 "Operator") against target **Hotel Equities**
+(hotelequities.com; Atlanta; ~300 hotels; merged with Springboard Hospitality 2025; CEO Ben Rafter =
+technology entrepreneur; COO Al Smith since Jul 2025; founder Fred Cerrone retired Nov 2025; Nov 2025
+executive appointments across Full Service / Focused Service / Lifestyle divisions; Marriott #1 ITR
+management company 4 yrs running). Folder `.context/arv2-one-account-conduit-hotelequities/`
+(BRIEF.md, client-context-conduit.md, z_lib.py copied from the Zafran run with ceilings $3.50 /
+20 AI Ark credits, field_catalog.py). Executed by a background Opus agent, not by hand (founder's
+standing rule: launch agents; use Exa + AI Ark + Gemini transcription + embeddings for hooks).
+
+Pre-run free recon findings: hotelequities.com has NO Ashby/Greenhouse — it runs **ADP WorkforceNow**
+with four public career centres; the JSON feed
+`workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=<CC>&locale=en_US&$top=50&$skip=N`
+works with a browser UA (143 open reqs on 2026-09-21: 32 mgmt/sales US, 97 hourly US, 8 + 6 Canada).
+Direct HTTP GETs to hotelequities.com intermittently hang (2-min stall) → Exa /contents fallback.
+AI Ark credits recorded so far across runs: 44.1 (smoke 32.5 + Zafran 11.6; person-depth unmetered).
+Priority rubric re-keyed to Conduit's fit (front-desk/guest-services/night-audit hiring, PMS/OPERA,
+messaging-tool gaps, merger timing, exec quotes on technology/guest experience/labor).
