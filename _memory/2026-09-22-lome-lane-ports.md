@@ -42,3 +42,20 @@ fails every turn on a missing blob (damascus/jerusalem notes) — hence the rsyn
 - `apps/frontend/node_modules` absent → `npm ci` in `apps/frontend`.
 - Sandbox image `clue-agent-sandbox:latest` is present on this host.
 - The stray untracked `_memory/2026-09-18-jerusalem-lane-ports.md` copy is left in place.
+
+## 2026-09-22 — first `up` on this lane (branch `feat/add-general-purpose-web-search-exa`)
+- Helper binary COPIED from `../jerusalem-v1` (Rust source identical to `ab31814a2` on both sides;
+  `git diff --stat` empty on crates/Cargo.*), not built here. `npm ci` done. `.artifacts/` rsynced.
+- All seven processes UP via the wrapper (`up > /tmp/lome_up.log`, never `| tail`).
+- **Environment defect found and repaired on the clone:** every fleet worker died at boot with
+  `RecipeVersionConflict: recipe0-stage0@29 already exists with a different definition`. The
+  san-salvador DB (and so this clone) holds a `@29` row seeded 2026-09-19 by the pre-merge
+  design-fleet-parallelism branch (it pins `open_design_leg@5` and lacks `run_python@1`); the
+  merged tree's v29 file is the base's. `recipe_revision` is append-only by trigger, and 4
+  executions + 2 events reference the row, so it was rewritten IN PLACE to the file's definition
+  (digest `0521a8c0…` → `c0f92871…`) with `DISABLE TRIGGER USER` inside one transaction, trigger
+  re-enabled (`tgenabled=O`). Workers then seeded @30 and @31 and stayed up.
+  **Founder action:** `/tmp/san-salvador_fleet_worker*.log` show the SAME conflict — the
+  san-salvador stack's workers are dead; that live DB needs the same one-row repair (or a fresh
+  seed) before its stack does any agent work.
+- `restart-workers` exits 0 here (no hang seen this time).
