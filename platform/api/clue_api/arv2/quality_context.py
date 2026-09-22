@@ -12,13 +12,14 @@ from collections.abc import Sequence
 from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_obs import get_logger
+from clue_research.claimstore.registry import list_research_fields
 from clue_spine import get_project, list_products, list_project_product_sets
 from clue_storage import (
     ArtifactIntegrityError,
@@ -52,6 +53,16 @@ class DocumentPin(BaseModel):
     source_icp_sha256: str | None = None
 
 
+class CatalogFieldPin(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    entity: Literal["accounts", "contacts"]
+    field_key: str
+    version: int
+    value_type: str
+    validation: dict[str, JsonValue] | None
+    description: str
+
+
 class ResearchContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -67,6 +78,7 @@ class ResearchContext(BaseModel):
     persona_state: Literal["pinned", "missing", "lineage_unresolved", "ambiguous"]
     seller_documents: tuple[DocumentPin, ...] = ()
     gaps: tuple[str, ...] = ()
+    field_catalog: tuple[CatalogFieldPin, ...] = ()
 
     def documents(self) -> tuple[DocumentPin, ...]:
         return (self.icp, *self.personas, *self.seller_documents)
@@ -374,6 +386,21 @@ async def build_context(
         f"selected_product_capability_evidence_missing:{pid}"
         for pid in sorted(set(products) - supported_products)
     )
+    catalog = []
+    for entity in ("accounts", "contacts"):
+        for row in await list_research_fields(conn, workspace_id=workspace_id, entity=entity):
+            catalog.append(
+                CatalogFieldPin.model_validate(
+                    {
+                        "entity": entity,
+                        "field_key": row.field_def.field_key,
+                        "version": row.definition_version,
+                        "value_type": row.field_def.value_type,
+                        "validation": row.field_def.validation,
+                        "description": row.description,
+                    }
+                )
+            )
     return ResearchContext(
         workspace_id=workspace_id,
         brand_id=project.brand_id,
@@ -386,6 +413,7 @@ async def build_context(
         persona_state=state,
         seller_documents=tuple(seller_documents),
         gaps=tuple(gaps),
+        field_catalog=tuple(catalog),
     )
 
 

@@ -82,3 +82,25 @@
 - Founder renewed implementation authorization and explicitly requires a pause before live paid
   testing. Continue the full ordered plan and offline proof; retain current live defaults and do
   not start paid calls. No application data or historical records have been changed.
+
+- Next Q4 checkpoint: actual detached C5 parent + in-slot claim specialist completes a scripted
+  original-read, typed claim write, durable finalization and no-model replay. Three isolated role
+  profiles, evidence skill and recipe are composed outside ARV2 at the API root. Acquisition wraps
+  the existing provider tools, retains complete results by reference, refuses uncertain repeat
+  purchase, and reindexes settled originals without another call. AI Ark/ATS deterministic maps
+  recompute from saved original records before submitting the same quality proposal contract.
+- Integration defects fixed: C5 rejected JsonValue-to-JsonValue bindings; child interaction writes
+  dropped the execution parent; inherited model callbacks double-accounted child calls; the earlier
+  role migration omitted agent_model_call_role. New revision c237eb027732 widens that CHECK.
+  Applied only to the isolated quality-test DB. Warm and cold outcomes retain the same committed
+  finalization; the cold replay deliberately omits transient operation receipts.
+- Context manifests now retain catalog definitions; views use the pinned definitions and proposals
+  refuse changed definitions. Native filesystem/delegation/finalization tool calls consume shared
+  job allowances as well as domain tools. Failed company lookups propagate a refusal in the new
+  profile instead of a superficially successful result. No change to legacy lookup behavior.
+- Verification: 22 focused runtime/provider/execution/graph/callback scenarios pass with scripted
+  models and transports. Context/claim/view scenarios also passed in the preceding combined run;
+  that run exposed a catalog-directory fixture issue, corrected with a real pinned evidence skill.
+  Focused typing and lint pass. No live paid calls. The source/mapping/profile composition is still
+  not launch/driver integrated; shared accumulated runtime, full privacy/result binding, Q5/Q6/Q7
+  and combined migration/load/browser acceptance remain outstanding. Do not describe v4 as active.

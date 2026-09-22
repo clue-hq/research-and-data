@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -21,12 +22,13 @@ from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_workspace import EvidenceWorkspace
 from clue_db import ConnFactory
 from clue_research.claimstore.quality import eligible_sql
-from clue_research.claimstore.registry import list_research_fields
-from clue_storage import StorageBackend, StorageError
+from clue_storage import StorageBackend, StorageError, read_verified_artifact
 
 _DOCUMENT = re.compile(r"/documents/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CLAIM = re.compile(r"/claim/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
+_OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
+_CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
 
 
 def _render(value: object, limit: int) -> ReadResult:
@@ -66,12 +68,14 @@ class ResearchViewMount(EvidenceWorkspace):
         execution_id: UUID,
         *,
         evidence: bool = False,
+        capabilities: Sequence[dict[str, object]] = (),
     ):
         self._connections = connections
         self._storage = storage
         self._scope = scope
         self._execution_id = execution_id
         self._evidence = evidence
+        self._capabilities = capabilities
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         if offset != 0 or limit < 1:
@@ -95,6 +99,35 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        match = _CAPABILITIES.fullmatch(path)
+        if match and authority.role == "account_research":
+            return _passage(
+                json.dumps(self._capabilities, ensure_ascii=False), int(match[1]), "capabilities"
+            )
+        match = _OPERATION.fullmatch(path)
+        if match and authority.role == "account_research":
+            key = (
+                await conn.execute(
+                    text("""
+              SELECT artifact_key FROM arv2_research_operation
+              WHERE operation_id=:id AND workspace_id=:ws AND job_id=:job
+                AND run_id=:run AND account_id=:account AND kind LIKE 'quality_tool:%'
+            """),
+                    {
+                        "id": match[1],
+                        "ws": scope.workspace_id,
+                        "job": scope.job_id,
+                        "run": scope.run_id,
+                        "account": scope.account_id,
+                    },
+                )
+            ).scalar_one_or_none()
+            if key is None:
+                raise ValueError("operation result unavailable in this research job")
+            _, raw = await read_verified_artifact(
+                conn, self._storage, workspace_id=scope.workspace_id, storage_key=key
+            )
+            return _passage(raw.decode(), int(match[2]), f"operations/{match[1]}")
         if path == "/context.json" or _DOCUMENT.fullmatch(path):
             context = await read_context(
                 conn,
@@ -114,7 +147,7 @@ class ResearchViewMount(EvidenceWorkspace):
                     conn, self._storage, workspace_id=scope.workspace_id, pin=document
                 )
                 return _passage(body, int(match[2]), f"documents/{match[1]}")
-            result = context.model_dump(mode="json")
+            result = context.model_dump(mode="json", exclude={"field_catalog"})
             result["context_id"] = str(authority.context_id)
             result["document_paths"] = {
                 str(d.document_id): f"/research/documents/{d.document_id}/0.json"
@@ -123,6 +156,8 @@ class ResearchViewMount(EvidenceWorkspace):
             result["catalog_path"] = "/research/catalog/0.json"
             result["claims_path"] = "/research/claims/0.json"
             result["evidence_path"] = "/evidence/index/0.json"
+            if authority.role == "account_research":
+                result["capabilities_path"] = "/research/capabilities/0.json"
             return result
         match = _PAGE.fullmatch(path)
         claim_match = _CLAIM.fullmatch(path)
@@ -130,21 +165,16 @@ class ResearchViewMount(EvidenceWorkspace):
             raise ValueError("unknown research path")
         kind, start = (match[1], int(match[2])) if match else ("claims", 0)
         if kind == "catalog":
-            catalog_rows = await list_research_fields(
+            context = await read_context(
                 conn,
+                self._storage,
                 workspace_id=scope.workspace_id,
-                entity="contacts" if scope.person_subject_id else "accounts",
+                project_id=scope.project_id,
+                context_id=authority.context_id,
             )
-            values = [
-                {
-                    "field_key": r.field_def.field_key,
-                    "version": r.definition_version,
-                    "value_type": r.field_def.value_type,
-                    "validation": r.field_def.validation,
-                    "description": r.description,
-                }
-                for r in catalog_rows[start : start + 20]
-            ]
+            entity = "contacts" if scope.person_subject_id else "accounts"
+            catalog_rows = [r for r in context.field_catalog if r.entity == entity]
+            values = [r.model_dump(mode="json") for r in catalog_rows[start : start + 20]]
             return {
                 "kind": "field_definitions_not_evidence",
                 "fields": values,
@@ -221,8 +251,11 @@ class ResearchViewMount(EvidenceWorkspace):
     async def als(self, path: str) -> LsResult:
         if path not in ("/", ""):
             return LsResult(error="Open /research/context.json or /evidence/index/0.json.")
-        async with self._connections() as conn:
-            await resolve_authority(conn, self._scope, self._execution_id)
+        try:
+            async with self._connections() as conn:
+                await resolve_authority(conn, self._scope, self._execution_id)
+        except (ValueError, StorageError):
+            return LsResult(error="Research authority unavailable.")
         return LsResult(
             entries=[
                 FileInfo(path=p, is_dir=False)
@@ -241,13 +274,17 @@ def research_backend(
     storage: StorageBackend,
     scope: JobScope,
     execution_id: UUID,
+    *,
+    capabilities: Sequence[dict[str, object]] = (),
 ) -> BackendProtocol:
     from deepagents.backends.composite import CompositeBackend
 
     return CompositeBackend(
         default=default,
         routes={
-            "/research/": ResearchViewMount(connections, storage, scope, execution_id),
+            "/research/": ResearchViewMount(
+                connections, storage, scope, execution_id, capabilities=capabilities
+            ),
             "/evidence/": ResearchViewMount(
                 connections, storage, scope, execution_id, evidence=True
             ),

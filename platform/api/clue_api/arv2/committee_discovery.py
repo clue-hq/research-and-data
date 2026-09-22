@@ -18,6 +18,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2 import research_operations as operations
+from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
     JobScope,
@@ -191,6 +192,8 @@ async def company_lock(runtime: ToolRuntime) -> dict[str, Any]:
             lambda caller: runtime.clients.ai_ark(caller).companies_exact(domain),
         )
     except Exception as exc:
+        if has_capability(runtime.scope.catalog_version, "research_quality"):
+            raise  # Governed receipt must expose the refusal instead of reporting a green lookup.
         # A provider halt is not bypassed: the next people call sees the same runtime latch.
         return {"domain": domain, "company_id": None, "reason": type(exc).__name__}
     rows = [company_from_record(row) for row in raw.get("content", []) if isinstance(row, dict)]
@@ -276,7 +279,8 @@ async def discover_people(runtime: ToolRuntime, args: DiscoverPeopleArgs) -> dic
         confidence=0.6,
         source_key="agent",
     )
-    await runtime.write([replace(assessment, artifact_key=op.artifact_key)])
+    if not has_capability(runtime.scope.catalog_version, "research_quality"):
+        await runtime.write([replace(assessment, artifact_key=op.artifact_key)])
     result = page_result(op, raw, runtime.scope, full=False)
     result.update(company_lock=lock, page=args.page, size=args.size)
     if result["has_more"] is None and isinstance(result["total_pages"], int):

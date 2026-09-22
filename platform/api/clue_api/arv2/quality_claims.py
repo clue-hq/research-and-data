@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import ALWAYS_UNSAFE_FIELDS, JobScope
 from clue_api.arv2.claim_writer import ClaimDraft, DerivedClaimInput, LenientClaimWriter
+from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_evidence import (
     EvidenceGrant,
     EvidenceUnavailable,
@@ -193,6 +194,30 @@ async def submit_proposal(
     ):
         error = "field_subject_mismatch"
     if field is not None and proposal.field_version not in (None, field.definition_version):
+        error = "field_definition_changed"
+    context = await read_context(
+        conn,
+        storage,
+        workspace_id=scope.workspace_id,
+        project_id=scope.project_id,
+        context_id=context_id,
+    )
+    catalog_pin = next(
+        (
+            p
+            for p in context.field_catalog
+            if p.field_key == proposal.field_key
+            and p.entity == ("contacts" if scope.person_subject_id else "accounts")
+        ),
+        None,
+    )
+    if catalog_pin is not None and (
+        field is None
+        or catalog_pin.version != field.definition_version
+        or catalog_pin.value_type != field.field_def.value_type
+        or catalog_pin.validation != field.field_def.validation
+        or catalog_pin.description != field.description
+    ):
         error = "field_definition_changed"
     try:
         for support in proposal.support:

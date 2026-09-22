@@ -695,6 +695,10 @@ class ToolRuntime:
                 raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
             await self.call_provider(provider, fn, operation=operation)
         async with self._conn_factory() as conn:
+            if has_capability(self.scope.catalog_version, "research_quality"):
+                from clue_api.arv2.quality_acquisition import recover_acquisitions
+
+                await recover_acquisitions(conn, self.storage, self.operation_scope)
             return await operations.body(
                 conn, self.storage, self.operation_scope, operation.operation_id
             )
@@ -1274,7 +1278,26 @@ async def _read_ats_board(runtime: ToolRuntime, args: ReadAtsBoardArgs) -> dict[
     except BoardFetchFailed as failed:
         raise RefusalError("board_fetch_failed", str(failed)) from failed
 
-    receipts = await runtime.write(ats_posting_claims(postings, runtime.scope))
+    drafts = ats_posting_claims(postings, runtime.scope)
+    if has_capability(runtime.scope.catalog_version, "research_quality"):
+        from clue_api.arv2.provider_ledger import ledger_id_for
+
+        drafts = [
+            replace(
+                d,
+                markers={
+                    **d.markers,
+                    "quality_ledger_id": str(ledger_id_for(postings.ledger_row_id)),
+                    "quality_board": {
+                        "kind": postings.board.kind,
+                        "slug": postings.board.slug,
+                        "source_url": postings.board.source_url,
+                    },
+                },
+            )
+            for d in drafts
+        ]
+    receipts = await runtime.write(drafts)
     return {
         "board": {
             "kind": postings.board.kind,

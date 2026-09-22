@@ -171,7 +171,10 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         run_id: UUID,
         **kwargs: Any,
     ) -> None:
-        del serialized, kwargs
+        del serialized
+        owner = (kwargs.get("metadata") or {}).get("agent_execution_id")
+        if owner is not None and owner != str(self._request.constitution.execution_id):
+            return
         workspace_id = self._request.constitution.workspace_id
         body = json.dumps(
             [[message.model_dump(mode="json") for message in batch] for batch in messages],
@@ -203,7 +206,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         del kwargs
-        pending = self._pending.pop(run_id)
+        pending = self._pending.pop(run_id, None)
+        if pending is None:
+            return  # An inherited parent handler does not own the child's model call.
         generation = response.generations[0][0]
         message = getattr(generation, "message", None)
         usage = getattr(message, "usage_metadata", None) or {}
@@ -268,7 +273,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         del kwargs
-        pending = self._pending.pop(run_id)
+        pending = self._pending.pop(run_id, None)
+        if pending is None:
+            return
         # What the provider did, when it is the provider that did something: a refusal or a
         # fault is named ``provider_refused|failed:<provider>:<reason>`` on the receipt, so the
         # row, the turn's failure code and the incident all read the same sentence. Anything the

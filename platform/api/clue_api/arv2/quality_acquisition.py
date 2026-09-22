@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from datetime import datetime
 from functools import partial
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.exa_client import _read_output, _read_report
@@ -23,12 +26,83 @@ async def index_acquisition(
     *,
     operation_id: UUID | None = None,
 ) -> tuple[SourceRef, ...]:
+    return await _index_receipts(
+        conn,
+        storage,
+        scope,
+        tuple(
+            AcquisitionReceipt(
+                ledger_id_for(row.row_id),
+                row.provider,
+                row.operation,
+                row.recorded_at,
+                row.http_status,
+                row.error_code,
+                report.raw_artifact_keys.get(row.raw_ref or ""),
+                operation_id,
+            )
+            for row in report.result_rows
+            if row.provider not in ("openrouter", "model")
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class AcquisitionReceipt:
+    ledger_id: UUID
+    provider: str
+    operation: str
+    recorded_at: datetime
+    http_status: int | None
+    error_code: str | None
+    key: str | None
+    operation_id: UUID | None
+
+
+async def recover_acquisitions(
+    conn: AsyncConnection, storage: StorageBackend, scope: OperationScope
+) -> tuple[SourceRef, ...]:
+    """Rebuild missing descriptors from settled ledger artifacts, never from another purchase."""
+    sources: list[SourceRef] = []
+    while True:
+        rows = (
+            (
+                await conn.execute(
+                    text("""
+          SELECT l.ledger_id,l.provider,l.operation,l.recorded_at,l.http_status,l.error_code,
+                 l.response_artifact_key AS key,o.operation_id
+          FROM provider_call_ledger l LEFT JOIN arv2_research_operation o
+            ON o.ledger_id=l.ledger_id AND o.workspace_id=l.workspace_id AND o.job_id=:job
+          WHERE l.workspace_id=:ws AND l.entity_research_job_id=:job AND l.phase='result'
+            AND l.provider NOT IN ('openrouter','model')
+            AND NOT EXISTS(SELECT 1 FROM arv2_evidence_source s
+                           WHERE s.workspace_id=l.workspace_id AND s.ledger_id=l.ledger_id)
+          ORDER BY l.recorded_at,l.ledger_id LIMIT 100
+        """),
+                    {"ws": scope.workspace_id, "job": scope.job_id},
+                )
+            )
+            .mappings()
+            .all()
+        )
+        if not rows:
+            return tuple(sources)
+        sources.extend(
+            await _index_receipts(
+                conn, storage, scope, tuple(AcquisitionReceipt(**dict(r)) for r in rows)
+            )
+        )
+
+
+async def _index_receipts(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    scope: OperationScope,
+    rows: tuple[AcquisitionReceipt, ...],
+) -> tuple[SourceRef, ...]:
     sources = []
-    for row in report.result_rows:
-        # Model reasoning and structuring replies are never original source evidence.
-        if row.provider in ("openrouter", "model"):
-            continue
-        key = report.raw_artifact_keys.get(row.raw_ref or "")
+    for row in rows:
+        key, operation_id = row.key, row.operation_id
         if key is None:
             sources.append(
                 await persist_source(
@@ -45,7 +119,7 @@ async def index_acquisition(
                     },
                     origin_locator="response-unavailable",
                     observed_at=row.recorded_at,
-                    ledger_id=ledger_id_for(row.row_id),
+                    ledger_id=row.ledger_id,
                     operation_id=operation_id,
                 )
             )
@@ -58,7 +132,7 @@ async def index_acquisition(
             body = json.loads(envelope["body_utf8"])
         except (KeyError, TypeError, ValueError):
             body = None
-        ledger = ledger_id_for(row.row_id)
+        ledger = row.ledger_id
 
         save = partial(
             persist_source,

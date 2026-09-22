@@ -32,6 +32,7 @@ CATALOG_CAPABILITIES = {
     "v1": frozenset(),
     "v2": frozenset({"committee_discovery"}),
     "v3": frozenset({"committee_discovery", "media_research"}),
+    "v4": frozenset({"committee_discovery", "media_research", "research_quality"}),
 }
 
 

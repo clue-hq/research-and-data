@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from clue_agents import AgentRole, ToolPin
@@ -856,8 +857,16 @@ def _unavailable_reason(address: str, name: str) -> str | None:
 class ToolRegistryAgentCatalog(AgentToolCatalog):
     """Translate the live toolbelt descriptor into C6's provider-neutral exact contract."""
 
-    def __init__(self, registry: ToolRegistry) -> None:
+    def __init__(
+        self,
+        registry: ToolRegistry,
+        *,
+        authority: Mapping[str, frozenset[AgentRole]] | None = None,
+    ) -> None:
         self._registry = registry
+        # Detached research recipes have their own reviewed roles. The interactive catalog
+        # continues to use the unchanged C6 authority audit when no mapping is supplied.
+        self._authority = authority
 
     def resolve(self, pin: ToolPin) -> AgentToolContract:
         try:
@@ -875,11 +884,19 @@ class ToolRegistryAgentCatalog(AgentToolCatalog):
             recipe_safe=descriptor.recipe_safe,
             steering=descriptor.effect_class is ToolEffectClass.STEERING,
             effect_class=descriptor.effect_class.value,
-            admitted_roles=_roles_for(descriptor.address, descriptor.name),
+            admitted_roles=(
+                _roles_for(descriptor.address, descriptor.name)
+                if self._authority is None
+                else self._authority.get(descriptor.address, frozenset())
+            ),
             unavailable_reason_code=(
-                "human_authority"
-                if descriptor.name in _HUMAN_ONLY_TOOLS
-                else _unavailable_reason(descriptor.address, descriptor.name)
+                None
+                if self._authority is not None
+                else (
+                    "human_authority"
+                    if descriptor.name in _HUMAN_ONLY_TOOLS
+                    else _unavailable_reason(descriptor.address, descriptor.name)
+                )
             ),
         )
 

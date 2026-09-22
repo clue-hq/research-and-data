@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from langchain.agents.middleware.types import AgentMiddleware
 from sqlalchemy import text
@@ -214,10 +214,18 @@ async def reserve(
 class SharedResearchAllowance(AgentMiddleware[Any, Any, Any]):
     """Reserve before every model dispatch, including bounded finalization repair calls."""
 
-    def __init__(self, connections: ConnFactory, scope: OperationScope, execution_id: UUID):
+    def __init__(
+        self,
+        connections: ConnFactory,
+        scope: OperationScope,
+        execution_id: UUID,
+        *,
+        domain_tools: frozenset[str] = frozenset(),
+    ):
         self._connections = connections
         self._scope = scope
         self._execution_id = execution_id
+        self._domain_tools = domain_tools
 
     async def awrap_model_call(self, request: Any, handler: Any) -> Any:
         async with self._connections() as conn:
@@ -228,4 +236,23 @@ class SharedResearchAllowance(AgentMiddleware[Any, Any, Any]):
                 kind="model",
                 activity_id=uuid4(),
             )
+        return await handler(request)
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        # Domain tools reserve their persisted C5 operation once. Framework filesystem,
+        # delegation and finalization tools also consume the shared tool allowance.
+        if request.tool_call.get("name") not in self._domain_tools:
+            call_id = request.tool_call.get("id")
+            if not call_id:
+                raise ValueError("research tool dispatch requires a stable call identity")
+            async with self._connections() as conn:
+                await reserve(
+                    conn,
+                    self._scope,
+                    execution_id=self._execution_id,
+                    kind="tool",
+                    activity_id=uuid5(
+                        NAMESPACE_URL, f"research-native-tool:{self._execution_id}:{call_id}"
+                    ),
+                )
         return await handler(request)

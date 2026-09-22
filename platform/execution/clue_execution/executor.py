@@ -1420,6 +1420,7 @@ class RecipeExecutor:
                 actor_id="svc_execution_worker" if node.actor != "human" else actor_id,
                 action_ref=action_ref,
                 execution_id=runtime.execution_id,
+                parent_execution_id=runtime.parent_execution_id,
                 execution_node_id=node.node_id,
                 execution_node_key=node.spec.node_key,
             ),

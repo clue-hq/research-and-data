@@ -370,6 +370,9 @@ class DeepAgentTurnRuntime:
                                     "checkpoint_ns": f"agent-turn:{request.turn_id}",
                                 },
                                 "callbacks": list(callbacks),
+                                # Nested governed children inherit callbacks, but monetary
+                                # receipts belong only to the execution making this dispatch.
+                                "metadata": {"agent_execution_id": str(constitution.execution_id)},
                                 "recursion_limit": self._recursion_limit,
                             },
                         ),
