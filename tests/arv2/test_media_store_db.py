@@ -76,6 +76,7 @@ def test_immutable_unicode_offsets_repair_and_binding():
 def test_committed_source_ownership_across_independent_connections(monkeypatch):
     import asyncio
 
+    from clue_api.arv2 import account_research_store as jobs
     from clue_db import db_lifespan
     from clue_research.claimstore import load_core_pack
     from tests.arv2 import test_committee_step_db as fixtures
@@ -96,13 +97,31 @@ def test_committed_source_ownership_across_independent_connections(monkeypatch):
                         url="https://example.com/concurrent", canonical_key="concurrency:one"
                     ),
                 )
+                first_run = await jobs.read_run(conn, run_id=rt.scope.run_id)
+                second_run = replace(first_run, run_id=uuid4(), request_sha256="e" * 64)
+                assert await jobs.create_run(conn, second_run)
+                second_job = uuid4()
+                assert await jobs.create_job(
+                    conn,
+                    job_id=second_job,
+                    run_id=second_run.run_id,
+                    workspace_id=rt.scope.workspace_id,
+                    account_entity_id=rt.scope.account_id,
+                    profile_sha256=second_run.profile_sha256,
+                )
+                other = runtime(
+                    conn,
+                    replace(rt.scope, job_id=second_job, run_id=second_run.run_id),
+                    rt.storage,
+                    ScriptedTransport([]),
+                )
             barrier = asyncio.Event()
 
-            async def worker():
+            async def worker(consumer):
                 await barrier.wait()
                 async with engine.begin() as conn:
                     return await ops.begin(
-                        rt,
+                        consumer,
                         conn,
                         item_id=item["item_id"],
                         stage="transcribe",
@@ -110,7 +129,7 @@ def test_committed_source_ownership_across_independent_connections(monkeypatch):
                         seconds=60,
                     )
 
-            workers = [asyncio.create_task(worker()), asyncio.create_task(worker())]
+            workers = [asyncio.create_task(worker(rt)), asyncio.create_task(worker(other))]
             barrier.set()
             results = await asyncio.gather(*workers)
             assert sum(won for _, won in results) == 1

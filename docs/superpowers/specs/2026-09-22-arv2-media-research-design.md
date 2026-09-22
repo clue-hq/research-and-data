@@ -1,6 +1,6 @@
 # ARV2 media discovery and reusable transcript research
 
-**Status:** approved by founder 2026-09-22; offline implementation in progress. Live acceptance and activation remain separate.
+**Status:** approved by founder 2026-09-22; offline implementation completed and verified; see the acceptance record. Live acceptance and activation remain separate.
 **Date / inspected base:** 2026-09-22 / `99253e5d4`, Jerusalem v1.
 **Implementation plan:** [ordered work and acceptance gates](../plans/2026-09-22-arv2-media-research.md).
 **Depends on:** the locally implemented [AI Ark committee design](2026-09-22-arv2-ai-ark-committee-discovery-design.md), whose live acceptance remains separate.
@@ -606,3 +606,6 @@ Recall@8 target still requires the independently annotated live acceptance set.
 Native-video metering records provider usage and reserved seconds with an explicit
 `usd_unpriced` qualification. The audio PoC price is not reused as a video price. Current billed
 USD reconciliation remains a live acceptance requirement before activating v3.
+
+Offline implementation: `5d90cdbe3`; see the [acceptance record](../plans/2026-09-22-arv2-media-acceptance.md)
+for measured checks and outstanding live-provider/research-quality acceptance.
