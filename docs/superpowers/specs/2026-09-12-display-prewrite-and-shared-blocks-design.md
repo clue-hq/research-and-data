@@ -19,6 +19,8 @@ placeholder copy. The section is served `pending: true` with that sentence as it
 `emptyMessage`, and the page polls every 5 s while any section is pending. A section that will
 never be written (its recipe matches no claim) is NOT pending: it keeps the client's ordinary
 "No {section} information found for {name}." default, so the sentence is never a promise the
+page cannot keep. **Status 2026-09-21:** implementation plan
+`docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`.
 page cannot keep.
 **Status 2026-09-22 — IMPLEMENTED** on branch `display/prewrite-and-shared-blocks` (plan
 `docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`, ledger

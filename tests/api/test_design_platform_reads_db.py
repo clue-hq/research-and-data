@@ -71,7 +71,7 @@ ICP = (
 
 def _leg_envelope(
     workspace_id: str,
-    project_id: str,
+    project_id: str | None,
     opening_turn: UUID | None,
     *,
     leg: bool = True,
@@ -236,6 +236,13 @@ async def _seeded(
         registry.register(tool, make_default=tool.descriptor.name not in unaliased)
     for tool in build_arv2_paged_read_tools(service):
         registry.register(tool, make_default=True)
+    from clue_api.web_search_tool import WebSearchTool  # noqa: PLC0415
+    from tests.api.test_web_search_tool import HIT, FakeExa, _result  # noqa: PLC0415
+
+    fake_exa = FakeExa(_result(output_text="Acme's summit is in May.", hits=(HIT,)))
+    # The offline double, injected through the constructor the production builder uses.
+    search_tool = WebSearchTool(client_factory=lambda label, raw, ledger: fake_exa)
+    registry.register(search_tool, make_default=True)
     invoker = build_tool_invoker(
         registry=registry,
         idempotency_store=DbIdempotencyStore(conn_factory=conn_factory),
@@ -253,6 +260,7 @@ async def _seeded(
         "opening_turn": opening_turn,
         "pin": pin,
         "product_set": product_set,
+        "fake_exa": fake_exa,
     }
 
 
@@ -372,6 +380,58 @@ def test_paging_a_read_is_never_answered_by_the_previous_pages_receipt(
                 )
             ).scalar_one()
             assert rows == 2
+
+    run_async(scenario())
+
+
+def test_a_leg_may_search_the_web_through_the_governed_tool(
+    tmp_path: Path, migrated_db: bool
+) -> None:
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import build_design_platform_reads_factory
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="search")
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = await asyncio.to_thread(
+                factory,
+                _leg_envelope(
+                    seeds["workspace_id"], seeds["project"].project_id, seeds["opening_turn"]
+                ),
+            )
+            assert reads is not None
+
+            found = await asyncio.to_thread(
+                reads.web_search, query="acme summit 2026", num_results=3
+            )
+            assert found["answer"] == "Acme's summit is in May."
+            assert found["rendered"].startswith("Acme's summit is in May.")
+            assert seeds["fake_exa"].calls[0]["type"] == "deep-lite"
+            assert seeds["fake_exa"].calls[0]["num_results"] == 3
+
+            second = await asyncio.to_thread(
+                reads.web_search, query="acme summit 2026", num_results=3
+            )
+            assert second == found
+            # Two calls, two operations, two journal rows — a search is never replayed from the
+            # previous search's receipt (the same rule the paged reads follow).
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT tool_name FROM tool_invocation WHERE workspace_id = :ws "
+                        "ORDER BY created_at"
+                    ),
+                    {"ws": seeds["workspace_id"]},
+                )
+            ).all()
+            assert [str(row[0]) for row in rows] == ["web_search@1", "web_search@1"]
+            assert len(seeds["fake_exa"].calls) == 2
 
     run_async(scenario())
 
@@ -518,6 +578,35 @@ def test_a_leg_without_a_pin_gets_empty_seller_knowledge_not_an_error(
             )
             assert unbundled is not None
             assert (await asyncio.to_thread(unbundled.seller_knowledge)).documents == ()
+
+    run_async(scenario())
+
+
+def test_a_leg_without_a_project_cannot_search(tmp_path: Path, migrated_db: bool) -> None:
+    """The execution layer asserts the tool's ``project`` pin on head-of-abm's path; this seam runs
+    outside an execution, so the seam itself refuses a search the leg cannot bind to a project."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import (
+        DesignPlatformReadError,
+        build_design_platform_reads_factory,
+    )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="noproject")
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = await asyncio.to_thread(
+                factory, _leg_envelope(seeds["workspace_id"], None, seeds["opening_turn"])
+            )
+            assert reads is not None
+            with pytest.raises(DesignPlatformReadError, match="project_unbound"):
+                await asyncio.to_thread(reads.web_search, query="acme summit 2026")
+            assert seeds["fake_exa"].calls == []
 
     run_async(scenario())
 

@@ -216,6 +216,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # gate hits. (`@1` resolved the execution-bound Stage-0 scope first; it stays registered,
     # non-default, for replay.)
     "open_icp_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
+    # turn the body names is its first fail-closed boundary.
+    "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -238,6 +241,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # ARV2 O4: the default composition is handed no provider credentials (`build_toolbelt`'s
     # `secrets` defaults to None, fail-closed), so this SPEND tool's Exa path is never reached here.
     "exa_search_evidence": ("precondition", ("exa_not_configured",)),
+    # web_search@1: no credentials are handed to the default composition, so the SPEND tool's Exa
+    # path is never reached here.
+    "web_search": ("precondition", ("exa_not_configured",)),
     # ARV2 R2/R3 (seam 1): the two account tools and R3's on-demand person launch register in
     # EVERY process — the C6 authority audit is a strict set equality — but this matrix composes
     # no `Arv2LaunchService`, so each refuses on composition before it reads a row.
@@ -614,6 +620,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "icp_key": "matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
+        "configure_project_targeting": {
+            "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
         "open_product_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
@@ -648,6 +658,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
         "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
         "exa_search_evidence": {"query": "how practice managers describe referral fax pain"},
+        "web_search": {"query": "acme summit 2026"},
         # ARV2 R2/R3 seam 1. The workspace and the requesting human are AMBIENT authority, so
         # neither launch body carries them; the account launch names the exact account set and the
         # pinned ICP artifact it was signed off against, and R3's person launch names contacts that
@@ -1447,7 +1458,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry.names()) == 142
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1488,7 +1502,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 164
+    assert len(registry) == 166
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1530,7 +1544,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry.names()) == 142
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1558,7 +1575,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 164
+    assert len(registry) == 166
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

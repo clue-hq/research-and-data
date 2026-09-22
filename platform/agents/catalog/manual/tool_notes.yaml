@@ -7,7 +7,8 @@
 # one sentence what the agent should do about it.
 #
 # Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
-#   - Every tool granted by `head-of-abm@v58` needs an entry. A missing entry fails the build by
+#   - Every tool granted by the active `head-of-abm` profile (`PROFILE_VERSION` in
+#     `clue_agents/manual/build.py`) needs an entry. A missing entry fails the build by
 #     name, so a newly granted tool cannot ship with unexplained refusals. An entry the profile no
 #     longer grants is kept rather than deleted — the tools chapter renders the grant, so an
 #     ungranted entry disappears from the manual on its own while its history stays readable here.
@@ -379,6 +380,20 @@ submit_ingestion:
     ingestion_artifact_erased: Ask the human to upload the file again before it can be ingested.
     ingestion_not_configured: Tell the human ingestion is not wired on this deployment, and say the file was not read.
     ingestion_context_invalid: Name the project for a project instruction, or the product for a product document, and call again.
+
+web_search:
+  afterwards: >-
+    Nothing changes on the platform. You hold the written answer and up to ten results with their
+    highlighted passages, and one search has been charged to the workspace. Read it as what a
+    search found today, not as a fact the platform verified: quote it as "a search found", never
+    as a claim, and never write it into a project document as if research had established it.
+    If the search did not settle the question, say so rather than searching again with the same
+    words.
+  skill_section: head-of-abm prompt v15, the paragraph "Look things up in this order".
+  see_also: [claims, accounts-research]
+  refusals:
+    exa_not_configured: Tell the human web search is not available on this deployment; do not answer the question from memory instead.
+    query_empty: Write the question you want searched, in plain words, then call again.
 
 write_project_document:
   afterwards: >-

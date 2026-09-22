@@ -205,7 +205,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # stays at 30; the manual re-mints at `manual-*@v7` because its generated chapters render this
     # profile's version into their title.
     # v61 replaces product/ICP approval prompts with automatic project targeting.
-    AgentRole.HEAD_OF_ABM: "v61",
+    # v62 (web search, 2026-09-22): v61's surface with `web_search@1` GRANTED — one deep-lite
+    # open-web search, used last, text out and never a claim — and prompt pin v14→v15 for the
+    # paragraph that orders the lookups (claims, then the seller's files, then the web). The
+    # conversation recipe moves 31 → 32; the manual re-mints at `manual-*@v9`.
+    AgentRole.HEAD_OF_ABM: "v62",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -214,7 +218,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `read_account_research@2` and `read_claims@1`, the same tools on the same contracts
     # head-of-abm holds — so a 1:1 creative can open the target account's research itself
     # instead of writing from whatever the brief happened to carry. Nothing else moves.
-    AgentRole.DESIGN: "v2",
+    # v3 (2026-09-22): v2 plus web_search@1 (spec 2026-09-22). Nothing else moves.
+    AgentRole.DESIGN: "v3",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -283,6 +288,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # tool's two schema digests, opens `attachments` on the readable prefixes, and mints
     # `code-execution@v1` and `manual-*@v5` to teach it.
     "run_python": (AgentRole.HEAD_OF_ABM,),
+    # web_search@1 (spec 2026-09-22): one open-web search, used LAST — after the claim store and
+    # the seller's knowledge files — and answering text that is never a claim. GRANTED at
+    # `head-of-abm@v62` and `design@v3` (reviewed profile bumps, never a dict edit).
+    "web_search": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
     "create_thread": (),
     "rename_thread": (),
     "rename_project": (),

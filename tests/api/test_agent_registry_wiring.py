@@ -161,7 +161,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("e61d7f28e92d152c984a963e9be3142c9df9ee7b7757cb670d522ad8c0e38c89"),
+        AgentRole.HEAD_OF_ABM: ("611426b23b623c512145b693de16e5bba76fb5f179553d5fd7ece018856ab9aa"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -289,7 +289,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
-    assert len(by_address) == 165
+    # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
+    assert len(by_address) == 166
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -403,7 +405,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
-    assert len(by_address) == 165
+    # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
+    assert len(by_address) == 166
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -515,6 +519,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "record_interview_answer@1",
         "run_python@1",
         "submit_ingestion@1",
+        "web_search@1",
     }
     # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
     # stops it inventing a workaround — and every one of them names WHY.
@@ -577,7 +582,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v61"
+    assert production.profile_ref.address == "profile:head-of-abm@v62"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v35"
     )
@@ -695,7 +700,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -876,7 +881,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -906,7 +911,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v14/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v15/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
@@ -969,15 +974,21 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v2"
-    assert len(resolved.profile.tools) == 53
+    assert resolved.profile.version == "v3"
+    assert len(resolved.profile.tools) == 54
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
     # 2026-09-19: the design agent reads the target account the way head-of-abm does.
     # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
     # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
     # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
-    for address in ("read_project_accounts@1", "read_account_research@2", "read_claims@1"):
+    # 2026-09-22 adds the fourth: web_search@1, the open-web search, used last.
+    for address in (
+        "read_project_accounts@1",
+        "read_account_research@2",
+        "read_claims@1",
+        "web_search@1",
+    ):
         assert any(pin.address == address for pin in resolved.profile.tools), address
 
     by_address = {item.address: item for item in resolved.capabilities}

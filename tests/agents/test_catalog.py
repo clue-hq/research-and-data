@@ -56,6 +56,11 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The leg's first turn starts itself: v12 with one sentence changed, because opening a
         # leg now queues that leg's first design turn instead of waiting for the user to speak.
         "prompt:head-of-abm@v13",
+        # Web search: v13 with the paragraph that orders the lookups — the claims for an account
+        # or a contact, the seller's knowledge files for the seller, `web_search` only when those
+        # come back empty, and the answer that says which facts came from a search.
+        "prompt:head-of-abm@v14",
+        "prompt:head-of-abm@v15",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
         "prompt:head-of-abm@v4",
@@ -99,6 +104,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # while `head-of-abm@v55` keeps the v1 bytes it pins.
         "skill:icp-authoring@v1",
         "skill:icp-authoring@v2",
+        # Automatic project targeting (head-of-abm@v61, base): the authoring skill re-minted at v3.
+        "skill:icp-authoring@v3",
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
@@ -119,6 +126,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-accounts-research@v5",
         "skill:manual-accounts-research@v6",
         "skill:manual-accounts-research@v7",
+        "skill:manual-accounts-research@v8",
+        "skill:manual-accounts-research@v9",
         "skill:manual-claims@v1",
         "skill:manual-claims@v2",
         "skill:manual-claims@v3",
@@ -126,6 +135,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-claims@v5",
         "skill:manual-claims@v6",
         "skill:manual-claims@v7",
+        "skill:manual-claims@v8",
+        "skill:manual-claims@v9",
         "skill:manual-discovery@v1",
         "skill:manual-discovery@v2",
         "skill:manual-discovery@v3",
@@ -133,6 +144,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-discovery@v5",
         "skill:manual-discovery@v6",
         "skill:manual-discovery@v7",
+        "skill:manual-discovery@v8",
+        "skill:manual-discovery@v9",
         "skill:manual-documents-decisions@v1",
         "skill:manual-documents-decisions@v2",
         "skill:manual-documents-decisions@v3",
@@ -140,6 +153,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-documents-decisions@v5",
         "skill:manual-documents-decisions@v6",
         "skill:manual-documents-decisions@v7",
+        "skill:manual-documents-decisions@v8",
+        "skill:manual-documents-decisions@v9",
         "skill:manual-errors@v1",
         "skill:manual-errors@v2",
         "skill:manual-errors@v3",
@@ -147,6 +162,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-errors@v5",
         "skill:manual-errors@v6",
         "skill:manual-errors@v7",
+        "skill:manual-errors@v8",
+        "skill:manual-errors@v9",
         "skill:manual-fields@v1",
         "skill:manual-fields@v2",
         "skill:manual-fields@v3",
@@ -154,6 +171,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-fields@v5",
         "skill:manual-fields@v6",
         "skill:manual-fields@v7",
+        "skill:manual-fields@v8",
+        "skill:manual-fields@v9",
         "skill:manual-gates-authority@v1",
         "skill:manual-gates-authority@v2",
         "skill:manual-gates-authority@v3",
@@ -161,6 +180,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-gates-authority@v5",
         "skill:manual-gates-authority@v6",
         "skill:manual-gates-authority@v7",
+        "skill:manual-gates-authority@v8",
+        "skill:manual-gates-authority@v9",
         "skill:manual-glossary@v1",
         "skill:manual-glossary@v2",
         "skill:manual-glossary@v3",
@@ -168,6 +189,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-glossary@v5",
         "skill:manual-glossary@v6",
         "skill:manual-glossary@v7",
+        "skill:manual-glossary@v8",
+        "skill:manual-glossary@v9",
         "skill:manual-humans-screens@v1",
         "skill:manual-humans-screens@v2",
         "skill:manual-humans-screens@v3",
@@ -175,6 +198,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-humans-screens@v5",
         "skill:manual-humans-screens@v6",
         "skill:manual-humans-screens@v7",
+        "skill:manual-humans-screens@v8",
+        "skill:manual-humans-screens@v9",
         "skill:manual-index@v1",
         "skill:manual-index@v2",
         "skill:manual-index@v3",
@@ -182,6 +207,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-index@v5",
         "skill:manual-index@v6",
         "skill:manual-index@v7",
+        "skill:manual-index@v8",
+        "skill:manual-index@v9",
         "skill:manual-limits@v1",
         "skill:manual-limits@v2",
         "skill:manual-limits@v3",
@@ -189,6 +216,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-limits@v5",
         "skill:manual-limits@v6",
         "skill:manual-limits@v7",
+        "skill:manual-limits@v8",
+        "skill:manual-limits@v9",
         "skill:manual-siblings@v1",
         "skill:manual-siblings@v2",
         "skill:manual-siblings@v3",
@@ -196,6 +225,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-siblings@v5",
         "skill:manual-siblings@v6",
         "skill:manual-siblings@v7",
+        "skill:manual-siblings@v8",
+        "skill:manual-siblings@v9",
         "skill:manual-tools@v1",
         "skill:manual-tools@v2",
         "skill:manual-tools@v3",
@@ -203,6 +234,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-tools@v5",
         "skill:manual-tools@v6",
         "skill:manual-tools@v7",
+        "skill:manual-tools@v8",
+        "skill:manual-tools@v9",
         "skill:manual-turn@v1",
         "skill:manual-turn@v2",
         "skill:manual-turn@v3",
@@ -210,6 +243,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-turn@v5",
         "skill:manual-turn@v6",
         "skill:manual-turn@v7",
+        "skill:manual-turn@v8",
+        "skill:manual-turn@v9",
         "skill:manual-workspace@v1",
         "skill:manual-workspace@v2",
         "skill:manual-workspace@v3",
@@ -222,6 +257,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:manual-workspace@v5",
         "skill:manual-workspace@v6",
         "skill:manual-workspace@v7",
+        "skill:manual-workspace@v8",
+        "skill:manual-workspace@v9",
         "skill:persona-authoring@v1",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v1",
@@ -279,6 +316,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # Attached files: v33 with the §1 bullet that names `attachments/` and sends the agent to
         # the code-execution skill before it opens one, and the §7c read-map line for a file.
         "skill:stage0-interview@v34",
+        "skill:stage0-interview@v35",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -302,6 +340,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # `read_claims@1`, so a 1:1 creative opens the target account's research itself. Nothing
         # else moves — same prompt, same 50 v1 pins, same model and workspace policy.
         "profile:design@v2",
+        # web_search@1: v2 plus the open-web search. Nothing else moves.
+        "profile:design@v3",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",
@@ -396,6 +436,10 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # which no longer tells the user to speak before generation begins, and the manual at
         # `manual-*@v7` because its generated chapters render the profile version in their title.
         "profile:head-of-abm@v60",
+        # web_search@1 granted; prompt v14; manual v8.
+        "profile:head-of-abm@v61",
+        # web_search@1 granted; prompt v15; manual v9 (re-minted on the research-streaming merge).
+        "profile:head-of-abm@v62",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",
         "profile:head-of-abm@v9",

@@ -77,6 +77,7 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: v59 moves one TOOL address (`open_design_leg` @4 -> @5) and v60 changes only the prompt, and
 #: the manual re-mint both of them carry lives in the path this block prints, not in the summary
 #: it measures.
+#: Unmoved at head-of-abm@v61: no disclosed resource joins (a tool grant is not a resource).
 SKILLS_BLOCK_MAX_BYTES = 5120
 
 #: The hand-written skill that teaches `run_python@1`. It is not a manual chapter — it carries a

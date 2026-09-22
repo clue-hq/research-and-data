@@ -161,7 +161,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `update_project_details`, `set_project_pinned` and `set_project_archived`
     # (137 -> 141), all UNGRANTED and human-only for the same reason the design library's
     # curation writes are: filing a project is an act of the person looking at the list.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 142
+    # `configure_project_targeting` (automatic targeting, base) joined at 142 -> 143 without the
+    # count moving here; web_search@1 (2026-09-22), granted at head-of-abm@v62 and design@v3,
+    # makes 144.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 144
+    assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
+    assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
@@ -213,8 +218,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_account_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_arv2_account_research_run@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["open_product_set_selection_gate"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("open_product_set_selection_gate@1") == (AgentRole.HEAD_OF_ABM,)
+    # Automatic project targeting (head-of-abm@v61, base): both gates are UNGRANTED now —
+    # `configure_project_targeting@1` applies the ICP and product set with turn provenance.
+    assert C6_AGENT_TOOL_AUTHORITY["open_product_set_selection_gate"] == ()
+    assert c6_roles_for_tool("open_product_set_selection_gate@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == ()
+    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["configure_project_targeting"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("configure_project_targeting@1") == (AgentRole.HEAD_OF_ABM,)
     for dropped in (
         "evaluate_stage0_readiness",
         "inspect_readiness_history",
@@ -242,7 +253,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `open_icp_confirmation_gate` did not leave the role — its subject changed. `@2` presents the
     # brand's ICP knowledge document; `@1`, whose subject was a draft `icp_spec` row this lane
     # never writes, stays registered and frozen for replay with no role behind it.
-    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == (AgentRole.HEAD_OF_ABM,)
+    # Automatic project targeting (v61) then withdrew `@2` from the role as well: both versions
+    # stay registered, frozen for replay, held by nobody.
+    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == ()
     assert c6_roles_for_tool("open_icp_confirmation_gate@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
@@ -308,8 +321,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("exa_search_evidence@1") == (AgentRole.ONBOARDING_SYNTHESIS,)
     # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
-    # (The total is asserted once above — 114 after the part-iii merge.)
-    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
+    # (The total is asserted once above — 114 after the part-iii merge.) Automatic project
+    # targeting (v61) withdrew the ICP gate from the role; it stays registered for replay.
+    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == ()
     # ARV2 onboarding O6: the S4-E/S5-F Client-KB and Product-KB readers, and the single-product
     # gate, are ungranted at EVERY version now. The exact-address rules that used to admit one safe
     # version of each were deleted with the grants, so `@1` and `@2` are both `()` — which is what

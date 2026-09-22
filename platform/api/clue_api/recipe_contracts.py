@@ -117,6 +117,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # and the project whose ``attachments/`` the container can see.
     "run_python@1",
     "configure_project_targeting@1",
+    # web_search@1 (recipe0-stage0@32): one deep-lite open-web search, used last, answering text
+    # that is never a claim. Granted at `head-of-abm@v62`; a SPEND, AT_LEAST_ONCE on replay, with
+    # the same ``project`` pin as its siblings.
+    "web_search@1",
 )
 
 RECIPE_1_TOOL_ADDRESSES: tuple[str, ...] = (

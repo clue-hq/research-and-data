@@ -138,6 +138,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # stays); v29 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v30.json",
     "recipe0-stage0-v31.json",
+    # web_search@1 joins the interaction slot, granted at `head-of-abm@v62`. One address ADDED,
+    # nothing leaves: v32 is v31 plus that address; v31 stays the exact replay input for turns
+    # pinned to it.
+    "recipe0-stage0-v32.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
