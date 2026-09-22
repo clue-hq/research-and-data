@@ -91,6 +91,17 @@ PERSONA_BODY = (
 )
 
 
+@pytest.fixture(autouse=True)
+def measured_failure_spend(monkeypatch):
+    """The driver double has no SQL; the real ledger join is covered by quality_driver_db."""
+    from clue_api.arv2 import quality_meter
+
+    async def usage(conn, *, workspace_id, job_id):
+        return quality_meter.QualityUsage(Decimal("2.50"), Decimal("3"), 120, 1, 0, 2, 3, 100)
+
+    monkeypatch.setattr(quality_meter, "usage", usage)
+
+
 def _run_row(*, profile_sha256: str | None = None) -> RunRow:
     return RunRow(
         run_id=uuid4(),
@@ -536,6 +547,9 @@ def test_handle_contains_a_composition_failure_as_needs_review(
 
     assert result.outcome == "needs_review"
     landed = store.named("finish_job")[0]
+    assert landed["cost_usd"] == Decimal("2.50")
+    assert landed["finalization"]["spend"]["unpriced_provider_calls"] == 1
+    assert not landed["finalization"]["spend"]["cost_complete"]
     assert landed["status"] == "needs_review"
     assert landed["failure_code"] == "ArtifactIntegrityError"
     assert "digest" in landed["failure_message"]

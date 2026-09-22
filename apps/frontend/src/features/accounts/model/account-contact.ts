@@ -34,7 +34,7 @@ export const AccountContactSummarySchema = z.object({
   outreachEligible: z.boolean().optional(),
   membershipGaps: z.array(z.string()).optional(),
   personaTone: ContactPersonaToneSchema,
-  influence: z.enum(["High", "Medium", "Low"]),
+  influence: z.enum(["High", "Medium", "Low"]).nullable(),
   avatarUrl: z
     .string()
     .refine(

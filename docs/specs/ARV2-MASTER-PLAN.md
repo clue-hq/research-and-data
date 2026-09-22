@@ -674,3 +674,14 @@ The v3 public fetch adapter imports only the shared `official_site.safety` and
 `official_site.url_policy` primitives for URL admission, DNS validation and pinned redirects.
 These two modules are a narrow addition to the ARV2 import guard; the official-site acquisition
 engine and the quarantined research pipeline remain forbidden.
+
+
+## Research quality shared seams — implementation amendment, 2026-09-23
+
+The approved [quality design](../superpowers/specs/2026-09-22-arv3-research-quality-design.md)
+reuses only `clue_research.narrative.fields` and `.support` for the existing narrative field
+and two-sided support table, and `clue_research.compliance` for shared workspace/use policy.
+The import guard admits these substrate helpers explicitly; it still rejects the legacy
+narrative positioner, assembler, research graph and waterfall. Platform Langfuse callbacks and
+project-library change notifications are shared platform seams, not alternate research owners.
+This amendment does not promote a launch default or authorize historical data repair.

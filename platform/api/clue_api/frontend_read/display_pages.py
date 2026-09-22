@@ -885,6 +885,15 @@ async def _expansion(
 # -- the committee -------------------------------------------------------------------------------
 
 
+def _membership_gap_text(reason: str) -> str:
+    """Keep diagnostic reason codes in the assessment, not in product copy."""
+    return {
+        "committee_assessment_not_applicable": "The proposed buying role needs verification.",
+        "affiliation_refuted": "Evidence contradicts employment at this company.",
+        "current_affiliation_not_established": "Current employment at this company is unverified.",
+    }.get(reason, "Committee membership needs further verification.")
+
+
 async def committee(
     conn: AsyncConnection,
     *,
@@ -930,7 +939,7 @@ async def committee(
             account_domain=selection.scope.account_domain,
             persona=m.proposed_role if m.state == "supported" else m.state,
             membership_state=m.state,
-            membership_gaps=m.gaps,
+            membership_gaps=tuple(dict.fromkeys(_membership_gap_text(gap) for gap in m.gaps)),
             outreach_eligible=m.outreach_eligible,
         )
         for m in states
@@ -1077,9 +1086,7 @@ async def buying_committee(
                 membership_state=member.membership_state,
                 membership_gaps=member.membership_gaps,
                 outreach_eligible=member.outreach_eligible,
-                why_they_matter=(
-                    "; ".join(member.membership_gaps) or "Candidate requiring verification"
-                )
+                why_they_matter="Buying responsibility has not been established."
                 if member.membership_state not in (None, "supported")
                 else _why_they_matter(
                     displayable(latest.get((member.id, ROLE_KEY)), policy),

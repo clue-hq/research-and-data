@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,7 @@ from clue_api.frontend_read.display_pages import (
     PENDING_MESSAGE,
     ROLE_KEY,
     DisplayPages,
+    _membership_gap_text,
     _why_they_matter,
     buying_committee,
     committee,
@@ -544,6 +546,31 @@ def test_the_buying_committee_is_persona_ordered_and_reads_through_the_display_p
             assert [chip.persona for chip in chips] == ["Economic buyer", "Champion"]
             assert [chip.email_verified for chip in chips] == [True, False]
             assert all(chip.has_detail for chip in chips)
+
+            # A provisional assessment must not reuse an old champion rationale or repeat
+            # diagnostic codes in the user-facing explanation.
+            gap = _membership_gap_text("current_affiliation_not_established")
+            provisional = replace(
+                members[0],
+                persona="candidate",
+                membership_state="candidate",
+                membership_gaps=(gap,),
+                outreach_eligible=False,
+            )
+            candidate = (
+                await buying_committee(
+                    conn,
+                    workspace_id=seeded.workspace_id,
+                    account_id=str(seeded.account),
+                    members=[provisional],
+                    policy=POLICY,
+                )
+            )[0]
+            assert candidate.membership_gaps == (
+                "Current employment at this company is unverified.",
+            )
+            assert candidate.why_they_matter == "Buying responsibility has not been established."
+            assert not candidate.outreach_eligible
 
     run_async(_run())
 

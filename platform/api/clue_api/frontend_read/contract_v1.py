@@ -623,7 +623,7 @@ class AccountContactSummaryV1(V1Model):
     title: str | None
     persona: str
     persona_tone: Literal["olive", "orange", "blue", "cyan", "green", "pink", "red"]
-    influence: Literal["High", "Medium", "Low"]
+    influence: Literal["High", "Medium", "Low"] | None
     avatar_url: AssetRef | None = _Absent
     email_status: Literal["available", "lookup"]
     email_label: str | None = _Absent

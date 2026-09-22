@@ -437,6 +437,7 @@ async def read_page(
         .all()
     )
     live, gaps, stale = {}, [], []
+    section_titles = {recipe.section_key: recipe.h1 for recipe in recipes}
     for row in rows:
         body = dict(row["body_json"])
         try:
@@ -447,7 +448,8 @@ async def read_page(
             await _validate_sections(conn, scope, inputs, draft, complete=False)
         except (KeyError, ValueError):
             stale.append(row["section_key"])
-            gaps.append(f"{row['section_key']}: supporting evidence needs review; refresh pending")
+            title = section_titles.get(row["section_key"], "Research")
+            gaps.append(f"{title}: supporting evidence needs review; refresh pending")
             continue
         if fingerprint(row["dependency_manifest"]) != inputs.sha256:
             stale.append(row["section_key"])

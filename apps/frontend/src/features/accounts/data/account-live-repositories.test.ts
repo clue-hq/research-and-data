@@ -466,8 +466,8 @@ test("research reads preserve exact project context and provisional membership",
   const { read, calls } = recordingRead([
     { data: { ...ACCOUNT_DETAIL, overviewDisplay: { page: "overview", sections: [], researchQuality: quality } } },
     { data: { ...ACCOUNT_WORKSPACE, insightsDisplay: { page: "insights", sections: [], researchQuality: quality } } },
-    { data: [{ ...CONTACT_SUMMARY, membershipState: "needs_verification", outreachEligible: false, membershipGaps: quality.gaps }] },
-    { data: { ...CONTACT_DETAIL, membershipState: "needs_verification", outreachEligible: false,
+    { data: [{ ...CONTACT_SUMMARY, influence: null, membershipState: "needs_verification", outreachEligible: false, membershipGaps: quality.gaps }] },
+    { data: { ...CONTACT_DETAIL, influence: null, membershipState: "needs_verification", outreachEligible: false,
       contactDisplay: { page: "contact", sections: [], researchQuality: quality } } },
   ]);
   const account = await createHttpAccountDetailsRepository(read).get("account-1", context);
@@ -483,4 +483,6 @@ test("research reads preserve exact project context and provisional membership",
   assert.equal(workspace?.insightsDisplay?.researchQuality?.contexts[0]?.projectName, "Clinical intake");
   assert.equal(contacts?.[0]?.outreachEligible, false);
   assert.equal(contact?.membershipState, "needs_verification");
+  assert.equal(contact?.influence, null);
+  assert.equal(contacts?.[0]?.influence, null);
 });

@@ -308,6 +308,11 @@ async def read_account_contacts(
                 "outreach_eligible": member.outreach_eligible,
                 "membership_gaps": member.membership_gaps,
                 **(
+                    {"influence": None}
+                    if member.membership_state not in (None, "supported")
+                    else {}
+                ),
+                **(
                     {"persona": persona_display(member.persona) or "Needs verification"}
                     if member.membership_state
                     else {}
@@ -565,6 +570,11 @@ async def read_contact_profile(
                 else ("Not in this project's committee.",),
                 "outreach_eligible": bool(own_member and own_member.outreach_eligible),
                 "persona": persona_display(own_member.persona) if own_member else "Excluded",
+                **(
+                    {"influence": None}
+                    if not own_member or own_member.membership_state != "supported"
+                    else {}
+                ),
             }
         )
     member_facts = await committee_claims(

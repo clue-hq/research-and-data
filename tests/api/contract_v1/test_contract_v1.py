@@ -537,8 +537,8 @@ NULL_SERIALIZING_OPTIONALS: dict[str, set[str]] = {
     "AccountSchema": {"owner", "createdBy", "primaryProjectId"},
     "AccountDetailSchema": {"owner", "createdBy"},
     "AccountWorkspaceSchema": set(),
-    "AccountContactSummarySchema": set(),
-    "AccountContactDetailSchema": {"emailClaimId"},
+    "AccountContactSummarySchema": {"membershipState"},
+    "AccountContactDetailSchema": {"emailClaimId", "membershipState"},
 }
 
 

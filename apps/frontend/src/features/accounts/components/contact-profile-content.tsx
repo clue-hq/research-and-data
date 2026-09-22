@@ -136,7 +136,7 @@ export function ContactDetailsList({
                 : components.badgeNeutral
             }`}
           >
-            {contact.influence}
+            {contact.influence ?? "Unverified"}
           </span>
         </ProfileRow>
         <ProfileRow icon={RadioTower} label={contact.contactDisplay ? "Research" : "Recent signals"}>

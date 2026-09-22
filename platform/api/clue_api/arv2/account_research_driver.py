@@ -714,6 +714,10 @@ class Arv2AccountResearchWorkHandler:
                         "continuation": "quality_reconciliation",
                         "generation_id": str(g.generation_id),
                         "workspace_id": g.workspace_id,
+                        "run_id": str(g.run_id),
+                        "job_id": str(g.initial_job_id),
+                        "project_id": g.project_id,
+                        "account_id": str(g.account_id),
                         "input_revision": g.input_revision,
                     },
                 )

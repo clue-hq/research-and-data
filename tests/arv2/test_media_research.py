@@ -260,7 +260,8 @@ def test_v3_keeps_committee_and_new_guidance():
     assert has_capability("v3", "committee_discovery") and has_capability("v3", "media_research")
     assert not has_capability("v2", "media_research")
     with pytest.raises(ValueError):
-        has_capability("v4", "media_research")
+        has_capability("unregistered-version", "media_research")
+    assert has_capability("v4", "media_research")
     for bundle in [load_account_resources(version="v3"), load_person_resources(version="v3")]:
         assert len(bundle.manifest()) == 5
         manual = bundle.skills[-1].body

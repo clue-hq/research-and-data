@@ -237,7 +237,7 @@ The frontend never re-derives any of these (master plan §6).
 | `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
 | `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
 | `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
-| `influence` | served; falls back to the persona-derived default table when the committee claim does not carry it (ruling S8) |
+| `influence` | legacy persona-derived default (S8); contextual unverified/excluded membership returns null |
 | `previewTitle` | `= name` in v1 (ruling S4) |
 | display gating | E2–E5 select claims through `arv2_display_allowed` (ruling S10): use-class rules and the sensitive fail-close stay, but a `WEAK` identity binding no longer hides an `outreachSafe = true` claim |
 
@@ -420,8 +420,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | the contact's resolved name |
 | `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
 | `persona` | string | required | served display text, e.g. `Economic buyer` — never the backend vocabulary value |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
-| `influence` | `High` \| `Medium` \| `Low` | required | persona-derived default when the claim lacks it (S8) |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | null for contextual unverified/excluded membership; otherwise persona-derived default (S8) |
 | `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
 | `emailStatus` | `available` \| `lookup` | required | whether a work-email claim exists |
 | `emailLabel` | email | optional | present only when `emailStatus = available` |
@@ -442,8 +445,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | as E4 |
 | `title` | string \| null | required (nullable) | as E4 (S7) |
 | `persona` | string | required | as E4 — served display text, e.g. `Economic buyer` |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | enum (7) | required | as E4 |
-| `influence` | `High` \| `Medium` \| `Low` | required | as E4 |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | as E4 |
 | `avatarUrl` | url or path (`/…`) | optional | as E4 |
 | `emailStatus` | `available` \| `lookup` | required | as E4 |
 | `emailLabel` | email | optional | as E4 |
@@ -1869,7 +1875,7 @@ the driver now lists the webset on every poll tick and verifies new items in a b
 (`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
 a row still appears only after every gate is verified.
 
-## Research quality generations — approved 2026-09-22, implementation in progress
+## Research quality generations — approved 2026-09-22, implemented locally; live acceptance pending
 
 The research-quality design §10.2 and its implementation authorization govern this additive
 contract. Existing account/contact layouts remain. New quality-profile reads carry `projectId`,
@@ -1885,6 +1891,9 @@ invalidated content remains visibly pending/qualified; privacy restrictions rema
 Committee members carry `membershipState` (candidate/supported/needs_verification/excluded),
 `outreachEligible` and `membershipGaps`. Only supported current employment plus supported remit may
 be presented as an established buying role. Counts use the same assessed membership reader.
+For a contextual candidate, unverified or excluded member, `influence` is null and renders as
+Unverified; the legacy persona default must not imply a verified influence level.
+`membershipGaps` contains user-facing explanations, not internal assessment reason codes.
 
 Cited sentences additionally carry `kind` (fact/inference/quote/qualified/gap) and qualifications.
 An attributed provider report excerpt is not a primary quote. A value argument cites a narrative

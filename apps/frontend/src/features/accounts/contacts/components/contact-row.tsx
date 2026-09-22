@@ -127,7 +127,7 @@ export function ContactRow({
               : components.badgeNeutral
           }`}
         >
-          {contact.influence}
+          {contact.influence ?? "Unverified"}
         </span>
       </div>
       <div className="flex min-w-0 items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
