@@ -71,7 +71,7 @@ ICP = (
 
 def _leg_envelope(
     workspace_id: str,
-    project_id: str,
+    project_id: str | None,
     opening_turn: UUID | None,
     *,
     leg: bool = True,
@@ -236,12 +236,12 @@ async def _seeded(
         registry.register(tool, make_default=tool.descriptor.name not in unaliased)
     for tool in build_arv2_paged_read_tools(service):
         registry.register(tool, make_default=True)
-    from clue_api.web_search_tool import build_web_search_tools  # noqa: PLC0415
+    from clue_api.web_search_tool import WebSearchTool  # noqa: PLC0415
     from tests.api.test_web_search_tool import HIT, FakeExa, _result  # noqa: PLC0415
 
     fake_exa = FakeExa(_result(output_text="Acme's summit is in May.", hits=(HIT,)))
-    search_tool = build_web_search_tools(secrets=None)[0]
-    search_tool._client_factory = lambda label, raw, ledger: fake_exa  # the offline double
+    # The offline double, injected through the constructor the production builder uses.
+    search_tool = WebSearchTool(client_factory=lambda label, raw, ledger: fake_exa)
     registry.register(search_tool, make_default=True)
     invoker = build_tool_invoker(
         registry=registry,
@@ -578,6 +578,35 @@ def test_a_leg_without_a_pin_gets_empty_seller_knowledge_not_an_error(
             )
             assert unbundled is not None
             assert (await asyncio.to_thread(unbundled.seller_knowledge)).documents == ()
+
+    run_async(scenario())
+
+
+def test_a_leg_without_a_project_cannot_search(tmp_path: Path, migrated_db: bool) -> None:
+    """The execution layer asserts the tool's ``project`` pin on head-of-abm's path; this seam runs
+    outside an execution, so the seam itself refuses a search the leg cannot bind to a project."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import (
+        DesignPlatformReadError,
+        build_design_platform_reads_factory,
+    )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="noproject")
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = await asyncio.to_thread(
+                factory, _leg_envelope(seeds["workspace_id"], None, seeds["opening_turn"])
+            )
+            assert reads is not None
+            with pytest.raises(DesignPlatformReadError, match="project_unbound"):
+                await asyncio.to_thread(reads.web_search, query="acme summit 2026")
+            assert seeds["fake_exa"].calls == []
 
     run_async(scenario())
 

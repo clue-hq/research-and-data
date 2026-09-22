@@ -28,7 +28,7 @@ then up to ten results with title, URL, date and highlighted passages, with the 
 `rendered`. It is present on a chat-opened design session and absent in the editor's own agent
 box and the CLI. It comes after the account reads and after the seller's files in `seller/`,
 every time: use it only when those have nothing on the brief's subject, or what they have is
-vague — an event the seller is running, a workshop, a topic outside its products. What it
+vague, such as an event the seller is running, a workshop, or a topic outside its products. What it
 returns is text you may design from now; it is not a claim, it is not verified, and it is never
 presented as research the platform did. A refusal (`{"error": "refused", "reasons": [...]}`)
 means no search happened; design from what you have and say what was missing.

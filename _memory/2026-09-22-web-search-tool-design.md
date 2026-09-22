@@ -139,3 +139,12 @@ manual-check` current. Branch `feat/add-general-purpose-web-search-exa`, 10 comm
 722814d91..be8024cbb, local only. Owed: the two live proofs (spec §4.5–4.6), founder-triggered;
 the first live call also settles whether Exa accepts `contents.highlights: {}` (fallback
 `{"maxCharacters": 2000}`).
+
+## Residuals worked (founder-requested, 2026-09-22)
+- `tool_notes.yaml`: header names the active profile via `PROFILE_VERSION` instead of a fixed
+  version; the `web_search` entry sits alphabetically (after `submit_ingestion`). No chapter moved.
+- Design DB test builds `WebSearchTool(client_factory=…)` directly; no private-attribute poke.
+- The design seam refuses `project_unbound` before the invoker when the leg carries no project —
+  the execution layer asserts the tool's `project` pin only on head-of-abm's path, and this seam
+  runs outside an execution (new DB test `test_a_leg_without_a_project_cannot_search`).
+- The scene skill's "Web search" paragraph has no em dash.

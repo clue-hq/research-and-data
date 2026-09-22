@@ -253,8 +253,15 @@ class DesignPlatformReads:
         """One open-web search (``web_search@1``), used last. The first SPEND tool on this seam:
         the ledger row it lands is workspace spend under the turn's identity, and — like the reads —
         every call is its own operation, so a second search is never answered by the first's
-        receipt."""
+        receipt.
 
+        The tool declares a ``project`` pin, which the execution layer asserts on head-of-abm's
+        path. This seam invokes outside an execution, where no pin is checked, so the seam holds
+        the same line itself: a leg with no project cannot spend — ``project_unbound``, before
+        the invoker is reached."""
+
+        if self._envelope.project_id is None:
+            raise DesignPlatformReadError("project_unbound")
         body: dict[str, Any] = {"query": query, "num_results": num_results}
         for key, value in (
             ("include_domains", include_domains),
