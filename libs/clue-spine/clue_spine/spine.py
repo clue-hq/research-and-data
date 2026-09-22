@@ -544,7 +544,7 @@ async def confirm_project_product(
 # --- project product set (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.2) -----------
 _PROJECT_PRODUCT_COLUMNS = (
     "workspace_id, project_id, brand_id, product_id, selection_version, gate_id, "
-    "confirmed_by_user_id, confirmed_at"
+    "confirmed_by_user_id, confirmed_at, confirmation_turn_id"
 )
 
 
@@ -559,7 +559,8 @@ class ProjectProductSet(BaseModel):
     brand_id: str
     selection_version: int
     product_ids: tuple[str, ...]
-    gate_id: UUID
+    gate_id: UUID | None
+    confirmation_turn_id: UUID | None = None
     confirmed_by_user_id: str
     confirmed_at: UtcDatetime
 
@@ -580,6 +581,7 @@ def _rows_to_sets(rows: list[dict[str, Any]]) -> list[ProjectProductSet]:
                 selection_version=version,
                 product_ids=tuple(m["product_id"] for m in members),
                 gate_id=head["gate_id"],
+                confirmation_turn_id=head["confirmation_turn_id"],
                 confirmed_by_user_id=head["confirmed_by_user_id"],
                 confirmed_at=head["confirmed_at"],
             )
@@ -616,16 +618,19 @@ async def confirm_project_product_set(
     workspace_id: str,
     project_id: str,
     product_ids: Sequence[str],
-    gate_id: UUID,
+    gate_id: UUID | None,
     confirmed_by_user_id: str,
+    confirmation_turn_id: UUID | None = None,
 ) -> ProjectProductSet | None:
-    """Human-authorized confirmation of the whole set as a new version (rulings P1/P2).
+    """Confirm the whole set, recording either a human gate or an automatic turn.
 
     Returns ``None`` — without revealing which coordinate was foreign — when the project is absent
     from the workspace or any product is not a product of the project's own brand and workspace.
     Repeats in ``product_ids`` collapse, first occurrence wins. Raises ``ValueError`` on an empty
     list: an empty set is not a selection.
     """
+    if (gate_id is None) == (confirmation_turn_id is None):
+        raise ValueError("confirmation requires exactly one gate or automatic turn")
     ordered = list(dict.fromkeys(product_ids))
     if not ordered:
         raise ValueError("a project product set needs at least one product")
@@ -673,9 +678,9 @@ async def confirm_project_product_set(
         await conn.execute(
             text(
                 "INSERT INTO project_product (workspace_id, project_id, brand_id, product_id, "
-                " selection_version, gate_id, confirmed_by_user_id) "
+                " selection_version, gate_id, confirmed_by_user_id, confirmation_turn_id) "
                 "VALUES (:workspace_id, :project_id, :brand_id, :product_id, :version, :gate_id, "
-                " :user_id)"
+                " :user_id, :confirmation_turn_id)"
             ),
             {
                 "workspace_id": workspace_id,
@@ -684,6 +689,7 @@ async def confirm_project_product_set(
                 "product_id": product_id,
                 "version": int(next_version),
                 "gate_id": gate_id,
+                "confirmation_turn_id": confirmation_turn_id,
                 "user_id": confirmed_by_user_id,
             },
         )

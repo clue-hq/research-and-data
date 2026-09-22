@@ -161,7 +161,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("abc2e4117e9ef1a346876a21b2d24478e6cd32a3c81afa686d8289da7fed7437"),
+        AgentRole.HEAD_OF_ABM: ("e61d7f28e92d152c984a963e9be3142c9df9ee7b7757cb670d522ad8c0e38c89"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -288,7 +288,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    assert len(by_address) == 165
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -401,7 +402,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    assert len(by_address) == 165
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -501,8 +503,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "launch_arv2_person_research@1",
         "open_design_leg@5",
         "open_directive_confirmation_gate@1",
-        "open_icp_confirmation_gate@2",
-        "open_product_set_selection_gate@1",
+        "configure_project_targeting@1",
         "propose_field@2",
         "propose_source@1",
         "read_account_research@2",
@@ -576,9 +577,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v60"
+    assert production.profile_ref.address == "profile:head-of-abm@v61"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v34"
+        "skill:stage0-interview@v35"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -598,7 +599,10 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
         "start_recon@1",
     }.isdisjoint(addresses)
     # What replaces them: the set-valued product gate and the ICP gate over the knowledge document.
-    assert {"open_product_set_selection_gate@1", "open_icp_confirmation_gate@2"} <= addresses
+    assert "configure_project_targeting@1" in addresses
+    assert {"open_product_set_selection_gate@1", "open_icp_confirmation_gate@2"}.isdisjoint(
+        addresses
+    )
     assert "open_icp_confirmation_gate@1" not in addresses
     assert toolbelt.descriptor("open_icp_confirmation_gate").address == (
         "open_icp_confirmation_gate@2"
@@ -622,7 +626,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v34")
+    body = production.open_skill("skill:stage0-interview@v35")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -682,16 +686,16 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v34",
+        "skill:stage0-interview@v35",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
-        "skill:icp-authoring@v2",
+        "skill:icp-authoring@v3",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -765,14 +769,14 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("no_knowledge_documents", "onboarding has not produced knowledge for this brand yet"),
         ("read_before_speaking", "before your first reply on a project, also read"),
         ("unknown_product_fact", "Never state a fact a file does not contain"),
-        ("product_set_gate", "call `open_product_set_selection_gate` with the `icp_key`"),
+        ("automatic_targeting", "call `configure_project_targeting` with the `icp_key`"),
         ("possible_duplicate", "A candidate marked as a possible duplicate"),
-        ("icp_gate", "call `open_icp_confirmation_gate` with the `icp_key` of the picked ICP"),
+        ("no_approval_pause", "Do not open an approval card"),
         # ARV2 context and authoring re-pins this one situation: a Revised gate receipt is no
         # longer a dead end the agent records and hands back to onboarding — it is drafted, in the
         # reviewed profile's own scope, and re-gated. The two new situations the same version
         # creates get their own fixtures beside it.
-        ("icp_revised", "draft the revised profile (section 5b) in the same scope"),
+        ("icp_revised", "profile (section 5b) in the same scope"),
         # The versioned project root moves three situations out of this skill and into their own.
         # What v32 must still do is ROUTE them: each section names the skill that carries the
         # procedure and the path to open it, so a model that reaches §5b, §5c or §6b is one read
@@ -792,12 +796,12 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("read_every_page_before_counting", "read again with `offset: next_offset` before you"),
         ("a_spilled_result_is_read_from_its_file", "the receipt says `spilled_to`"),
         ("read_discovery_before_relaunching", "call `read_discovery_run` for this project"),
-        ("prose_is_not_a_receipt", 'Ordinary prose such as "looks good" confirms nothing.'),
+        ("prose_is_not_a_receipt", "ordinary file writes do not move a pin."),
         ("contradictory_correction", "**Corrections carry lineage.**"),
         ("upload", "goes through `submit_ingestion` with its material context"),
         ("novel_field", "goes through `propose_field` or `propose_source`"),
         ("unmappable", "is routed `unmapped` with its exact quote"),
-        ("launch_preconditions", "never launch before both gates are answered"),
+        ("launch_preconditions", "apply the ICP and products before launching"),
         ("launch_is_not_completion", "It is never completed research"),
     ),
 )
@@ -808,7 +812,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v34")
+    body = head.open_skill("skill:stage0-interview@v35")
 
     assert required_guidance in body
 
@@ -862,17 +866,17 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v34" not in remaining
+    assert "skill:stage0-interview@v35" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
-        "skill:icp-authoring@v2",
+        "skill:icp-authoring@v3",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v7" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -902,7 +906,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v13/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v14/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
@@ -937,6 +941,16 @@ def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path
             engine_tool_ceiling=admitted,
             selected_profile_versions=C6_ACTIVE_PROFILE_VERSIONS,
         )
+
+
+@pytest.mark.parametrize("name", ["design_register_asset_record", "design_set_asset_description"])
+def test_asset_api_versions_do_not_expand_the_reviewed_design_profile(
+    registry: AgentProfileRegistry, name: str
+) -> None:
+    capabilities = {item.address: item for item in registry.resolve(AgentRole.DESIGN).capabilities}
+    assert capabilities[f"{name}@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert capabilities[f"{name}@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert capabilities[f"{name}@2"].reason_code == "not_admitted_for_role"
 
 
 def test_design_profile_resolves_with_the_full_granted_write_surface(

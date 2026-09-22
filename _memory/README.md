@@ -22,11 +22,31 @@ Keep notes concise and operational. Do not store secrets, API keys, credentials,
 
 ## Repository Role
 
+- `2026-09-22-asset-inspector-review.md` — branded asset inspector, automatic saving,
+  responsive/failure verification and pilot comparison with an open generation-quality defect.
+
 This repository is the data and research subsystem for the larger AI-native ABM orchestration platform. Its job is to turn client ICPs and client knowledge into canonical account/contact entities, typed claims with provenance, explainable fit/intent scores, and persona-keyed buying-committee research that downstream content and design systems can trust.
 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-on-demand-ingestion-pool.md` — dedicated ingestion coordinator and
+  on-demand 4 x 10 image workers; strict routing, durable tasks and idle shutdown.
+- `2026-09-22-hide-asset-source-interpretation-rows.md` — temporarily removes Observed
+  use, Logo relationship and Messaging & tone from the inspector; stored metadata retained.
+- `2026-09-22-asset-vision-replay-preparation.md` — four approved live calls completed;
+  all recognized the logos, background interpretation varied, original failure not reproduced.
+- `2026-09-22-asset-description-mapping-audit.md` — identity/fingerprint checks and
+  concurrent replay pass, but multiple captions are visually wrong; validation,
+  transparent-preview, provider-evidence and library-polling gaps remain open.
+- `2026-09-22-asset-details-height.md` — asset Details column fills the modal height;
+  removed a conflicting viewport-height cap and verified internal scrolling live.
+- `2026-09-22-onboarding-role-select.md` — onboarding Role field reuses the branded
+  shared select; browser-checked without disturbing the user's live ingestion.
+- `2026-09-21-brand-context-controls.md` — shared branded asset selectors, aligned
+  toolbar, simplified header, and automatic brand-kit plus ICP/product approval.
+- `2026-09-21-san-diego-stack-startup.md` — isolated live San Diego stack on
+  3033/8013/8023/8033; four fleet workers, restored blobs, and authority/recipe boot fixes.
 - `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
   sandbox and project-management authority tests; isolated database migration smoke.
 - `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names

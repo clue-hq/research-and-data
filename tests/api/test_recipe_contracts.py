@@ -17,7 +17,7 @@ from clue_api.recipe_contracts import (
     build_replay_safety_audit,
     standing_recipe_addresses,
 )
-from clue_api.recipe_wiring import SYSTEM_RECIPE_FILENAMES
+from clue_api.recipe_wiring import HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES, SYSTEM_RECIPE_FILENAMES
 from clue_api.stage0_recipe import RecipeStep
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_toolbelt import ReplayPolicy, ToolRegistry
@@ -646,11 +646,8 @@ def test_the_code_sandbox_mints_recipe_v29_without_rewriting_v28() -> None:
     # for a turn pinned to it.
     added = {"run_python@1"}
 
-    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
-    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
-        "recipe0-stage0-v28.json",
-        "recipe0-stage0-v29.json",
-    )
+    assert "recipe0-stage0-v29.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v29.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v28["graph"]["tool_allowlist"])
     assert added <= set(v29["graph"]["tool_allowlist"])
     slot = next(node for node in v29["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -705,9 +702,9 @@ def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
     added = {"open_design_leg@5"}
     removed = {"open_design_leg@4"}
 
-    v29_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v29.json")
-    assert SYSTEM_RECIPE_FILENAMES[v29_index : v29_index + 2] == (
-        "recipe0-stage0-v29.json",
+    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
+    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
+        "recipe0-stage0-v28.json",
         "recipe0-stage0-v30.json",
     )
     assert added.isdisjoint(v29["graph"]["tool_allowlist"])

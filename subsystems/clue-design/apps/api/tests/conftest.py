@@ -174,6 +174,52 @@ def make_client(app: FastAPI) -> TestClient:
     the queue would sit `queued` for the whole test. Adapting this one helper keeps every async-
     turn test unchanged; the autouse fixture above owns the matching exit.
     """
+    # Production ingestions now have separate execution capacity. Test hosts compose the
+    # same two handlers in distinct workers, retaining in-process capture/provider stubs.
+    # Real OS-process isolation and 4x10 concurrency are exercised by test_ingestion_pool_db.
+    import asyncio
+    from clue_fleet import LeasedWorkWorker
+    from lumen_api.fleet_handler import DesignTurnHost, build_design_job_handler
+    from lumen_api.ingestion_tasks import AssetAnalysisWorkHandler
+
+    original_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def with_ingestion_workers(instance):
+        async with original_lifespan(instance):
+            if not settings.lumen_embedded_fleet_worker:
+                yield
+                return
+
+            def host():
+                return DesignTurnHost(
+                    storage=instance.state.storage,
+                    engine_cache_root=instance.state.engine_cache_root,
+                )
+            workers = [
+                LeasedWorkWorker(
+                    handlers=(build_design_job_handler(host_provider=host, ingestion_only=True),),
+                    concurrency=1, poll_interval=0.05,
+                ),
+                LeasedWorkWorker(
+                    handlers=(AssetAnalysisWorkHandler(
+                        storage=instance.state.storage,
+                        engine_cache_root=instance.state.engine_cache_root,
+                    ),),
+                    concurrency=10, poll_interval=0.05,
+                ),
+            ]
+            tasks = [asyncio.create_task(worker.run()) for worker in workers]
+            try:
+                yield
+            finally:
+                for worker in workers:
+                    worker.stop()
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    app.router.lifespan_context = with_ingestion_workers
     client = TestClient(app, headers={"X-Workspace-Id": os.environ["LUMEN_DEV_WORKSPACE_ID"]})
     client.__enter__()
     _LIFESPAN_CLIENTS.append(client)

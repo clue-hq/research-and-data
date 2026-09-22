@@ -132,3 +132,9 @@ def build_design_tools(
         return cast(tuple[Tool, ...], _build(None))
     log.info("design_tools.live", tools=list(DESIGN_TOOL_NAMES))
     return cast(tuple[Tool, ...], _build(_live_host(storage)))
+
+
+def is_default_design_tool(tool: Tool) -> bool:
+    from lumen_api.toolbelt.factory import is_default_design_tool as is_default
+
+    return bool(is_default(tool))

@@ -367,6 +367,14 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 width=asset.width,
                 height=asset.height,
                 kind_hint=asset.kind_hint,  # type: ignore[arg-type]
+                source_occurrences=[{
+                    "occurrence_id": hashlib.sha256(
+                        f"{snapshot.final_url}|{asset.locator}|{asset.source_url}".encode()
+                    ).hexdigest(),
+                    "source": "website", "page_url": snapshot.final_url,
+                    "locator": asset.locator, "alt": asset.alt,
+                    "surrounding_text": asset.surrounding_text, "placement": asset.placement,
+                }],
                 pointer=_pointer(asset.locator),
             )
         )

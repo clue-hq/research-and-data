@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AssetContextSchema, AssetSourceSchema } from "./asset-context";
 
 export const BrandContextSectionSchema = z.enum([
   "colors",
@@ -67,6 +68,8 @@ export const BrandAssetVisualSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const BrandAssetSchema = z.object({
+  context: AssetContextSchema.optional(),
+  sources: z.array(AssetSourceSchema).optional(),
   category: BrandAssetCategorySchema,
   createdAt: z.string(),
   createdLabel: z.string(),

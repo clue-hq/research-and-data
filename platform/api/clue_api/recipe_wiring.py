@@ -128,10 +128,6 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
     # already-pinned execution able to resolve the unpaged reads.
     "recipe0-stage0-v28.json",
-    # The code sandbox: `run_python@1` joins the interaction slot, granted for the first time at
-    # `head-of-abm@v58`. Nothing leaves — it is one address ADDED, not a re-pin — so v29 is v28
-    # plus that address and v28 stays the exact replay input for turns pinned to it.
-    "recipe0-stage0-v29.json",
     # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
     # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
     # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
@@ -141,6 +137,7 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
     # stays); v29 stays the exact replay input for turns pinned to it.
     "recipe0-stage0-v30.json",
+    "recipe0-stage0-v31.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
@@ -152,6 +149,10 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
 # R1 never seeds or promotes these recipes for new executions.
 HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
     "account-research-unit-v1.json",
+    # The sandbox and multi-artifact branches both shipped a different recipe0@29.
+    # Version 30 combines them. Keep the checked-in sandbox @29 for replay, and preserve
+    # any stored multi-artifact @29 without proposing conflicting bytes during worker boot.
+    "recipe0-stage0-v29.json",
     # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
     # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
     # their pins were live, so the idempotent seed skips them; on a FRESH database the

@@ -1,3 +1,4 @@
+import { httpAssetRepository, fixtureAssetRepository, type AssetRepository } from "./asset.repository";
 import {
   BrandContextWorkspaceSchema,
   type BrandContextWorkspace,
@@ -7,6 +8,7 @@ import {
   brandKitAssetIds,
   emptyBrandContextWorkspace,
   toBrandContextWorkspace,
+  toRegistryAssets,
 } from "../model/brand-context-mapping";
 import {
   BrandKitDetailSchema,
@@ -38,7 +40,7 @@ export interface BrandContextView {
   kit: BrandKitMeta | null;
 }
 
-export interface BrandContextRepository {
+export interface BrandContextRepository extends AssetRepository {
   getWorkspace(): Promise<BrandContextView>;
 }
 
@@ -72,6 +74,7 @@ export function httpBrandContextRepository({
   designFetch: () => Promise<typeof fetch> | typeof fetch;
 }): BrandContextRepository {
   return {
+    ...httpAssetRepository(designFetch),
     async getWorkspace() {
       // Started first and awaited last, so the two backends are read concurrently.
       // It never rejects, which is what lets the catch below still serve the
@@ -110,25 +113,16 @@ async function readWorkspace(
 
   const kits = BrandKitSummaryListSchema.parse(await read("/brand-kits"));
   const selected = selectBrandKit(kits);
-  // The onboarding documents do not need a kit: they are written during
-  // onboarding, long before any brand kit is ingested.
-  if (!selected) {
-    return {
-      kit: null,
-      workspace: withPlatformFolders(emptyBrandContextWorkspace(), await platformFolders),
-    };
-  }
-
-  const kit = BrandKitDetailSchema.parse(
+  const kit = selected ? BrandKitDetailSchema.parse(
     await read(`/brand-kits/${encodeURIComponent(selected.id)}`),
-  );
+  ) : null;
 
   // The kit names its assets by id only; their filename, media type, byte
   // length and geometry live in the asset registry. One read per asset, in
   // parallel, and any refusal leaves that row with honest unknowns.
   const assetRecords = new Map<string, DesignAssetRecord>();
   await Promise.all(
-    brandKitAssetIds(kit).map(async (assetId) => {
+    (kit ? brandKitAssetIds(kit) : []).map(async (assetId) => {
       try {
         const record = DesignAssetRecordSchema.parse(
           await read(`/assets/${encodeURIComponent(assetId)}`),
@@ -148,12 +142,13 @@ async function readWorkspace(
   const registryRecords: DesignAssetListRecord[] = [];
   for (const kind of ["raster_image", "vector", "logo"]) {
     try {
-      const page = (await read(
-        `/assets?kind=${kind}&include_archived=false&limit=200&offset=0`,
-      )) as { assets?: unknown[] };
-      for (const raw of page.assets ?? []) {
-        const parsed = DesignAssetListRecordSchema.safeParse(raw);
-        if (parsed.success) registryRecords.push(parsed.data);
+      for (let offset = 0; ; offset += 200) {
+        const page = (await read(`/assets?kind=${kind}&include_archived=false&limit=200&offset=${offset}`)) as {assets?: unknown[]};
+        for (const raw of page.assets ?? []) {
+          const parsed = DesignAssetListRecordSchema.safeParse(raw);
+          if (parsed.success) registryRecords.push(parsed.data);
+        }
+        if ((page.assets?.length ?? 0) < 200) break;
       }
     } catch (error) {
       console.warn(
@@ -163,13 +158,19 @@ async function readWorkspace(
     }
   }
 
-  return {
-    kit: toBrandKitMeta(kit),
-    workspace: withPlatformFolders(
-      toBrandContextWorkspace(kit, { assetRecords, registryRecords }),
-      await platformFolders,
-    ),
-  };
+  const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords})
+    : {...emptyBrandContextWorkspace(), assets: toRegistryAssets(registryRecords, new Set())};
+  try {
+    const metadata = await httpAssetRepository(() => designFetch).readMetadata(workspace.assets.map(asset => asset.id));
+    workspace.assets = workspace.assets.map(asset => {
+      const context = metadata[asset.id];
+      return context ? {...asset, context, name: context.title ?? asset.name,
+        description: context.description ?? asset.description,
+        sources: context.source_occurrences.length ? [...new Set(context.source_occurrences.map(occurrence => occurrence.source))] : asset.sources} : asset;
+    });
+  } catch (error) { console.warn("[brand-context] asset metadata unavailable", error); }
+  return {kit: kit ? toBrandKitMeta(kit) : null, workspace: withPlatformFolders(workspace, await platformFolders)};
+
 }
 
 /**
@@ -225,6 +226,7 @@ function selectBrandKit(
 }
 
 const fixtureBrandContextRepository: BrandContextRepository = {
+  ...fixtureAssetRepository(),
   async getWorkspace() {
     // No kit meta: the dummy is a DESIGN, not a stored kit — there is nothing to approve or
     // re-extract, and inventing a status chip for it would be the first lie on this page.

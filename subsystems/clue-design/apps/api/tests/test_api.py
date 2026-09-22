@@ -987,6 +987,10 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     asset_id = upload_logo(client).json()["asset"]["id"]
+    cache_dir = tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    record = HybridRepository().require_asset_record(asset_id)["asset"]
+    for digest, _mime in record_digests(record):
+        cache_blob_path(cache_dir, digest).unlink(missing_ok=True)
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_agent_turn_preview(
@@ -1001,29 +1005,19 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
     assert entry["record"]["id"] == asset_id
     assert entry["record"]["status"] == "ready"
 
-    # The read-through actually ran: the turn's engine cache holds the bytes at
-    # `sha256/{ab}/{digest}`. That single path is what BOTH readers compute —
-    # `view("asset:…")` via `blob_path_for_digest`, and the ENGINE at render via
-    # `StoreBackedResolver`'s digest fallback (a `clue-storage` location is not
-    # `local-store`, so it resolves through `digest_relative_path`, which is
-    # `cache_relative_path` byte for byte). Without this materialization the
-    # manifest is a promise the render cannot keep: `asset.bytes_missing`, an
-    # empty chip where the image should be.
-    cache_dir = (
-        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
-    )
+    # Inventory is metadata-only. Bytes arrive on explicit inspection or placement.
+    cache_dir = tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
     digests = [digest for digest, _mime in record_digests(entry["record"])]
     assert digests
-    for digest in digests:
-        assert cache_blob_path(cache_dir, digest).is_file(), digest
+    assert all(not cache_blob_path(cache_dir, digest).is_file() for digest in digests)
+    config.asset_materializer(asset_id)
+    assert all(cache_blob_path(cache_dir, digest).is_file() for digest in digests)
 
 
-def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
+def test_agent_turn_asset_library_keeps_older_assets_without_a_recent_cap(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bound is a real cap on the most-recently-updated rows, not a suggestion:
-    a workspace library can be large, and every entry costs read-through bytes plus
-    prompt-cache surface in `view`'s available-ids text."""
+    """Full metadata coverage replaces the old recent-only materialization cap."""
     from lumen_api import main as main_mod
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
@@ -1041,7 +1035,7 @@ def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
         workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     library = captured["config"].asset_library
-    assert list(library) == [newer], library
+    assert set(library) == {older, newer}, library
 
 
 def test_scene_turn_asset_library_drops_unplaceable_kinds(

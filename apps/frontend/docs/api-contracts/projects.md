@@ -4,6 +4,24 @@ Status: **R0 ratified; repair slices R1-R9 implemented; Stage-0/project hardenin
 
 Owner for backend integration: Aaryan.
 
+## Automatic ICP and product targeting — founder ruling 2026-09-21
+
+This amendment supersedes the human-approval requirement for ICP and product
+selection in the historical sections below. New project turns use
+`head-of-abm@v61`, `stage0-interview@v35` and `configure_project_targeting@1`.
+The agent reads the current ICP, applies its product set (or the user's requested
+override), confirms the exact artifact and pins it to the project without opening
+an approval card. Existing project overrides survive repeated application of the
+same ICP. The tool returns the artifact digest and product-selection version so
+the requested task can continue in the same turn.
+
+The backend records an automatic initiating-turn reference, never a fabricated
+human gate answer. Product selection remains versioned and scoped to active
+products from this project's brand. Historical human gates and receipts remain
+readable; account selection, spending and other human decisions retain their
+existing contracts. No frontend payload changes or client-side auto-answering
+are introduced.
+
 ## Canonical frontend routes — founder-ratified 2026-08-17 (Phase R, rulings R1–R3)
 
 Adopted from the design repo's canonical-routes contract

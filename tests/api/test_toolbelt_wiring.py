@@ -360,6 +360,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
     "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_enrich_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
@@ -933,6 +934,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "request": {"company_domain": "matrix.example"},
             "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
         },
+        "design_enrich_assets": {
+            "job_id": "ingest_matrix_enrich",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_enrich"},
+        },
         "design_record_ad_creatives": {
             "creatives": [
                 {
@@ -1440,7 +1447,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry.names()) == 141
+    assert len(registry.names()) == 142
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1481,7 +1488,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 161
+    assert len(registry) == 164
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1523,7 +1530,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry.names()) == 141
+    assert len(registry.names()) == 142
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1551,7 +1558,7 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 161
+    assert len(registry) == 164
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

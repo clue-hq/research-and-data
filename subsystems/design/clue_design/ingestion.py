@@ -265,8 +265,8 @@ async def complete(
     *,
     workspace_id: str,
     job_id: str,
-    brand_kit_id: str,
-    version: int,
+    brand_kit_id: str | None,
+    version: int | None,
     evidence_json: str | None,
     expected_generation: int | None = None,
 ) -> JsonObject:
@@ -311,7 +311,7 @@ async def fail(
     expected_generation: int | None = None,
 ) -> JsonObject:
     """Terminal failure: the typed error object (progress/stage keep their last values)."""
-    return await _write_or_fence(
+    result = await _write_or_fence(
         conn,
         "UPDATE design_ingestion_job"
         " SET status = CAST('failed' AS design_ingestion_status),"
@@ -322,6 +322,17 @@ async def fail(
         job_id=job_id,
         expected_generation=expected_generation,
     )
+
+    from clue_design.descriptions import fail_queued_analysis
+
+    await fail_queued_analysis(
+        conn,
+        workspace_id=workspace_id,
+        asset_ids=None,
+        job_id=job_id,
+        reason=(error or {}).get("message", "Ingestion job failed; analysis can be retried"),
+    )
+    return result
 
 
 # --- the durable-job surface (D5): the fleet handle + the requeue-safe input read --------------
@@ -632,6 +643,16 @@ async def fail_dispatched_job(
             params,
         )
     ).first()
+    if row is not None:
+        from clue_design.descriptions import fail_queued_analysis
+
+        await fail_queued_analysis(
+            conn,
+            workspace_id=row.workspace_id,
+            asset_ids=None,
+            job_id=row.job_id,
+            reason=error.get("message", "Ingestion job failed; analysis can be retried"),
+        )
     return None if row is None else _job_execution_from_row(row)
 
 
@@ -655,4 +676,14 @@ async def fail_stranded_job(
             {"work_id": work_id, "error": dump_json(error)},
         )
     ).first()
+    if row is not None:
+        from clue_design.descriptions import fail_queued_analysis
+
+        await fail_queued_analysis(
+            conn,
+            workspace_id=row.workspace_id,
+            asset_ids=None,
+            job_id=row.job_id,
+            reason=error.get("message", "Ingestion job failed; analysis can be retried"),
+        )
     return None if row is None else _job_execution_from_row(row)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, Field, StrictInt, model_validator
+from clue_design.asset_context import AssetContextPatch
 
 
 JsonObject = Dict[str, Any]
@@ -581,11 +582,9 @@ class SetBrandKitLogoRequest(BaseModel):
     color_mode: str = "full_color"
 
 
-class SetAssetDescriptionRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    usage: Optional[str] = None
-    tags: Optional[List[str]] = None
+
+class SetAssetDescriptionRequest(AssetContextPatch):
+    pass
 
 
 class BrandCompatibilityRequest(BaseModel):

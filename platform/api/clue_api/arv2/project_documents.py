@@ -133,6 +133,8 @@ _RETIRABLE_STATUSES: tuple[str, ...] = ("ready", "proposed")
 #: dropped from the version it mints (ruling I; the brand Knowledge PUT drops the same four).
 _APPROVAL_KEYS: tuple[str, ...] = (
     "confirmed_by",
+    "confirmation_mode",
+    "confirmation_turn_ref",
     "confirmed_at",
     "confirmed_for_project_id",
     "product_selection_version",

@@ -188,8 +188,37 @@ test("a workspace with no kit gets the designed empty states, never fixture data
   assert.deepEqual(workspace.knowledgeFolders, []);
   assert.notEqual(workspace.id, brandContextFixture.id);
   assert.equal(kit, null);
-  // Nothing beyond the list is fetched when there is nothing to fetch.
-  assert.deepEqual(requested, ["/brand-kits"]);
+  // The workspace library is independent of kit existence.
+  assert.equal(requested.filter(path => path.startsWith("/assets?")).length, 3);
+});
+
+test("a no-kit library reads past page one and batches metadata for older assets", async () => {
+  const records = Array.from({length: 251}, (_, index) => ({id: `asset_${index}`,
+    kind: "raster_image", status: "ready", source: {kind: "uploaded"}, label: `Image ${index}`}));
+  const pages: number[] = [], batches: number[] = [];
+  const fetchImpl: typeof fetch = async input => {
+    const url = new URL(String(input), "https://design.example");
+    if (url.pathname === "/brand-kits") return Response.json([]);
+    if (url.pathname === "/assets") {
+      if (url.searchParams.get("kind") !== "raster_image") return Response.json({assets: []});
+      const offset = Number(url.searchParams.get("offset")); pages.push(offset);
+      return Response.json({assets: records.slice(offset, offset + 200)});
+    }
+    if (url.pathname === "/assets/descriptions") {
+      const ids = url.searchParams.get("asset_ids")!.split(","); batches.push(ids.length);
+      return Response.json({descriptions: Object.fromEntries(ids.map(id => [id, {asset_id: id,
+        title: "Historical image", creative_type: "photo", usage_roles: ["card_image"], status: "ready"}]))});
+    }
+    throw new Error(`Unexpected per-asset read: ${url.pathname}`);
+  };
+  const view = await httpBrandContextRepository({designFetch: () => fetchImpl, clueFetch: () => noPlatformRead}).getWorkspace();
+  assert.equal(view.kit, null);
+  assert.deepEqual(pages, [0, 200]); assert.deepEqual(batches, [100, 100, 51]);
+  assert.equal(view.workspace.assets.length, 251);
+  const older = view.workspace.assets.find(asset => asset.id === "asset_250")!;
+  assert.equal(older.name, "Historical image");
+  assert.deepEqual(older.context?.usage_roles, ["card_image"]);
+  assert.deepEqual(older.sources, ["user_upload"]);
 });
 
 test("a design-API refusal renders the empty states rather than failing the page", async () => {

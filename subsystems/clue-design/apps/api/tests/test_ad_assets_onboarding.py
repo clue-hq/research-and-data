@@ -43,6 +43,19 @@ TINY_PNG = bytes.fromhex(
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_asset_describer(monkeypatch):
+    from asset_analysis_fixture import analysis
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.describe import DescribeResult
+    class Describer:
+        active = True
+        def describe(self, items):
+            return [DescribeResult(item.asset_id, "Ad", "Ad", "Reference", [],
+                                   analysis=analysis("Ad", item.source_occurrences)) for item in items]
+    monkeypatch.setattr(pipeline, "resolve_describer", lambda: Describer())
+
+
 def _pages() -> list[AdLibraryPage]:
     provider = AdyntelProvider(api_key="k", email="e@example.com")
     return [
@@ -556,7 +569,7 @@ def test_an_empty_harvest_says_so_at_the_top_level(
     assert outcome["card_written"] is False
     assert outcome["assets_generated"] == 0
     # The steps that never ran are NAMED, rather than being absent keys nobody notices.
-    assert outcome["steps_not_reached"] == ["custody", "record", "distill", "pregenerate"]
+    assert outcome["steps_not_reached"] == ["custody", "record", "enrich", "distill", "pregenerate"]
     assert "0 ad(s) kept" in outcome["summary"]
     assert "No ad-DNA card was written." in outcome["summary"]
 

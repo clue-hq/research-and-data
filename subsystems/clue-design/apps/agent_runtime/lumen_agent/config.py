@@ -166,6 +166,8 @@ class AgentRuntimeConfig:
     # The runtime only returns/places records from this manifest; None means the
     # library is unavailable for this turn, never that an asset may be invented.
     asset_library: dict | None = None
+    # API-owned lazy byte reader; accepts only an id from the frozen manifest.
+    asset_materializer: Any | None = None
     # P6.4: an account-bound durable custom-component capability supplied by
     # the API worker. The runtime receives methods, not database/store paths;
     # source is projected by value into the run's virtual filesystem while all

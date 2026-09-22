@@ -94,6 +94,7 @@ import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
@@ -2269,3 +2270,18 @@ class HybridRepository:
                 kind=kind,
             )
         )
+
+
+def api_engine_cache_root(workspace_id: str) -> Path:
+    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
+
+    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
+    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
+    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
+    purely by digest, so one shared tree would let a turn read another tenant's bytes.
+    """
+    from py_lumen_config import settings
+
+    path = settings.effective_asset_store_root / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
