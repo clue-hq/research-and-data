@@ -629,7 +629,9 @@ def gemini_usage_cost(usage: Mapping[str, object]) -> Decimal:
     )
 
 
-def gemini_cost_reader(media_seconds: int) -> CostReader:
+def gemini_cost_reader(
+    media_seconds: int, *, model: str | None = None, video: bool = False
+) -> CostReader:
     """A cost reader for a native ``generateContent`` response, stamping the media seconds."""
 
     def read(response: HttpResponse) -> CostReading:
@@ -637,10 +639,24 @@ def gemini_cost_reader(media_seconds: int) -> CostReader:
         usage = body.get("usageMetadata") if isinstance(body, dict) else None
         usage = usage if isinstance(usage, dict) else {}
         request_id = body.get("responseId") if isinstance(body, dict) else None
+        extras: dict[str, object] = {"usage": usage}
+        if model:
+            extras["model"] = model
+        if video:
+            extras["usd_unpriced"] = True
+        for source, target in (
+            ("promptTokenCount", "prompt_tokens"),
+            ("candidatesTokenCount", "completion_tokens"),
+            ("cachedContentTokenCount", "cached_prompt_tokens"),
+        ):
+            value = usage.get(source)
+            if isinstance(value, int) and value >= 0:
+                extras[target] = value
         return CostReading(
-            cost_usd=gemini_usage_cost(usage),
+            cost_usd=None if video else gemini_usage_cost(usage),
             provider_request_id=request_id if isinstance(request_id, str) else None,
             media_seconds=media_seconds,
+            extras=extras,
         )
 
     return read
@@ -1398,16 +1414,9 @@ class GeminiMediaClient:
                     media_seconds=duration_s,
                     usd=Decimal(0) if video else estimate_media_usd(duration_s),
                 ),
-                cost_reader=(
-                    lambda response: CostReading(
-                        extras={
-                            "usd_unpriced": True,
-                            "usage": json.loads(response.body).get("usageMetadata", {}),
-                        }
-                    )
-                )
-                if video
-                else gemini_cost_reader(duration_s),
+                # Stamp the spec too: malformed metering must not turn unknown USD into zero.
+                extras={"usd_unpriced": True} if video else {},
+                cost_reader=gemini_cost_reader(duration_s, model=model, video=video),
                 halt_rule=gemini_native_halt_rule,
                 max_attempts=1,
             )

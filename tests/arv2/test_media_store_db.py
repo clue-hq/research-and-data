@@ -24,6 +24,123 @@ from tests.db.conftest import run_async
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
+def test_media_trace_ledger_logs_fallback_and_reuse_agree():
+    import json
+
+    from clue_api.arv2.account_research_tools import build_account_tools
+    from clue_api.langfuse_callbacks import ClueLangfuseHandler
+    from clue_obs import capture_events
+    from clue_obs.langfuse import LangfuseRunRegistry, observation, propagate_trace
+    from clue_projections.cost import CostFilters, cost_report
+    from tests._langfuse import finished_spans, langfuse_installed
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            speech = "UNIQUE_TRANSCRIPT_MARKER must stay out of structured logs."
+            wire = ScriptedTransport(
+                [
+                    video_metadata(),
+                    native_speech(speech),
+                    HttpResponse(500, body=b'{"error":"embedding unavailable"}'),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            tool = next(t for t in build_account_tools(rt) if t.name == "read_media")
+            with langfuse_installed() as (exporter, _), capture_events() as captured:
+                with (
+                    observation("arv2.account_research", as_type="agent"),
+                    propagate_trace(trace_name="arv2.account_research"),
+                ):
+                    config = {"callbacks": [ClueLangfuseHandler(LangfuseRunRegistry())]}
+                    args = {"url": "https://youtu.be/abcdefghijk", "purpose": "Study priorities"}
+                    first = json.loads(await tool.ainvoke(args, config=config))
+                    assert first["state"] == "available" and first["index"]["state"] == "lexical"
+                    replay = json.loads(await tool.ainvoke(args, config=config))
+                    assert replay["reused"] and len(wire.requests) == 3
+                spans = finished_spans(exporter)
+            generations = [
+                s for s in spans if s.attributes.get("langfuse.observation.type") == "generation"
+            ]
+            assert len(generations) == 1
+            generation = generations[0]
+            parents = {s.context.span_id: s for s in spans}
+            stage = parents[generation.parent.span_id]
+            assert stage.name == "arv2.media.provider_stage"
+            assert parents[stage.parent.span_id].name == "read_media"
+            assert len({s.context.trace_id for s in spans}) == 1
+            assert len([s for s in spans if s.name == "read_media"]) == 2
+            assert (
+                len(
+                    [
+                        s
+                        for s in spans
+                        if s.attributes.get("langfuse.observation.type") == "embedding"
+                    ]
+                )
+                == 1
+            )
+            assert generation.attributes["langfuse.observation.metadata.cost_source"] == "unpriced"
+            assert "langfuse.observation.cost_details" not in generation.attributes
+
+            ledger = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT * FROM provider_call_ledger WHERE entity_research_job_id=:job "
+                            "AND phase='result' AND provider='gemini'"
+                        ),
+                        {"job": rt.scope.job_id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert ledger["cost_usd"] is None and ledger["media_seconds"] == 60
+            assert ledger["extras_json"]["cost_source"] == "unpriced"
+            assert ledger["extras_json"]["langfuse_trace_id"] == format(
+                generation.context.trace_id, "032x"
+            )
+            assert ledger["extras_json"]["langfuse_observation_id"] == format(
+                generation.context.span_id, "016x"
+            )
+            operation_id = stage.attributes["langfuse.observation.metadata.operation_id"]
+            op = (
+                (
+                    await conn.execute(
+                        text("SELECT * FROM arv2_media_operation WHERE operation_id=:id"),
+                        {"id": UUID(operation_id)},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            assert op["state"] == "succeeded" and op["ledger_ids"] and op["artifact_keys"]
+            report = await cost_report(
+                workspace_id=rt.scope.workspace_id,
+                filters=CostFilters(job_id=rt.scope.job_id),
+                conn_factory=rt._conn_factory,
+            )
+            video_line = next(p for p in report.providers if p.provider == "gemini")
+            assert video_line.unpriced_calls == 1 and video_line.free_calls == 0
+            logs = [
+                e for e in captured.entries if str(e.get("event", "")).startswith("arv2.media.")
+            ]
+            assert all(e["job_id"] == str(rt.scope.job_id) for e in logs)
+            assert speech not in json.dumps(logs, default=str)
+            assert "https://" not in json.dumps(logs, default=str)
+            assert any(e["event"] == "arv2.media.embedding_fallback" for e in logs)
+            assert any(e["event"] == "arv2.media.tool_completed" and e.get("reused") for e in logs)
+            assert any(
+                e.get("state") == "unknown" and e.get("decision") == "reuse_or_wait" for e in logs
+            )
+            assert any(e.get("operation_id") == operation_id and e.get("ledger_ids") for e in logs)
+            assert ops.active_operation.get() is None
+
+    run_async(scenario())
+
+
 async def seeded(conn):
     run, account, job_id = await _seed(conn)
     scope = replace(_scope(run, account), job_id=job_id, catalog_version="v3")

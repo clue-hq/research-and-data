@@ -33,6 +33,12 @@ __all__ = ["ClueLangfuseHandler", "LangfuseCallbacks", "build_langfuse_callbacks
 class ClueLangfuseHandler(CallbackHandler):
     """The SDK handler plus the registry fill and the cost stamp."""
 
+    # The SDK attaches/detaches the current OTel observation in each callback. LangChain
+    # otherwise runs synchronous callbacks in an executor's copied context, so provider
+    # calls inside an async tool become siblings of that tool and context tokens cannot
+    # be restored. Run in the caller's task; concurrent tools still have isolated contexts.
+    run_inline = True
+
     def __init__(self, registry: LangfuseRunRegistry) -> None:
         super().__init__()
         self._registry = registry

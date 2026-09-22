@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
+from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.media_acquisition import raw_responses
 from clue_api.arv2.media_types import EmbeddingContract, content_hash
 
@@ -133,7 +134,16 @@ async def embed_batch(
                     values, query=query, dimensions=dimensions
                 ),
             )
-        except Exception:
+        except Exception as exc:
+            telemetry.record(
+                runtime,
+                "embedding_fallback",
+                warning=True,
+                operation_id=str(op["operation_id"]),
+                item_id=str(item_id),
+                stage=op["stage"],
+                error_code=type(exc).__name__,
+            )
             return None  # raw/ledger and unknown state survived; lexical path is independent.
         vectors = [list(c.vector) for c in result.chunks]
         width = result.dimensions
@@ -220,6 +230,16 @@ async def ensure_index(runtime: Any, version_id: UUID) -> dict[str, Any]:
             ),
             {"ws": runtime.scope.workspace_id, "id": index_id, "state": state},
         )
+    telemetry.record(
+        runtime,
+        "index_completed",
+        version_ref=str(version_id),
+        index_ref=str(index_id),
+        state=state,
+        passages=len(spans),
+        embedded=complete,
+        gap_count=len(gaps),
+    )
     return {
         "index_ref": str(index_id),
         "state": state,

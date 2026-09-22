@@ -30,6 +30,9 @@ This repository is the data and research subsystem for the larger AI-native ABM 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
+- `2026-09-22-arv2-media-implementation.md` — approved media v3 implemented locally;
+  AI Ark v2 remains default. Observability follow-up repairs unpriced video settlement and
+  async trace nesting, adds IDs-only media outcomes; 145 affected tests pass. Live acceptance owed.
 - `2026-09-22-arv2-media-research-planning.md` — media spec/plan only, covering discovery,
   reusable transcripts and evidence; separate founder instruction changed new-launch default
   to AI Ark v2. 70 focused tests pass; media implementation and live acceptance remain pending.

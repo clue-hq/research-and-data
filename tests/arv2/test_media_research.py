@@ -166,6 +166,8 @@ def test_source_qualifications_are_context_and_cannot_be_quoted_as_evidence():
 
 def test_public_video_calls_native_transcription_instead_of_indexed_text():
     body = {
+        "responseId": "native-request-1",
+        "usageMetadata": {"promptTokenCount": 120, "candidatesTokenCount": 50},
         "candidates": [
             {
                 "finishReason": "STOP",
@@ -178,10 +180,11 @@ def test_public_video_calls_native_transcription_instead_of_indexed_text():
                     ]
                 },
             }
-        ]
+        ],
     }
     wire = ScriptedTransport([HttpResponse(200, body=json.dumps(body).encode())])
-    client = _client(wire, MemoryLedger(), ceiling_s=600)
+    ledger = MemoryLedger()
+    client = _client(wire, ledger, ceiling_s=600)
     transcript = client.transcribe_video(
         "https://youtu.be/abcdefghijk",
         duration_s=60,
@@ -193,6 +196,11 @@ def test_public_video_calls_native_transcription_instead_of_indexed_text():
         == "https://www.youtube.com/watch?v=abcdefghijk"
     )
     assert "We need better evidence." in transcript.text
+    result = next(row for row in ledger.rows if row.phase == "result")
+    assert result.provider_request_id == "native-request-1"
+    assert result.cost_usd is None and result.extras["cost_source"] == "unpriced"
+    assert result.extras["prompt_tokens"] == 120 and result.extras["completion_tokens"] == 50
+    assert result.extras["model"] == transcript.model and result.media_seconds == 60
     text, segments, quality = assess_transcript(transcript)
     assert all(s.attribution != "evidence_backed" for s in segments)
     assert quality.coverage == "unknown"

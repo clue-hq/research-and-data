@@ -75,6 +75,8 @@ ask "did this one report its cost?".
 provider did not report), plus `cost_source`, `provider`, `operation`, `raw_ref` and
 `ledger_row_id`. `cost.ledger_row_id` is that request's `result`-phase ledger row — the join back
 to the full trail. `ProviderCaller.totals()` is the running sum across every call one caller made.
+That sum covers known USD amounts only; explicitly unpriced USD remains NULL on the individual
+receipt and is counted separately by the cost report.
 
 `cost_source` labels how well the numbers are known, and it is written on **every** result row's
 `extras["cost_source"]` as well as onto the `CallCost`:
@@ -82,6 +84,7 @@ to the full trail. `ProviderCaller.totals()` is the running sum across every cal
 | value | meaning | where it appears |
 |---|---|---|
 | `metered` | provider metering supplied a number | AI Ark credit headers, Exa, OpenRouter, Gemini |
+| `unpriced` | USD metering and a reliable price are unavailable; `cost_usd` stays NULL while usage survives | native video until billed-usage calibration |
 | `free` | nothing was ever going to be charged — the spec declared no cost reader **and** reserved nothing | the public sources: ATS boards, careers pages, RSS feeds, YouTube watch pages, enclosure `GET`/`HEAD`, the Files API upload/poll legs |
 | `estimate` | documented arithmetic is inferred, or the provider supplied no usable cost and the pre-spend estimate stands in | AI Ark result arithmetic (`credit_basis` identifies it), or unreadable metering |
 

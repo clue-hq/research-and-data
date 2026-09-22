@@ -154,3 +154,36 @@ Before running this code in a test runtime, apply `alembic upgrade head` to that
 explicitly selected isolated database. The implementation adds tables/columns required by the
 new storage lifecycle; it does not migrate a running/shared service automatically. Keep the
 v2 selector for the baseline, and explicitly select v3 only for the authorized media comparison.
+
+## Observability follow-up — 2026-09-22
+
+Audited against Doc R and the Lane 3 Langfuse and entity-tagging standards after the founder's
+explicit observability instruction. Media continues using the existing agent callbacks,
+`ProviderCaller`, artifact/ledger drain and provider-incident recorder. Postgres remains the
+authority; no telemetry service, configuration flag or parallel cost ledger was added.
+
+- Media stage spans carry workspace, project, run, job, item and operation references, and
+  contain the existing provider observations. Raw/ledger links survive failure and replay.
+- Structured `arv2.media.*` logs/events expose ownership decisions, stage outcomes, receipt
+  links, embedding fallback, index coverage and tool outcomes including transcript reuse.
+  Added logs carry identifiers/counts/codes, never transcript text, queries or source URLs.
+  Ownership/receipt events observe transaction work; durable database state remains authoritative.
+- Fixed an accounting defect: native-video `usd_unpriced` metadata previously became a zero-USD
+  estimate. It now settles as `cost_source=unpriced`, `cost_usd=NULL`, retaining usage, model and
+  provider request reference. The existing cost report counts it as unpriced. Langfuse receives
+  no fabricated zero or automatic model-price estimate; the unpriced model remains metadata.
+- Native Gemini `generateContent` is a generation observation. The integrated test also exposed
+  an existing callback-context defect: async tool provider spans appeared under the job instead
+  of under the tool. The shared Langfuse callback now runs inline, keeping OTel attach/detach in
+  the caller's task. Concurrent tools and error exits restore their independent contexts.
+
+Final affected-suite result: **145 passed in 6.73s** with scripted providers, in-memory Langfuse
+export and the isolated disposable Postgres database. This includes tool → stage → generation
+parentage, ledger/trace ID joins, report reconciliation, embedding failure with lexical fallback,
+reuse without duplicate provider calls, logging discipline and shared-spend boundaries.
+Touched Ruff/format and diff checks pass; import contracts **28 kept, 0 broken**. Full mypy
+checks 902 files and retains only the previously recorded `design_leg_wiring.py:1627` failure.
+
+Live acceptance still must verify API/worker export into the configured Langfuse project, entity
+tags/retention, and real provider billing. No paid calls, shared-runtime restart, migration,
+push or deployment were performed for this audit. AI Ark v2 stays default.

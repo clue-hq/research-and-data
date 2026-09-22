@@ -10,7 +10,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import text
 
 from clue_api.arv2 import media_store as store
+from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.research_operations import fingerprint, job_available
+from clue_obs.langfuse import observation
 
 active_resolution: ContextVar[list[str] | None] = ContextVar("arv2_media_resolution", default=None)
 
@@ -70,6 +72,7 @@ async def begin(
             )
             if reclaimed:
                 # No dispatch occurred. The old owner's CAS can no longer send this request.
+                decision(runtime, reclaimed, "reclaimed")
                 return dict(reclaimed), True
         if row["state"] in ("reserved", "dispatched"):
             await conn.execute(
@@ -93,6 +96,7 @@ async def begin(
                 .mappings()
                 .one()
             )
+        decision(runtime, row, "reuse_or_wait")
         return dict(row), False
     used = (
         await conn.execute(
@@ -102,6 +106,15 @@ async def begin(
         )
     ).scalar_one()
     if used + seconds > runtime.settings.arv2_media_seconds_ceiling:
+        telemetry.record(
+            runtime,
+            "allowance_refused",
+            warning=True,
+            stage=stage,
+            item_id=str(item_id),
+            used_seconds=used,
+            requested_seconds=seconds,
+        )
         raise store.unavailable("durable job media-seconds allowance exceeded")
     params.update(id=uuid4(), job=job, owner=uuid4(), seconds=seconds)
     row = (
@@ -120,7 +133,22 @@ async def begin(
     )
     if row is None:
         raise store.unavailable()
+    decision(runtime, row, "reserved")
     return dict(row), True
+
+
+def decision(runtime: Any, op: Any, outcome: str) -> None:
+    # This is an observed ownership decision within a transaction, not a second state store.
+    telemetry.record(
+        runtime,
+        "operation_decision",
+        operation_id=str(op["operation_id"]),
+        item_id=str(op["item_id"]),
+        owner_job=str(op["owner_job"]),
+        stage=op["stage"],
+        state=op["state"],
+        decision=outcome,
+    )
 
 
 async def dispatch(runtime: Any, conn: Any, op: dict[str, Any]) -> None:
@@ -170,6 +198,14 @@ async def attach_receipts(
     recognized = [("linkedin:" + url, url) for url in metadata.get("recognized_subject_urls", [])]
     for key in keys:
         await store.subjects(runtime, conn, key, recognized)
+    telemetry.record(
+        runtime,
+        "receipts_attached",
+        operation_id=str(oid),
+        ledger_ids=[str(value) for value in ledger_ids],
+        artifact_count=len(keys),
+        error_code=error,
+    )
     if row["state"] == "unavailable" or not await job_available(conn, runtime.operation_scope):
         await conn.execute(
             text(
@@ -213,14 +249,58 @@ async def call(runtime: Any, op: dict[str, Any], provider: str, fn: Any) -> Any:
         await dispatch(runtime, conn, op)
     token = active_operation.set(op["operation_id"])
     try:
-        return await runtime.call_provider(provider, fn)
-    except Exception as exc:
-        status = getattr(exc, "http_status", None)
-        known_rejection = status in {400, 404, 413, 415, 422}
-        async with runtime._conn_factory() as conn:
-            await finish(runtime, conn, op, error=type(exc).__name__, known_failure=known_rejection)
-            if known_rejection:
-                await store.release_item(runtime, conn, op["item_id"])
-        raise
+        with observation(
+            "arv2.media.provider_stage",
+            as_type="span",
+            metadata={
+                **telemetry.scope(runtime),
+                "operation_id": str(op["operation_id"]),
+                "item_id": str(op["item_id"]),
+                "stage": op["stage"],
+                "provider": provider,
+            },
+        ) as current:
+            telemetry.record(
+                runtime,
+                "provider_stage_started",
+                operation_id=str(op["operation_id"]),
+                item_id=str(op["item_id"]),
+                stage=op["stage"],
+                provider=provider,
+            )
+            try:
+                result = await runtime.call_provider(provider, fn)
+            except Exception as exc:
+                status = getattr(exc, "http_status", None)
+                known_rejection = status in {400, 404, 413, 415, 422}
+                async with runtime._conn_factory() as conn:
+                    await finish(
+                        runtime, conn, op, error=type(exc).__name__, known_failure=known_rejection
+                    )
+                    if known_rejection:
+                        await store.release_item(runtime, conn, op["item_id"])
+                state = "failed" if known_rejection else "unknown"
+                current.update(
+                    level="ERROR", status_message=type(exc).__name__, output={"state": state}
+                )
+                telemetry.record(
+                    runtime,
+                    "provider_stage_failed",
+                    warning=True,
+                    operation_id=str(op["operation_id"]),
+                    stage=op["stage"],
+                    state=state,
+                    error_code=type(exc).__name__,
+                )
+                raise
+            current.update(output={"state": "provider_returned"})
+            telemetry.record(
+                runtime,
+                "provider_stage_completed",
+                operation_id=str(op["operation_id"]),
+                stage=op["stage"],
+                state="provider_returned",
+            )
+            return result
     finally:
         active_operation.reset(token)

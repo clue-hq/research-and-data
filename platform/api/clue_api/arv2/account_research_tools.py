@@ -2546,6 +2546,10 @@ def _governed(
                     if runtime.finalization is not None:
                         runtime.finalization["media"] = coverage
                     result = {**result, "media": coverage}
+                if has_capability(runtime.scope.catalog_version, "media_research"):
+                    from clue_api.arv2.media_telemetry import tool_result
+
+                    tool_result(runtime, name, result)
                 return json.dumps(result, default=str)
             except RefusalError as refused:
                 envelope = _refusal_envelope(refused, codes)

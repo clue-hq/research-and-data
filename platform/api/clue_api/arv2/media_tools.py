@@ -12,6 +12,7 @@ from sqlalchemy import text
 from clue_api.arv2 import media_acquisition as acquisition
 from clue_api.arv2 import media_retrieval as retrieval
 from clue_api.arv2 import media_store as store
+from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.account_research_refusals import RefusalError
 from clue_api.arv2.gemini_media_client import GeminiMediaError
 from clue_api.arv2.media_resolution import Resolution
@@ -242,6 +243,13 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                         runtime, UUID(result["version_ref"])
                     )
                 except Exception as exc:
+                    telemetry.record(
+                        runtime,
+                        "index_unavailable",
+                        warning=True,
+                        version_ref=result["version_ref"],
+                        error_code=type(exc).__name__,
+                    )
                     result["index"] = {"state": "unavailable", "gap": type(exc).__name__}
                 result["resolution_gaps"] = gaps
                 return result

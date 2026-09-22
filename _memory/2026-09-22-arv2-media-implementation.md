@@ -29,3 +29,26 @@
 - Account/person v3 bundle digests recorded; v1/v2 resource bytes unchanged. Default/settings/example/local selector remains v2. Video setting parity confirmed.
 - Apply migration to the explicitly selected isolated test DB before starting new-code API/workers. Shared services/DBs were not changed. Existing repo-wide Ruff/mypy/quarantine failures remain documented outside this feature.
 - No paid live calls, service restarts, push, PR or deployment. User .context/attachments/V4drO2/ remains untracked and untouched.
+
+## Observability follow-up (founder request)
+
+- Audited against Doc R and Lane 3 rulings/slices 3–4. All media wire calls already use
+  ProviderCaller plus the shared raw/ledger drain and incident recorder. Keep Postgres authoritative;
+  no new telemetry backend or flags, and no duplicated tool/model observations.
+- Found native-video `usd_unpriced` extras were not consumed by shared settlement: zero USD was
+  being booked as an estimate. Added nullable unpriced settlement, model/request/token usage,
+  native generation classification, and no inferred Langfuse model pricing for unknown USD.
+- Added IDs-only media logs/events for ownership decisions, provider-stage lifecycle, receipt
+  links, embedding fallback, index outcome and tool outcome/reuse. Stage spans nest existing
+  provider observations; no transcript/URL/query text is copied into the added structured logs.
+- Completed behavior suite initially 118 passed/1 failed: integrated trace test exposed shared
+  callback context loss (provider stage parent was the research job, not its tool). Set the
+  Langfuse callback to run inline so OTel attach/detach happens in the caller's async context.
+  Concurrent successful/failing tools and model/agent regressions: 10 passed. Integrated media
+  tool → native generation → durable ledger → cost report plus fallback/reuse: 1 passed.
+- Final affected suite: **145 passed (6.73s)**, covering media/replay, raw/ledger, provider
+  settlement, Langfuse callbacks/agent runtime, cost reports, logging discipline and shared-spend
+  boundaries. Touched Ruff and diff checks pass; import-linter 28 kept/0 broken. Full mypy checks
+  902 source files and reports only the prior design_leg_wiring.py:1627 Mapping/dict failure.
+- No paid providers, service restart, migration, live exporter calls, push or deployment.
+  Cloud export/retention and actual billed video cost remain founder-triggered live acceptance.

@@ -139,8 +139,10 @@ class CostReading:
 #:   enclosure ``GET``/``HEAD``, the Files API upload legs) are all this, and labelling them
 #:   ``estimate`` would quietly imply an unread bill that does not exist.
 #: * ``estimate`` — a reader existed and reported nothing, so the pre-spend estimate stands in for
-#:   the cost. This is the only value that means "we do not actually know".
-CostSource = Literal["metered", "estimate", "free"]
+#:   the cost.
+#: * ``unpriced`` — the adapter explicitly declares ``usd_unpriced`` and no USD metering
+#:   answered. Usage remains recorded, but USD stays NULL rather than becoming a measured zero.
+CostSource = Literal["metered", "estimate", "free", "unpriced"]
 
 
 @dataclass(frozen=True)
@@ -244,7 +246,7 @@ def _observation_type(operation: str) -> ObservationType:
     """What kind of work a provider operation is, for the tree: a model completion, an embedding,
     or a fetch/tool hop (the default — an ATS board, a watch page, a media upload leg)."""
     lowered = operation.lower()
-    if lowered.endswith("chat/completions") or lowered == "agent_completion":
+    if lowered.endswith(("chat/completions", ":generatecontent")) or lowered == "agent_completion":
         return "generation"
     if "embed" in lowered:
         return "embedding"
@@ -750,18 +752,27 @@ class ProviderCaller:
         told_us_nothing = (
             cost.cost_usd is None and cost.credits is None and cost.media_seconds is None
         )
-        source = (
-            "estimate"
+        unpriced = cost.cost_usd is None and (
+            cost.extras.get("usd_unpriced") is True or spec.extras.get("usd_unpriced") is True
+        )
+        source: CostSource = (
+            "unpriced"
+            if unpriced
+            else "estimate"
             if cost.inferred
             else self._cost_source(spec, told_us_nothing=told_us_nothing)
         )
-        usd = spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0))
+        usd = (
+            None
+            if unpriced
+            else (spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0)))
+        )
         credits = spec.estimate.credits if told_us_nothing else (cost.credits or Decimal(0))
         media_seconds = (
             spec.estimate.media_seconds if told_us_nothing else (cost.media_seconds or 0)
         )
         over_ceiling = self._exceeds_ceilings(
-            SpendEstimate(usd=usd, credits=credits, media_seconds=media_seconds)
+            SpendEstimate(usd=usd or Decimal(0), credits=credits, media_seconds=media_seconds)
         )
         if over_ceiling:
             guardrail(
@@ -771,7 +782,7 @@ class ProviderCaller:
             )
         with self._totals_lock:
             self._totals = SpendTotals(
-                usd=self._totals.usd + usd,
+                usd=self._totals.usd + (usd or Decimal(0)),
                 credits=self._totals.credits + credits,
                 media_seconds=self._totals.media_seconds + media_seconds,
             )
@@ -812,7 +823,7 @@ class ProviderCaller:
                     "provider_request_id": cost.provider_request_id,
                     "raw_ref": raw_ref,
                 },
-                cost_details={"total": float(usd)},
+                cost_details={"total": float(usd)} if usd is not None else None,
                 usage_details=_usage_details(cost, credits=credits, media_seconds=media_seconds)
                 or None,
                 metadata={
@@ -824,11 +835,14 @@ class ProviderCaller:
                     # ``tool`` fetch, an ``agent`` leg). The money is therefore repeated in
                     # metadata, which every observation type keeps, so a free or non-token call
                     # still shows what it settled at.
-                    "cost_usd": str(usd),
+                    "cost_usd": str(usd) if usd is not None else None,
                     "credits": str(credits),
                     "media_seconds": media_seconds,
+                    # An unpriced call must not acquire a vendor price-table estimate in
+                    # Langfuse. Keep its model as metadata until authoritative pricing exists.
+                    "model": model,
                 },
-                **({"model": model} if isinstance(model, str) and model else {}),
+                **({"model": model} if isinstance(model, str) and model and not unpriced else {}),
                 **(
                     {"level": "ERROR", "status_message": error_code or outcome}
                     if outcome != "ok"
