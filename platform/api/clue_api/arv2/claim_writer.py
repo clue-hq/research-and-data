@@ -119,7 +119,8 @@ class LenientClaimWriter:
                 await conn.execute(
                     text("""
                 SELECT EXISTS(SELECT 1 FROM arv2_research_job WHERE run_id=:run
-                  AND workspace_id=:ws AND subject_entity_id=:contact AND right(profile_ref,2)='v2'
+                  AND workspace_id=:ws AND subject_entity_id=:contact AND profile_ref IN
+        ('agent-profile:arv2-person:v2','agent-profile:arv2-person:v3')
                   AND ((input_refs->>'privacy_stopped')::boolean IS TRUE
                        OR COALESCE(input_refs->'blocked_channels','[]'::jsonb) ? :field))
             """),
@@ -143,6 +144,42 @@ class LenientClaimWriter:
                 subject_id=str(draft.markers["provider_subject_id"]),
                 artifact_key=draft.artifact_key,
             )
+        if draft.markers.get("media"):
+            from sqlalchemy import text
+
+            media = draft.markers["media"]
+            if not isinstance(media, dict):
+                raise ValueError("invalid media provenance")
+            available = (
+                await conn.execute(
+                    text("""
+                SELECT EXISTS(SELECT 1 FROM arv2_media_transcript t
+                  JOIN arv2_media_item i USING(workspace_id,item_id)
+                  JOIN artifact a ON a.storage_key=t.text_key AND a.workspace_id=t.workspace_id
+                  WHERE t.workspace_id=:ws AND t.version_id=CAST(:version AS uuid)
+                    AND t.text_key=:key AND i.erased_at IS NULL AND a.erased_at IS NULL
+                    AND t.expires_at>now() AND i.expires_at>now()
+                    AND (a.expires_at IS NULL OR a.expires_at>now()))
+            """),
+                    {
+                        "ws": draft.workspace_id,
+                        "version": media.get("version_ref"),
+                        "key": draft.artifact_key,
+                    },
+                )
+            ).scalar_one()
+            if not available:
+                raise ValueError("media evidence unavailable")
+            locked = await conn.execute(
+                text(
+                    "SELECT storage_key FROM artifact WHERE workspace_id=:ws AND "
+                    "storage_key=:key AND erased_at IS NULL AND "
+                    "(expires_at IS NULL OR expires_at>now()) FOR UPDATE"
+                ),
+                {"ws": draft.workspace_id, "key": draft.artifact_key},
+            )
+            if locked.scalar_one_or_none() is None:
+                raise ValueError("media evidence became unavailable before claim write")
         markers: dict[str, JsonValue] = dict(draft.markers)
         registered = False
 

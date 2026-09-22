@@ -35,7 +35,8 @@ async def register_provider_subjects(
     for subject_id, linkedin in sorted(set(subjects), key=lambda item: (item[0], item[1] or "")):
         await conn.execute(
             text("""
-            INSERT INTO provider_identity(workspace_id,provider,subject_id,evidence_artifact_key)
+            INSERT INTO
+        provider_identity(workspace_id,provider,subject_id,evidence_artifact_key)
             VALUES (:ws,:provider,:subject,:artifact) ON CONFLICT DO NOTHING
         """),
             {
@@ -78,6 +79,7 @@ async def register_provider_subjects(
               expires_at=LEAST(COALESCE(expires_at,now()+interval '30 days'),
                                now()+interval '30 days'),
               privacy_erased=privacy_erased OR :erased,
+              erasure_reason=CASE WHEN :erased THEN 'privacy' ELSE erasure_reason END,
               erased_at=CASE WHEN :erased THEN COALESCE(erased_at,now()) ELSE erased_at END,
               source_url=CASE WHEN :erased THEN NULL ELSE source_url END
             WHERE storage_key=:key AND workspace_id=:ws
@@ -277,7 +279,8 @@ async def erase_provider_evidence(
             (
                 await conn.execute(
                     text("""
-            UPDATE artifact SET privacy_erased=true,erased_at=now(),source_url=NULL
+            UPDATE artifact SET
+        privacy_erased=true,erasure_reason='privacy',erased_at=now(),source_url=NULL
             WHERE workspace_id=:ws AND storage_key IN (
               SELECT artifact_key FROM provider_artifact_subject
               WHERE workspace_id=:ws AND provider=:provider AND subject_id=:subject)

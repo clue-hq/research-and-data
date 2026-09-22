@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_catalog import (
     arv2_account_profile_sha256,
     arv2_person_profile_sha256,
+    has_capability,
 )
 from clue_api.arv2.account_research_claims import (
     PERSONA_FIELD,
@@ -331,7 +332,7 @@ async def launch_arv2_account_research(
                     icp_version=icp.icp_version,
                 )
             )
-            if settings.arv2_research_catalog_version == "v2"
+            if has_capability(settings.arv2_research_catalog_version, "committee_discovery")
             else None,
             created_at=now(),
         ),
@@ -789,7 +790,7 @@ async def launch_arv2_person_research(
                     icp_version=icp.icp_version,
                 )
             )
-            if settings.arv2_research_catalog_version == "v2"
+            if has_capability(settings.arv2_research_catalog_version, "committee_discovery")
             else None,
             created_at=now(),
         ),

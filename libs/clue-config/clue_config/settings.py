@@ -342,7 +342,7 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
     # New launches use AI Ark committee discovery (founder ruling 2026-09-22).
     # Historical jobs still resolve their pinned catalog, including legacy v1 rows.
-    arv2_research_catalog_version: Literal["v1", "v2"] = "v2"
+    arv2_research_catalog_version: Literal["v1", "v2", "v3"] = "v2"
     arv2_account_research_enabled: bool = True
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
@@ -356,6 +356,7 @@ class Settings(BaseSettings):
     # **Native Gemini** model id — the one ARV2 call that bypasses OpenRouter, because OpenRouter
     # serves neither this transcription model nor a file upload. It reads
     # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
+    arv2_media_video_model: str = "gemini-3.5-flash-lite"
     arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
     # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
     # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.

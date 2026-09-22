@@ -55,6 +55,7 @@ from clue_api.arv2.account_research_catalog import (
     build_system_prompt,
     bundle_pin,
     catalog_version,
+    has_capability,
     load_account_resources,
     load_person_resources,
 )
@@ -678,7 +679,7 @@ class Arv2AccountResearchWorkHandler:
             media_budget=media_budget,
             now=self._clock,
         )
-        if composition.scope.catalog_version == "v2":
+        if has_capability(composition.scope.catalog_version, "committee_discovery"):
             if job.subject_type == "account" and job.selection_claim_ids is not None:
                 runtime.finalization = {
                     "summary": "Recovered the committed committee selection.",
@@ -1017,8 +1018,25 @@ class Arv2AccountResearchWorkHandler:
                 link_audit=link_audit,
                 model_id=composition.model_id,
             )
+            if has_capability(composition.scope.catalog_version, "media_research"):
+                from clue_api.arv2 import media_store
+                from clue_api.arv2.account_research_refusals import RefusalError
+
+                try:
+                    media = await media_store.state(runtime, conn)
+                    finalization["media"] = {
+                        "attempts": media["attempts"],
+                        "coverage": media["coverage"],
+                        "discovery": media["discovery"],
+                        "exhaustive": False,
+                        "recording_count": media["recording_count"],
+                        "item_refs": [str(r["item_id"]) for r in media["recordings"]],
+                        "item_refs_truncated": media["recordings_truncated"],
+                    }
+                except RefusalError:
+                    finalization["media"] = {"coverage": "unavailable", "exhaustive": False}
             if (
-                composition.scope.catalog_version == "v2"
+                has_capability(composition.scope.catalog_version, "committee_discovery")
                 and composition.job.subject_type == "person"
             ):
                 from clue_api.arv2 import research_operations
@@ -1026,7 +1044,7 @@ class Arv2AccountResearchWorkHandler:
                 channels = await research_operations.operation_states(conn, runtime.operation_scope)
                 finalization["channels"] = {**channels, **runtime.channel_states}
             if (
-                composition.scope.catalog_version == "v2"
+                has_capability(composition.scope.catalog_version, "committee_discovery")
                 and composition.job.subject_type == "account"
             ):
                 from clue_api.arv2 import research_operations
@@ -1060,7 +1078,10 @@ class Arv2AccountResearchWorkHandler:
                     await self._store.set_job_stage(
                         conn, job_id=composition.job.job_id, stage="member_research"
                     )
-            if composition.scope.catalog_version == "v2" and committee.skipped:
+            if (
+                has_capability(composition.scope.catalog_version, "committee_discovery")
+                and committee.skipped
+            ):
                 await conn.execute(
                     text(
                         "UPDATE arv2_research_job SET finalization_json=finalization_json || "
@@ -1102,7 +1123,7 @@ class Arv2AccountResearchWorkHandler:
         problem would turn a finished account into one that must be researched again.
         """
         candidates = (runtime.finalization or {}).get("committee_candidates") or []
-        if composition.scope.catalog_version == "v2":
+        if has_capability(composition.scope.catalog_version, "committee_discovery"):
             from clue_api.arv2 import research_operations
 
             candidates = await research_operations.selected_candidates(
@@ -1312,6 +1333,7 @@ def _receipt(
         "summary": finalization.get("summary", ""),
         "fit_verdicts": finalization.get("fit_verdicts", []),
         "gaps": finalization.get("gaps", []),
+        **({"media": finalization["media"]} if "media" in finalization else {}),
         **_written_down(
             outcome=outcome,
             runtime=runtime,
@@ -1364,6 +1386,7 @@ def _person_receipt(
         # the two agree whenever there is a finalization at all.
         "compliance_log": finalization.get("compliance_log") or list(runtime.compliance_log),
         "gaps": finalization.get("gaps", []),
+        **({"media": finalization["media"]} if "media" in finalization else {}),
         **_written_down(
             outcome=outcome,
             runtime=runtime,
@@ -1505,6 +1528,7 @@ class _LiveClients:
             gemini_api_key=self._gemini_api_key,
             short_model=self._settings.arv2_media_short_model,
             transcribe_model=self._settings.arv2_media_transcribe_model,
+            video_model=self._settings.arv2_media_video_model,
             embedding_model=self._settings.arv2_embedding_model,
             media_budget=self._media_budget,
             short_max_seconds=self._settings.arv2_media_short_max_seconds,

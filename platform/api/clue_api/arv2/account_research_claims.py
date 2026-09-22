@@ -36,6 +36,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
 
+from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPerson, AiArkPhone
 from clue_api.arv2.ats_client import BoardPostings
 from clue_api.arv2.claim_writer import ClaimDraft
@@ -1508,7 +1509,7 @@ def committee_candidate_claims(
                 "confirmed_by": confirmed_by,
                 "vacant_seat": (
                     bool(candidate.get("vacant_seat"))
-                    if scope.catalog_version == "v2"
+                    if has_capability(scope.catalog_version, "committee_discovery")
                     else bool(candidate.get("vacant_seat")) or not name
                 ),
                 **(
@@ -1526,7 +1527,7 @@ def committee_candidate_claims(
                             "rationale",
                         )
                     }
-                    if scope.catalog_version == "v2"
+                    if has_capability(scope.catalog_version, "committee_discovery")
                     else {}
                 ),
                 # The why behind the seat, when the agent gave one. It rides the account claim as

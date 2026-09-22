@@ -1,6 +1,6 @@
 # ARV2 media discovery and reusable transcript research
 
-**Status:** proposed design for founder review; no runtime implementation or activation.
+**Status:** approved by founder 2026-09-22; offline implementation in progress. Live acceptance and activation remain separate.
 **Date / inspected base:** 2026-09-22 / `99253e5d4`, Jerusalem v1.
 **Implementation plan:** [ordered work and acceptance gates](../plans/2026-09-22-arv2-media-research.md).
 **Depends on:** the locally implemented [AI Ark committee design](2026-09-22-arv2-ai-ark-committee-discovery-design.md), whose live acceptance remains separate.
@@ -21,11 +21,9 @@ Tools own URL resolution, acquisition, storage, retrieval, evidence checks, and 
 No new media agent, scheduler, separate research pipeline, or child agent per search is added.
 Source records and indexes are evidence infrastructure; domain findings remain claims.
 
-The founder requested the spec and implementation plan first. All new choices below are
-proposed defaults for review, not previously ratified rulings. This document does not authorize
-media implementation, paid canaries, rollout, or a push. The founder separately authorized the
-v2 default-selector change during this planning session; that small configuration change is
-implemented independently of the proposed media work.
+The founder reviewed and approved this spec and plan, then authorized offline implementation
+on 2026-09-22. Paid canaries, rollout and publishing remain separate. The v2 default-selector
+change was authorized and committed independently; media v3 remains opt-in pending live review.
 
 Binding foundations:
 
@@ -587,3 +585,24 @@ native-video exception/model proposal, workspace-only reuse, 30-day source reten
 semantics, attribution labels and the acceptance targets. They do not reopen the approved
 AI Ark email/phone or Exa-failure-continuation decisions. A provider limitation discovered during
 implementation must be recorded with its effect on scope before claiming the relevant case done.
+
+
+## Approved implementation record (2026-09-22)
+
+The founder authorized offline implementation of this spec and its plan after review. The base
+is `79520ffca`, pulled and already current. Default catalog remains v2 until explicit live review.
+Only v3 supersedes legacy fixed-six person sweeps, blanket domain restrictions, indexed-text-only
+YouTube handling, excerpt-only transcript access and mandatory/inferred timestamps. AI Ark v2
+company locks, SMART discovery, work-email/phone channels, seed reuse and Exa-failure continuation
+remain binding. Old v1/v2 resource bytes remain unchanged.
+
+Implementation detail: the first chunk recipe uses a deterministic conservative UTF-8 byte
+bound (target 400, maximum 800, overlap 80), which also bounds byte-fallback token counts.
+This produces smaller passages than the proposed 400-token target and avoids a tokenizer's
+runtime download dependency. Exact offsets/full-source paging remain lossless. The recipe is
+part of the embedding contract and changing it creates a new index generation; the final
+Recall@8 target still requires the independently annotated live acceptance set.
+
+Native-video metering records provider usage and reserved seconds with an explicit
+`usd_unpriced` qualification. The audio PoC price is not reused as a video price. Current billed
+USD reconciliation remains a live acceptance requirement before activating v3.

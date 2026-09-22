@@ -32,6 +32,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import JobScope, committee_member_claims
 from clue_api.arv2.account_research_launch import QueuedJob, arv2_job_id
 from clue_api.arv2.account_research_store import (
@@ -232,7 +233,9 @@ async def _fan_out(
     """
     linkedin = fold_linkedin_url(candidate.get("linkedin_url"))
     refs = (
-        {"version": 1, "parent_job_id": str(job.job_id)} if scope.catalog_version == "v2" else None
+        {"version": 1, "parent_job_id": str(job.job_id)}
+        if has_capability(scope.catalog_version, "committee_discovery")
+        else None
     )
     if candidate.get("candidate_ref"):
         contact_id, created = await resolve_provider_contact(
@@ -252,7 +255,10 @@ async def _fan_out(
         contact_id, account_id, created = await _resolve_contact(
             conn, run=run, account_id=job.account_entity_id, name=name, linkedin_url=linkedin
         )
-        if scope.catalog_version == "v2" and account_id != job.account_entity_id:
+        if (
+            has_capability(scope.catalog_version, "committee_discovery")
+            and account_id != job.account_entity_id
+        ):
             raise ProviderIdentityConflict("employment_conflict")
     if candidate.get("selection_claim_id"):
         await link_selection_claim(

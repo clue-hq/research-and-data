@@ -39,6 +39,10 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_research.claimstore",
     # D1: the entity, membership and project-run writers the master plan keeps (not quarantined).
     "clue_research.identity",
+    # Media v3 reuses these pure public-URL/DNS safety primitives. This does not admit the
+    # official-site acquisition engine, agents, resolvers, scoring or source waterfall.
+    "clue_research.official_site.safety",
+    "clue_research.official_site.url_policy",
     "clue_research.membership",
     "clue_research.durable.project_run",
     # D1: the pack-loader list (composition root data, not a lane)

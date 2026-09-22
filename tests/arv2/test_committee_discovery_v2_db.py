@@ -126,9 +126,9 @@ def response(body, status=200):
     return HttpResponse(status=status, body=json.dumps(body).encode())
 
 
-async def ready_account(conn, *, no_linkedin=False):
+async def ready_account(conn, *, no_linkedin=False, catalog_version="v2"):
     run, account, job_id = await _seed(conn)
-    scope = replace(_scope(run, account), job_id=job_id, catalog_version="v2")
+    scope = replace(_scope(run, account), job_id=job_id, catalog_version=catalog_version)
     storage = _MemoryStorage()
     wire = ScriptedTransport(
         [
@@ -173,10 +173,13 @@ async def ready_account(conn, *, no_linkedin=False):
     return run, account, rt, storage, wire, result
 
 
-def test_full_handoff_profile_reuse_channels_and_replay():
+@pytest.mark.parametrize("catalog_version", ["v2", "v3"])
+def test_full_handoff_profile_reuse_channels_and_replay(catalog_version):
     async def scenario():
         async with rollback_conn(seed_pack=True) as conn:
-            run, account, rt, storage, wire, result = await ready_account(conn, no_linkedin=True)
+            run, account, rt, storage, wire, result = await ready_account(
+                conn, no_linkedin=True, catalog_version=catalog_version
+            )
             assert len(wire.requests) == 2
             again = await discover_people(
                 rt,
@@ -215,12 +218,12 @@ def test_full_handoff_profile_reuse_channels_and_replay():
                 candidates=candidates,
                 writer=rt._writer,
                 catalog=COMMITTEE_CATALOG,
-                person_profile_sha256=arv2_person_profile_sha256(version="v2"),
-                person_profile_ref="agent-profile:arv2-person:v2",
+                person_profile_sha256=arv2_person_profile_sha256(version=catalog_version),
+                person_profile_ref=f"agent-profile:arv2-person:{catalog_version}",
             )
             assert not step.skipped and len(step.jobs) == 1
             child = await store.read_job(conn, job_id=step.jobs[0].job_id)
-            assert child.profile_ref == "agent-profile:arv2-person:v2"
+            assert child.profile_ref == f"agent-profile:arv2-person:{catalog_version}"
             assert set(child.input_refs) == {"version", "candidate_ref", "parent_job_id"}
             person_scope = replace(
                 rt.scope,
@@ -538,7 +541,8 @@ def test_expired_profile_is_unreadable_and_purged():
     run_async(scenario())
 
 
-def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure():
+@pytest.mark.parametrize("catalog_version", ["v2", "v3"])
+def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(catalog_version):
     from uuid import uuid4
 
     from langchain_core.messages import AIMessage, ToolMessage
@@ -613,8 +617,8 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure()
                     " jsonb) WHERE run_id=:id"
                 ),
                 {
-                    "ref": "agent-profile:arv2-account:v2",
-                    "digest": arv2_account_profile_sha256(version="v2"),
+                    "ref": f"agent-profile:arv2-account:{catalog_version}",
+                    "digest": arv2_account_profile_sha256(version=catalog_version),
                     "key": key,
                     "sha": sha,
                     "pin": json.dumps(pin),
@@ -627,8 +631,8 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure()
                     "WHERE job_id=:id"
                 ),
                 {
-                    "ref": "agent-profile:arv2-account:v2",
-                    "digest": arv2_account_profile_sha256(version="v2"),
+                    "ref": f"agent-profile:arv2-account:{catalog_version}",
+                    "digest": arv2_account_profile_sha256(version=catalog_version),
                     "id": job_id,
                 },
             )
@@ -825,8 +829,10 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure()
     run_async(scenario())
 
 
-async def seeded_person_runtime(conn, wire):
-    run, account, rt, storage, _, result = await ready_account(conn)
+async def seeded_person_runtime(conn, wire, *, catalog_version="v2"):
+    run, account, rt, storage, _, result = await ready_account(
+        conn, catalog_version=catalog_version
+    )
     await _finalize_research(
         rt,
         FinalizeResearchArgs(
@@ -849,8 +855,8 @@ async def seeded_person_runtime(conn, wire):
         candidates=await ops.selected_candidates(conn, rt.operation_scope),
         writer=rt._writer,
         catalog=COMMITTEE_CATALOG,
-        person_profile_sha256=arv2_person_profile_sha256(version="v2"),
-        person_profile_ref="agent-profile:arv2-person:v2",
+        person_profile_sha256=arv2_person_profile_sha256(version=catalog_version),
+        person_profile_ref=f"agent-profile:arv2-person:{catalog_version}",
     )
     child = await store.read_job(conn, job_id=step.jobs[0].job_id)
     scope = replace(
@@ -1092,7 +1098,8 @@ def test_unseeded_person_uses_bound_lookup_then_same_channels_without_second_loo
     run_async(scenario())
 
 
-def test_v2_launch_pins_version_and_rollback_keeps_old_jobs(tmp_path):
+@pytest.mark.parametrize("catalog_version", ["v2", "v3"])
+def test_v2_launch_pins_version_and_rollback_keeps_old_jobs(tmp_path, catalog_version):
     from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
     from clue_api.arv2.account_research_launch import launch_arv2_account_research
     from clue_storage.fs import FsStorage
@@ -1105,19 +1112,22 @@ def test_v2_launch_pins_version_and_rollback_keeps_old_jobs(tmp_path):
             fixture = await seed_icp_fixture(conn, storage)
             request = _request(fixture)
             v2 = settings_for(
-                arv2_account_research_enabled=True, arv2_research_catalog_version="v2"
+                arv2_account_research_enabled=True, arv2_research_catalog_version=catalog_version
             )
             receipt = await launch_arv2_account_research(
                 conn,
                 request,
                 settings=v2,
                 storage=storage,
-                profile_sha256=arv2_account_profile_sha256(version="v2"),
+                profile_sha256=arv2_account_profile_sha256(version=catalog_version),
             )
             run = await store.read_run(conn, run_id=receipt.run_id)
-            assert run.profile_ref.endswith(":v2") and run.persona_pin["state"] == "missing"
+            assert (
+                run.profile_ref.endswith(":" + catalog_version)
+                and run.persona_pin["state"] == "missing"
+            )
             assert all(
-                j.profile_ref.endswith(":v2")
+                j.profile_ref.endswith(":" + catalog_version)
                 for j in await store.list_jobs(conn, run_id=run.run_id)
             )
             replay = await launch_arv2_account_research(
@@ -1125,7 +1135,7 @@ def test_v2_launch_pins_version_and_rollback_keeps_old_jobs(tmp_path):
                 request,
                 settings=v2,
                 storage=storage,
-                profile_sha256=arv2_account_profile_sha256(version="v2"),
+                profile_sha256=arv2_account_profile_sha256(version=catalog_version),
             )
             assert replay.replayed and replay.run_id == run.run_id
             v1 = settings_for(
@@ -1139,7 +1149,9 @@ def test_v2_launch_pins_version_and_rollback_keeps_old_jobs(tmp_path):
                 profile_sha256=arv2_account_profile_sha256(),
             )
             assert rollback.run_id != receipt.run_id
-            assert (await store.read_run(conn, run_id=run.run_id)).profile_ref.endswith(":v2")
+            assert (await store.read_run(conn, run_id=run.run_id)).profile_ref.endswith(
+                ":" + catalog_version
+            )
             assert (await store.read_run(conn, run_id=rollback.run_id)).profile_ref.endswith(":v1")
 
     run_async(scenario())

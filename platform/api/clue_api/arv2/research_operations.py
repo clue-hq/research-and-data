@@ -88,7 +88,8 @@ async def begin(
     won = result.scalar_one_or_none() is not None
     await conn.execute(
         text("""
-        UPDATE arv2_research_operation SET state='unknown',error_code='dispatch_outcome_unknown'
+        UPDATE arv2_research_operation SET
+        state='unknown',error_code='dispatch_outcome_unknown'
         WHERE operation_id=:id AND workspace_id=:ws AND state='running' AND lease_until<now()
     """),
         {"id": oid, "ws": scope.workspace_id},
@@ -281,10 +282,12 @@ async def stop_contact_jobs(
     await conn.execute(
         text("""
         UPDATE arv2_research_job SET input_refs=input_refs || jsonb_build_object(
-          'privacy_stopped', COALESCE((input_refs->>'privacy_stopped')::boolean,false) OR :stop,
+          'privacy_stopped', COALESCE((input_refs->>'privacy_stopped')::boolean,false) OR
+        :stop,
           'blocked_channels', COALESCE(input_refs->'blocked_channels','[]'::jsonb)
                               || CAST(:blocked AS jsonb))
-        WHERE workspace_id=:ws AND subject_entity_id=:contact AND right(profile_ref,2)='v2'
+        WHERE workspace_id=:ws AND subject_entity_id=:contact AND profile_ref IN
+        ('agent-profile:arv2-person:v2','agent-profile:arv2-person:v3')
     """),
         {
             "ws": workspace_id,
@@ -295,7 +298,8 @@ async def stop_contact_jobs(
     )
     await conn.execute(
         text("""
-        UPDATE artifact SET privacy_erased=true,erased_at=now(),source_url=NULL
+        UPDATE artifact SET
+        privacy_erased=true,erasure_reason='privacy',erased_at=now(),source_url=NULL
         WHERE workspace_id=:ws AND storage_key IN (
           SELECT o.artifact_key FROM arv2_research_operation o
           JOIN arv2_research_job j USING(job_id)

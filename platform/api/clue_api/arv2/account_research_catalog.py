@@ -27,6 +27,21 @@ ARV2_PERSON_CATALOG_VERSION = "v1"
 ARV2_PERSON_PROFILE_REF = f"agent-profile:arv2-person:{ARV2_PERSON_CATALOG_VERSION}"
 
 
+# Explicit versions prevent future bundles silently falling back to v1 behavior.
+CATALOG_CAPABILITIES = {
+    "v1": frozenset(),
+    "v2": frozenset({"committee_discovery"}),
+    "v3": frozenset({"committee_discovery", "media_research"}),
+}
+
+
+def has_capability(version: str, capability: str) -> bool:
+    try:
+        return capability in CATALOG_CAPABILITIES[version]
+    except KeyError as exc:
+        raise ValueError(f"unsupported ARV2 catalog version: {version}") from exc
+
+
 def arv2_catalog_root(agent: Arv2Agent, version: str) -> Path:
     """The directory holding the five files of one agent's catalog version."""
     # platform/api/clue_api/arv2/<this file> -> parents[3] == platform/
@@ -50,7 +65,7 @@ def catalog_version(profile_ref: str | None) -> str:
     if profile_ref in {
         f"agent-profile:{agent}:{version}"
         for agent in ("arv2-account", "arv2-person")
-        for version in ("v1", "v2")
+        for version in CATALOG_CAPABILITIES
     }:
         return profile_ref.rsplit(":", 1)[1]
     raise ValueError(f"unsupported ARV2 profile reference: {profile_ref}")

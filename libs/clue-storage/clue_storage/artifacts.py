@@ -1,7 +1,8 @@
 """The ``artifact`` table DAL (PB-B2.2) — snapshot rows + the durable erasure lifecycle.
 
 Plain async functions over ``AsyncConnection`` in the repo's raw-SQL style (the ``clue_spine``
-pattern: one implementation will ever exist, so no repository/service layer). The table's UNIQUE
+pattern: one implementation will ever exist, so no repository/service layer). The
+        table's UNIQUE
 ``storage_key`` makes :func:`record_artifact` the dedup — identical bytes in one workspace land
 on one row, however many times a fetch (or a re-flush of the same sink) records them.
 
@@ -285,6 +286,7 @@ async def purge_erased_artifacts(
     await conn.execute(
         text(
             "UPDATE artifact SET privacy_erased=true, "
+            "erasure_reason=COALESCE(erasure_reason,'retention'), "
             "erased_at=COALESCE(erased_at,now()), source_url=NULL WHERE "
             "expires_at<=now() AND purged_at IS NULL"
         )

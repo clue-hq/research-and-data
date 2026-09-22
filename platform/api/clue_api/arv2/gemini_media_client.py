@@ -356,6 +356,7 @@ class Transcript:
     has_timestamps: bool = False
     cost: CallCost | None = None
     upload_costs: tuple[CallCost, ...] = ()
+    finish_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -997,9 +998,11 @@ class GeminiMediaClient:
         media_budget: MediaBudget,
         short_max_seconds: int,
         ledger: LedgerSink,
+        video_model: str = "gemini-3.5-flash-lite",
         sleep: Callable[[float], None] = time.sleep,
         now: Callable[[], datetime] = _utcnow,
     ) -> None:
+        self._video_model = video_model
         self._caller = caller
         self._openrouter_api_key = openrouter_api_key
         self._openrouter_base_url = openrouter_base_url
@@ -1015,7 +1018,14 @@ class GeminiMediaClient:
 
     # -- transcription -------------------------------------------------------------------------
 
-    def transcribe_short(self, audio: AudioFile, *, context: SpeakerContext) -> Transcript:
+    def transcribe_short(
+        self,
+        audio: AudioFile,
+        *,
+        context: SpeakerContext,
+        max_attempts: int = 4,
+        require_transcript_section: bool = False,
+    ) -> Transcript:
         """One cheap OpenRouter completion over a short item, returning the structured output.
 
         Refuses a long item outright rather than quietly routing it to the expensive path: the
@@ -1068,14 +1078,21 @@ class GeminiMediaClient:
                 # otherwise be inlined into every attempt's raw record (~13 MB for a 10-minute
                 # item, up to four attempts). The record keeps its sha256 and byte count instead.
                 binary_request=True,
+                max_attempts=max_attempts,
             )
         )
         self._require_ok(result, "short transcription")
+        response_body = result.json()
+        choices = response_body.get("choices") if isinstance(response_body, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else {}
+        finish = first.get("finish_reason") if isinstance(first, dict) else None
+        value = openrouter_message_text(result.json())
         return replace(
-            parse_structured_transcript(
-                openrouter_message_text(result.json()), model=self._short_model, context=context
-            ),
+            self.parse_openrouter_recording(response_body, model=self._short_model)
+            if require_transcript_section
+            else parse_structured_transcript(value, model=self._short_model, context=context),
             cost=result.call_cost,
+            finish_reason=finish if isinstance(finish, str) else None,
         )
 
     def transcribe_long(self, audio: AudioFile, *, context: SpeakerContext) -> Transcript:
@@ -1251,6 +1268,189 @@ class GeminiMediaClient:
             dimensions=len(vectors[0]),
         )
 
+    def embed_texts(
+        self, texts: Sequence[str], *, query: bool = False, dimensions: int = 768
+    ) -> EmbeddedTranscript:
+        """Prepared passage/query embeddings, one compatible textual-format contract.
+
+        OpenRouter does not promise Gemini task_type forwarding. Prefixes are explicit and
+        versioned by the media index; actual dimensions are validated, never padded/truncated.
+        """
+        import math
+
+        if not texts:
+            return EmbeddedTranscript(chunks=(), cost=None, dimensions=0)
+        inputs = [("search_query: " if query else "search_document: ") + t for t in texts]
+        result = self._embeddings_call(inputs, dimensions, max_attempts=1)
+        vectors = self._embedding_vectors(result, expected=len(texts))
+        body = result.json()
+        rows = body.get("data", []) if isinstance(body, dict) else []
+        indices = [row.get("index") for row in rows]
+        if sorted(indices) != list(range(len(texts))):
+            raise GeminiMediaError(
+                "incomplete or duplicate embedding indices", raw_ref=result.raw_ref
+            )
+        vectors = [vector for _, vector in sorted(zip(indices, vectors, strict=True))]
+        width = len(vectors[0])
+        if width not in {768, 1536, 3072}:
+            raise GeminiMediaError("unsupported embedding dimensions", raw_ref=result.raw_ref)
+        normalized = []
+        for vector in vectors:
+            if len(vector) != width or any(not math.isfinite(v) for v in vector):
+                raise GeminiMediaError("invalid embedding vector contract", raw_ref=result.raw_ref)
+            norm = math.sqrt(sum(v * v for v in vector))
+            if norm == 0:
+                raise GeminiMediaError("zero embedding vector", raw_ref=result.raw_ref)
+            normalized.append(tuple(v / norm for v in vector))
+        return EmbeddedTranscript(
+            chunks=tuple(
+                EmbeddedChunk(text=t, start_ts_s=None, vector=v)
+                for t, v in zip(texts, normalized, strict=True)
+            ),
+            cost=result.call_cost,
+            dimensions=width,
+        )
+
+    def upload_recording(self, audio: AudioFile) -> str:
+        """Free Files stage, independently checkpointed by the v3 acquisition owner."""
+        return self._upload(audio)[0]
+
+    def resume_uploaded_file(self, name: str) -> str:
+        """Resume the free readiness poll from a saved upload response."""
+        if not re.fullmatch(r"files/[A-Za-z0-9_-]+", name):
+            raise ValueError("invalid saved Gemini file name")
+        return self._await_active(name, raw_ref=None)[0]
+
+    def transcribe_uploaded(
+        self,
+        file_uri: str,
+        *,
+        mime_type: str,
+        duration_s: int,
+        context: SpeakerContext,
+        video: bool = False,
+    ) -> Transcript:
+        return self.transcribe_native(
+            file_uri, mime_type=mime_type, duration_s=duration_s, context=context, video=video
+        )
+
+    def transcribe_video(self, url: str, *, duration_s: int, context: SpeakerContext) -> Transcript:
+        """Native public-YouTube input. The resolver proves public access and duration first."""
+        from clue_api.arv2.media_resolution import youtube_url
+
+        normalized = youtube_url(url)
+        if normalized is None:
+            raise ValueError("public YouTube URL required")
+        return self.transcribe_native(
+            normalized[0], mime_type="video/mp4", duration_s=duration_s, context=context, video=True
+        )
+
+    def transcribe_native(
+        self, uri: str, *, mime_type: str, duration_s: int, context: SpeakerContext, video: bool
+    ) -> Transcript:
+        if duration_s <= 0:
+            raise ValueError("verified media duration required")
+        model = self._video_model if video else self._transcribe_model
+        self._reserve(
+            duration_s,
+            provider="gemini",
+            operation=f"models/{model}:generateContent",
+            label="media.transcribe_video" if video else "media.transcribe_long",
+        )
+        prompt = (
+            (
+                short_transcription_prompt(context)
+                + "\nTranscribe ALL audible speech, not a summary. Do not infer unheard words. "
+                "Speaker labels and timestamps are estimates unless explicitly grounded. "
+                "Report truncation or inaudible sections honestly."
+            )
+            if video
+            else long_transcription_prompt(context)
+        )
+        result = self._caller.call(
+            CallSpec(
+                provider="gemini",
+                operation=f"models/{model}:generateContent",
+                label="media.transcribe_video" if video else "media.transcribe_long",
+                request=json_request(
+                    "POST",
+                    f"{GEMINI_BASE}/models/{model}:generateContent",
+                    headers=self._gemini_headers(),
+                    json_body={
+                        "contents": [
+                            {
+                                "parts": [
+                                    {"fileData": {"fileUri": uri, "mimeType": mime_type}},
+                                    {"text": prompt},
+                                ]
+                            }
+                        ],
+                        "generationConfig": {
+                            "temperature": 0,
+                            "maxOutputTokens": LONG_MAX_OUTPUT_TOKENS,
+                        },
+                    },
+                    timeout_s=GENERATE_TIMEOUT_S,
+                ),
+                # Video billing must be calibrated in the founder-triggered canary. Never apply the
+                # dedicated audio model's price to video. The ledger explicitly records unknown USD.
+                estimate=SpendEstimate(
+                    media_seconds=duration_s,
+                    usd=Decimal(0) if video else estimate_media_usd(duration_s),
+                ),
+                cost_reader=(
+                    lambda response: CostReading(
+                        extras={
+                            "usd_unpriced": True,
+                            "usage": json.loads(response.body).get("usageMetadata", {}),
+                        }
+                    )
+                )
+                if video
+                else gemini_cost_reader(duration_s),
+                halt_rule=gemini_native_halt_rule,
+                max_attempts=1,
+            )
+        )
+        self._require_ok(result, "native recording transcription")
+        return replace(
+            self.parse_native_recording(result.json(), model=model, structured=video),
+            cost=result.call_cost,
+        )
+
+    @staticmethod
+    def parse_openrouter_recording(body: object, *, model: str) -> Transcript:
+        value = openrouter_message_text(body)
+        choices = body.get("choices") if isinstance(body, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else {}
+        finish = first.get("finish_reason") if isinstance(first, dict) else None
+        return replace(
+            GeminiMediaClient.parse_recording_text(value, model=model, structured=True),
+            finish_reason=finish if isinstance(finish, str) else None,
+        )
+
+    @staticmethod
+    def parse_native_recording(body: object, *, model: str, structured: bool) -> Transcript:
+        value = native_transcript_text(body)
+        finish = None
+        if isinstance(body, dict):
+            candidates = body.get("candidates") or []
+            if candidates:
+                finish = candidates[0].get("finishReason")
+        parsed = GeminiMediaClient.parse_recording_text(value, model=model, structured=structured)
+        return replace(parsed, finish_reason=finish)
+
+    @staticmethod
+    def parse_recording_text(value: str, *, model: str, structured: bool) -> Transcript:
+        if structured and not re.search(r"^##\s+TRANSCRIPT\s*$", value, re.M | re.I):
+            # A description, META block or refusal cannot masquerade as audible speech.
+            return Transcript(model=model, text="", lines=())
+        return (
+            parse_structured_transcript(value, model=model, context=SpeakerContext(person_name=""))
+            if structured
+            else Transcript(model=model, text=value, lines=sentence_lines(value))
+        )
+
     # -- internals -----------------------------------------------------------------------------
 
     def _gemini_headers(self) -> dict[str, str]:
@@ -1406,10 +1606,13 @@ class GeminiMediaClient:
             raw_ref=raw_ref,
         )
 
-    def _embeddings_spec(self, texts: Sequence[str], dimensions: int | None) -> CallSpec:
+    def _embeddings_spec(
+        self, texts: Sequence[str], dimensions: int | None, *, max_attempts: int = 4
+    ) -> CallSpec:
         return CallSpec(
             provider="openrouter",
             operation="embeddings",
+            max_attempts=max_attempts,
             label="media.embed_chunks",
             request=openrouter_embeddings_request(
                 base_url=self._openrouter_base_url,
@@ -1424,16 +1627,22 @@ class GeminiMediaClient:
             cost_reader=openrouter_cost_reader,
         )
 
-    def _embeddings_call(self, texts: Sequence[str], dimensions: int) -> CallResult:
+    def _embeddings_call(
+        self, texts: Sequence[str], dimensions: int, *, max_attempts: int = 4
+    ) -> CallResult:
         """One embeddings call, retried once without ``dimensions`` if that is what was rejected.
 
         ``dimensions`` is a Matryoshka truncation the model may or may not expose through this
         endpoint. Retrying without it and reporting the served dimension is honest; silently
         padding or truncating a vector to the dimension we asked for would not be.
         """
-        result = self._caller.call(self._embeddings_spec(texts, dimensions))
+        result = self._caller.call(
+            self._embeddings_spec(texts, dimensions, max_attempts=max_attempts)
+        )
         if 400 <= result.response.status < 500 and "dimension" in result.text().lower():
-            result = self._caller.call(self._embeddings_spec(texts, None))
+            result = self._caller.call(
+                self._embeddings_spec(texts, None, max_attempts=max_attempts)
+            )
         self._require_ok(result, "embeddings")
         return result
 
