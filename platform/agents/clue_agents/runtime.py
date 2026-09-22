@@ -287,12 +287,14 @@ class DeepAgentTurnRuntime:
         execution: AgentExecutionAdapter,
         max_runtime_s: float = 300.0,
         max_rounds: int = 24,
+        middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     ) -> None:
         if max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
         if not 1 <= max_rounds <= 128:
             raise ValueError("agent round ceiling must be between 1 and 128")
         self._models = models
+        self._middleware = tuple(middleware)
         self._execution = execution
         self._max_runtime_s = max_runtime_s
         self._recursion_limit = superstep_ceiling(max_rounds)
@@ -343,6 +345,7 @@ class DeepAgentTurnRuntime:
                         # profile.
                         effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
                     ),
+                    *self._middleware,
                 ),
                 backend=backend,  # type: ignore[arg-type]
                 checkpointer=checkpointer,

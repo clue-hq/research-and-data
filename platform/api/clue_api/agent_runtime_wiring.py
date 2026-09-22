@@ -480,7 +480,9 @@ class ModelDomainRef(_ModelInput):
 class DelegateSpecialistRequest(_ModelInput):
     """Small typed proposal accepted by the governed specialist delegation tool."""
 
-    role: Literal["research", "content_drafter", "reviewer"]
+    role: Literal[
+        "research", "content_drafter", "reviewer", "research_claims", "research_narrative"
+    ]
     goal: str = Field(min_length=1, max_length=2_048)
     instructions: str = Field(min_length=1, max_length=8_192)
     verbatim_context: tuple[str, ...] = Field(default=(), max_length=16)
@@ -1088,6 +1090,8 @@ class GovernedAgentToolFactory:
             AgentRole.RESEARCH: "outputs/research-strategy.md",
             AgentRole.CONTENT_DRAFTER: "outputs/content-exemplar.md",
             AgentRole.REVIEWER: "outputs/review-verdict.md",
+            AgentRole.RESEARCH_CLAIMS: "outputs/claim-processing.json",
+            AgentRole.RESEARCH_NARRATIVE: "outputs/research-narrative.json",
         }
 
         async def delegate_specialist(runtime: ToolRuntime, **kwargs: Any) -> str:
@@ -1161,6 +1165,8 @@ class GovernedAgentToolFactory:
                     AgentRole.RESEARCH,
                     AgentRole.CONTENT_DRAFTER,
                     AgentRole.REVIEWER,
+                    AgentRole.RESEARCH_CLAIMS,
+                    AgentRole.RESEARCH_NARRATIVE,
                 ],
                 role,
             )
@@ -1387,6 +1393,7 @@ class DurableDeepAgentTurnRunner:
         lease: AgentWorkspaceLease,
         tools: Sequence[BaseTool],
         stream: TurnStreamEmitter | None = None,
+        backend: object | None = None,
     ) -> AgentTurnOutcome:
         workspace_id = request.constitution.workspace_id
         await self._turns.mark_running(
@@ -1421,7 +1428,7 @@ class DurableDeepAgentTurnRunner:
         profile_ref = constitution.profile_ref
         try:
             with propagate_trace(
-                trace_name="head-of-abm.turn",
+                trace_name=f"{constitution.role.value.replace('_', '-')}.turn",
                 session_id=str(request.thread_id),
                 user_id=workspace_id,
                 metadata={
@@ -1437,7 +1444,7 @@ class DurableDeepAgentTurnRunner:
                     request=request,
                     resolved_profile=resolved_profile,
                     context=context,
-                    backend=lease.backend,
+                    backend=backend if backend is not None else lease.backend,
                     governed_tools=tools,
                     callbacks=callbacks,
                 )

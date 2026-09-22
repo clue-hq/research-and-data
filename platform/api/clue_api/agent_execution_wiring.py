@@ -431,12 +431,14 @@ class DbAgentPlanJournal:
                         proposal_artifact_key, proposal_sha256,
                         validated_artifact_key, validated_sha256,
                         resource_manifest_sha256, max_parallelism,
-                        estimated_cost_millicents, budget_limit_millicents, validated_at
+                        estimated_cost_millicents, budget_limit_millicents,
+                        budget_mode, validated_at
                     )
                     VALUES (
                         :id, :turn, :execution, :workspace, :role,
                         :proposal_key, :proposal_sha, :validated_key, :validated_sha,
-                        :manifest_sha, :parallelism, :estimated, :budget, :validated_at
+                        :manifest_sha, :parallelism, :estimated, :budget,
+                        :budget_mode, :validated_at
                     )
                     ON CONFLICT (id) DO NOTHING RETURNING id
                     """
@@ -455,6 +457,7 @@ class DbAgentPlanJournal:
                     "parallelism": plan.max_parallelism,
                     "estimated": plan.estimated_cost_millicents,
                     "budget": plan.budget_limit_millicents,
+                    "budget_mode": plan.budget_mode,
                     "validated_at": plan.validated_at,
                 },
             )
@@ -466,7 +469,8 @@ class DbAgentPlanJournal:
                                 "SELECT turn_id, execution_id, workspace_id, role, "
                                 "proposal_artifact_key, proposal_sha256, validated_artifact_key, "
                                 "validated_sha256, resource_manifest_sha256, max_parallelism, "
-                                "estimated_cost_millicents, budget_limit_millicents, validated_at "
+                                "estimated_cost_millicents, budget_limit_millicents, "
+                                "budget_mode, validated_at "
                                 "FROM agent_plan WHERE id=:id"
                             ),
                             {"id": plan.plan_id},
@@ -488,6 +492,7 @@ class DbAgentPlanJournal:
                     plan.max_parallelism,
                     plan.estimated_cost_millicents,
                     plan.budget_limit_millicents,
+                    plan.budget_mode,
                     plan.validated_at,
                 )
                 actual = (
@@ -503,6 +508,7 @@ class DbAgentPlanJournal:
                     int(row["max_parallelism"]),
                     int(row["estimated_cost_millicents"]),
                     int(row["budget_limit_millicents"]),
+                    row["budget_mode"],
                     row["validated_at"],
                 )
                 if actual != expected:
@@ -1591,7 +1597,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 media_type="application/vnd.clue.agent-operation-parameters+json",
             )
         estimated = sum(costs.values())
-        if estimated > self._policy.budget_limit_millicents:
+        if (
+            self._policy.budget_mode == "enforced"
+            and estimated > self._policy.budget_limit_millicents
+        ):
             from clue_agents import AgentPlanIssue, AgentPlanReview
 
             raise AgentPlanRejected(
@@ -1646,6 +1655,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             "max_parallelism": min(self._policy.max_parallelism, self._policy.max_fanout),
             "estimated_cost_millicents": estimated,
             "budget_limit_millicents": self._policy.budget_limit_millicents,
+            "budget_mode": self._policy.budget_mode,
             "validated_at": validated_at.isoformat(),
         }
         validated_ref = await self._artifacts.persist_body(
@@ -1663,6 +1673,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             max_parallelism=min(self._policy.max_parallelism, self._policy.max_fanout),
             estimated_cost_millicents=estimated,
             budget_limit_millicents=self._policy.budget_limit_millicents,
+            budget_mode=self._policy.budget_mode,
             validated_at=validated_at,
         )
         await self._journal.record_validated(
@@ -1977,6 +1988,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 {
                     "schema_version": "1",
                     "limit_millicents": budget_limit,
+                    "mode": self._policy.budget_mode,
                     "parent_execution_id": str(plan.execution_id),
                     "plan_id": str(plan.plan_id),
                     "node_key": operation.node_key,

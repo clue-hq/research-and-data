@@ -296,14 +296,17 @@ def test_validated_plan_requires_stable_unique_operation_ids_and_budget() -> Non
         validated_at=NOW,
     )
     assert plan.operations[0].operation_id == operation.operation_id
+    over_estimate = {
+        **plan.model_dump(),
+        "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
+        "estimated_cost_millicents": 101,
+    }
     with pytest.raises(ValidationError, match="estimate exceeds"):
-        ValidatedPlan.model_validate(
-            {
-                **plan.model_dump(),
-                "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
-                "estimated_cost_millicents": 101,
-            }
-        )
+        ValidatedPlan.model_validate(over_estimate)
+    record_only = ValidatedPlan.model_validate({**over_estimate, "budget_mode": "record_only"})
+    assert record_only.estimated_cost_millicents == 101
+    assert record_only.budget_limit_millicents == 100
+    assert plan.budget_mode == "enforced"
 
 
 def test_delegation_contract_is_fresh_scoped_and_reference_only() -> None:
@@ -435,22 +438,24 @@ def test_frozen_contract_json_schema_digests() -> None:
     # default keeps every existing construction valid.
     # Merge 2026-09-17 (codex/design-agent-v1 into research-streaming): both ``note`` and
     # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
+    # Research quality Q4: admit two specialist roles and explicit trusted budget mode.
+    # Existing plans decode to enforced; new roles are admitted by f4b30cb3d088.
     assert actual == {
-        "AgentProfile": "163055da1d4ea52c1627ce9beb845d8786e165a0c0d973654aa581a4160423f2",
+        "AgentProfile": "f4480edc18fd37250f861018a7448c38c36355d8cf087b59c4a037a7e0b8507e",
         "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("2f8f8f77d7c9e19d58f900824383d18f681a7fd273f785a3d9ea29f0399a4e92"),
-        "AgentTurnRequest": ("ad4400829caad0526206e81cafbe57582951934ad5fe347d9ec3d1f8883ee1d1"),
-        "AgentPlan": "d9b94061c8d49d073ac055293b1e3dc095975cb20cadcd0327a42177f6ffed62",
-        "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("f5ae983ec69fe98f1fb1ebe7d551d6a88d7018e546f48d31aa22c3de9a3216d2"),
+        "AgentConstitution": ("45ab9cf133eedcc2c6d9eff6409da1b186c7d99286d101278d72eb1185fbf0ee"),
+        "AgentTurnRequest": ("cd432d8372524ce2a2aa9e8977dfadfa3fa60eeb52a9bd5590b241d6a38161ac"),
+        "AgentPlan": "88a61868a570f8ad8bf0f45970603f363e7ca7e5bc20db6f2dbd05a901e1cc8a",
+        "ValidatedPlan": ("cc19a5139945377d7a50fdde0ea8dba06de1882dcdd2215227379b5f94105fc1"),
+        "DelegationRequest": ("50953fc74274f844c3af26eab94d5897f759ffb6d8a8bf365b459664acbfae95"),
         "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
         "SpecialistTaskEnvelope": (
-            "44f25aed2767854897c76f30aff7e002032880379ea77dc404fbc8156d3d3e05"
+            "32a0b5d93d5ca52221d564eea1914b16425a1a9bb68f172799b364287eec48e3"
         ),
         "ContextBundleManifest": (
             "3d4bcf33bedda5d6d88a90b4c86917561d27c7d542c2b9c953b4991b739ca0ea"

@@ -417,6 +417,7 @@ class AgentProfileRegistry:
         selected_profile_versions: Mapping[AgentRole, str] | None = None,
         tool_inventory: Sequence[AgentToolContract] = (),
         surface_policies: Sequence[AgentSurfacePolicy] = (),
+        required_roles: frozenset[AgentRole] = _REQUIRED_ACTIVE_ROLES,
     ) -> None:
         self._prompts = prompts
         self._skills = skills
@@ -454,7 +455,7 @@ class AgentProfileRegistry:
                         f"selected profile {role.value!r}@{version} is not uniquely active"
                     )
                 active[role] = candidates[0]
-        missing = _REQUIRED_ACTIVE_ROLES - set(active)
+        missing = required_roles - set(active)
         if missing:
             raise AgentCatalogError(
                 f"required active roles have no profile: {sorted(role.value for role in missing)}"

@@ -222,6 +222,8 @@ class AgentRole(StrEnum):
     CONTENT_DRAFTER = "content_drafter"
     REVIEWER = "reviewer"
     ACCOUNT_RESEARCH = "account_research"
+    RESEARCH_CLAIMS = "research_claims"
+    RESEARCH_NARRATIVE = "research_narrative"
     # PD-part3 D2: the platform-facing role of the COMPOSITE design deepagent — the
     # orchestrator/author/reviewer trio stays internal to the design runtime (one leg,
     # one summarized outcome; a doorway, not a container). Deliberately absent from
@@ -736,6 +738,7 @@ class ValidatedPlan(FrozenContract):
     max_parallelism: int = Field(ge=1, le=32)
     estimated_cost_millicents: int = Field(ge=0)
     budget_limit_millicents: int = Field(ge=0)
+    budget_mode: Literal["enforced", "record_only"] = "enforced"
     validated_at: AwareDatetime
 
     @model_validator(mode="after")
@@ -779,7 +782,10 @@ class ValidatedPlan(FrozenContract):
         )
         if self.estimated_cost_millicents != operation_estimate:
             raise ValueError("validated plan estimate must equal the sum of operation estimates")
-        if self.estimated_cost_millicents > self.budget_limit_millicents:
+        if (
+            self.budget_mode == "enforced"
+            and self.estimated_cost_millicents > self.budget_limit_millicents
+        ):
             raise ValueError("validated plan estimate exceeds its budget limit")
         return self
 
@@ -877,7 +883,13 @@ class SpecialistTaskEnvelope(FrozenContract):
     """
 
     schema_version: Literal["1"] = "1"
-    role: Literal[AgentRole.RESEARCH, AgentRole.CONTENT_DRAFTER, AgentRole.REVIEWER]
+    role: Literal[
+        AgentRole.RESEARCH,
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+        AgentRole.RESEARCH_CLAIMS,
+        AgentRole.RESEARCH_NARRATIVE,
+    ]
     goal: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_048)]
     instructions: Annotated[
         str,

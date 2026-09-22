@@ -57,3 +57,18 @@
 - Q3 runtime tool integration, deterministic provider mapping, transcript support and downstream
   display/reconciliation are still pending. No profile/default activated. The 18-test foundation
   suite includes new inference withdrawal, concurrency and crash tests; focused ruff/mypy pass.
+
+- Q4 substrate integration: new governed research_claims/research_narrative roles; trusted explicit
+  record-only monetary policy preserves ARV2 spending posture, with legacy enforced default intact.
+  Revision f4b30cb3d088 adds scoped job/execution mappings and shared durable dispatch allowances.
+  Child/retry work cannot reset model/tool/delegation counters. Shared DeepAgent runtime accepts
+  trusted middleware/backend bindings; fresh-wake specialists can use revocable evidence mounts.
+  Registry can resolve a detached role set without activating these roles in conversation profiles.
+  New specialist model/effort keys documented in the consolidated example and added locally.
+- Shared C5 execution, specialist, and allowance checks: 27 passed on the isolated database.
+  Contract/execution/runtime run: 33 passed, two old Head-of-ABM tests failed against the current
+  product-gate input / Stage-0 skill text. These do not exercise the new research flow; baseline
+  confirmation is still owed. Test collection initially used nonexistent registry/C5 filenames;
+  corrected after inventorying tests. Focused mypy/ruff pass for the committed runtime substrate.
+- Q4 research tool/mount composition is being developed next. No v4 profile/default, full pipeline,
+  committee reconciliation, narrative refresh, load/browser/live acceptance is complete yet.

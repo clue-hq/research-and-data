@@ -83,6 +83,7 @@ class AgentPlanPolicy(_Value):
     max_delegations: int = Field(ge=0, le=32)
     max_delegation_depth: int = Field(ge=0, le=4)
     budget_limit_millicents: int = Field(ge=0)
+    budget_mode: Literal["enforced", "record_only"] = "enforced"
 
     @classmethod
     def from_profile(
@@ -90,6 +91,7 @@ class AgentPlanPolicy(_Value):
         profile: AgentProfile,
         *,
         budget_limit_millicents: int,
+        budget_mode: Literal["enforced", "record_only"] = "enforced",
         max_dependency_depth: int = 16,
         max_fanout: int = 8,
         max_parallelism: int = 8,
@@ -104,6 +106,7 @@ class AgentPlanPolicy(_Value):
             max_delegations=profile.max_delegations,
             max_delegation_depth=profile.max_delegation_depth,
             budget_limit_millicents=budget_limit_millicents,
+            budget_mode=budget_mode,
         )
 
 
