@@ -1,6 +1,7 @@
 # ARV2: company-scoped buying-committee discovery with AI Ark
 
-**Status:** detailed design draft for review; no runtime implementation or live acceptance.
+**Status:** implementation authorized and completed locally; offline acceptance recorded;
+live canary and activation remain pending.
 **Date:** 2026-09-22. **Inspected base:** `8df27dd25`, after pulling
 `origin/research-streaming` (includes PR #75, general-purpose web search).
 **Companion:** [implementation plan](../plans/2026-09-22-arv2-ai-ark-committee-discovery.md).
@@ -556,10 +557,10 @@ handling; channel output and spend accounted for. Relevance/recall results must 
 reported, not rounded into a claim that AI Ark always finds the best committee. If a company has
 no useful role-search coverage, that is an actionable canary result, not a fabricated pass.
 
-### 10.3 Review checkpoints before implementation
+### 10.3 Accepted implementation contracts
 
-The founder's flow, both channel types and Exa-failure behavior are settled. Review the following
-engineering recommendations as one concrete contract package:
+The founder authorized implementation of the companion plan on 2026-09-22. These engineering
+defaults accompany the already approved flow, both channels and Exa-failure behavior:
 
 1. Default 10-result role pages; agent-controlled refinement/paging without a new spend veto.
 2. Persona pinning with visible, non-blocking missing/lineage-unknown states.
@@ -570,3 +571,31 @@ engineering recommendations as one concrete contract package:
    after its contract review.
 
 The detailed work order, touched files and verification gates are in the companion plan.
+
+### 10.4 Engineering decisions made during implementation
+
+- Results and channel operations use version-1 reference envelopes. Canonical requests identify
+  paid operations; reasoning text is an assessment and never a billing key. Two-hour ownership
+  leases become `unknown` when abandoned; expiration never authorizes an automatic repurchase.
+- v2 pins all five catalog resources. Nullable historical job refs resolve to v1. Persona pins
+  identify the original artifact and digest; missing, unreadable, lineage-mismatch and unverified
+  lineage are explicit. Children use the same run pin.
+- Personal provider artifacts expire after 30 days. Every returned subject is indexed, including
+  candidates not selected. Erasure invalidates the whole shared page, even when other live claims
+  cite it; readers refuse immediately and the maintenance sweep purges the blob. Surviving claims
+  can retain evidence references whose source is unavailable. No silent page reconstruction.
+- Contact, provider and artifact checks guard late writes; a response arriving after a privacy
+  stop is retained only as an unreadable billing receipt. Account-side selection copies are
+  reachable by full erasure. Raw sensitive birth-date keys are removed before persistence.
+- AI Ark pacing is shared by token within a process and serialized across worker processes with
+  a database advisory lock; existing minimum-gap and halt behavior remain authoritative.
+- Provider credit headers are metered. Documented result arithmetic is explicitly inferred
+  (`cost_source=estimate`, `credit_basis=documented_result_arithmetic`). Unknown billing retains
+  a preflight estimate; no-email/no-phone results use documented zero-result arithmetic.
+- The new registered `account.committee_search_assessment` is an agent assessment, with role,
+  rationale, evidence and result references. Phone claims use existing `core.direct_phone` and
+  do not imply verification, consent or DNC clearance. No frontend phone slot was added.
+
+The [acceptance record](../plans/2026-09-22-arv2-ai-ark-committee-acceptance.md) separates local
+proof, baseline failures, and the live release gate. The new selector remains `v1` in both
+`.env.example` and local `.env`; no historical research is re-run.

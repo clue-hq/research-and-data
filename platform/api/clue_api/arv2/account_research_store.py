@@ -91,7 +91,7 @@ _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, product_selection_version, effort, "
     "committee_cap, directive_text, profile_ref, profile_sha256, requested_by_user_id, "
-    "request_sha256, status, created_at, finished_at"
+    "request_sha256, status, created_at, finished_at, persona_pin"
 )
 
 #: The run's status, derived from its jobs in one statement so two drivers finishing two accounts
@@ -147,6 +147,7 @@ class RunRow:
     profile_sha256: str
     requested_by_user_id: str
     request_sha256: str
+    persona_pin: dict[str, Any] | None = None
     status: JobStatus = "not_started"
     created_at: datetime | None = None
     finished_at: datetime | None = None
@@ -185,6 +186,9 @@ class JobRow:
     #: Where the job is (spec 2026-09-12 §1); ``None`` before its first claim or on rows that
     #: predate the column. Stamped by the driver, read by the research progress card.
     stage: JobStage | None = None
+    profile_ref: str | None = None
+    input_refs: dict[str, Any] | None = None
+    selection_claim_ids: tuple[UUID, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -221,7 +225,7 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             " :icp_artifact_sha256, :icp_key, :icp_version, :product_selection_version, :effort, "
             " :committee_cap, :directive_text, :profile_ref, :profile_sha256, "
             " :requested_by_user_id, :request_sha256, :status, COALESCE(:created_at, now()), "
-            " :finished_at) ON CONFLICT (run_id) DO NOTHING"
+            " :finished_at, CAST(:persona_pin AS jsonb)) ON CONFLICT (run_id) DO NOTHING"
         ),
         {
             "run_id": row.run_id,
@@ -241,6 +245,7 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             "profile_sha256": row.profile_sha256,
             "requested_by_user_id": row.requested_by_user_id,
             "request_sha256": row.request_sha256,
+            "persona_pin": json.dumps(row.persona_pin) if row.persona_pin is not None else None,
             "status": row.status,
             "created_at": row.created_at,
             "finished_at": row.finished_at,
@@ -259,6 +264,8 @@ async def create_job(
     subject_type: JobSubject = "account",
     subject_entity_id: UUID | None = None,
     profile_sha256: str | None = None,
+    profile_ref: str | None = None,
+    input_refs: Mapping[str, Any] | None = None,
 ) -> bool:
     """Queue one subject — the account itself, or one of its committee members. Returns whether
     the row was inserted.
@@ -276,9 +283,9 @@ async def create_job(
     result = await conn.execute(
         text(
             "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id, "
-            " subject_type, subject_entity_id, profile_sha256) "
+            " subject_type, subject_entity_id, profile_sha256, profile_ref, input_refs) "
             "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id, :subject_type, "
-            " :subject_entity_id, :profile_sha256) "
+            " :subject_entity_id, :profile_sha256, :profile_ref, CAST(:input_refs AS jsonb)) "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -289,6 +296,8 @@ async def create_job(
             "subject_type": subject_type,
             "subject_entity_id": subject_entity_id,
             "profile_sha256": profile_sha256,
+            "profile_ref": profile_ref,
+            "input_refs": json.dumps(input_refs or {}),
         },
     )
     return result.rowcount == 1
@@ -776,6 +785,7 @@ def _run(row: RowMapping) -> RunRow:
         profile_sha256=row["profile_sha256"],
         requested_by_user_id=row["requested_by_user_id"],
         request_sha256=row["request_sha256"],
+        persona_pin=decode_jsonb(row.get("persona_pin")),
         status=row["status"],
         created_at=row["created_at"],
         finished_at=row["finished_at"],
@@ -805,4 +815,9 @@ def _job(row: RowMapping) -> JobRow:
         credits=row["credits"],
         media_seconds=row["media_seconds"],
         stage=row["stage"],
+        profile_ref=row.get("profile_ref"),
+        input_refs=decode_jsonb(row.get("input_refs")) or {},
+        selection_claim_ids=tuple(row["selection_claim_ids"])
+        if row.get("selection_claim_ids") is not None
+        else None,
     )

@@ -340,6 +340,7 @@ class Settings(BaseSettings):
     # **default True since the R2 exit gate passed on 2026-09-08** (founder instruction
     # 2026-09-07: flip once R2 is over). A worker missing a credential still composes no handler.
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
+    arv2_research_catalog_version: Literal["v1", "v2"] = "v1"
     arv2_account_research_enabled: bool = True
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.

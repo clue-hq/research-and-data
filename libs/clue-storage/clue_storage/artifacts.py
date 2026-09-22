@@ -64,6 +64,8 @@ class ArtifactRecord(BaseModel):
     created_at: UtcDatetime
     erased_at: UtcDatetime | None = None
     purged_at: UtcDatetime | None = None
+    privacy_erased: bool = False
+    expires_at: datetime | None = None
 
 
 class PurgeResult(BaseModel):
@@ -77,7 +79,7 @@ class PurgeResult(BaseModel):
 
 _COLUMNS = (
     "artifact_id, storage_key, workspace_id, content_sha256, media_type, size_bytes, "
-    "source_key, source_url, created_at, erased_at, purged_at"
+    "source_key, source_url, created_at, erased_at, purged_at, privacy_erased, expires_at"
 )
 
 
@@ -120,7 +122,8 @@ async def record_artifact(
         "size_bytes, source_key, source_url) "
         "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
         ":source_key, :source_url) "
-        "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL"
+        "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL "
+        "WHERE NOT artifact.privacy_erased"
     )
     parameters = {
         "storage_key": storage_key,
@@ -139,6 +142,8 @@ async def record_artifact(
     record = await get_artifact(conn, storage_key)
     if record is None:  # pragma: no cover - unreachable inside one transaction
         raise RuntimeError(f"artifact {storage_key!r} vanished during record")
+    if record.privacy_erased:
+        raise ArtifactIntegrityError("privacy-erased artifact cannot be restored")
     return record
 
 
@@ -169,8 +174,12 @@ async def read_verified_artifact(
         raise ArtifactIntegrityError(f"artifact row is missing for {storage_key!r}")
     if record.workspace_id != workspace_id:
         raise ArtifactIntegrityError("artifact belongs to another workspace")
-    if record.erased_at is not None or record.purged_at is not None:
-        raise ArtifactIntegrityError("artifact was erased or purged")
+    if (
+        record.erased_at is not None
+        or record.purged_at is not None
+        or (record.expires_at is not None and record.expires_at <= datetime.now(UTC))
+    ):
+        raise ArtifactIntegrityError("artifact was erased, expired or purged")
     try:
         data = await storage.get(storage_key)
     except StorageError as exc:
@@ -272,6 +281,14 @@ async def purge_erased_artifacts(
       and ``purged_at`` is stamped. ``delete`` is idempotent, so a crash after delete but
       before commit converges on the next pass.
     """
+    # Expiry was committed with the source. Reads already refuse it, even if a purge rolls back.
+    await conn.execute(
+        text(
+            "UPDATE artifact SET privacy_erased=true, "
+            "erased_at=COALESCE(erased_at,now()), source_url=NULL WHERE "
+            "expires_at<=now() AND purged_at IS NULL"
+        )
+    )
     where = "erased_at IS NOT NULL AND purged_at IS NULL"
     params: dict[str, object] = {}
     if keys is not None:
@@ -281,13 +298,16 @@ async def purge_erased_artifacts(
         params["keys"] = list(keys)
     result = await conn.execute(
         # Ordered so two concurrent purges lock rows in the same order (no deadlock).
-        text(f"SELECT storage_key FROM artifact WHERE {where} ORDER BY storage_key FOR UPDATE"),
+        text(
+            f"SELECT storage_key,privacy_erased FROM artifact WHERE {where} "
+            "ORDER BY storage_key FOR UPDATE"
+        ),
         params,
     )
     purged: list[str] = []
     resurrected: list[str] = []
-    for (storage_key,) in result.all():
-        if await live_claim_count(conn, storage_key) != 0:
+    for storage_key, privacy_erased in result.all():
+        if not privacy_erased and await live_claim_count(conn, storage_key) != 0:
             await conn.execute(
                 text(
                     "UPDATE artifact SET erased_at = NULL, purged_at = NULL "

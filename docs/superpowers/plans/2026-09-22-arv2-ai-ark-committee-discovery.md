@@ -1,6 +1,9 @@
 # ARV2 AI Ark committee discovery: implementation plan
 
-**Status:** planning only, 2026-09-22. No tasks below are implemented by this document.
+**Status:** implemented locally, 2026-09-22. Steps 1–8 have implementation and offline
+evidence; the pre-existing import/type-check failures are recorded in the
+[acceptance report](2026-09-22-arv2-ai-ark-committee-acceptance.md). Step 9 is not initiated;
+future launches remain on v1.
 **Design:** [company-scoped committee discovery](../specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md).
 **Base inspected:** `8df27dd25` on `origin/research-streaming`, pulled before planning.
 
@@ -12,8 +15,8 @@ the existing person jobs and enrich work emails and phones alongside person dept
 the claim/identity/storage/fleet seams and leave R4 company discovery unchanged.
 
 The founder approved the flow, both enrichment channels, and continuation after exhausted
-account Exa research failure. The design's §10.3 engineering recommendations remain a review
-package. This plan is not permission to launch live paid research or deploy the feature.
+account Exa research failure. The founder's implementation request accepts the design's §10.3 engineering defaults.
+It does not initiate live paid research or deployment.
 
 Establish evidence and replay contracts before changing agent behavior. Each step must leave
 current v1 behavior working. Do not begin by swapping prompt order while the tool still requires
@@ -27,20 +30,20 @@ checkpoints; nothing is pushed without explicit instruction.
 **Inspect:** the master plan; ARV2 launch/store/driver/tools/committee modules; the shared
 identity, compliance and storage seams. Review frontend contracts before any display change.
 
-- [ ] Refresh the branch against the then-current authorized upstream; preserve local user
+- [x] Refresh the branch against the then-current authorized upstream; preserve local user
   files. This planning session's pull does not guarantee upstream will stay unchanged.
-- [ ] Review design §10.3 as one contract package; record revisions without reopening the
+- [x] Review design §10.3 as one contract package; record revisions without reopening the
   founder's already approved flow or channel/failure decisions.
-- [ ] Specify versioned operation, candidate-handle, selection-evidence, persona-pin, provider-
+- [x] Specify versioned operation, candidate-handle, selection-evidence, persona-pin, provider-
   binding and person-seed models, including ownership and lifecycle rules.
-- [ ] Settle multi-person-page erasure using existing storage mechanisms. Default to invalidating
+- [x] Settle multi-person-page erasure using existing storage mechanisms. Default to invalidating
   and purging the containing page if safe redaction is unsupported. An unresolved erasure path
   cannot accompany activation of a new persistent profile cache.
-- [ ] Inspect persona lineage metadata; where no exact ICP-version reference exists, implement
+- [x] Inspect persona lineage metadata; where no exact ICP-version reference exists, implement
   lineage-unknown state rather than pretending there is a verified match.
-- [ ] Establish a focused offline baseline. Record pre-existing failures separately; no live
+- [x] Establish a focused offline baseline. Record pre-existing failures separately; no live
   client tests and no shared/lane database use.
-- [ ] Add the precise approved supersession to the master plan's AI Ark and R2/R3 descriptions.
+- [x] Add the precise approved supersession to the master plan's AI Ark and R2/R3 descriptions.
   Preserve R4, media and general-purpose web-search decisions.
 
 **Exit:** reviewed engineering contracts and known baseline.
@@ -50,17 +53,17 @@ identity, compliance and storage seams. Review frontend contracts before any dis
 **Modify:** `platform/api/clue_api/arv2/ai_ark_client.py`.
 **Tests:** `tests/arv2/test_ai_ark_client.py`.
 
-- [ ] Expose company ID, person identity, source receipt and complete role-search paging metadata.
+- [x] Expose company ID, person identity, source receipt and complete role-search paging metadata.
   Preserve current `people_by_name` callers and their named-lookup semantics.
-- [ ] Add `people_by_roles`: exact company ID or explicit domain fallback, SMART titles,
+- [x] Add `people_by_roles`: exact company ID or explicit domain fallback, SMART titles,
   optional validated seniority/functions, page and size. Construct provider JSON in code.
-- [ ] Extend email export with a person-ID input, preserving legacy LinkedIn input. Use the v1
+- [x] Extend email export with a person-ID input, preserving legacy LinkedIn input. Use the v1
   endpoint initially and normalize its documented no-email response.
-- [ ] Add typed phone lookup using LinkedIn or domain/name input; never person ID alone.
-- [ ] Preserve full scrubbed profiles and endpoint-specific empty/error semantics. Update
+- [x] Add typed phone lookup using LinkedIn or domain/name input; never person ID alone.
+- [x] Preserve full scrubbed profiles and endpoint-specific empty/error semantics. Update
   no-email cost accounting, with provider-reported versus inferred charges distinguished.
-- [ ] Keep the shared caller, raw sink, ledger, scrubbing, pacing, halt rules and retries.
-- [ ] Test correct nested SMART shape, company locking, optional-filter omission, invalid inputs,
+- [x] Keep the shared caller, raw sink, ledger, scrubbing, pacing, halt rules and retries.
+- [x] Test correct nested SMART shape, company locking, optional-filter omission, invalid inputs,
   page 0/page 1, no matches, response identity, phone arrays/duplicates, email verdicts, billing
   and removal of sensitive fields before raw persistence.
 
@@ -74,17 +77,17 @@ identity, compliance and storage seams. Review frontend contracts before any dis
 **Proposed new module:** `platform/api/clue_api/arv2/research_operations.py`.
 **Migration:** generated random Alembic revision from the then-current head.
 
-- [ ] Implement design §6's operational record pointing to the existing ledger/artifact.
+- [x] Implement design §6's operational record pointing to the existing ledger/artifact.
   Cover role search, email, phone and the account deep-attempt ordering receipt.
-- [ ] Add canonical fingerprints, ownership checks, leases and persisted result resolution.
+- [x] Add canonical fingerprints, ownership checks, leases and persisted result resolution.
   Successful, empty, failed and unknown are distinct; rationale text is not a billing key.
-- [ ] Commit reusable results before returning handles. Reconstruct from saved responses on
+- [x] Commit reusable results before returning handles. Reconstruct from saved responses on
   replay; do not reissue an uncertain dispatched request or repurchase after a claim-write failure.
-- [ ] Add persona pins/missing states and reference-only job input/profile fields. Replay uses
+- [x] Add persona pins/missing states and reference-only job input/profile fields. Replay uses
   the original run pins; legacy rows retain explicit v1 interpretation.
-- [ ] Extend artifact-subject registration/erasure to all returned profiles, including unselected
+- [x] Extend artifact-subject registration/erasure to all returned profiles, including unselected
   candidates. Every candidate/seed read checks scope, artifact integrity and erasure state.
-- [ ] Test rollback, leases, equivalent requests, crash boundaries, tampering, cross-workspace
+- [x] Test rollback, leases, equivalent requests, crash boundaries, tampering, cross-workspace
   references, multi-person-page erasure and persona changes during a run.
 
 **Tests:** extend `test_account_research_store_db.py`, `test_account_research_launch_db.py`,
@@ -99,20 +102,20 @@ smoke passes on an isolated disposable DB and Alembic reports exactly one head.
 **Modify:** ARV2 `account_research_tools.py`, `account_research_claims.py`.
 **Tests:** `test_account_research_tools.py`, `test_account_research_claims.py`.
 
-- [ ] Add `discover_people` and `read_people_result` to the v2 account tools. Runtime owns
+- [x] Add `discover_people` and `read_people_result` to the v2 account tools. Runtime owns
   company scope; agent chooses roles, titles, optional filters, pages and refinements.
-- [ ] Reuse the persisted company lookup; handle ambiguity and exact-domain fallback explicitly.
-- [ ] Permit discovery after either a successful account deep operation or an exhausted failure.
+- [x] Reuse the persisted company lookup; handle ambiguity and exact-domain fallback explicitly.
+- [x] Permit discovery after either a successful account deep operation or an exhausted failure.
   An earlier call returns a recoverable ordering instruction; a display-stage label is insufficient.
-- [ ] Expose full profile material by reference and useful page metadata. Equivalent queries can
+- [x] Expose full profile material by reference and useful page metadata. Equivalent queries can
   support several role hypotheses without repeat spending.
-- [ ] Store concise role/search rationales as assessments with evidence references. Never demand
+- [x] Store concise role/search rationales as assessments with evidence references. Never demand
   hidden chain of thought or turn a hypothesis into a provider-certified fact.
-- [ ] Add provider/web/unfilled-role selection variants. Resolve provider facts server-side and
+- [x] Add provider/web/unfilled-role selection variants. Resolve provider facts server-side and
   keep profile provenance separate from the agent's committee-role rationale.
-- [ ] Distinguish not-found from evidenced vacancy; deduplicate people before applying committee
+- [x] Distinguish not-found from evidenced vacancy; deduplicate people before applying committee
   cap; checkpoint the ordered selection claim references for settlement recovery.
-- [ ] Test unknown-name discovery, paging, refinement, forged handles, zero-result gaps,
+- [x] Test unknown-name discovery, paging, refinement, forged handles, zero-result gaps,
   provider-only evidence selection and finalization after account Exa failure.
 
 **Exit:** account tool flow discovers and selects people without pre-supplied names or a mandatory
@@ -123,17 +126,17 @@ web-confirmation URL. No mechanical confidence/coverage veto is introduced.
 **Modify:** ARV2 `committee_step.py`, store/driver settlement, identity seam and claim provenance.
 **Tests:** `test_committee_step_db.py`, identity tests, `test_account_research_driver_db.py`.
 
-- [ ] Add workspace-scoped provider-subject binding with uniqueness and evidence through the
+- [x] Add workspace-scoped provider-subject binding with uniqueness and evidence through the
   shared identity package. Avoid parallel copies of resolution SQL in account/person tools.
-- [ ] Resolve provider ID and LinkedIn consistently. Support a selected person without LinkedIn;
+- [x] Resolve provider ID and LinkedIn consistently. Support a selected person without LinkedIn;
   prevent ambiguous name matching from merging distinct provider identities.
-- [ ] Record provider/LinkedIn conflicts and existing-contact employment conflicts. Do not
+- [x] Record provider/LinkedIn conflicts and existing-contact employment conflicts. Do not
   silently reparent a contact or substitute the account used by its person research job.
-- [ ] Atomically write contact, committee claims, ordered handoff state, person job and its
+- [x] Atomically write contact, committee claims, ordered handoff state, person job and its
   reference-only seed. Retain deterministic job identity and post-commit queue behavior.
-- [ ] Resume settlement from live claim references after a crash. Reuse the existing deterministic
+- [x] Resume settlement from live claim references after a crash. Reuse the existing deterministic
   profile mapper and one provenance adapter; no raw profile in finalization or queue JSON.
-- [ ] Test duplicate selection, cap ordering, same-name people, no LinkedIn, another employer,
+- [x] Test duplicate selection, cap ordering, same-name people, no LinkedIn, another employer,
   simultaneous selection, partial failure and repeated settlement/enqueue.
 
 **Exit:** one local person job per selected distinct person, bound to correct source and account.
@@ -143,22 +146,22 @@ web-confirmation URL. No mechanical confidence/coverage veto is introduced.
 **Modify:** ARV2 `account_research_driver.py`, `account_research_tools.py`,
 `account_research_claims.py`. **Tests:** person tool/driver paths, claims and compliance tests.
 
-- [ ] Compose the person from the source profile, selection rationale and pinned client/account
+- [x] Compose the person from the source profile, selection rationale and pinned client/account
   context. Treat provider text as external data, not instructions; preserve subject locking.
-- [ ] Materialize available professional facts before channel requests can fail.
-- [ ] Begin independently keyed email/phone operations in the existing person job while its
+- [x] Materialize available professional facts before channel requests can fail.
+- [x] Begin independently keyed email/phone operations in the existing person job while its
   agent can continue Exa/web depth. Automatic startup and explicit agent requests use one
   operation owner, so concurrent calls cannot buy the same channel twice.
-- [ ] Email uses the selected provider ID. Phone initially uses selected-profile domain/name
+- [x] Email uses the selected provider ID. Phone initially uses selected-profile domain/name
   plus returned-identity checks; LinkedIn preference awaits the live contract canary.
-- [ ] Reuse `core.work_email` with its verdict/check time. Store the primary valid provider-
+- [x] Reuse `core.work_email` with its verdict/check time. Store the primary valid provider-
   ordered number in `core.direct_phone`; other numbers remain in governed source material.
   Do not invent validation, DNC or consent metadata, or promote a channel to an identity key.
-- [ ] Show independent channel states through person state/receipts. Join in-flight calls under
+- [x] Show independent channel states through person state/receipts. Join in-flight calls under
   existing shutdown limits; unfinished/unknown is not reported as not found.
-- [ ] Preserve unseeded on-demand lookup. After it obtains a bound profile, use the same mapper
+- [x] Preserve unseeded on-demand lookup. After it obtains a bound profile, use the same mapper
   and channel service instead of a second enrichment implementation.
-- [ ] Prove seeded jobs buy no additional named search. Test channel independence, missing
+- [x] Prove seeded jobs buy no additional named search. Test channel independence, missing
   channels, mismatched phone identity, repeated tool calls, timeout, provider halt and erasure.
 
 **Exit:** email/phone claims and person depth survive independent partial failures.
@@ -169,15 +172,15 @@ web-confirmation URL. No mechanical confidence/coverage veto is introduced.
 `arv2-person/v2/` bundles. **Modify:** catalog loader, launch/driver selectors and documentation.
 **Tests:** `test_account_research_catalog.py`, driver/launch version cases.
 
-- [ ] Write consistent profile, prompt, dossier, audit and manual resources. Remove mandatory
+- [x] Write consistent profile, prompt, dossier, audit and manual resources. Remove mandatory
   web-first/name-first committee instructions from every v2 resource.
-- [ ] Describe role planning, SMART semantics, company scope, refinement, profile reuse,
+- [x] Describe role planning, SMART semantics, company scope, refinement, profile reuse,
   independent channel outcomes, gaps and stopping. Preserve the person-depth charter.
-- [ ] Resolve resources and internal tool sets by each job's profile/version; preserve v1 bytes
+- [x] Resolve resources and internal tool sets by each job's profile/version; preserve v1 bytes
   and interpret old rows explicitly as v1. Pin child authority at creation.
-- [ ] Record implemented status in the master plan and ARV2 README only when true. Preserve
+- [x] Record implemented status in the master plan and ARV2 README only when true. Preserve
   historical canary reports; corrections are dated additions.
-- [ ] Add settings only when needed and maintain example-file parity. No model changes or new
+- [x] Add settings only when needed and maintain example-file parity. No model changes or new
   Head-of-ABM `web_search@1` grants are required by this feature.
 
 **Exit:** old and new jobs use their own resource/tool contracts; switching future-launch
@@ -185,16 +188,18 @@ selection does not break queued v1 jobs.
 
 ### Step 8 — Integrated offline and isolated-database acceptance
 
-- [ ] Complete design A01–A18 with actual evidence. Use scripted model turns and fixtures to
+- [ ] Close every acceptance gate without exceptions. A01–A17 have local evidence; A18
+  retains the pre-existing package-import guard failure, documented in the acceptance report.
+  Complete design A01–A18 with actual evidence. Use scripted model turns and fixtures to
   test behavior, not tests that only search prompt strings.
-- [ ] Exercise account finalization → contacts → queued persons → seed reuse → both channels
+- [x] Exercise account finalization → contacts → queued persons → seed reuse → both channels
   and depth → final receipts, including replay and partial failures.
-- [ ] Run relevant lint/type checks, focused regression suites, identity/erasure checks and
+- [x] Run relevant lint/type checks, focused regression suites, identity/erasure checks and
   disposable-DB migration smoke. Confirm one Alembic head and ARV2-only dependency/read guards.
-- [ ] Verify existing committee/email rendering and source authorization. Phone storage is not
+- [x] Verify existing committee/email rendering and source authorization. Phone storage is not
   a shipped phone UI; any visible slot first needs the frontend contract review and its checks.
-- [ ] Verify env/example parity; record base failures and live tests still outstanding.
-- [ ] Commit coherent verified slices locally. Do not push, publish or deploy without instruction.
+- [x] Verify env/example parity; record base failures and live tests still outstanding.
+- [x] Commit coherent verified slices locally. Do not push, publish or deploy without instruction.
 
 Focused existing offline suites, to supplement new operation/identity/privacy tests:
 

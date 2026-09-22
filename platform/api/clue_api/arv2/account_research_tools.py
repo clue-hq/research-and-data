@@ -42,7 +42,9 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
+from sqlalchemy import text
 
+from clue_api.arv2 import research_operations as operations
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
     PUBLIC_APPEARANCES_FIELD,
@@ -132,6 +134,7 @@ from clue_core import Claim, RunId
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for_runs
+from clue_storage import StorageBackend
 
 log = get_logger("clue_api.arv2.account_research_tools")
 
@@ -343,8 +346,12 @@ class ToolRuntime:
         media_budget: MediaBudget,
         transport_factory: Callable[[], Transport] = HttpxTransport,
         now: Callable[[], datetime] = _utcnow,
+        storage: StorageBackend | None = None,
     ) -> None:
+        self.storage = storage
         self.scope = scope
+        self.person_seed: dict[str, Any] | None = None
+        self.channel_states: dict[str, str] = {}
         self.settings = settings
         self.clients = clients
         self.catalog = catalog
@@ -396,7 +403,13 @@ class ToolRuntime:
 
     # -- the one path to a provider ---------------------------------------------------------------
 
-    async def call_provider[T](self, provider: str, fn: Callable[[ProviderCaller], T]) -> T:
+    async def call_provider[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        *,
+        operation: operations.Operation | None = None,
+    ) -> T:
         """Run one synchronous provider hop off the loop, then land its money trail.
 
         The hop is shielded from the awaiting tool's cancellation on purpose: the runtime cap can
@@ -407,7 +420,7 @@ class ToolRuntime:
         latched = self.halted.get(provider)
         if latched is not None:
             raise RefusalError(f"provider_halted:{provider}", latched)
-        hop: asyncio.Task[T] = asyncio.create_task(self._hop(provider, fn))
+        hop: asyncio.Task[T] = asyncio.create_task(self._hop(provider, fn, operation))
         self._inflight.add(hop)
         hop.add_done_callback(self._forget_hop)
         return await asyncio.shield(hop)
@@ -419,7 +432,36 @@ class ToolRuntime:
             # never reported as an unretrieved task exception.
             hop.exception()
 
-    async def _hop[T](self, provider: str, fn: Callable[[ProviderCaller], T]) -> T:
+    async def _hop[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None = None,
+    ) -> T:
+        token = getattr(self.clients, "ai_ark_token_scope", None)
+        if provider != "ai_ark" or not token:
+            return await self._perform_hop(provider, fn, operation)
+        while True:
+            async with self._conn_factory() as pacing_conn:
+                won = (
+                    await pacing_conn.execute(
+                        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:token,0))"),
+                        {"token": f"ai-ark:{token}"},
+                    )
+                ).scalar_one()
+                if won:
+                    try:
+                        return await self._perform_hop(provider, fn, operation)
+                    finally:
+                        await asyncio.sleep(self.settings.arv2_ai_ark_min_gap_s)
+            await asyncio.sleep(0.1)
+
+    async def _perform_hop[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None = None,
+    ) -> T:
         async with self._semaphore(provider):
             raw, ledger = BufferedRawSink(), BufferedLedger()
             caller = ProviderCaller(
@@ -429,9 +471,24 @@ class ToolRuntime:
                 now=self._now,
             )
             self._ledgers[id(caller)] = ledger
+            result = None
+            error_code = None
             try:
-                return await asyncio.to_thread(fn, caller)
+                if self.scope.catalog_version == "v2":
+                    async with self._conn_factory() as conn:
+                        available = await operations.job_available(
+                            conn, self.operation_scope, operation.kind if operation else None
+                        )
+                    if not available:
+                        error_code = "privacy_stopped"
+                        raise RefusalError("tool_error", "research authority was withdrawn")
+                if provider in self.halted:
+                    error_code = "provider_halted_pre_dispatch"
+                    raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+                result = await asyncio.to_thread(fn, caller)
+                return result
             except ProviderHalted as halted:
+                error_code = "provider_halted"
                 detail = str(halted)
                 self.halted[provider] = detail
                 # Latch the *wire* provider as well as the tool's label for it. One media hop can
@@ -440,9 +497,28 @@ class ToolRuntime:
                 # own label. Money truth blocks whoever meets it first.
                 self.halted.setdefault(halted.provider, detail)
                 raise RefusalError(f"provider_halted:{provider}", detail) from halted
+            except BaseException as error:
+                error_code = error_code or type(error).__name__
+                raise
             finally:
                 self._ledgers.pop(id(caller), None)
-                await self._drain(raw, ledger)
+                cost = getattr(result, "cost", None)
+                await self._drain(
+                    raw,
+                    ledger,
+                    operation=operation,
+                    error=error_code,
+                    preferred_row=getattr(cost, "ledger_row_id", None),
+                    semantic_empty=(
+                        provider == "ai_ark"
+                        and result is not None
+                        and (
+                            (hasattr(result, "people") and not result.people)
+                            or (hasattr(result, "numbers") and not result.numbers)
+                            or (hasattr(result, "found") and not result.found)
+                        )
+                    ),
+                )
 
     def _semaphore(self, provider: str) -> asyncio.Semaphore:
         if provider not in self._semaphores:
@@ -473,9 +549,18 @@ class ToolRuntime:
         if pending:
             await asyncio.wait(pending, timeout=timeout_s)
 
-    async def _drain(self, raw: BufferedRawSink, ledger: BufferedLedger) -> None:
+    async def _drain(
+        self,
+        raw: BufferedRawSink,
+        ledger: BufferedLedger,
+        *,
+        operation: operations.Operation | None = None,
+        error: str | None = None,
+        preferred_row: str | None = None,
+        semantic_empty: bool = False,
+    ) -> None:
         async with self._conn_factory() as conn:
-            await drain_provider_calls(
+            report = await drain_provider_calls(
                 conn,
                 raw=raw,
                 ledger=ledger,
@@ -486,6 +571,73 @@ class ToolRuntime:
                     project_run_id=str(self.scope.project_run_id),
                     job_id=self.scope.job_id,
                 ),
+            )
+
+            if self.scope.catalog_version == "v2" and self.storage is not None:
+                # Register every attempt, including unselected people and unsuccessful responses.
+                from clue_api.arv2.committee_discovery import index_provider_artifacts
+
+                await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
+            if self.scope.catalog_version == "v2" and not await operations.job_available(
+                conn, self.operation_scope, operation.kind if operation else None
+            ):
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET "
+                        "privacy_erased=true,erased_at=now(),source_url=NULL WHERE "
+                        "workspace_id=:ws AND storage_key=ANY(:keys)"
+                    ),
+                    {
+                        "ws": self.scope.workspace_id,
+                        "keys": list(report.raw_artifact_keys.values()),
+                    },
+                )
+            if operation is not None:
+                await operations.finish(
+                    conn,
+                    self.operation_scope,
+                    operation,
+                    report.result_rows,
+                    error=error,
+                    preferred_row=preferred_row,
+                    semantic_empty=semantic_empty,
+                )
+
+    @property
+    def operation_scope(self) -> operations.OperationScope:
+        return operations.OperationScope(
+            self.scope.workspace_id,
+            self.scope.run_id,
+            self.scope.job_id,
+            UUID(str(self.scope.account_id)),
+        )
+
+    async def operate(
+        self,
+        provider: str,
+        kind: str,
+        request: Mapping[str, Any],
+        fn: Callable[[ProviderCaller], Any],
+    ) -> tuple[operations.Operation, dict[str, Any]]:
+        if self.storage is None:
+            raise RuntimeError("v2 research requires verified artifact storage")
+        async with self._conn_factory() as conn:
+            operation, won = await operations.begin(conn, self.operation_scope, kind, request)
+        if won:
+            if provider in self.halted:
+                async with self._conn_factory() as conn:
+                    await operations.finish(
+                        conn,
+                        self.operation_scope,
+                        operation,
+                        (),
+                        error="provider_halted_pre_dispatch",
+                    )
+                raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+            await self.call_provider(provider, fn, operation=operation)
+        async with self._conn_factory() as conn:
+            return await operations.body(
+                conn, self.storage, self.operation_scope, operation.operation_id
             )
 
     # -- the one path to a claim ------------------------------------------------------------------
@@ -889,6 +1041,10 @@ class CommitteeCandidate(_Args):
     evidence_span: str | None = None
     rationale: str | None = None
     influence: Literal["High", "Medium", "Low"] | None = None
+    evidence_kind: Literal["provider_candidate", "web_candidate", "unfilled_role"] = "web_candidate"
+    candidate_ref: str | None = None
+    role_key: str | None = None
+    gap_reason: str | None = None
 
 
 class FinalizeResearchArgs(_Args):
@@ -999,6 +1155,11 @@ async def _read_person_state(runtime: ToolRuntime, args: ReadPersonStateArgs) ->
             "employment_history": list(scope.employment_history),
         },
     }
+    if scope.catalog_version == "v2":
+        async with runtime._conn_factory() as conn:
+            state["channels"] = await operations.operation_states(conn, runtime.operation_scope)
+        state["channels"].update(runtime.channel_states)
+        state["profile_seed"] = runtime.person_seed
     if args.section == "all":
         return state
     return {args.section: state[args.section]}
@@ -1091,6 +1252,11 @@ async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, An
 
 
 async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict[str, Any]:
+    if runtime.scope.catalog_version == "v2":
+        from clue_api.arv2.committee_discovery import company_lock
+
+        return await company_lock(runtime)
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.ai_ark(caller).company_by_domain(args.domain)
 
@@ -1219,6 +1385,10 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     and career history to it would send the model back to re-buy the name search for facts this
     call already had.
     """
+    if runtime.scope.catalog_version == "v2":
+        from clue_api.arv2.committee_discovery import lookup_bound_person
+
+        return await lookup_bound_person(runtime, args)
     scope = runtime.scope
     wanted = fold_identity(args.linkedin_url)
     locked = fold_identity(scope.person_linkedin_url or "")
@@ -1631,6 +1801,28 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
             label=f"deep-{scope.account_domain}",
         )
 
+    if scope.catalog_version == "v2" and scope.subject_kind == "account":
+        from clue_api.arv2.committee_discovery import deep_result
+
+        operation, raw = await runtime.operate(
+            "exa",
+            "account_deep",
+            {"system": system_prompt, "query": query, "num_results": args.num_results},
+            hop,
+        )
+        try:
+            return deep_result(operation, raw)
+        except RefusalError:
+            async with runtime._conn_factory() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE arv2_research_operation SET "
+                        "state='empty',error_code='deep_thin_response' WHERE operation_id=:id "
+                        "AND workspace_id=:ws"
+                    ),
+                    {"id": operation.operation_id, "ws": scope.workspace_id},
+                )
+            raise
     result = await runtime.call_provider("exa", hop)
     report = result.report_text or ""
     if not report.strip():
@@ -2087,6 +2279,10 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
     )
     verdicts = keyed.verdicts
     candidates = [candidate.model_dump() for candidate in args.committee_candidates]
+    if runtime.scope.catalog_version == "v2":
+        from clue_api.arv2.committee_discovery import finalize_committee
+
+        return await finalize_committee(runtime, args, verdicts, keyed, candidates)
     drafts = [
         *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=keyed.filled),
         *committee_candidate_claims(candidates, runtime.scope),
@@ -2270,7 +2466,7 @@ def _tool(
 
 def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     """The twelve tools for one account job, bound to that job's runtime."""
-    return [
+    tools = [
         _tool(
             runtime,
             name="read_account_state",
@@ -2410,6 +2606,13 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         ),
     ]
 
+    if runtime.scope.catalog_version == "v2":
+        from clue_api.arv2.committee_discovery import account_tools
+
+        tools = [tool for tool in tools if tool.name != "lookup_people"]
+        tools.extend(account_tools(runtime))
+    return tools
+
 
 def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     """The eleven tools for one person job, bound to that job's runtime.
@@ -2441,7 +2644,7 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             codes=PERSON_REFUSAL_CODES,
         )
 
-    return [
+    tools = [
         person_tool(
             name="read_person_state",
             description=(
@@ -2567,3 +2770,9 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             body=_finalize_person_research,
         ),
     ]
+
+    if runtime.scope.catalog_version == "v2":
+        from clue_api.arv2.committee_discovery import person_tools
+
+        tools.extend(person_tools(runtime))
+    return tools

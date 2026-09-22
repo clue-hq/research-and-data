@@ -36,7 +36,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, JsonValue
 
-from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPerson
+from clue_api.arv2.ai_ark_client import AiArkCompany, AiArkEmailExport, AiArkPerson, AiArkPhone
 from clue_api.arv2.ats_client import BoardPostings
 from clue_api.arv2.claim_writer import ClaimDraft
 from clue_api.arv2.structuring_client import (
@@ -177,6 +177,8 @@ class JobScope:
     #: the prompts (so the model does not spend the job re-deriving where they have worked); never
     #: evidence, and never the source of a claim.
     employment_history: tuple[str, ...] = ()
+    catalog_version: str = "v1"
+    input_refs: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.subject_kind == "person" and self.contact_id is None:
@@ -1475,7 +1477,9 @@ def unconfirmed_candidates(
     return [
         candidate
         for candidate in candidates
-        if candidate.get("name") and not candidate.get("confirmed_by")
+        if candidate.get("name")
+        and not candidate.get("confirmed_by")
+        and not candidate.get("candidate_ref")
     ]
 
 
@@ -1493,7 +1497,7 @@ def committee_candidate_claims(
     for candidate in candidates:
         name = candidate.get("name")
         confirmed_by = candidate.get("confirmed_by")
-        if name and not confirmed_by:
+        if name and not confirmed_by and not candidate.get("candidate_ref"):
             continue
         value: JsonValue = _without_nones(
             {
@@ -1502,7 +1506,29 @@ def committee_candidate_claims(
                 "persona": candidate.get("persona"),
                 "linkedin_url": candidate.get("linkedin_url"),
                 "confirmed_by": confirmed_by,
-                "vacant_seat": bool(candidate.get("vacant_seat")) or not name,
+                "vacant_seat": (
+                    bool(candidate.get("vacant_seat"))
+                    if scope.catalog_version == "v2"
+                    else bool(candidate.get("vacant_seat")) or not name
+                ),
+                **(
+                    {
+                        key: candidate.get(key)
+                        for key in (
+                            "evidence_kind",
+                            "candidate_ref",
+                            "role_key",
+                            "gap_reason",
+                            "provider_subject_id",
+                            "artifact_key",
+                            "operation_id",
+                            "parent_job_id",
+                            "rationale",
+                        )
+                    }
+                    if scope.catalog_version == "v2"
+                    else {}
+                ),
                 # The why behind the seat, when the agent gave one. It rides the account claim as
                 # well as the member's own role claim, so the account's committee reads the same
                 # reasoning the contact page shows.
@@ -1528,7 +1554,18 @@ def committee_candidate_claims(
                 source_key="agent",
             )
         )
-    return drafts
+    return [
+        provider_evidence(draft, candidate) if candidate.get("candidate_ref") else draft
+        for draft, candidate in zip(
+            drafts,
+            [
+                c
+                for c in candidates
+                if not c.get("name") or c.get("confirmed_by") or c.get("candidate_ref")
+            ],
+            strict=True,
+        )
+    ]
 
 
 #: The three contact fields a confirmed committee member is written on, in the order they are
@@ -1590,7 +1627,7 @@ def committee_member_claims(
         (ROLE_ON_COMMITTEE_FIELD, role),
         (CURRENT_TITLE_FIELD, _string(title)),
     )
-    return [
+    drafts = [
         _draft(
             scope,
             field_key=field_key,
@@ -1608,6 +1645,26 @@ def committee_member_claims(
         for field_key, value in values
         if value is not None
     ]
+    if candidate.get("candidate_ref"):
+        drafts = [
+            provider_evidence(
+                replace(
+                    draft,
+                    extraction_method=ExtractionMethod.API
+                    if draft.field_key == CURRENT_TITLE_FIELD
+                    else draft.extraction_method,
+                    source_key="ai_ark:person"
+                    if draft.field_key == CURRENT_TITLE_FIELD
+                    else draft.source_key,
+                    markers={**draft.markers, "json_path": "profile.title"}
+                    if draft.field_key == CURRENT_TITLE_FIELD
+                    else draft.markers,
+                ),
+                candidate,
+            )
+            for draft in drafts
+        ]
+    return drafts
 
 
 # -- the person job's own two shapes --------------------------------------------------------------
@@ -1824,4 +1881,38 @@ def person_finalization_claims(
         lookalikes_written=lookalikes,
         reports_to_written=reports_to_written,
         reports_to_skipped=skipped,
+    )
+
+
+def provider_evidence(draft: ClaimDraft, reference: Mapping[str, Any]) -> ClaimDraft:
+    """The single provenance adapter for discovery, profile and channel claims."""
+    markers = {
+        **draft.markers,
+        "provider_record": "ai_ark",
+        "provider_subject_id": str(reference["provider_subject_id"]),
+        "operation_id": str(reference["operation_id"]),
+    }
+    return replace(draft, artifact_key=str(reference["artifact_key"]), markers=markers)
+
+
+def phone_claim(phone: AiArkPhone, scope: JobScope) -> ClaimDraft | None:
+    if not phone.numbers:
+        return None
+    return _draft(
+        scope,
+        field_key="core.direct_phone",
+        value=phone.numbers[0],
+        method=ExtractionMethod.API,
+        source_url=None,
+        evidence_span=None,
+        priority=2,
+        outreach_safe=True,
+        confidence=0.6,
+        source_key="ai_ark:phone",
+        markers={
+            "json_path": "data",
+            "provider_record": "ai_ark",
+            "provider_ordered": True,
+            "verification_not_supplied": True,
+        },
     )

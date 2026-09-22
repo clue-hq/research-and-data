@@ -1,14 +1,19 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
-> **Committee-discovery follow-up, 2026-09-22 (planning only).** The founder approved account
-> research → reasoned buying roles → company-scoped AI Ark SMART people discovery → selected
-> contacts' email/phone enrichment alongside person depth, with web research for gaps. Exa
-> account-research failure must be recorded without preventing discovery. The
-> [detailed design draft](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md)
-> and [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md)
-> specify the proposed change to §3's name-scoped-only rule and R3's web-first committee rule.
-> Those runtime changes are **not implemented** by this amendment; engineering contracts remain
-> for review. R4 target-account discovery and the general-purpose `web_search@1` tool are unchanged.
+> **Committee discovery, 2026-09-22 — implemented; activation pending.** The v2 account
+> agent researches the company, reasons about buying responsibilities from its ICP and pinned
+> persona, then discovers unknown people through company-scoped AI Ark SMART title search.
+> This supersedes §3's name-scoped-only rule and R2/R3's web-first committee sequence **for v2**.
+> Selected profiles seed the existing person jobs; work-email and phone enrichment run alongside
+> person depth without another named search. Exhausted account Exa failure leaves a gap and
+> permits discovery. Web research fills gaps and corroborates profiles. Provider facts cite
+> saved artifacts/JSON paths; committee responsibility is the agent's separate assessment.
+> v1 resources remain intact. `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v1` remains the default until
+> the explicitly initiated Probook/Zafran live canary is reviewed. R4 account discovery, media,
+> model settings and general-purpose `web_search@1` are unchanged. See the
+> [design](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
+> [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md) and
+> [acceptance record](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
 
 > **Scoped-field follow-up, 2026-09-16 (planning only).** The founder requested a detailed plan to
 > make agent-proposed research definitions workspace-local. The current lenient writer still

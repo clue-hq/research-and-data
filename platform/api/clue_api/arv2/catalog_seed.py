@@ -65,6 +65,14 @@ _PROF = UseClass.PROFESSIONAL_PUBLIC.value
 _PERS = UseClass.PERSONAL_PUBLIC_NON_SENSITIVE.value
 
 ARV2_PACK: tuple[SeedField, ...] = (
+    _row(
+        "account.committee_search_assessment",
+        "object",
+        _OBJ,
+        "The account agent's buying-role hypothesis and search rationale, with evidence and "
+        "provider-result references. An assessment, not a provider-certified responsibility.",
+        ttl_days=30,
+    ),
     # --- account: the master plan's new fields ---
     _row(
         "account.open_requisitions",

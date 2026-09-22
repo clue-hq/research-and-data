@@ -4,6 +4,31 @@ Master plan §9 Track R. Two rules bind every module here: it **imports nothing 
 (Global Constraint 7, enforced by `tests/arv2/test_import_guard.py`), and **every provider call
 goes through `ProviderCaller`** — no module opens a socket of its own.
 
+## Company-scoped committee discovery (v2, 2026-09-22)
+
+Implemented behind `CLUE_ARV2_RESEARCH_CATALOG_VERSION`, default **v1**. After account Exa deep
+research (or its recorded exhausted failure), the account agent plans roles and uses
+`discover_people` for exact-company SMART title searches. `read_people_result` reads full saved
+profiles. Provider, web and unfilled-role selections remain distinct. No web URL or previously
+known name is required for a provider candidate.
+
+Selected candidates pass reference-only seeds into existing person jobs. Professional profile
+facts land before enrichment; work-email-by-ID and domain/name phone lookup run independently
+alongside person depth. Phone results require matching returned provider ID or selected LinkedIn.
+Unknown dispatches are not automatically retried. Failed claim writes reuse saved responses.
+
+`research_operations.py` owns operation references, ordered selection checkpoints and job privacy
+stops. `committee_discovery.py` owns tools and the shared channel path. `research_context.py` pins
+persona evidence. Provider identity resolution and subject-to-artifact indexing live behind the
+shared `clue_research.identity.provider` seam. Personal raw pages expire after 30 days and are
+invalidated as a whole on erasure; maintenance purges them even if a colleague still cites one.
+
+Each v2 job pins its five-file bundle; old rows keep v1 semantics. Rollback selects v1 for future
+launches while retaining the additive schema and v2 readers. Apply migration `0ab01fe27c1e` before
+running the changed application. Activation awaits the separately initiated Probook/Zafran canary
+and review. Phones are stored in `core.direct_phone`; a frontend phone slot is outside this change.
+See [acceptance](../../../../docs/superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
+
 ## Step 0 — the shared foundation (this task)
 
 | Module | What it owns |
@@ -53,9 +78,9 @@ to the full trail. `ProviderCaller.totals()` is the running sum across every cal
 
 | value | meaning | where it appears |
 |---|---|---|
-| `metered` | the provider's own metering answered — the cost reader supplied at least one number | every paid call: AI Ark, Exa, OpenRouter, native Gemini `generateContent` |
+| `metered` | provider metering supplied a number | AI Ark credit headers, Exa, OpenRouter, Gemini |
 | `free` | nothing was ever going to be charged — the spec declared no cost reader **and** reserved nothing | the public sources: ATS boards, careers pages, RSS feeds, YouTube watch pages, enclosure `GET`/`HEAD`, the Files API upload/poll legs |
-| `estimate` | a cost reader existed but reported nothing, so the pre-spend estimate stands in | the fallback only — this is the one value that means *we do not actually know* |
+| `estimate` | documented arithmetic is inferred, or the provider supplied no usable cost and the pre-spend estimate stands in | AI Ark result arithmetic (`credit_basis` identifies it), or unreadable metering |
 
 The `free`/`estimate` split is the point of the change: before it, a free ATS fetch and a paid call
 whose provider went silent were both unlabelled, so "what did this account really cost" could not

@@ -125,6 +125,7 @@ class CostReading:
     provider_request_id: str | None = None
     media_seconds: int | None = None
     extras: Mapping[str, object] = field(default_factory=dict)
+    inferred: bool = False
 
 
 #: Where the numbers on a settled ledger row came from. Written into every result row's
@@ -194,6 +195,7 @@ class CallSpec:
     estimate: SpendEstimate = field(default_factory=SpendEstimate)
     max_attempts: int = DEFAULT_MAX_ATTEMPTS
     retry_statuses: frozenset[int] = DEFAULT_RETRY_STATUSES
+    empty_statuses: frozenset[int] = frozenset()
     halt_rule: HaltRule | None = None
     cost_reader: CostReader | None = None
     raw_scrubber: RawScrubber | None = None
@@ -516,7 +518,9 @@ class ProviderCaller:
             settled, actual_over_ceiling = self._settle(
                 spec,
                 call_id=call_id,
-                outcome=self._outcome(response.status, spec.retry_statuses),
+                outcome="ok"
+                if response.status in spec.empty_statuses
+                else self._outcome(response.status, spec.retry_statuses),
                 attempts=attempts,
                 latency_ms=latency_ms,
                 status=response.status,
@@ -746,7 +750,11 @@ class ProviderCaller:
         told_us_nothing = (
             cost.cost_usd is None and cost.credits is None and cost.media_seconds is None
         )
-        source = self._cost_source(spec, told_us_nothing=told_us_nothing)
+        source = (
+            "estimate"
+            if cost.inferred
+            else self._cost_source(spec, told_us_nothing=told_us_nothing)
+        )
         usd = spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0))
         credits = spec.estimate.credits if told_us_nothing else (cost.credits or Decimal(0))
         media_seconds = (
@@ -784,7 +792,11 @@ class ProviderCaller:
             raw_ref=raw_ref,
             extras={
                 **cost.extras,
-                **_failure_extras(spec.provider, status, response_body),
+                **(
+                    {}
+                    if status in spec.empty_statuses
+                    else _failure_extras(spec.provider, status, response_body)
+                ),
                 "cost_source": source,
                 **_langfuse_extras(current),
             },

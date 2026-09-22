@@ -106,6 +106,43 @@ class LenientClaimWriter:
         self._lenient = lenient
 
     async def write(self, conn: AsyncConnection, draft: ClaimDraft) -> WriteReceipt:
+        if draft.entity_type is EntityType.CONTACT:
+            from sqlalchemy import text
+
+            # Same authority lock as the shared privacy controller; a late write must serialize
+            # behind its stop before deciding whether this run still owns the subject.
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                {"key": f"contact-research:{draft.workspace_id}:{draft.entity_id}"},
+            )
+            blocked = (
+                await conn.execute(
+                    text("""
+                SELECT EXISTS(SELECT 1 FROM arv2_research_job WHERE run_id=:run
+                  AND workspace_id=:ws AND subject_entity_id=:contact AND right(profile_ref,2)='v2'
+                  AND ((input_refs->>'privacy_stopped')::boolean IS TRUE
+                       OR COALESCE(input_refs->'blocked_channels','[]'::jsonb) ? :field))
+            """),
+                    {
+                        "run": draft.run_id,
+                        "ws": draft.workspace_id,
+                        "contact": draft.entity_id,
+                        "field": draft.field_key,
+                    },
+                )
+            ).scalar_one()
+            if blocked:
+                raise ValueError("research authority was withdrawn for this subject")
+        if draft.artifact_key and draft.markers.get("provider_subject_id"):
+            from clue_research.identity.provider import lock_provider_evidence
+
+            await lock_provider_evidence(
+                conn,
+                workspace_id=draft.workspace_id,
+                provider="ai_ark",
+                subject_id=str(draft.markers["provider_subject_id"]),
+                artifact_key=draft.artifact_key,
+            )
         markers: dict[str, JsonValue] = dict(draft.markers)
         registered = False
 

@@ -43,29 +43,29 @@ def arv2_person_catalog_root(version: str = ARV2_PERSON_CATALOG_VERSION) -> Path
     return arv2_catalog_root("arv2-person", version)
 
 
-def arv2_account_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched account job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
+def catalog_version(profile_ref: str | None) -> str:
+    """Legacy rows explicitly retain v1; unknown authority is refused."""
+    if profile_ref is None:
+        return "v1"
+    if profile_ref in {
+        f"agent-profile:{agent}:{version}"
+        for agent in ("arv2-account", "arv2-person")
+        for version in ("v1", "v2")
+    }:
+        return profile_ref.rsplit(":", 1)[1]
+    raise ValueError(f"unsupported ARV2 profile reference: {profile_ref}")
 
-    Deliberately the *same* computation :func:`load_account_resources` makes, not a second one over
-    the same file: the launch pins this value and the driver compares the bundle's against it, so
-    two digest paths (raw bytes here, decoded text there) is a relaunch loop waiting for the first
-    profile written with CRLF line endings.
-    """
-    base = root or arv2_account_catalog_root()
-    return _resource(
-        "profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md", ARV2_ACCOUNT_CATALOG_VERSION
-    ).sha256
+
+def bundle_pin(bundle: ResourceBundle) -> str:
+    return bundle.profile.sha256 if bundle.profile.version == "v1" else bundle.manifest_sha256()
 
 
-def arv2_person_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched person job records beside :data:`ARV2_PERSON_PROFILE_REF`.
+def arv2_account_profile_sha256(root: Path | None = None, *, version: str = "v1") -> str:
+    return bundle_pin(load_account_resources(root, version=version))
 
-    Same one-computation rule as the account pin, for the same reason.
-    """
-    base = root or arv2_person_catalog_root()
-    return _resource(
-        "profile", ARV2_PERSON_PROFILE_REF, base / "profile.md", ARV2_PERSON_CATALOG_VERSION
-    ).sha256
+
+def arv2_person_profile_sha256(root: Path | None = None, *, version: str = "v1") -> str:
+    return bundle_pin(load_person_resources(root, version=version))
 
 
 @dataclass(frozen=True)
@@ -130,14 +130,14 @@ def _load_resources(agent: Arv2Agent, version: str, root: Path | None) -> Resour
     )
 
 
-def load_account_resources(root: Path | None = None) -> ResourceBundle:
+def load_account_resources(root: Path | None = None, *, version: str = "v1") -> ResourceBundle:
     """Read the account agent's five files and pin each one by digest."""
-    return _load_resources("arv2-account", ARV2_ACCOUNT_CATALOG_VERSION, root)
+    return _load_resources("arv2-account", version, root)
 
 
-def load_person_resources(root: Path | None = None) -> ResourceBundle:
+def load_person_resources(root: Path | None = None, *, version: str = "v1") -> ResourceBundle:
     """Read the person agent's five files and pin each one by digest."""
-    return _load_resources("arv2-person", ARV2_PERSON_CATALOG_VERSION, root)
+    return _load_resources("arv2-person", version, root)
 
 
 @dataclass(frozen=True)

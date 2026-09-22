@@ -35,8 +35,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_catalog import (
-    ARV2_ACCOUNT_PROFILE_REF,
-    ARV2_PERSON_PROFILE_REF,
     arv2_account_profile_sha256,
     arv2_person_profile_sha256,
 )
@@ -63,6 +61,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.research_context import pin_persona
 from clue_api.arv2.structuring_client import FieldCatalog
 from clue_config import Settings
 from clue_core import EntityId, ExtractionMethod, Persona, ProjectPhase, ProjectRunId
@@ -317,10 +316,23 @@ async def launch_arv2_account_research(
             effort=request.effort,
             committee_cap=request.committee_cap,
             directive_text=request.directive_text,
-            profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+            profile_ref=f"agent-profile:arv2-account:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            persona_pin=(
+                await pin_persona(
+                    conn,
+                    storage,
+                    workspace_id=request.workspace_id,
+                    brand_id=icp.brand_id,
+                    project_id=request.project_id,
+                    icp_key=icp.icp_key,
+                    icp_version=icp.icp_version,
+                )
+            )
+            if settings.arv2_research_catalog_version == "v2"
+            else None,
             created_at=now(),
         ),
     )
@@ -354,6 +366,7 @@ async def launch_arv2_account_research(
             # committee step, once this job has resolved them. The job carries its own copy of the
             # profile pin so replay never has to infer it from the run.
             subject_type="account",
+            profile_ref=f"agent-profile:arv2-account:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
         )
 
@@ -761,10 +774,23 @@ async def launch_arv2_person_research(
             effort="full",
             committee_cap=len(request.contact_entity_ids),
             directive_text=request.directive_text,
-            profile_ref=ARV2_PERSON_PROFILE_REF,
+            profile_ref=f"agent-profile:arv2-person:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            persona_pin=(
+                await pin_persona(
+                    conn,
+                    storage,
+                    workspace_id=request.workspace_id,
+                    brand_id=icp.brand_id,
+                    project_id=request.project_id,
+                    icp_key=icp.icp_key,
+                    icp_version=icp.icp_version,
+                )
+            )
+            if settings.arv2_research_catalog_version == "v2"
+            else None,
             created_at=now(),
         ),
     )
@@ -801,6 +827,7 @@ async def launch_arv2_person_research(
             # account sibling, and the driver composes their employer's context from it.
             account_entity_id=place.account_id,
             subject_type="person",
+            profile_ref=f"agent-profile:arv2-person:{settings.arv2_research_catalog_version}",
             subject_entity_id=contact_id,
             profile_sha256=profile_sha256,
         )
@@ -1033,7 +1060,9 @@ class DbArv2LaunchService:
     async def launch(self, request: Arv2LaunchRequest) -> Arv2LaunchReceipt:
         # The profile digest is read at launch time, so a run records the bytes that existed when
         # the human approved it — the driver re-checks them and refuses if they have since moved.
-        profile_sha256 = arv2_account_profile_sha256()
+        profile_sha256 = arv2_account_profile_sha256(
+            version=self._settings.arv2_research_catalog_version
+        )
         async with self._conn_factory() as conn:
             receipt = await launch_arv2_account_research(
                 conn,
@@ -1053,7 +1082,9 @@ class DbArv2LaunchService:
         # The person profile's digest, read at launch time for the same reason the account launch
         # reads its own: the run records the bytes that existed when the human asked, and the
         # driver refuses a job whose profile has moved since.
-        profile_sha256 = arv2_person_profile_sha256()
+        profile_sha256 = arv2_person_profile_sha256(
+            version=self._settings.arv2_research_catalog_version
+        )
         async with self._conn_factory() as conn:
             receipt = await launch_arv2_person_research(
                 conn,
