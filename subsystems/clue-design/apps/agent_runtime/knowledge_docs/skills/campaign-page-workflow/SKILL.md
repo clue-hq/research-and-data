@@ -54,9 +54,12 @@ Know what the library actually holds and what the key bands actually
 look like BEFORE deciding anything. View the bands you are likely to
 keep or remix for pixels; use `inspect_cloned_section` for markup/CSS/slots.
 Truncated or unavailable source remains a gap. The evidence
-base for this entire build is: what the brief supplied + what this
-library captured + registered brand assets. Nothing from your own
-memory of the client company, however famous it is.
+base for this entire build is: attributed brief material, captured library
+content, registered brand assets and seller knowledge, and scoped account/contact
+claims returned by the exposed shared-platform reads. Preserve each item's
+subject, source, freshness and verification status; contact use also requires
+the allowed-use gate. A returned claim is not automatically verified. Nothing
+comes from your own memory of the client company, however famous it is.
 
 Read `web-account-personalization` for target evidence. Consume shared platform
 reads only where exposed; their verified claims can ground this plan. A named
@@ -182,7 +185,10 @@ invented now:
   reference for grammar, rhythm, and density.
 - The logo-off test on every composed and derived band.
 - Check primary conversion intent and every actual link/control destination.
-- Every claim on the page traces to the anchors (brief or library).
+- Every claim on the page traces to its actual evidence: attributed brief
+  material, captured library content, seller knowledge, or scoped platform
+  account/contact claims. Keep the subject, freshness, verification and
+  contact-use limits intact; user requirements alone do not verify a claim.
 - Read the finished page top to bottom as the arriving visitor: at
   every scroll position — do I know what this is, why it's for me,
   what I get if I act?
