@@ -251,3 +251,19 @@ Private bundle: `.artifacts/arv3-live-20260922-fed26981/`. Start with `manifest.
 | Aaron recovery | `72d97161ca0e32a0848ef7782d59c518` |
 
 Within shared traces, locate the enclosing `arv2.account_research` agent observation by `metadata.job_id` (that name is also used for person jobs), then follow its descendants. The exported activity timeline contains explicit tool rationales and choices, with timings and IDs. It does not reproduce private model reasoning. IDs for every job and selected identity are in the manifest/snapshot; use the exact IDs because the environment filter is unreliable for these traces.
+
+## Cumulative review with Premier v1
+
+The [cumulative quality review](2026-09-22-arv3-cumulative-quality-review.md) retains this report
+as the v3 baseline and compares it with the founder-supplied Premier audit. A new read-only
+database join confirms Premier's exact v1 profile and Exa call, and shows its incorrect Klara
+claim and correction both remain unsuperseded. This independently reproduces the correction
+failure seen here. The proposed Deep Agent/claim-specialist/narrative-specialist architecture
+is discussion only, not an implemented or approved redesign.
+
+Additional inspection of this run's saved provider requests found 14,932 report characters / 20
+Exa results for Probook and 15,131 / 20 for Zafran. Each account's two extraction calls received
+12 + 4 source blocks, not the complete report. This identifies a coverage-accounting boundary,
+not a measured loss percentage: the parent can also use the report in direct claim writes.
+The v3 test did not exercise display pages; Premier's display defects must not be presented as
+measured v3 UI results. All original run/recovery totals and exclusions above remain unchanged.
