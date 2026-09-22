@@ -4,7 +4,7 @@
 **Branch:** `codex/ai-ark-committee-discovery-spec`.
 **Base:** `79520ffca`; the authorized pull reported already up to date.
 **Implementation commit:** `5d90cdbe3` (local only).
-**Status:** offline implementation verified; live provider/research-quality acceptance pending.
+**Status:** offline implementation verified; authorized v3 live cohort completed with quality defects. Full acceptance remains open; see the [live comparison](2026-09-22-arv3-live-poc-comparison.md).
 **Default:** AI Ark v2. Media v3 is available for explicit selection; it has not been activated.
 
 Authority: [approved design](../specs/2026-09-22-arv2-media-research-design.md),
@@ -187,3 +187,19 @@ checks 902 files and retains only the previously recorded `design_leg_wiring.py:
 Live acceptance still must verify API/worker export into the configured Langfuse project, entity
 tags/retention, and real provider billing. No paid calls, shared-runtime restart, migration,
 push or deployment were performed for this audit. AI Ark v2 stays default.
+
+
+## Authorized live follow-up — September 22
+
+The founder subsequently requested latest **v3 only**, compared with the saved PoC, using
+Probook, Zafran and their historical people. This supersedes the fresh v2 control and unseen
+subject requirement for this particular experiment; it does not claim those acceptance cases
+passed. The original 13 jobs completed through real platform agents in an isolated database.
+Native video/audio, embeddings, hybrid retrieval and saved-transcript reuse executed live.
+Output-quality defects remain, including shared catalog contamination and low usable media
+claim yield. A separate four-person on-demand recovery run completed, returning both channels for all four; original seeded-handoff outcomes remain qualified.
+
+The [live comparison and trace report](2026-09-22-arv3-live-poc-comparison.md) records results,
+exclusions, the measured bottlenecks, evidence handles and remaining gates. The earlier
+"no paid providers" statement describes the implementation checkpoint above, not this later
+founder-authorized test. Shared settings remain v2; no production v3 activation occurred.

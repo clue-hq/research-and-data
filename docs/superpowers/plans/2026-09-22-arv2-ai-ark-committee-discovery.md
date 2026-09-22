@@ -259,3 +259,19 @@ actual connection configuration first. Live client tests are excluded from the c
 This plan is grounded in source at `8df27dd25` and the provider documentation linked in the
 design. The planning task changes documentation only. Runtime tests, migrations, paid provider
 calls and live end-to-end acceptance are future work and are not claimed here.
+
+
+## Authorized live follow-up — September 22
+
+The founder requested the latest v3 flow (which includes this committee implementation) and a
+comparison against the historical PoC, without a separate fresh v2 control. Real company-bound
+SMART searches ran for both Probook and Zafran through the platform agents. Probook independently
+selected all five historical members; Zafran selected three historical members plus a new
+marketing-operations candidate. Two other historical Zafran subjects were researched separately.
+Selected-profile reuse and both enrichment channels have live evidence; four Probook enrichment
+cases were invalidated by a test-harness identity error; a separate on-demand recovery completed with emails and phones for all four. Original seeded-handoff outcomes remain qualified.
+
+See the [live comparison and trace report](2026-09-22-arv3-live-poc-comparison.md) for measured
+coverage, limits and receipts. The experiment uncovered and fixed a real shared-pacing deadlock
+in `5c0b9b912`. Quality acceptance remains open; this does not close every Step 9 gate or change
+production activation. The planning-session verification above remains historical.
