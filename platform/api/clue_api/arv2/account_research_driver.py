@@ -35,13 +35,12 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from langchain_core.tools import StructuredTool
-from pydantic import SecretStr
+from pydantic import JsonValue, SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -590,12 +589,16 @@ class Arv2AccountResearchWorkHandler:
                     "Finalize the typed account report with remaining gaps.",
                 )
             async with self._connection() as conn:
+                from clue_api.arv2.quality_coverage import coverage
+
+                assert composition.run.context_id is not None
+                measured = await coverage(conn, composition.scope, composition.run.context_id)
                 accepted = await reconcile_generation(
                     conn,
                     workspace_id=workspace_id,
                     generation_id=generation_id,
                     expected_revision=revision,
-                    needs_review=result.status != "completed",
+                    needs_review=result.status != "completed" or bool(measured["needs_review"]),
                 )
             return WorkResult(
                 outcome="completed",
@@ -605,6 +608,7 @@ class Arv2AccountResearchWorkHandler:
                     "applied": accepted,
                     "execution_id": str(result.execution_id),
                     "finalization_key": result.finalization_key,
+                    "coverage": cast(JsonValue, measured),
                 },
             )
         except asyncio.CancelledError:
@@ -742,7 +746,7 @@ class Arv2AccountResearchWorkHandler:
 
     async def _contain(self, scope: _Scope, *, code: str, message: str) -> str:
         """Land the job ``needs_review`` with a named reason, and refresh its run."""
-        finalization = {
+        finalization: dict[str, object] = {
             "reason": code,
             "detail": message[:1_000],
             "profile_sha256": None,
@@ -750,6 +754,10 @@ class Arv2AccountResearchWorkHandler:
         }
         try:
             async with self._connection() as conn:
+                from clue_api.arv2.quality_meter import usage
+
+                meter = await usage(conn, workspace_id=scope.workspace_id, job_id=scope.job_id)
+                finalization["spend"] = meter.receipt()
                 await self._store.finish_job(
                     conn,
                     job_id=scope.job_id,
@@ -757,11 +765,11 @@ class Arv2AccountResearchWorkHandler:
                     finalization=finalization,
                     failure_code=code,
                     failure_message=message[:1_000],
-                    model_rounds=0,
-                    tool_calls=0,
-                    cost_usd=Decimal(0),
-                    credits=Decimal(0),
-                    media_seconds=0,
+                    model_rounds=meter.model_calls,
+                    tool_calls=meter.tool_calls,
+                    cost_usd=meter.known_usd,
+                    credits=meter.credits,
+                    media_seconds=meter.media_seconds,
                 )
                 await self._store.refresh_run_status(conn, run_id=scope.run_id)
         except Exception:  # noqa: BLE001 — the fleet result is owed whatever the database does
@@ -1437,7 +1445,14 @@ class Arv2AccountResearchWorkHandler:
             meter = await usage(
                 conn, workspace_id=composition.run.workspace_id, job_id=composition.job.job_id
             )
+            from clue_api.arv2.quality_coverage import coverage
+
+            assert composition.run.context_id is not None
+            measured = await coverage(conn, composition.scope, composition.run.context_id)
+            if measured["needs_review"]:
+                status = "needs_review"
             finalization = {
+                "coverage": cast(JsonValue, measured),
                 "schema_version": "quality-job-v1",
                 "context_id": str(composition.run.context_id),
                 "execution_id": str(result.execution_id),

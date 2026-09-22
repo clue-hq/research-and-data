@@ -237,6 +237,19 @@ class QualityProviderWriter(LenientClaimWriter):
                 entailment="supported",
                 relationship_direction="not_applicable",
                 temporal_scope="supported",
+                qualifications=tuple(
+                    str(q)
+                    for row in draft.value_json
+                    if isinstance(row, dict)
+                    for q in (
+                        cast(list[JsonValue], row["qualifications"])
+                        if isinstance(row.get("qualifications"), list)
+                        else []
+                    )
+                )
+                if draft.field_key == "account.open_requisitions"
+                and isinstance(draft.value_json, list)
+                else (),
                 explanation="Existing deterministic provider mapper v1, recomputed against saved "
                 "original record. Mapping details: "
                 + json.dumps(dict(draft.markers), sort_keys=True),

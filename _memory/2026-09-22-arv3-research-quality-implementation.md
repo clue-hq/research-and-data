@@ -146,3 +146,25 @@
 - Not complete: Q7 media attribution/version repair, hiring freshness, measured coverage/refusal
   recovery; artifact/privacy and failure-meter closure; Q8 combined migration/load/browser proofs.
   Defaults remain v2 and the opt-in v4 composition has not been activated or live accepted.
+
+- Q7 checkpoint: transcript acquisition/recovery now indexes canonical versions into scoped evidence
+  grants. Specialists can read bounded segment views and submit typed transcript claims through the
+  same proposal writer. Exact range/version validation, self-introduction and consistent turn-label
+  evidence, coverage/repetition qualifications and honest timing survive into stored claims/citations.
+  Uncorroborated personal voice stays qualified/ineligible. Repair preserves the original and marks
+  dependent quality claims unresolved with ordinary correction/invalidation events. Legacy media
+  annotations remain intact. Invalid-reference proposals/read calls replay stored refusals without
+  external transport. Domain unavailable/uncertain media envelopes no longer masquerade as success.
+- Hiring mappings for the new profile retain observation/closing/status/timezone and explicit
+  open/closed/historical/unknown assessments; expired listings cannot become ordinary current-opening
+  page prose. Durable coverage reports derive acquisition, media, disposition, claim and current-page
+  outcomes from DB records; missing/stale pages or unprocessed sources produce needs_review. Failed
+  worker containment preserves measured spend/unknown prices rather than writing artificial zeros.
+- New immutable governed resource revision 4 includes media tools/instructions; revisions 2/3 remain
+  replayable. No launch default or shared runtime changed. Offline validation: 38 final media, hiring,
+  provider/refusal, actual runtime, driver, page and legacy media/evidence cases passed; mypy passes
+  17 changed production files. Driver expectation changed to needs_review specifically because its
+  scripted model publishes no pages (the new final completion contract), with the coverage assertion.
+- Remaining before paid boundary: privacy/output bindings, standalone-person/read/count edge cases,
+  complete combined acceptance (migration/storage/load/browser/frozen evidence/telemetry). Paid live
+  comparison and actual model quality remain unproven and must not run without resuming authorization.

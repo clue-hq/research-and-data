@@ -148,11 +148,18 @@ class AcquireResearchTool(Tool):
             assert runtime.storage is not None
             async with ctx.conn_factory() as conn:
                 await recover_acquisitions(conn, runtime.storage, runtime.operation_scope)
-            if operation.artifact_key and operation.state in {"succeeded", "failed"}:
+                from clue_api.arv2.quality_media import index_transcripts
+
+                await index_transcripts(conn, runtime.storage, runtime.operation_scope)
+            if operation.artifact_key and operation.state in {"succeeded", "failed", "unknown"}:
                 return self.receipt(
                     AcquireResearchReceipt(
                         operation_id=operation.operation_id,
-                        status="completed" if operation.state == "succeeded" else "refused",
+                        status="outcome_unknown"
+                        if operation.state == "unknown"
+                        else "completed"
+                        if operation.state == "succeeded"
+                        else "refused",
                         result_path=f"/research/operations/{operation.operation_id}/0.json",
                         error_code=operation.error_code,
                         replayed=True,
@@ -171,13 +178,36 @@ class AcquireResearchTool(Tool):
         # a retry will return the above refusal instead of calling the provider again.
         raw = await tool.ainvoke(args.arguments)
         value = json.loads(raw) if isinstance(raw, str) else raw
-        refused = isinstance(value, dict) and bool(value.get("error"))
-        code = str(value.get("code") or "provider_refusal") if refused else None
+        domain_state = value.get("state") if isinstance(value, dict) else None
+        unknown = domain_state in {"unknown", "dispatched", "reserved"}
+        refused = isinstance(value, dict) and (
+            bool(value.get("error"))
+            or domain_state
+            in {
+                "unavailable",
+                "empty",
+                "ambiguous",
+                "not_found",
+                "refused",
+                "failed",
+            }
+        )
+        code = (
+            "dispatch_outcome_unknown"
+            if unknown
+            else str(value.get("code") or value.get("gap") or "provider_refusal")
+            if refused
+            else None
+        )
         body = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
         sha = content_address(body)
         key = artifact_key(runtime.scope.workspace_id, sha)
         assert runtime.storage is not None
         async with ctx.conn_factory() as conn:
+            from clue_api.arv2.quality_media import index_transcripts
+
+            if args.operation in {"read_media", "search_transcripts", "open_transcript"}:
+                await index_transcripts(conn, runtime.storage, runtime.operation_scope)
             # Privacy may have been withdrawn during the hop. Keep settlement, refuse new exposure.
             await resolve_authority(conn, runtime.scope, ctx.execution_id)
             await record_artifact(
@@ -229,7 +259,7 @@ class AcquireResearchTool(Tool):
                     "id": operation.operation_id,
                     "ws": runtime.scope.workspace_id,
                     "owner": operation.owner_token,
-                    "state": "failed" if refused else "succeeded",
+                    "state": "unknown" if unknown else "failed" if refused else "succeeded",
                     "key": key,
                     "code": code,
                 },
@@ -237,7 +267,7 @@ class AcquireResearchTool(Tool):
         return self.receipt(
             AcquireResearchReceipt(
                 operation_id=operation.operation_id,
-                status="refused" if refused else "completed",
+                status="outcome_unknown" if unknown else "refused" if refused else "completed",
                 result_path=f"/research/operations/{operation.operation_id}/0.json",
                 error_code=code,
             )

@@ -180,8 +180,28 @@ async def _validate_sections(
                     restricted=recipe.restricted or sentence.kind in ("qualified", "gap"),
                 ):
                     raise ValueError("page support is unavailable for presentation")
+                if claim["field_key"] == "account.open_requisitions":
+                    from clue_api.arv2.quality_hiring import current_hiring_state
+
+                    values = claim["value_json"]
+                    if (
+                        isinstance(values, list)
+                        and any(
+                            isinstance(v, dict) and current_hiring_state(v) != "open"
+                            for v in values
+                        )
+                        and sentence.kind not in ("qualified", "gap")
+                    ):
+                        raise ValueError(
+                            "closed, historical or undated hiring must remain qualified"
+                        )
                 if sentence.kind == "quote" and (
-                    markers.get("claim_kind") not in ("observation", "attributed_statement")
+                    (
+                        claim["entity_type"] == "contact"
+                        and claim["source_key"] == "research:transcript"
+                        and (markers.get("media") or {}).get("attribution") != "evidence_backed"
+                    )
+                    or markers.get("claim_kind") not in ("observation", "attributed_statement")
                     or claim["source_key"] not in ("research:web_snapshot", "research:transcript")
                     or not claim["evidence_span"]
                     or sentence.text not in claim["evidence_span"]

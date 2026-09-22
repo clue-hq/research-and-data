@@ -189,3 +189,46 @@ def test_provider_refusal_is_visible_and_cannot_be_retried_as_success(tmp_path):
                 await tool.invoke(args, replace(ctx, execution_id=ExecutionId(child)))
 
     run_async(case())
+
+
+def test_invalid_transcript_reads_are_durable_refusals_without_transport(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, context = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4")
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=context,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            wire = ScriptedTransport([])
+            rt = runtime(conn, scope, storage, wire)
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            tool = AcquireResearchTool(rt)
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            args = AcquireResearchInput(
+                operation="open_transcript",
+                arguments={"version_ref": str(uuid4()), "start": 0, "end": 10},
+            )
+            first = await tool.invoke(args, ctx)
+            second = await tool.invoke(args, ctx)
+            assert first.references["status"] == second.references["status"] == "refused"
+            assert second.references["replayed"]
+            assert not wire.requests
+
+    run_async(case())

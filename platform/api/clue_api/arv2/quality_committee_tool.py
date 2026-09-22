@@ -200,7 +200,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 profile_sha256=bundle_pin(
                     load_quality_resources(
                         "arv2-person",
-                        version=int((self.scope.input_refs or {}).get("quality_recipe_version", 3)),
+                        version=int((self.scope.input_refs or {}).get("quality_recipe_version", 4)),
                     )
                 ),
                 profile_ref=f"agent-profile:arv2-person:{self.scope.catalog_version}",

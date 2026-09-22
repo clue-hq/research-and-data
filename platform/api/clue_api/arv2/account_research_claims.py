@@ -337,6 +337,18 @@ def ats_posting_claims(postings: BoardPostings, scope: JobScope) -> list[ClaimDr
             },
             keep=("title",),
         )
+        if scope.catalog_version == "v4":
+            from clue_api.arv2.quality_hiring import hiring_context
+
+            assert isinstance(row, dict)
+            row.update(
+                hiring_context(
+                    posting.provider_fields,
+                    observed=scope.today,
+                    confirmed_board=True,
+                    listed=posting.is_listed,
+                )
+            )
         span_parts = [
             part
             for part in (
@@ -355,7 +367,8 @@ def ats_posting_claims(postings: BoardPostings, scope: JobScope) -> list[ClaimDr
                 source_url=posting.url,
                 evidence_span=" — ".join(span_parts) or None,
                 priority=1,
-                outreach_safe=True,
+                outreach_safe=not isinstance(row, dict)
+                or row.get("hiring_state", "open") == "open",
                 confidence=0.9,
                 source_key=f"ats:{postings.board.kind}",
                 markers={"json_path": f"jobs[{index}]", "board_url": postings.url},

@@ -169,13 +169,47 @@ def _evidence_ref(claim: Claim) -> EvidenceRef:
         if quality
         else None
     )
+    media = markers.get("media")
+    if (
+        quality
+        and isinstance(media, dict)
+        and claim.entity_type.value == "contact"
+        and (media.get("attribution") != "evidence_backed")
+    ):
+        kind = "source_excerpt"
     quote = (claim.evidence_span or None) if kind in (None, "primary_quote") else None
     support = markers.get("support")
     supports = [s for s in support if isinstance(s, dict)] if isinstance(support, list) else []
     is_record = claim.extraction_method is ExtractionMethod.API and claim.source_url is None
     seen = claim.observed_at or claim.collected_at
     media_timestamp = _string_entry(value, ("media_timestamp",))
-    qualifications = markers.get("qualifications")
+    raw_qualifications = markers.get("qualifications")
+    qualifications = (
+        [str(q) for q in raw_qualifications] if isinstance(raw_qualifications, list) else []
+    )
+    if quality and isinstance(media, dict):
+        raw_segments = media.get("segments")
+        segments = raw_segments if isinstance(raw_segments, list) else []
+        stamps = [s for s in segments if isinstance(s, dict) and s.get("time_s") is not None]
+        media_timestamp = (
+            f"{stamps[0]['time_s']}s ({str(stamps[0].get('timing', 'unknown')).replace('_', ' ')})"
+            if stamps
+            else None
+        )
+        qualifications.append(
+            f"Transcript version {media.get('version_ref')}; "
+            f"characters {media.get('start')}–{media.get('end')}."
+        )
+        if not stamps:
+            qualifications.append("Timestamp unavailable.")
+    if quality and claim.field_key == "account.open_requisitions" and isinstance(value, list):
+        from clue_api.arv2.quality_hiring import current_hiring_state
+
+        qualifications.extend(
+            f"Hiring: {current_hiring_state(row)}; observed {row.get('observed_on', 'unknown')}."
+            for row in value
+            if isinstance(row, dict)
+        )
     claim_support_ids = [s.get("claim_ids") for s in supports if s.get("kind") == "claims"]
     return EvidenceRef(
         claim_id=str(claim.id),

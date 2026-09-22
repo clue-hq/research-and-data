@@ -29,6 +29,7 @@ _DOCUMENT = re.compile(r"/documents/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CLAIM = re.compile(r"/claim/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
 _OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
+_TRANSCRIPT = re.compile(r"/transcripts/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
 
 
@@ -100,6 +101,17 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        transcript = _TRANSCRIPT.fullmatch(path)
+        if transcript:
+            from clue_api.arv2.quality_media import read_transcript
+
+            return await read_transcript(
+                conn, self._storage, authority.grant, UUID(transcript[1]), int(transcript[2])
+            )
+        if path == "/coverage.json":
+            from clue_api.arv2.quality_coverage import coverage
+
+            return await coverage(conn, scope, authority.context_id)
         if path == "/committee.json":
             members = await read_committee(
                 conn,

@@ -24,6 +24,7 @@ from clue_api.arv2.quality_evidence import (
     record_disposition,
     validate_support,
 )
+from clue_api.arv2.quality_media import TranscriptSupport, validate_transcript
 from clue_api.arv2.quality_relationships import (
     EMPLOYMENT,
     CommitteeAssessment,
@@ -123,6 +124,10 @@ class ClaimProposal(
     pass
 
 
+class TranscriptProposal(_ProposalBase[TranscriptSupport]):
+    pass
+
+
 class SellerDocumentSupport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["seller_document"] = "seller_document"
@@ -153,7 +158,7 @@ async def submit_proposal(
     storage: StorageBackend,
     scope: JobScope,
     grant: EvidenceGrant,
-    proposal: ClaimProposal | NarrativeProposal,
+    proposal: ClaimProposal | NarrativeProposal | TranscriptProposal,
     *,
     context_id: UUID,
     actor_ref: str,
@@ -205,6 +210,8 @@ async def submit_proposal(
     inherited_safe = True
     inherited_class = proposal.use_class
     inherited_binding = proposal.identity_binding
+    media_markers: list[dict[str, JsonValue]] = []
+    qualifications = list(proposal.assessment.qualifications)
     error = None
     assessment = proposal.assessment.conclusion()
     field = await get_effective_field(
@@ -365,6 +372,21 @@ async def submit_proposal(
                     marker_context = (claim.write_markers or {}).get("context_id")
                     if marker_context and marker_context != str(context_id):
                         raise EvidenceUnavailable("supporting claim has another context")
+            elif isinstance(support, TranscriptSupport):
+                if proposal.claim_kind != "attributed_statement" or len(proposal.support) != 1:
+                    raise EvidenceUnavailable(
+                        "a transcript establishes a single attributed statement"
+                    )
+                ref, media, warnings = await validate_transcript(
+                    conn, storage, grant, scope, support
+                )
+                refs.append(ref)
+                support_keys.update((ref.artifact_key, str(media["segments_key"])))
+                media_markers.append(media)
+                qualifications.extend(warnings)
+                if warnings and assessment == "supported":
+                    assessment = "qualified"
+                inherited_safe = inherited_safe and not warnings
             elif isinstance(support, SellerDocumentSupport):
                 if (
                     not isinstance(proposal, NarrativeProposal)
@@ -469,15 +491,19 @@ async def submit_proposal(
         )
         method = ExtractionMethod.API if provider else ExtractionMethod.LLM_SYNTHESIS
         first = refs[0] if refs else None
-        quotes = [s.quote for s in proposal.support if isinstance(s, TextSupport)]
+        quotes = [
+            s.quote for s in proposal.support if isinstance(s, (TextSupport, TranscriptSupport))
+        ]
         markers: dict[str, JsonValue] = {
             "quality_required": True,
             "claim_kind": proposal.claim_kind,
             "support": [s.model_dump(mode="json") for s in proposal.support],
-            "qualifications": list(proposal.assessment.qualifications),
+            "qualifications": [str(q) for q in qualifications],
             "proposal_ref": str(oid),
             "context_id": str(context_id),
         }
+        if media_markers:
+            markers["media"] = media_markers[0]
         draft = ClaimDraft(
             entity_id=subject,
             entity_type=EntityType.CONTACT

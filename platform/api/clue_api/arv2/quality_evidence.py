@@ -409,7 +409,14 @@ async def resolve_source(
 
 
 async def _body(conn: AsyncConnection, storage: StorageBackend, ref: SourceRef) -> bytes:
-    keys = sorted({ref.artifact_key, *([ref.original_key] if ref.original_key else [])})
+    segments_key = ref.metadata.get("segments_key") if ref.kind == "transcript" else None
+    keys = sorted(
+        {
+            ref.artifact_key,
+            *([ref.original_key] if ref.original_key else []),
+            *([segments_key] if isinstance(segments_key, str) else []),
+        }
+    )
     locked = (
         (
             await conn.execute(

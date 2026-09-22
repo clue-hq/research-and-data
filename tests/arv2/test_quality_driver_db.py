@@ -221,8 +221,11 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             )
             jid = launch.job_ids[0]
             result = await handler.handle(work(jid, launch.run_id, fixture.workspace_id))
-            assert result.outcome == "completed", (result, await read_job(conn, job_id=jid))
+            assert result.outcome == "needs_review", (result, await read_job(conn, job_id=jid))
             initial = await read_job(conn, job_id=jid)
+            # This scripted worker finalizes a report without publishing pages. Measured
+            # completion must retain that gap rather than accepting the model's status.
+            assert initial.finalization["coverage"]["missing_pages"] == ["insights", "overview"]
             assert initial.finalization["spend"]["unpriced_model_calls"] == 3
             assert initial.finalization["spend"]["cost_complete"] is False
             assert initial.finalization["schema_version"] == "quality-job-v1"
@@ -249,7 +252,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                     ),
                     {"id": jid},
                 )
-            ).scalar_one() == "reconciled"
+            ).scalar_one() == "needs_review"
             assert (await handler.handle(continuation)).outcome == "completed"
             assert len(calls) == 2
             # No legacy Luna display or repeat initial task was offered.

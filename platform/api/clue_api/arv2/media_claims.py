@@ -143,6 +143,9 @@ async def audit(runtime: Any, claim: Any) -> tuple[str, str, dict[str, Any]]:
 
 
 async def mark_repaired(runtime: Any, conn: Any, previous: UUID, current: UUID) -> None:
+    from clue_api.arv2.quality_media import invalidate_repaired
+
+    await invalidate_repaired(conn, runtime.storage, runtime.scope.workspace_id, previous, current)
     # Append an audit finding, preserving the original claim and its pinned evidence.
     await conn.execute(
         text("""INSERT INTO

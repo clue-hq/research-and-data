@@ -78,6 +78,7 @@ from clue_api.arv2.quality_execution import (
     runtime_remaining,
 )
 from clue_api.arv2.quality_mapping import QualityProviderWriter
+from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
 from clue_api.arv2.quality_page_tools import PublishResearchPageTool, ReadPageInputsTool
 from clue_api.arv2.quality_provider_tools import AcquireResearchTool
@@ -174,6 +175,7 @@ def quality_tools(
     registry = ToolRegistry()
     for cls in (
         SubmitResearchClaimTool,
+        SubmitTranscriptClaimTool,
         CorrectResearchClaimTool,
         SearchEvidenceTool,
         ProcessingDispositionTool,
@@ -188,7 +190,7 @@ def quality_tools(
 
 
 def quality_profiles(
-    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 3
+    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 4
 ) -> AgentProfileRegistry:
     authority = {
         descriptor.address: (
@@ -398,7 +400,7 @@ class ResearchUnitRuntime:
             )
         self.artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=connections)
         self.turns = DbAgentTurnJournal(conn_factory=connections)
-        self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 3))
+        self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 4))
         self.profiles = quality_profiles(tools, version=self.resource_version)
         self.checkpointer_factory = checkpointer_factory
         self.plans = DbAgentPlanJournal(conn_factory=connections)

@@ -1,0 +1,14 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 4,
+  "resources": {
+    "profiles/quality-account-research/v4/profile.yaml": "76ac5e0f0fdaf9ba5981d93dd1c1cbb45adde1cc8d8a37e9df4fb67c408f42b9",
+    "profiles/quality-research-claims/v4/profile.yaml": "01922e99525b91c4b4b9b6ac5d2f62f554e0e7c18330e3a454e6e44ae1adf523",
+    "profiles/quality-research-narrative/v4/profile.yaml": "18ae896e495e3a740f2485088bc8452bdac1eb9038eb4684380a65ed3e5f52c3",
+    "prompts/quality-account-research/v4/SYSTEM.md": "b6d22e036c7f3a19964a2ce0e7d223f609b0654db70c145c162a59d75738cc6b",
+    "prompts/quality-research-claims/v4/SYSTEM.md": "9a9fe266bc2357c6c9bc73c11d209a7cbd7f153189caf8ee3401a6de1c1fbe3d",
+    "prompts/quality-research-narrative/v4/SYSTEM.md": "4def7f104998133a2faafc24cc5e66584dea29ab9e5e4a7b1a85c4bef07de3af",
+    "recipe-v4.json": "80d58b65edf7a7a94e55e0f14a338c39b0b82d372cbf01e86b4f6eabad39685b",
+    "skills/governed-evidence/v1/SKILL.md": "8b0dcd78b9031371c5c92e6abf74c832a1f304c0c3775df41c2fed772101eb53"
+  }
+}
