@@ -236,6 +236,64 @@ async def mark_erased(conn: AsyncConnection, storage_key: str) -> None:
     )
 
 
+async def retain_artifact(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    storage_key: str,
+    reference_kind: str,
+    reference_id: str,
+) -> None:
+    """Hold immutable bytes for a durable owner. Explicit privacy erasure always wins.
+
+    The artifact lock serializes retention with erasure; an owner cannot resurrect unavailable
+    evidence. Owners release these references when their durable records/grants are retired.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact WHERE storage_key=:key AND workspace_id=:ws "
+                "AND erased_at IS NULL AND NOT privacy_erased "
+                "AND (expires_at IS NULL OR expires_at>now()) FOR UPDATE"
+            ),
+            {"key": storage_key, "ws": workspace_id},
+        )
+    ).first()
+    if row is None:
+        raise ArtifactIntegrityError("artifact is unavailable for retention")
+    await conn.execute(
+        text(
+            "INSERT INTO artifact_reference(workspace_id,reference_kind,reference_id,storage_key) "
+            "VALUES (:ws,:kind,:id,:key) ON CONFLICT DO NOTHING"
+        ),
+        {"ws": workspace_id, "kind": reference_kind, "id": reference_id, "key": storage_key},
+    )
+
+
+async def release_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    reference_kind: str,
+    reference_id: str,
+) -> None:
+    """Release one durable owner's retention, without deleting bytes or other owners' grants."""
+    await conn.execute(
+        text(
+            "DELETE FROM artifact_reference WHERE workspace_id=:ws "
+            "AND reference_kind=:kind AND reference_id=:id"
+        ),
+        {"ws": workspace_id, "kind": reference_kind, "id": reference_id},
+    )
+
+
+async def live_reference_count(conn: AsyncConnection, storage_key: str) -> int:
+    result = await conn.execute(
+        text("SELECT count(*) FROM artifact_reference WHERE storage_key=:key"), {"key": storage_key}
+    )
+    return await live_claim_count(conn, storage_key) + int(result.scalar_one())
+
+
 async def erase_if_unreferenced(conn: AsyncConnection, storage_key: str) -> bool:
     """Phase 1 of erasure: under the artifact **row lock**, recount live citers and stamp
     ``erased_at`` iff the count is zero. Returns whether the row was marked (the caller then
@@ -254,7 +312,7 @@ async def erase_if_unreferenced(conn: AsyncConnection, storage_key: str) -> bool
     row = locked.first()
     if row is None:
         return False
-    if await live_claim_count(conn, storage_key) != 0:
+    if await live_reference_count(conn, storage_key) != 0:
         return False
     await mark_erased(conn, storage_key)
     return True
@@ -309,7 +367,7 @@ async def purge_erased_artifacts(
     purged: list[str] = []
     resurrected: list[str] = []
     for storage_key, privacy_erased in result.all():
-        if not privacy_erased and await live_claim_count(conn, storage_key) != 0:
+        if not privacy_erased and await live_reference_count(conn, storage_key) != 0:
             await conn.execute(
                 text(
                     "UPDATE artifact SET erased_at = NULL, purged_at = NULL "

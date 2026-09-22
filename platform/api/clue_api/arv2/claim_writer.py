@@ -102,8 +102,9 @@ class LenientClaimWriter:
     restores the substrate's own refusals so a caller that wants the strict contract still gets it.
     """
 
-    def __init__(self, *, lenient: bool) -> None:
+    def __init__(self, *, lenient: bool, scoped_proposals: bool = False) -> None:
         self._lenient = lenient
+        self._scoped_proposals = scoped_proposals
 
     async def write(self, conn: AsyncConnection, draft: ClaimDraft) -> WriteReceipt:
         if draft.entity_type is EntityType.CONTACT:
@@ -218,7 +219,17 @@ class LenientClaimWriter:
         except UnknownFieldError:
             if not self._lenient:
                 raise
-            await _register_proposed_field(conn, draft)
+            if self._scoped_proposals:
+                from clue_research.claimstore.registry import register_agent_research_field
+
+                await register_agent_research_field(
+                    conn,
+                    workspace_id=draft.workspace_id,
+                    field_key=draft.field_key,
+                    run_id=str(draft.run_id),
+                )
+            else:
+                await _register_proposed_field(conn, draft)
             registered, markers["proposed_field"] = True, True
             await gate()
         except ValueSchemaError:

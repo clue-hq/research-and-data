@@ -91,7 +91,7 @@ _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, product_selection_version, effort, "
     "committee_cap, directive_text, profile_ref, profile_sha256, requested_by_user_id, "
-    "request_sha256, status, created_at, finished_at, persona_pin"
+    "request_sha256, status, created_at, finished_at, persona_pin, context_id"
 )
 
 #: The run's status, derived from its jobs in one statement so two drivers finishing two accounts
@@ -148,6 +148,7 @@ class RunRow:
     requested_by_user_id: str
     request_sha256: str
     persona_pin: dict[str, Any] | None = None
+    context_id: UUID | None = None
     status: JobStatus = "not_started"
     created_at: datetime | None = None
     finished_at: datetime | None = None
@@ -225,7 +226,8 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             " :icp_artifact_sha256, :icp_key, :icp_version, :product_selection_version, :effort, "
             " :committee_cap, :directive_text, :profile_ref, :profile_sha256, "
             " :requested_by_user_id, :request_sha256, :status, COALESCE(:created_at, now()), "
-            " :finished_at, CAST(:persona_pin AS jsonb)) ON CONFLICT (run_id) DO NOTHING"
+            " :finished_at, CAST(:persona_pin AS jsonb), :context_id) "
+            "ON CONFLICT (run_id) DO NOTHING"
         ),
         {
             "run_id": row.run_id,
@@ -246,6 +248,7 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             "requested_by_user_id": row.requested_by_user_id,
             "request_sha256": row.request_sha256,
             "persona_pin": json.dumps(row.persona_pin) if row.persona_pin is not None else None,
+            "context_id": row.context_id,
             "status": row.status,
             "created_at": row.created_at,
             "finished_at": row.finished_at,

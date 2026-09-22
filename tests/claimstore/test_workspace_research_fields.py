@@ -350,3 +350,47 @@ def test_populated_research_fields_refuse_lossy_migration_rollback():
                     await conn.run_sync(downgrade)
 
     run_async(scenario())
+
+
+def test_agent_proposal_is_neutral_scoped_and_never_global():
+    from clue_research.claimstore.registry import register_agent_research_field
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            ws = await seed_workspace(conn, "quality-proposal")
+            other = await seed_workspace(conn, "quality-proposal-other")
+            result = await register_agent_research_field(
+                conn,
+                workspace_id=ws,
+                field_key="account.custom_quality_example",
+                run_id="run-test",
+            )
+            assert result.description == (
+                "Proposed research field: custom quality example. "
+                "Meaning requires review; not evidence."
+            )
+            assert any(
+                f.key == "account.custom_quality_example"
+                for f in (await read_account_catalog(conn, workspace_id=ws)).account
+            )
+            assert not any(
+                f.key == "account.custom_quality_example"
+                for f in (await read_account_catalog(conn, workspace_id=other)).account
+            )
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM field_definition "
+                        "WHERE field_key='account.custom_quality_example'"
+                    )
+                )
+            ).scalar_one() == 0
+            with pytest.raises(WorkspaceFieldDefinitionError):
+                await register_agent_research_field(
+                    conn,
+                    workspace_id=ws,
+                    field_key="client.unrelated",
+                    run_id="run-test",
+                )
+
+    run_async(scenario())

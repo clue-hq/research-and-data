@@ -1,7 +1,7 @@
 # ARV3 research quality, evidence access and specialist ownership
 
-**Status:** factual-visibility policy adopted by founder 2026-09-22; remaining design/plan under
-review. Specification only, not implemented or activated.
+**Status:** design and implementation plan authorized by the founder 2026-09-22; implementation
+in progress. New-profile activation and offline/live acceptance are tracked separately in the plan.
 **Date / inspected checkout:** 2026-09-22, `codex/ai-ark-committee-discovery-spec`, `2dd07c55f`.
 **Implementation sequence:** [companion plan](../plans/2026-09-22-arv3-research-quality.md).
 
@@ -29,8 +29,8 @@ Person research remains detached fleet work; it uses the same claim-specialist c
 - Use location according to organizational structure and decision remit, not a blanket industry rule.
 - Preserve repository logging, observability, tracing and telemetry. Test final behavior at coherent
   development boundaries; do not repeatedly repair tests for temporary intermediate behavior.
-- This request authorizes the detailed spec. It does not activate new policies, migrate data,
-  start another paid research run, or authorize application implementation by itself.
+- The subsequent founder instruction authorizes implementation of this spec and plan. It does
+  not promote the live default, run historical repairs or start another paid research run.
 
 ### 1.2 Policy decisions and proposed contract changes
 

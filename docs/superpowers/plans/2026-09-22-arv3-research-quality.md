@@ -1,8 +1,9 @@
 # ARV3 research quality — ordered implementation and acceptance plan
 
-**Status:** factual-visibility policy adopted by founder 2026-09-22; implementation plan remains
-proposed and implementation has not started. Policy adoption alone does not authorize application,
-configuration or data changes.
+**Status:** implementation authorized by the founder and started 2026-09-22. The proposed context,
+membership and presentation contracts are included in that authorization. Live activation and
+acceptance remain separate. Latest origin fetched; feature upstream and `origin/research-streaming`
+are contained in local base `a14ccbee0`; fast-forward pull required no merge.
 **Design:** [research quality, evidence access and specialist ownership](../specs/2026-09-22-arv3-research-quality-design.md).
 **Inspected base:** `2dd07c55f`, `codex/ai-ark-committee-discovery-spec`, 2026-09-22.
 
@@ -12,7 +13,8 @@ configuration or data changes.
   data contracts incrementally; do not create a parallel research pipeline.
 - Design §1.2 item 1's factual-visibility policy is adopted: invalid observations remain auditable,
   are excluded from ordinary factual summaries, and unresolved findings stay visible. Do not request
-  that approval again. Remaining contract details, including §10.2 presentation, remain for review.
+  that approval again. The subsequent implementation instruction approves the proposed contract
+  details, including §10.2 presentation, for development.
   Existing annotation-only runtime behavior continues until implementation and explicit activation.
 - User asked to synchronize latest origin before implementation. At that point inspect branch,
   upstream and concurrent/uncommitted work, fetch, and integrate the intended remote base without

@@ -44,6 +44,7 @@ from clue_core import (
     decode_jsonb,
     default_research_scope,
     field_namespace,
+    is_valid_field_key,
     resolve_product_scope,
     resolve_research_scope,
     resolve_reuse_scope,
@@ -942,11 +943,59 @@ async def register_workspace_research_field(
     created_by: str,
 ) -> ResolvedFieldDefinition:
     """Register a human's research instruction; the substrate owns all shape/scope properties."""
-    key = research_field_key(entity, label)
-    label = _research_text(label, label=True)
-    description = _research_text(description, label=False)
     if not created_by.startswith("human:") or not created_by.removeprefix("human:"):
         raise PermissionError("Research field creation requires human authority.")
+    return await _register_research_field(
+        conn,
+        workspace_id=workspace_id,
+        key=research_field_key(entity, label),
+        label=label,
+        description=description,
+        created_by=created_by,
+        policy="settings-v1",
+    )
+
+
+async def register_agent_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    run_id: str,
+) -> ResolvedFieldDefinition:
+    """A trusted research producer may propose neutral, tenant-local account/contact vocabulary.
+
+    Field meaning must later be reviewed separately from any particular subject's observations.
+    No model-supplied evidence or description enters either catalog through this path.
+    """
+    if not field_key.startswith(("account.", "contact.")) or not is_valid_field_key(field_key):
+        raise WorkspaceFieldDefinitionError("Proposed research keys require account/contact scope")
+    if not run_id:
+        raise PermissionError("Research field proposal requires its producing run")
+    label = field_key.split(".", 1)[1].replace("_", " ").replace(".", " / ")
+    return await _register_research_field(
+        conn,
+        workspace_id=workspace_id,
+        key=field_key,
+        label=label,
+        description=f"Proposed research field: {label}. Meaning requires review; not evidence.",
+        created_by=f"agent:{run_id}",
+        policy="research-quality-v1",
+    )
+
+
+async def _register_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    key: str,
+    label: str,
+    description: str,
+    created_by: str,
+    policy: str,
+) -> ResolvedFieldDefinition:
+    label = _research_text(label, label=True)
+    description = _research_text(description, label=False)
     await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
     await _lock_field_registration(conn, key)
     if await _get_row(conn, key) is not None:
@@ -968,7 +1017,7 @@ async def register_workspace_research_field(
             promoted_by, research_scope, product_scope, label, description
         ) VALUES (
             :ws, :key, 'json', 'deep', CAST(:kind AS field_class), NULL,
-            'research', NULL, 'settings-v1', :by, 'project_neutral', 'forbidden',
+            'research', NULL, :policy, :by, 'project_neutral', 'forbidden',
             :label, :description
         )
     """),
@@ -977,6 +1026,7 @@ async def register_workspace_research_field(
             "key": key,
             "kind": classify_field_key(key).value,
             "by": created_by,
+            "policy": policy,
             "label": label,
             "description": description,
         },
