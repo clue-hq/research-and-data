@@ -1,0 +1,30 @@
+== A. episode pages -> mp3 enclosure ==
+  live[h8_page_rafter_ai_payoff] http=200 0.6s bytes=56176
+   rafter_ai_payoff     http=200 mp3=1 feeds=1 dur=None :: Where AI Actually Pays Off in Hospitality, and What Owners Shoul…
+        mp3: https://www.buzzsprout.com/2103299/episodes/19376570-where-ai-actually-pays-off-in-hospitality-and-what-owners-should-demand-ben-rafter-hotel-equities
+  live[h8_page_rafter_tech_ceo] http=200 0.67s bytes=55685
+   rafter_tech_ceo      http=200 mp3=1 feeds=1 dur=None :: What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter,…
+        mp3: https://www.buzzsprout.com/2103299/episodes/16397083-what-happens-when-a-tech-ceo-leads-a-hotel-company-ben-rafter-springboard-hospitality.mp3
+  live[h8_page_rafter_ai_labor] http=200 0.41s bytes=55825
+   rafter_ai_labor      http=200 mp3=1 feeds=1 dur=None :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter,…
+        mp3: https://www.buzzsprout.com/2103299/episodes/19376569-how-ai-addresses-the-biggest-cost-in-a-hotel-labor-ben-rafter-hotel-equities.mp3
+  live[h8_page_rafter_tech] http=200 0.46s bytes=72881
+   rafter_tech          http=200 mp3=1 feeds=1 dur=None :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Sprin…
+        mp3: https://www.buzzsprout.com/2103299/episodes/16412086-tech-ceo-turned-hotel-ceo-shares-tech-advice-ben-rafter-springboard-hospitality.mp3
+  live[h8_page_rafter_owner_econ] http=200 0.38s bytes=57875
+   rafter_owner_econ    http=200 mp3=1 feeds=1 dur=None :: Why Hotel Ownership Is Becoming Unsustainable, and What We&#x27;re Do…
+        mp3: https://www.buzzsprout.com/2103299/episodes/19376568-why-hotel-ownership-is-becoming-unsustainable-and-what-we-re-doing-about-it-ben-rafter-hotel-equi
+  live[h8_page_rafter_no_vacancy] http=200 1.96s bytes=184372
+   rafter_no_vacancy    http=200 mp3=0 feeds=2 dur=400 :: Springboard’s Ben Rafter on Building Smarter, Faster, and More Human H
+  live[h8_page_rafter_tmg] http=200 1.14s bytes=260683
+   rafter_tmg           http=200 mp3=0 feeds=0 dur=None :: 190 - TMG Hospitality Trailblazers: Ben Rafter | Travel Media Group
+
+== B. Hospitality Daily show RSS (all Rafter episodes + exact durations) ==
+  live[h8_rss_hospitality-daily] http=404 0.43s bytes=10
+   rss try https://feeds.transistor.fm/hospitality-daily -> http=404
+  live[h8_rss_rss] http=404 0.54s bytes=0
+   rss try https://podcast.hospitalitydaily.com/rss -> http=404
+  live[h8_rss_hospitality-daily.rs] http=404 0.4s bytes=2877
+   rss try https://feeds.buzzsprout.com/hospitality-daily.rss -> http=404
+
+H8 7.0s spend=0.13

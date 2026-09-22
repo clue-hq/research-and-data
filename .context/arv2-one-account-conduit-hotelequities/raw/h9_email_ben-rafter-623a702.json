@@ -1,0 +1,657 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 1.02,
+  "_request_body": {
+    "url": "https://www.linkedin.com/in/ben-rafter-623a702"
+  },
+  "_body": {
+    "id": "f54c7f19-7467-a9d5-8f02-fb54beb96345",
+    "identifier": "ben-rafter-623a702",
+    "profile": {
+      "first_name": "Ben",
+      "middle_name": null,
+      "last_name": "Rafter",
+      "full_name": "Ben Rafter",
+      "headline": "CEO at Hotel Equities",
+      "title": "CEO",
+      "picture": {
+        "source": "https://images.ai-ark.com/xad2dL6AxN5wxpNybDCPlsGKNXH0XUPfS5kpj3SnaVA/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/f54c7f19-7467-a9d5-8f02-fb54beb96345.jpg"
+      },
+      "background": {
+        "source": "https://media.licdn.com/dms/image/v2/D5616AQHr8esx8MOX6g/profile-displaybackgroundimage-shrink_350_1400/B56Zo1WYr3HQAY-/0/1761831652474?e=1789603200&v=beta&t=tm2sMxCgvQKVlA7v005Ac2gUwZ5Kz60j9R6ZL7eiqRE"
+      },
+      "summary": "Would you put your cell phone in all the hotels rooms you managed? I did and 10,000,000 guests later it was the most worthwhile thing I've done in my career. I also co-founded a company acquired by Amazon, sold a company to Marriott Vacations and spent half my career developing new technologies. I'm currently Chief Executive Officer of Hotel Equities, a leading hospitality management firm with a portfolio spanning North America, the Caribbean, and Latin America, which merged with Springboard Hospitality in spring 2025. I'm also managing director of Jororo, LLC, a private investment company focused on acquiring unique, independent hotels in Hawaii and across the mainland. Jororo currently has investments in eleven hotels representing ~1,800 rooms.Specialties: Emerging technology, e-commerce, analytics, hospitality."
+    },
+    "link": {
+      "linkedin": "https://www.linkedin.com/in/ben-rafter-623a702",
+      "twitter": null,
+      "github": null,
+      "facebook": "https://www.facebook.com/bgrafter"
+    },
+    "location": {
+      "default": "Honolulu, Hawaii, United States, North America",
+      "short": "Honolulu, Hawaii",
+      "country": "United States",
+      "state": "Hawaii",
+      "city": "Honolulu",
+      "position": null
+    },
+    "languages": {
+      "primary_locale": {
+        "country": "US",
+        "language": "en"
+      },
+      "supported_locales": [
+        {
+          "country": "US",
+          "language": "en"
+        }
+      ],
+      "profile_languages": null
+    },
+    "industry": "Hospitality",
+    "educations": [
+      {
+        "school": {
+          "id": "6816c47b-c1a1-c878-0fbf-f882fd20d6e4",
+          "name": "University of Washington",
+          "logo": "https://images.ai-ark.com/8XUFl7oH2Rh0MGG1dGOO53luzBRzP4WVA-I55ANZCLc/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/6816c47b-c1a1-c878-0fbf-f882fd20d6e4.jpg",
+          "url": "https://www.linkedin.com/school/university-of-washington"
+        },
+        "degree_name": null,
+        "field_of_study": null,
+        "grade": null,
+        "date": null
+      }
+    ],
+    "position_groups": [
+      {
+        "company": {
+          "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+          "name": "Hotel Equities",
+          "logo": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg",
+          "url": "https://www.linkedin.com/company/hotel-equities",
+          "employees": {
+            "start": 10001,
+            "end": null
+          }
+        },
+        "date": {
+          "start": "2025-05-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Hotel Equities",
+            "description": "Hotel Equities, a leading hospitality management firm with a diverse portfolio of hotels, resorts, and outdoor destinations across the United States, Canada, the Caribbean, and Latin America.",
+            "title": "CEO",
+            "employment_type": "Full-time",
+            "location": "Atlanta, GA",
+            "date": {
+              "start": "2025-05-01",
+              "end": null
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Jororo, LLC",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2015-01-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Jororo, LLC",
+            "description": "Jororo, LLC is Ben Rafter\u2019s investment company, primarily focused on acquiring hotels in Hawaii and other leisure markets. Jororo currently has investments in eleven hotels representing approximately 1,800 rooms.",
+            "title": "Managing Partner",
+            "employment_type": null,
+            "location": "Hawaiian Islands",
+            "date": {
+              "start": "2015-01-01",
+              "end": null
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "a6424080-606a-ff5d-43ac-ee3fbdad2468",
+          "name": "Springboard Hospitality",
+          "logo": "https://images.ai-ark.com/NUW4hYr9By67VSXydC4HxDWIuMIZpcLFsevq4j8v4OE/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/a6424080-606a-ff5d-43ac-ee3fbdad2468.jpg",
+          "url": "https://www.linkedin.com/company/springboardhospitality",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2018-07-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Springboard Hospitality",
+            "description": "Springboard (fka OLS Hotels & Resorts) is a boutique hotel management company with 48 hotels and resorts in 14 states.",
+            "title": "CEO",
+            "employment_type": "Full-time",
+            "location": "Honolulu, HI",
+            "date": {
+              "start": "2018-07-01",
+              "end": null
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Aqua Hotels and Resorts, Aston Hotels and Resorts",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2014-01-01",
+          "end": "2015-01-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Aqua Hotels and Resorts, Aston Hotels and Resorts",
+            "description": "Responsible for 58 properties across Hawaii, Guam, California, Nevada, Florida and Pennsylvania. With 50 properties and almost 10,000 rooms in Hawaii, Aqua-Aston was the largest operator in the Hawaii region and the only operator on all six Hawaii tourism islands.",
+            "title": "President & CEO, Aqua Hospitality and President, Aston Hotels and Resorts",
+            "employment_type": null,
+            "location": "Honolulu, HI",
+            "date": {
+              "start": "2014-01-01",
+              "end": "2015-01-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Aqua Hospitality",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2008-11-01",
+          "end": "2015-01-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Aqua Hospitality",
+            "description": "Aqua Hospitality consisted of 29 hotels and resorts across three brands. As the only operator on all six of Hawaii's tourism islands, Aqua created Hawaii's leisure boutique experience and was the fastest growing hotel company in Hawaii for a decade. In late 2014 Aqua Hospitality was acquired by Interval Leisure Group, now part of Marriott Vacations.",
+            "title": "President & CEO",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2008-11-01",
+              "end": "2015-01-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Travelworm & JetAway",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2005-10-01",
+          "end": "2008-04-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Travelworm & JetAway",
+            "description": "President & CEO for TravelWorm, Inc., a leading online provider of casino and leisure travel, owned by private-equity firm Wasserstein & Co. \n\nStabilized company and successfully led it through an acquisition by a group of private investors.",
+            "title": "President & CEO",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2005-10-01",
+              "end": "2008-04-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Get2Hawaii",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2001-09-01",
+          "end": "2005-09-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Get2Hawaii",
+            "description": "President and CEO of Get2Hawaii, a provider of leisure travel to dozens of consumer web sites, supplier web sites, affiliates, and travel agencies. Led the company from pre-release (inception) to the successful sale of hundreds of thousands of transactions and hundreds of millions of dollars of Hawaii inventory. \n\nGet2Hawaii technology is designed to broker inventory from a supplier to a retailer without the usual overhead associated with traditional wholesalers and manual operations. Get2's technology offers net rates, dynamic packaging, dynamic branding, full merchandising and promotional capabilities and full yield control.\n\nIn conjunction with its supply partners, Get2Hawaii offers net rates from hotels and resorts, all major air carriers, and a broad segment of car rental companies and activities.",
+            "title": "President & CEO",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2001-09-01",
+              "end": "2005-09-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Cambridge Technology Partners",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "1997-07-01",
+          "end": "2001-09-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Cambridge Technology Partners",
+            "description": "Director of Cambridge Technology Partners' Innovation Center and NewCo Solutions practice. Managed the practice and was responsible for major business development activities. Also worked directly with clients as a principal strategist, creating innovation centers and accelerating startup or disruptive ideas for both Global 1000 companies and pure startups.",
+            "title": "Director, NewCo Solutions",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "1997-07-01",
+              "end": "2001-09-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Livebid (Innerlinx)",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "1996-06-01",
+          "end": "1998-06-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Livebid (Innerlinx)",
+            "description": "Co-founded Innerlinx (later renamed Livebid), acquired by Amazon.com for a significant return to investors. \n\nLivebid\u2019s real-time auction model was the recognized leader in the space. Livebid hosted several famous auctions, including the sale of the Batmobile, O.J. Simpson\u2019s Brentwood estate and Titanic artifacts, and was featured in news publications and programs worldwide.",
+            "title": "Co-founder",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "1996-06-01",
+              "end": "1998-06-30"
+            }
+          }
+        ]
+      }
+    ],
+    "skills": [
+      "Business Development",
+      "E-commerce",
+      "Hospitality",
+      "Resorts",
+      "Hospitality Industry",
+      "Hotels",
+      "Start-ups",
+      "Leadership",
+      "Leisure",
+      "Tourism",
+      "Program Management",
+      "Management",
+      "Strategy",
+      "Analytics",
+      "Marketing Strategy",
+      "Product Marketing",
+      "Sales",
+      "Human Resources",
+      "Committed to Customer Satisfaction",
+      "Mergers & Acquisitions"
+    ],
+    "member_badges": {
+      "premium": false,
+      "creator": false,
+      "open_to_work": false,
+      "hiring": false,
+      "verified": true,
+      "influencer": false
+    },
+    "statistics": {
+      "network": {
+        "influencer": false,
+        "followable": null,
+        "followers_count": 4458,
+        "connections_count": 4078
+      },
+      "experience": {
+        "prev_job_titles": null,
+        "tenure": {
+          "company": "2025-05-01",
+          "start": "1996-12-02",
+          "title": "2018-07-01"
+        }
+      }
+    },
+    "company": {
+      "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+      "summary": {
+        "name": "Hotel Equities",
+        "legal_name": "Hotel Equities Group, LLC.",
+        "description": "Hotel Equities (HE) is a best-in-class hospitality management company with a diverse portfolio of premium-branded and independent\u00a0hotels, resorts, and outdoor hospitality destinations throughout the United States, Canada, the Caribbean, and Latin America (CALA). We deliver proven results and drive long-term value for stakeholders through a comprehensive suite of services, a people-first and performance-driven culture, and a commitment to excellence.\n\nOver 11,000+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+        "overview": "Hotel Equities (HE) is an award-winning hotel development, ownership and management company.  For 30 years, our team has collaborated with premier brands and entrepreneurial owners to deliver best in class results.  HE is hyper focused on managing upper midscale and full-service hotels in the U.S and Canada.  Whether we\u2019re executing ground-up development, re-positioning a property or managing one of the 135+ hotels in our portfolio, HE provides the highest and best value for owners, while prioritizing guest satisfaction and profitability.  Over 2500+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+        "seo": "Choose the management team at Hotel Equities when you want to expand your hotels company brand like never before.",
+        "founded_year": 1989,
+        "type": "PRIVATELY_HELD",
+        "industry": "hospitality",
+        "staff": {
+          "total": 990,
+          "range": {
+            "start": 10001
+          }
+        },
+        "logo": {
+          "source": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg"
+        }
+      },
+      "link": {
+        "website": "http://www.hotelequities.com",
+        "domain": "hotelequities.com",
+        "domain_ltd": "hotelequities.com",
+        "linkedin": "https://www.linkedin.com/company/hotel-equities",
+        "facebook": "https://www.facebook.com/hotelequities",
+        "twitter": "https://x.com/HotelEquities",
+        "crunchbase": "https://www.crunchbase.com/organization/hotel-equities"
+      },
+      "financial": {
+        "revenue": {
+          "annual": {
+            "start": 50000000,
+            "end": 100000000,
+            "amount": "50000000-100000000"
+          }
+        },
+        "funding": {
+          "type": "PRIVATE_EQUITY_ROUND",
+          "total_amount": 500000000,
+          "last_amount": 500000000,
+          "num_investor": 1,
+          "num_funding_rounds": 1,
+          "rounds": [
+            {
+              "announced_at": "2018-09-12",
+              "raised_amount": 500000000,
+              "type": "PRIVATE_EQUITY_ROUND",
+              "investors": [
+                "Virtua Partners"
+              ]
+            }
+          ],
+          "date": "2018-09-12"
+        },
+        "acquisition": {
+          "total": 1,
+          "contents": [
+            {
+              "identifier": {
+                "id": "springboard-hospitality",
+                "name": "Springboard Hospitality",
+                "image": "8b78eddb33524976bedb6fc30110f672"
+              },
+              "role": "acquiree",
+              "announced_at": "2025-05-01"
+            }
+          ]
+        },
+        "aberdeen": {
+          "it_spend": 8712352
+        }
+      },
+      "location": {
+        "headquarter": {
+          "continent": "North America",
+          "country": "United States",
+          "state": "Georgia",
+          "city": "Alpharetta",
+          "street": "North Point Pkwy",
+          "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+          "position": {
+            "lng": -84.38857,
+            "lat": 33.74975
+          }
+        },
+        "locations": [
+          {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Georgia",
+            "city": "Alpharetta",
+            "street": "North Point Pkwy",
+            "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+            "position": {
+              "lng": -84.38857,
+              "lat": 33.74975
+            }
+          }
+        ]
+      },
+      "technologies": [
+        {
+          "name": "viewport meta",
+          "category": "mobile"
+        },
+        {
+          "name": "iphone / mobile compatible",
+          "category": "mobile"
+        },
+        {
+          "name": "ssl by default",
+          "category": "ssl"
+        },
+        {
+          "name": "hsts",
+          "category": "ssl"
+        },
+        {
+          "name": "apple mobile web clips icon",
+          "category": "mobile"
+        },
+        {
+          "name": "dnssec",
+          "category": "ns"
+        },
+        {
+          "name": "google tag manager",
+          "category": "widgets"
+        },
+        {
+          "name": "google font api",
+          "category": "widgets"
+        },
+        {
+          "name": "content delivery network",
+          "category": "cdn"
+        },
+        {
+          "name": "google analytics",
+          "category": "analytics"
+        },
+        {
+          "name": "html5"
+        },
+        {
+          "name": "symantec email security.cloud"
+        },
+        {
+          "name": "godaddy premium dns"
+        },
+        {
+          "name": "google fonts"
+        },
+        {
+          "name": "google tag manager"
+        },
+        {
+          "name": "bootstrap"
+        },
+        {
+          "name": "google cloud translation api"
+        },
+        {
+          "name": "office 365"
+        },
+        {
+          "name": "google analytics"
+        },
+        {
+          "name": "vimeo"
+        },
+        {
+          "name": "Adobe Marketing Cloud",
+          "category": "Search Marketing"
+        },
+        {
+          "name": "Adobe Media Optimizer",
+          "category": "Search Marketing"
+        },
+        {
+          "name": "Google Analytics",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "name": "Google Font API",
+          "category": "Fonts"
+        },
+        {
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "name": "Google translate API",
+          "category": "Widgets"
+        },
+        {
+          "name": "Google translate widget",
+          "category": "Widgets"
+        },
+        {
+          "name": "Microsoft Office 365",
+          "category": "Other"
+        },
+        {
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "name": "Multilingual",
+          "category": "Widgets"
+        },
+        {
+          "name": "Omniture (Adobe)",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "name": "Outlook",
+          "category": "Email Providers"
+        },
+        {
+          "name": "Remote",
+          "category": "Other"
+        },
+        {
+          "name": "SynXis (Sabre Hospitality)",
+          "category": "Reservation Software"
+        },
+        {
+          "name": "Vimeo",
+          "category": "Online Video Platforms"
+        },
+        {
+          "name": "iCIMS",
+          "category": "Recruitment"
+        }
+      ],
+      "industries": [
+        "hospitality"
+      ],
+      "keywords": [
+        "rooms operations",
+        "revenue generation",
+        "finance & accounting",
+        "food & beverage",
+        "human resources",
+        "procurement",
+        "commercial strategy",
+        "development services",
+        "content storytelling",
+        "brand development",
+        "online reputation management",
+        "talent acquistion & development",
+        "tech innovation",
+        "guest experience"
+      ],
+      "hashtags": [
+        "hotelmanagement",
+        "hospitalitystrong",
+        "hoteliers"
+      ],
+      "languages": [
+        "english"
+      ],
+      "sic": [
+        "7011"
+      ],
+      "naics": [
+        "721110",
+        "561499"
+      ],
+      "last_updated": "2026-09-21"
+    },
+    "department": {
+      "departments": [
+        "general_management"
+      ],
+      "sub_departments": [
+        "executive_leadership_and_general_management"
+      ],
+      "functions": [
+        "general_management"
+      ],
+      "seniority": "c_suite"
+    },
+    "email": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "ben.rafter@hotelequities.com",
+          "mx": {
+            "record": "hotelequities-com.mail.protection.outlook.com",
+            "google": false,
+            "found": true,
+            "provider": "microsoft"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-09-22T05:26:58.000420",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "last_updated": "2026-09-21"
+  }
+}

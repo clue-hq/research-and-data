@@ -1,0 +1,1443 @@
+{
+  "lookups": {
+    "ben_rafter": {
+      "variants": [
+        "Ben Rafter",
+        "Benjamin Rafter"
+      ],
+      "web_confirmed_title": "Chief Executive Officer",
+      "persona": "executive_sponsor",
+      "identity_confirmation_url": "https://www.hotelequities.com/meet-our-team.htm",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "Ben Rafter",
+          "title": "CEO",
+          "headline": "CEO at Hotel Equities",
+          "linkedin": "https://www.linkedin.com/in/ben-rafter-623a702",
+          "location_short": "Honolulu, Hawaii",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2025-05-01",
+          "ark_id": "f54c7f19-7467-a9d5-8f02-fb54beb96345",
+          "department": {
+            "departments": [
+              "general_management"
+            ],
+            "sub_departments": [
+              "executive_leadership_and_general_management"
+            ],
+            "functions": [
+              "general_management"
+            ],
+            "seniority": "c_suite"
+          },
+          "followers": 4458,
+          "connections": 4078,
+          "badges": {
+            "premium": false,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": true,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "University of Washington",
+              "degree": null,
+              "field": null,
+              "date": null
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "CEO"
+              ],
+              "date": {
+                "start": "2025-05-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Jororo, LLC",
+              "titles": [
+                "Managing Partner"
+              ],
+              "date": {
+                "start": "2015-01-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Springboard Hospitality",
+              "titles": [
+                "CEO"
+              ],
+              "date": {
+                "start": "2018-07-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Aqua Hotels and Resorts, Aston Hotels and Resorts",
+              "titles": [
+                "President & CEO, Aqua Hospitality and President, Aston Hotels and Resorts"
+              ],
+              "date": {
+                "start": "2014-01-01",
+                "end": "2015-01-31"
+              }
+            },
+            {
+              "company": "Aqua Hospitality",
+              "titles": [
+                "President & CEO"
+              ],
+              "date": {
+                "start": "2008-11-01",
+                "end": "2015-01-31"
+              }
+            },
+            {
+              "company": "Travelworm & JetAway",
+              "titles": [
+                "President & CEO"
+              ],
+              "date": {
+                "start": "2005-10-01",
+                "end": "2008-04-30"
+              }
+            },
+            {
+              "company": "Get2Hawaii",
+              "titles": [
+                "President & CEO"
+              ],
+              "date": {
+                "start": "2001-09-01",
+                "end": "2005-09-30"
+              }
+            },
+            {
+              "company": "Cambridge Technology Partners",
+              "titles": [
+                "Director, NewCo Solutions"
+              ],
+              "date": {
+                "start": "1997-07-01",
+                "end": "2001-09-30"
+              }
+            },
+            {
+              "company": "Livebid (Innerlinx)",
+              "titles": [
+                "Co-founder"
+              ],
+              "date": {
+                "start": "1996-06-01",
+                "end": "1998-06-30"
+              }
+            }
+          ],
+          "skills": [
+            "Business Development",
+            "E-commerce",
+            "Hospitality",
+            "Resorts",
+            "Hospitality Industry",
+            "Hotels",
+            "Start-ups",
+            "Leadership",
+            "Leisure",
+            "Tourism",
+            "Program Management",
+            "Management",
+            "Strategy",
+            "Analytics",
+            "Marketing Strategy",
+            "Product Marketing",
+            "Sales",
+            "Human Resources",
+            "Committed to Customer Satisfaction",
+            "Mergers & Acquisitions"
+          ],
+          "awards": [],
+          "certifications": [],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    },
+    "al_smith": {
+      "variants": [
+        "Albert Smith",
+        "Al Smith"
+      ],
+      "web_confirmed_title": "Chief Operating Officer",
+      "persona": "economic_buyer",
+      "identity_confirmation_url": "https://www.hospitalitynet.org/appointment/79030411.html",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "Albert Smith",
+          "title": "Chief Operating Officer",
+          "headline": "Chief Operating Officer, Hotel Equities",
+          "linkedin": "https://www.linkedin.com/in/albert-smith-3aa9318",
+          "location_short": "Alpharetta, Georgia",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2021-07-01",
+          "ark_id": "c44a19cf-ad36-3c1c-c13a-0247fc9a101a",
+          "department": {
+            "departments": [
+              "operations"
+            ],
+            "sub_departments": [
+              "business_operations"
+            ],
+            "functions": [
+              "operations"
+            ],
+            "seniority": "c_suite"
+          },
+          "followers": 10617,
+          "connections": 10721,
+          "badges": {
+            "premium": false,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": true,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "American College of Hotel & Restaurant MGMT.",
+              "degree": null,
+              "field": null,
+              "date": {
+                "start": "1995-01-01",
+                "end": "1997-12-31"
+              }
+            },
+            {
+              "school": "St. Francis High School",
+              "degree": null,
+              "field": null,
+              "date": null
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "Chief Operating Officer",
+                "President, Hotel Operations"
+              ],
+              "date": {
+                "start": "2021-07-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Highgate",
+              "titles": [
+                "Senior Vice President, Lifestyle"
+              ],
+              "date": {
+                "start": "2020-03-01",
+                "end": "2021-07-31"
+              }
+            },
+            {
+              "company": "Pivot",
+              "titles": [
+                "Senior Vice President"
+              ],
+              "date": {
+                "start": "2015-03-01",
+                "end": "2020-03-31"
+              }
+            },
+            {
+              "company": "sbe Lifestyle Hospitality",
+              "titles": [
+                "Vice President of Hotel Operations for SLS Las Vegas"
+              ],
+              "date": {
+                "start": "2013-09-01",
+                "end": "2015-03-31"
+              }
+            },
+            {
+              "company": "Kimpton Hotels & Restaurants",
+              "titles": [
+                "Regional Director of Operations, Southern California"
+              ],
+              "date": {
+                "start": "2009-07-01",
+                "end": "2013-09-30"
+              }
+            },
+            {
+              "company": "Viceroy Hotels and Resorts",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "2004-02-01",
+                "end": "2009-07-31"
+              }
+            },
+            {
+              "company": "Millennium Hotels and Resorts",
+              "titles": [
+                "Director of Front Office Operations, Los Angeles Biltmore Hotel"
+              ],
+              "date": {
+                "start": "1998-01-01",
+                "end": "2004-12-31"
+              }
+            },
+            {
+              "company": "Westin Hotels & Resorts",
+              "titles": [
+                "Front Desk Supervisor"
+              ],
+              "date": {
+                "start": "1996-01-01",
+                "end": "1998-12-31"
+              }
+            }
+          ],
+          "skills": [
+            "Hotel Management",
+            "Hospitality",
+            "Hospitality Management",
+            "Management",
+            "Leadership",
+            "Hotels",
+            "Resorts",
+            "Customer Satisfaction",
+            "Catering",
+            "Customer Service",
+            "Front Office",
+            "Food & Beverage",
+            "Teamwork",
+            "Menu Development",
+            "New Restaurant Openings",
+            "Pre-opening",
+            "Hospitality Industry",
+            "Meeting Planning",
+            "Rooms Division",
+            "Tourism"
+          ],
+          "awards": [
+            {
+              "title": "General Manager of the Year",
+              "date": "2012-11-01"
+            }
+          ],
+          "certifications": [],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "awards",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    },
+    "brian_jenkins": {
+      "variants": [
+        "Brian Jenkins"
+      ],
+      "web_confirmed_title": "Head of HE Labs | EVP of Strategy",
+      "persona": "champion",
+      "identity_confirmation_url": "https://www.hospitalitynet.org/appointment/79032251/brian-jenkins",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "Brian Jenkins",
+          "title": "Head of HE Labs, EVP Strategy",
+          "headline": "Head of HE Labs, EVP Strategy",
+          "linkedin": "https://www.linkedin.com/in/brianjenkins01",
+          "location_short": "Mexico City",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2025-06-01",
+          "ark_id": "10e07b83-83f8-679c-9c12-ece4731a2f95",
+          "department": {
+            "departments": [
+              "consulting"
+            ],
+            "sub_departments": [
+              "strategy_consulting"
+            ],
+            "functions": [
+              "consulting"
+            ],
+            "seniority": "vp"
+          },
+          "followers": 828,
+          "connections": 831,
+          "badges": {
+            "premium": false,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": true,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "Columbia University",
+              "degree": "B.A. Joint Major in Finance and Economics. Concentration in Political Science",
+              "field": null,
+              "date": {
+                "start": "2008-01-01",
+                "end": "2012-12-31"
+              }
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "Head of HE Labs, EVP Strategy",
+                "Vice President Strategy"
+              ],
+              "date": {
+                "start": "2025-06-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Springboard Hospitality",
+              "titles": [
+                "Vice President Strategy, Partner"
+              ],
+              "date": {
+                "start": "2016-11-01",
+                "end": "2025-06-30"
+              }
+            },
+            {
+              "company": "Capco",
+              "titles": [
+                "Strategy Consultant"
+              ],
+              "date": {
+                "start": "2013-01-01",
+                "end": "2016-12-31"
+              }
+            },
+            {
+              "company": "The River Club of New York",
+              "titles": [
+                "Tennis Professional"
+              ],
+              "date": {
+                "start": "2009-01-01",
+                "end": "2012-12-31"
+              }
+            },
+            {
+              "company": "Thomson Reuters",
+              "titles": [
+                "Investor Relations - Summer Analyst"
+              ],
+              "date": {
+                "start": "2011-06-01",
+                "end": "2011-08-31"
+              }
+            },
+            {
+              "company": "Fleckenstein Capital",
+              "titles": [
+                "Hedge Fund - Summer Research Analyst"
+              ],
+              "date": {
+                "start": "2010-06-01",
+                "end": "2010-09-30"
+              }
+            },
+            {
+              "company": "Nike",
+              "titles": [
+                "Director of Summer Tennis Camps"
+              ],
+              "date": {
+                "start": "2006-01-01",
+                "end": "2009-12-31"
+              }
+            },
+            {
+              "company": "Sun Valley Resort",
+              "titles": [
+                "Tennis Professional"
+              ],
+              "date": {
+                "start": "2006-01-01",
+                "end": "2009-12-31"
+              }
+            }
+          ],
+          "skills": [
+            "Financial Modeling",
+            "Program Management",
+            "Project Management",
+            "Business Strategy",
+            "Business Analysis",
+            "IT Strategy",
+            "Operations Management",
+            "Business Development",
+            "Data Analysis",
+            "Management Consulting",
+            "Strategy",
+            "Valuation",
+            "Equity Research",
+            "Capital Markets",
+            "Financial Analysis",
+            "Economics",
+            "Corporate Finance"
+          ],
+          "awards": [
+            {
+              "title": "Morgan Stanley Foundation Scholar",
+              "date": null
+            }
+          ],
+          "certifications": [],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "awards",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    },
+    "stephen_hahn": {
+      "variants": [
+        "Stephen Hahn",
+        "Steve Hahn"
+      ],
+      "web_confirmed_title": "VP of Information Technology",
+      "persona": "technical_evaluator",
+      "identity_confirmation_url": "https://www.hotelequities.com/meet-our-team.htm",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "Stephen Hahn",
+          "title": "Vice President of Information Technology",
+          "headline": "Vice President of Information Technology - Hotel Equities",
+          "linkedin": "https://www.linkedin.com/in/stephen-hahn-41028112",
+          "location_short": "Glen Burnie, Maryland",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2022-10-01",
+          "ark_id": "6eacf5fe-64f6-341b-dd54-005ec2b6dd56",
+          "department": {
+            "departments": [
+              "information_technology"
+            ],
+            "sub_departments": [
+              "technology_operations"
+            ],
+            "functions": [
+              "information_technology"
+            ],
+            "seniority": "vp"
+          },
+          "followers": 278,
+          "connections": 232,
+          "badges": {
+            "premium": true,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": true,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "University of Maryland Global Campus",
+              "degree": "Master of Science",
+              "field": "Applied Computer Systems",
+              "date": {
+                "start": "1995-01-01",
+                "end": "1998-12-31"
+              }
+            },
+            {
+              "school": "University of Maryland Global Campus",
+              "degree": "Bachelor of Science",
+              "field": "Business & Management",
+              "date": {
+                "start": "1991-01-01",
+                "end": "1994-12-31"
+              }
+            },
+            {
+              "school": "Price Georges Community College",
+              "degree": "Associate of Arts - AA",
+              "field": "Hospitality Services",
+              "date": {
+                "start": "1988-01-01",
+                "end": "1990-12-31"
+              }
+            },
+            {
+              "school": "Florida State University",
+              "degree": null,
+              "field": null,
+              "date": {
+                "start": "1986-01-01",
+                "end": "1988-12-31"
+              }
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "Vice President of Information Technology"
+              ],
+              "date": {
+                "start": "2022-10-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Hotel Equities Company a Partner of Coakley & Williams",
+              "titles": [
+                "Sr. Corporate Director of Information Technology"
+              ],
+              "date": {
+                "start": "2021-02-01",
+                "end": "2022-10-31"
+              }
+            },
+            {
+              "company": "Coakley & Williams Hotel Management Company",
+              "titles": [
+                "Vice President of Corporate Services",
+                "Cheif Information Officer",
+                "Director Of Information Technology",
+                "Systems Administrator"
+              ],
+              "date": {
+                "start": "1996-12-01",
+                "end": "2021-02-28"
+              }
+            },
+            {
+              "company": "Econo Lodge - Pentagon",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "1996-04-01",
+                "end": "1996-12-31"
+              }
+            },
+            {
+              "company": "Hilton - Springfield",
+              "titles": [
+                "Assistant General Manager"
+              ],
+              "date": {
+                "start": "1994-06-01",
+                "end": "1996-06-30"
+              }
+            }
+          ],
+          "skills": [
+            "ShareGate",
+            "Security",
+            "IT Strategy",
+            "IT Service Management",
+            "Information Technology",
+            "Project Management",
+            "Active Directory",
+            "Microsoft Office",
+            "IT Management",
+            "Microsoft Azure",
+            "Scrum",
+            "Hospitality",
+            "Hospitality Industry",
+            "Hospitality Management",
+            "Strategic Planning",
+            "Hotels",
+            "Team Building",
+            "Property Management Systems",
+            "Revenue Analysis",
+            "Leadership"
+          ],
+          "awards": [],
+          "certifications": [
+            {
+              "name": "Unix Essential Training",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2023-02-01",
+                "end": null
+              }
+            },
+            {
+              "name": "macOS for IT Administrators",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2023-02-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Learning ITIL\u00ae",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2022-10-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Learning PowerShell Core",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2022-10-01",
+                "end": null
+              }
+            },
+            {
+              "name": "CompTIA A+",
+              "authority": "CompTIA",
+              "date": {
+                "start": "2021-05-01",
+                "end": null
+              }
+            },
+            {
+              "name": "CompTIA Network+ (N10-007) Cert Prep: 4 Making TCP/IP Work",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2021-03-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Cybersecurity Foundations",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2021-03-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Windows Server 2019: Installation and Configuration",
+              "authority": "LinkedIn",
+              "date": {
+                "start": "2021-03-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Certified Hospitality Supervisor",
+              "authority": "American Hotel & Lodging Educational Institute",
+              "date": {
+                "start": "2013-05-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Microsoft Certified Database Administrator (MCDBA)",
+              "authority": "Microsoft",
+              "date": {
+                "start": "2001-07-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Microsoft Certified Systems Engineer (MCSE)",
+              "authority": "Microsoft",
+              "date": {
+                "start": "2001-01-01",
+                "end": null
+              }
+            },
+            {
+              "name": "Scrum Master Certified (SMC)",
+              "authority": "VMEdu Inc.",
+              "date": {
+                "start": "2021-01-01",
+                "end": "2025-01-31"
+              }
+            }
+          ],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "certifications",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    },
+    "david_rosenberg": {
+      "variants": [
+        "David Rosenberg"
+      ],
+      "web_confirmed_title": "President, Focused Service",
+      "persona": "divisional_operator",
+      "identity_confirmation_url": "https://www.hotelequities.com/blog/hotel-equities-strengthens-leadership-team-with-key-executive-appointments-across-new-divisions/",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "David Rosenberg",
+          "title": "President-Focused Service Division",
+          "headline": "President-Focused Service Division",
+          "linkedin": "https://www.linkedin.com/in/david-rosenberg-4a244312",
+          "location_short": "Atlanta Metropolitan Area",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2020-02-01",
+          "ark_id": "d6ce4b67-6f4c-9955-3321-7577238644e9",
+          "department": {
+            "departments": [
+              "hospitality_food_and_guest_services"
+            ],
+            "sub_departments": [
+              "food_and_beverage_service"
+            ],
+            "functions": [
+              "operations"
+            ],
+            "seniority": "c_suite"
+          },
+          "followers": 2146,
+          "connections": 2101,
+          "badges": {
+            "premium": false,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": false,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "Florida International University",
+              "degree": "BS Hospitality",
+              "field": "Hospitality",
+              "date": {
+                "start": "1989-01-01",
+                "end": "1991-12-31"
+              }
+            },
+            {
+              "school": "The Culinary Institute of America",
+              "degree": "AOS",
+              "field": "Culinary Arts",
+              "date": {
+                "start": "1987-01-01",
+                "end": "1989-12-31"
+              }
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "President-Focused Service Division",
+                "Executive Vice President-Operations",
+                "Senior Vice President Operations",
+                "Vice President Operations"
+              ],
+              "date": {
+                "start": "2020-02-01",
+                "end": null
+              }
+            },
+            {
+              "company": "HP Hotels",
+              "titles": [
+                "Vice President Operations"
+              ],
+              "date": {
+                "start": "2018-12-01",
+                "end": "2020-02-29"
+              }
+            },
+            {
+              "company": "Winegardner & Hammons Hotel Group",
+              "titles": [
+                "Regional Vice President Of Operations",
+                "General Manager"
+              ],
+              "date": {
+                "start": "2016-03-01",
+                "end": "2018-11-30"
+              }
+            },
+            {
+              "company": "Hyatt Atlanta midtown",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "2014-05-01",
+                "end": "2016-03-31"
+              }
+            },
+            {
+              "company": "FG Management",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "2013-04-01",
+                "end": "2014-05-31"
+              }
+            },
+            {
+              "company": "Westin New Orleans Canal Place- Interstate Hotels and Resorts",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "2010-06-01",
+                "end": "2013-04-30"
+              }
+            },
+            {
+              "company": "Noble Investment Group",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "2003-08-01",
+                "end": "2010-04-30"
+              }
+            },
+            {
+              "company": "Winegardner and Hammons",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "1995-01-01",
+                "end": "2003-12-31"
+              }
+            }
+          ],
+          "skills": [
+            "Banquets",
+            "Catering",
+            "Customer Service",
+            "Event Management",
+            "Fine Dining",
+            "Food & Beverage",
+            "Food Safety",
+            "Front Office",
+            "Hospitality",
+            "Hospitality Industry",
+            "Hospitality Management",
+            "Hotel Management",
+            "Hotels",
+            "Leisure",
+            "Menu Development",
+            "Micros",
+            "OnQ",
+            "Opening Hotels",
+            "Pre-opening",
+            "Property Management Systems"
+          ],
+          "awards": [],
+          "certifications": [],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    },
+    "bill_stachler": {
+      "variants": [
+        "Bill Stachler",
+        "William Stachler"
+      ],
+      "web_confirmed_title": "SVP of Revenue Optimization",
+      "persona": "adjacent_revenue",
+      "identity_confirmation_url": "https://www.hotelequities.com/meet-our-team.htm",
+      "http": 200,
+      "totalElements": 1,
+      "returned": 1,
+      "credits": 0.5,
+      "kept": [
+        {
+          "full_name": "Bill Stachler",
+          "title": "Senior Vice President Revenue Management",
+          "headline": "SVP of Revenue Optimization at Hotel Equities",
+          "linkedin": "https://www.linkedin.com/in/billstachler",
+          "location_short": "Atlanta Metropolitan Area",
+          "current_company": "Hotel Equities",
+          "current_company_url": "https://www.linkedin.com/company/hotel-equities",
+          "since": "2021-03-01",
+          "ark_id": "25da444a-6f5f-75cd-d9c5-bdc2d3e0953b",
+          "department": {
+            "departments": [
+              "hospitality_food_and_guest_services"
+            ],
+            "sub_departments": [
+              "hospitality_revenue_management"
+            ],
+            "functions": [
+              "operations"
+            ],
+            "seniority": "vp"
+          },
+          "followers": 1249,
+          "connections": 1236,
+          "badges": {
+            "premium": false,
+            "creator": false,
+            "open_to_work": false,
+            "hiring": false,
+            "verified": false,
+            "influencer": false
+          },
+          "educations": [
+            {
+              "school": "Radford University - College of Business and Economics",
+              "degree": "BS",
+              "field": "Political Sc.",
+              "date": {
+                "start": "1984-01-01",
+                "end": "1988-12-31"
+              }
+            }
+          ],
+          "career": [
+            {
+              "company": "Hotel Equities",
+              "titles": [
+                "Senior Vice President Revenue Management",
+                "Vice President of Revenue Optimization"
+              ],
+              "date": {
+                "start": "2021-03-01",
+                "end": null
+              }
+            },
+            {
+              "company": "Hilton",
+              "titles": [
+                "Hilton Worldwide",
+                "Senior Director Revenue Management, Full Service, Lifestyle, and Luxury Brands",
+                "Regional Director of Revenue Management, Full Service, Lifestyle, and Luxury Brands"
+              ],
+              "date": {
+                "start": "2000-01-01",
+                "end": "2020-07-31"
+              }
+            },
+            {
+              "company": "Hilton Hotels",
+              "titles": [
+                "Area Director of Revenue Management Boston Cluster"
+              ],
+              "date": {
+                "start": "2000-08-01",
+                "end": "2004-02-29"
+              }
+            },
+            {
+              "company": "Promus Hotels",
+              "titles": [
+                "General Manager"
+              ],
+              "date": {
+                "start": "1999-07-01",
+                "end": "2000-07-31"
+              }
+            },
+            {
+              "company": "Red Lion/Doubletree Hotels",
+              "titles": [
+                "Director of Revenue Management and Front Office Services"
+              ],
+              "date": {
+                "start": "1994-01-01",
+                "end": "1999-07-31"
+              }
+            },
+            {
+              "company": "Eastman Construction",
+              "titles": [
+                "Project Manager"
+              ],
+              "date": {
+                "start": "1988-01-01",
+                "end": "1993-12-31"
+              }
+            }
+          ],
+          "skills": [
+            "Revenue Analysis",
+            "Yield Management",
+            "Hospitality Industry",
+            "OnQ",
+            "Opening Hotels",
+            "Project Management",
+            "Revenue Forecasting",
+            "Rooms Division Management",
+            "Front Office",
+            "Hospitality",
+            "Hospitality Management",
+            "Hotel Booking",
+            "Hotel Management",
+            "Pre-opening",
+            "Hotels",
+            "Management",
+            "Property Management Systems",
+            "Resorts",
+            "Rooms Division",
+            "Cross-functional Team Leadership"
+          ],
+          "awards": [
+            {
+              "title": "Regional Director of the Year Full Service Hotels Hilton Worldwide",
+              "date": "2011-01-01"
+            },
+            {
+              "title": "Doubletree Revenue Manager of the Year",
+              "date": "2009-01-01"
+            }
+          ],
+          "certifications": [],
+          "last_updated": "2026-09-21",
+          "top_keys": [
+            "awards",
+            "company",
+            "department",
+            "educations",
+            "id",
+            "identifier",
+            "industry",
+            "languages",
+            "last_updated",
+            "link",
+            "location",
+            "member_badges",
+            "position_groups",
+            "profile",
+            "skills",
+            "statistics"
+          ]
+        }
+      ],
+      "dropped": []
+    }
+  },
+  "emails": {
+    "ben_rafter": {
+      "linkedin": "https://www.linkedin.com/in/ben-rafter-623a702",
+      "http": 200,
+      "ark_full_name": "Ben Rafter",
+      "ark_title": "CEO",
+      "ark_current_company": "Hotel Equities",
+      "email": "ben.rafter@hotelequities.com",
+      "status": "VALID",
+      "sub_status": "EMPTY",
+      "domain_type": "SMTP",
+      "mx": {
+        "record": "hotelequities-com.mail.protection.outlook.com",
+        "google": false,
+        "found": true,
+        "provider": "microsoft"
+      },
+      "free": false,
+      "generic": false,
+      "verified_at": "2026-09-22T05:26:58.000420",
+      "found": true,
+      "email_block_top_keys": [
+        "output",
+        "state"
+      ],
+      "email_block_raw": {
+        "state": "DONE",
+        "output": [
+          {
+            "address": "ben.rafter@hotelequities.com",
+            "mx": {
+              "record": "hotelequities-com.mail.protection.outlook.com",
+              "google": false,
+              "found": true,
+              "provider": "microsoft"
+            },
+            "domainType": "SMTP",
+            "status": "VALID",
+            "subStatus": "EMPTY",
+            "date": "2026-09-22T05:26:58.000420",
+            "free": false,
+            "generic": false,
+            "found": true
+          }
+        ]
+      },
+      "credits": 1.0
+    },
+    "al_smith": {
+      "linkedin": "https://www.linkedin.com/in/albert-smith-3aa9318",
+      "http": 404,
+      "ark_full_name": null,
+      "ark_title": null,
+      "ark_current_company": null,
+      "email": null,
+      "status": null,
+      "sub_status": null,
+      "domain_type": null,
+      "mx": null,
+      "free": null,
+      "generic": null,
+      "verified_at": null,
+      "found": null,
+      "email_block_top_keys": [],
+      "email_block_raw": {},
+      "credits": 0.5
+    },
+    "brian_jenkins": {
+      "linkedin": "https://www.linkedin.com/in/brianjenkins01",
+      "http": 200,
+      "ark_full_name": "Brian Jenkins",
+      "ark_title": "Head of HE Labs, EVP Strategy",
+      "ark_current_company": "Hotel Equities",
+      "email": "bjenkins@hotelequities.com",
+      "status": "VALID",
+      "sub_status": "EMPTY",
+      "domain_type": "SMTP",
+      "mx": {
+        "record": "hotelequities-com.mail.protection.outlook.com",
+        "google": false,
+        "found": true,
+        "provider": "microsoft"
+      },
+      "free": false,
+      "generic": false,
+      "verified_at": "2026-09-22T05:27:04.000665",
+      "found": true,
+      "email_block_top_keys": [
+        "output",
+        "state"
+      ],
+      "email_block_raw": {
+        "state": "DONE",
+        "output": [
+          {
+            "address": "bjenkins@hotelequities.com",
+            "mx": {
+              "record": "hotelequities-com.mail.protection.outlook.com",
+              "google": false,
+              "found": true,
+              "provider": "microsoft"
+            },
+            "domainType": "SMTP",
+            "status": "VALID",
+            "subStatus": "EMPTY",
+            "date": "2026-09-22T05:27:04.000665",
+            "free": false,
+            "generic": false,
+            "found": true
+          }
+        ]
+      },
+      "credits": 1.0
+    },
+    "stephen_hahn": {
+      "linkedin": "https://www.linkedin.com/in/stephen-hahn-41028112",
+      "http": 200,
+      "ark_full_name": "Stephen Hahn",
+      "ark_title": "Vice President of Information Technology",
+      "ark_current_company": "Hotel Equities",
+      "email": "shahn@hotelequities.com",
+      "status": "VALID",
+      "sub_status": "EMPTY",
+      "domain_type": "SMTP",
+      "mx": {
+        "record": "hotelequities-com.mail.protection.outlook.com",
+        "google": false,
+        "found": true,
+        "provider": "microsoft"
+      },
+      "free": false,
+      "generic": false,
+      "verified_at": "2026-09-22T05:26:48.000709",
+      "found": true,
+      "email_block_top_keys": [
+        "output",
+        "state"
+      ],
+      "email_block_raw": {
+        "state": "DONE",
+        "output": [
+          {
+            "address": "shahn@hotelequities.com",
+            "mx": {
+              "record": "hotelequities-com.mail.protection.outlook.com",
+              "google": false,
+              "found": true,
+              "provider": "microsoft"
+            },
+            "domainType": "SMTP",
+            "status": "VALID",
+            "subStatus": "EMPTY",
+            "date": "2026-09-22T05:26:48.000709",
+            "free": false,
+            "generic": false,
+            "found": true
+          }
+        ]
+      },
+      "credits": 1.0
+    },
+    "david_rosenberg": {
+      "linkedin": "https://www.linkedin.com/in/david-rosenberg-4a244312",
+      "http": 200,
+      "ark_full_name": "David Rosenberg",
+      "ark_title": "President-Focused Service Division",
+      "email": "drosenberg@hotelequities.com",
+      "status": "VALID",
+      "sub_status": "EMPTY",
+      "domain_type": "SMTP",
+      "mx": {
+        "record": "hotelequities-com.mail.protection.outlook.com",
+        "google": false,
+        "found": true,
+        "provider": "microsoft"
+      },
+      "free": false,
+      "generic": false,
+      "verified_at": "2026-09-22T06:46:21.000973",
+      "found": true,
+      "email_block_top_keys": [
+        "output",
+        "state"
+      ],
+      "email_block_raw": {
+        "state": "DONE",
+        "output": [
+          {
+            "address": "drosenberg@hotelequities.com",
+            "mx": {
+              "record": "hotelequities-com.mail.protection.outlook.com",
+              "google": false,
+              "found": true,
+              "provider": "microsoft"
+            },
+            "domainType": "SMTP",
+            "status": "VALID",
+            "subStatus": "EMPTY",
+            "date": "2026-09-22T06:46:21.000973",
+            "free": false,
+            "generic": false,
+            "found": true
+          }
+        ]
+      },
+      "credits": 1.0
+    }
+  },
+  "excluded": []
+}

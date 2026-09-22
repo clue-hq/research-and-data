@@ -1,0 +1,72 @@
+== A. direct fetches (timeout 20s, 1 try) ==
+  live[h2_direct_home] http=0 20.02s bytes=55
+   home       http=0 20.02s text=0
+  live[h2_direct_team] http=0 20.0s bytes=55
+   team       http=0 20.0s text=0
+  live[h2_direct_careers] http=0 20.0s bytes=55
+   careers    http=0 20.0s text=0
+  live[h2_direct_blog] http=0 20.0s bytes=55
+   blog       http=0 20.0s text=0
+  live[h2_direct_about] http=0 20.01s bytes=55
+   about      http=0 20.01s text=0
+  live[h2_direct_portfolio] http=0 20.0s bytes=55
+   portfolio  http=0 20.0s text=0
+
+== B. Exa /contents fallback for 6 page(s) ==
+  exa[h2_exa_fallback] http=200 1.81s cost=0.004 got=4/6
+   home       exa chars=3047 -> https://hotelequities.com/
+   team       exa chars=12168 -> https://hotelequities.com/meet-our-team.htm
+   careers    exa chars=1065 -> https://hotelequities.com/careers
+   blog       exa chars=8142 -> https://hotelequities.com/blog/
+   about      exa chars=0 -> None
+   portfolio  exa chars=0 -> None
+
+== team page titles seen ==
+   - Chairman
+   - Chief Development Officer
+   - Chief Executive Officer
+   - Chief Financial Officer
+   - Chief Investment Officer
+   - Chief Operating Officer
+   - Co-Chairman
+   - Executive Vice President of Marketing at Hotel Equities
+   - Founder
+   - President
+   - SVP of Accounting & Procurement
+
+Brad Read
+
+   - SVP of Accounting & Procurement 
+
+Lindsay M
+   - SVP of Business Development
+   - SVP of Finance 
+
+SVP of Finance
+
+With over 
+   - SVP of Human Resources 
+
+SVP of Human Resou
+   - SVP of Operations
+   - SVP of Revenue Optimization 
+
+SVP of Revenu
+   - SVP of Sales
+   - Senior Vice President
+   - VP of Accounting 
+   - VP of Condos and Projects
+   - VP of Distribution
+   - VP of Finance
+   - VP of Growth Marketing
+   - VP of Information Technology 
+   - VP of Marketing
+   - VP of Marketing 
+   - VP of Operations
+   - VP of Restaurant 
+   - VP of Sales
+   - VP of Strategy
+   - VP of Strategy 
+   - VP of Strategy at Hotel Equities
+
+H2 121.9s resolved=4/6 spend=0.102

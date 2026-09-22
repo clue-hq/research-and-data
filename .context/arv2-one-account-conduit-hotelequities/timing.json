@@ -1,0 +1,194 @@
+{
+  "phases": [
+    {
+      "phase": "H1_adp_feed",
+      "seconds": 5.38,
+      "note": "4 centres, 72 reqs, free",
+      "ts": "2026-09-22T06:38:44Z"
+    },
+    {
+      "phase": "H3_ark_company",
+      "seconds": 12.43,
+      "note": "credit probe + company search",
+      "ts": "2026-09-22T06:38:51Z"
+    },
+    {
+      "phase": "H4_committee_web",
+      "seconds": 12.68,
+      "note": "8 exa searches",
+      "ts": "2026-09-22T06:38:51Z"
+    },
+    {
+      "phase": "H1_adp_feed",
+      "seconds": 10.26,
+      "note": "4 centres, 145 reqs, free",
+      "ts": "2026-09-22T06:39:30Z"
+    },
+    {
+      "phase": "H5_exa_deep_account",
+      "seconds": 52.77,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:39:31Z"
+    },
+    {
+      "phase": "H6_committee_confirm",
+      "seconds": 10.18,
+      "note": "12 primary pages",
+      "ts": "2026-09-22T06:40:29Z"
+    },
+    {
+      "phase": "H2_own_site",
+      "seconds": 121.88,
+      "note": "6 pages, 6 via exa fallback",
+      "ts": "2026-09-22T06:40:41Z"
+    },
+    {
+      "phase": "H8_media_resolve",
+      "seconds": 7.02,
+      "note": "7 pages + rss",
+      "ts": "2026-09-22T06:41:29Z"
+    },
+    {
+      "phase": "H7_gap_searches",
+      "seconds": 14.19,
+      "note": "10 targeted exa searches",
+      "ts": "2026-09-22T06:41:37Z"
+    },
+    {
+      "phase": "H9_ark_people",
+      "seconds": 101.76,
+      "note": "6 name-scoped + 4 email exports",
+      "ts": "2026-09-22T06:44:52Z"
+    },
+    {
+      "phase": "H10_media_rafter_ai_payoff",
+      "seconds": 25.71,
+      "note": "684s audio, two models",
+      "ts": "2026-09-22T06:45:04Z"
+    },
+    {
+      "phase": "H10_media_rafter_ai_labor",
+      "seconds": 26.24,
+      "note": "640s audio, two models",
+      "ts": "2026-09-22T06:45:04Z"
+    },
+    {
+      "phase": "H10_media_rafter_tech_ceo",
+      "seconds": 34.71,
+      "note": "958s audio, two models",
+      "ts": "2026-09-22T06:46:12Z"
+    },
+    {
+      "phase": "H10_media_rafter_owner_economics",
+      "seconds": 38.37,
+      "note": "682s audio, two models",
+      "ts": "2026-09-22T06:46:15Z"
+    },
+    {
+      "phase": "H9b_ark_extra_email",
+      "seconds": 5.62,
+      "note": "1 export + credit reconciliation",
+      "ts": "2026-09-22T06:46:22Z"
+    },
+    {
+      "phase": "H10_media_rafter_tech_advice",
+      "seconds": 54.64,
+      "note": "1176s audio, two models",
+      "ts": "2026-09-22T06:46:32Z"
+    },
+    {
+      "phase": "H11_person_deep_ben_rafter",
+      "seconds": 31.67,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:04Z"
+    },
+    {
+      "phase": "H11_person_deep_brian_jenkins",
+      "seconds": 29.32,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:04Z"
+    },
+    {
+      "phase": "H11_person_deep_al_smith",
+      "seconds": 34.61,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:08Z"
+    },
+    {
+      "phase": "H11_person_deep_stephen_hahn",
+      "seconds": 32.34,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:09Z"
+    },
+    {
+      "phase": "H11_person_deep_david_rosenberg",
+      "seconds": 34.97,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:13Z"
+    },
+    {
+      "phase": "H13_embed_retrieval",
+      "seconds": 19.62,
+      "note": "46 chunks + 4 queries",
+      "ts": "2026-09-22T06:49:38Z"
+    },
+    {
+      "phase": "H14_key_pages",
+      "seconds": 2.27,
+      "note": "12 primary pages",
+      "ts": "2026-09-22T06:50:22Z"
+    },
+    {
+      "phase": "H15_structure_brian_jenkins",
+      "seconds": 54.77,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:19Z"
+    },
+    {
+      "phase": "H15_structure_account",
+      "seconds": 61.8,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:23Z"
+    },
+    {
+      "phase": "H15_structure_david_rosenberg",
+      "seconds": 57.58,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:24Z"
+    },
+    {
+      "phase": "H15_structure_stephen_hahn",
+      "seconds": 58.78,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:24Z"
+    },
+    {
+      "phase": "H15_structure_ben_rafter",
+      "seconds": 62.86,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:25Z"
+    },
+    {
+      "phase": "H15_structure_al_smith",
+      "seconds": 73.49,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:37Z"
+    }
+  ],
+  "wall_clock": {
+    "run_started_utc": "2026-09-22T06:34:07Z",
+    "last_provider_call_utc": "2026-09-22T06:53:37Z",
+    "research_wall_clock_seconds": 1170,
+    "research_wall_clock_hms": "0h 19m 30s",
+    "total_wall_clock_seconds": 2014,
+    "total_wall_clock_hms": "0h 33m 34s",
+    "sum_of_phase_seconds": 1087.9,
+    "total_calls": 151,
+    "total_cash_usd": 0.4911,
+    "ai_ark_credits_actual": 7.1,
+    "apollo_calls": 0,
+    "firecrawl_calls": 0,
+    "ceilings_hit": [],
+    "parallelism_factor": 0.93
+  }
+}

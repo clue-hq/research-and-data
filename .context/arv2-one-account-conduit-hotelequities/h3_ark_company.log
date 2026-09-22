@@ -1,0 +1,13 @@
+== GET /v1/credit (balance probe) ==
+  ark[h3_credit_before] http=401 0.95s total=None returned=0 cr~0.0
+    401 {"_unparsed": ""}
+
+== POST /v1/companies domain=hotelequities.com size=3 ==
+  ark[h3_companies_hotelequities] http=200 0.97s total=1 returned=1 cr~0.3
+   totalElements: 1 returned: 1
+   -> Hotel Equities | legal=Hotel Equities Group, LLC. | staff=990 | founded=1989 | Alpharetta | hotelequities.com
+      revenue={'start': 50000000, 'end': 100000000, 'amount': '50000000-100000000'}
+      technologies=['viewport meta', 'iphone / mobile compatible', 'ssl by default', 'hsts', 'apple mobile web clips icon', 'dnssec', 'google tag manager', 'google font api', 'content delivery network', 'google analytics', 'html5', 'symantec email security.cloud', 'godaddy premium dns', 'google fonts', 'google tag manager', 'bootstrap', 'google cloud translation api', 'office 365', 'google analytics', 'vimeo', 'Adobe Marketing Cloud', 'Adobe Media Optimizer', 'Google Analytics', 'Google Font API', 'Google Tag Manager', 'Google translate API', 'Google translate widget', 'Microsoft Office 365', 'Mobile Friendly', 'Multilingual', 'Omniture (Adobe)', 'Outlook', 'Remote', 'SynXis (Sabre Hospitality)', 'Vimeo', 'iCIMS']
+      industries=['hospitality']
+
+H3 12.4s credits=0.3 spend=0.049

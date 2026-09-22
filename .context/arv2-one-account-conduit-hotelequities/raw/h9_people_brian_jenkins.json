@@ -1,0 +1,707 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 0.51,
+  "_request_body": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "STRICT",
+            "content": [
+              "Brian Jenkins"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "hotelequities.com"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  },
+  "_body": {
+    "content": [
+      {
+        "id": "10e07b83-83f8-679c-9c12-ece4731a2f95",
+        "identifier": "brianjenkins01",
+        "profile": {
+          "first_name": "Brian",
+          "middle_name": null,
+          "last_name": "Jenkins",
+          "full_name": "Brian Jenkins",
+          "headline": "Head of HE Labs, EVP Strategy",
+          "title": "Head of HE Labs, EVP Strategy",
+          "picture": {
+            "source": "https://images.ai-ark.com/_qMj24K4ObjRrwcc5V49BMi2sS7K9gGI_tfQ9T-Wba4/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/10e07b83-83f8-679c-9c12-ece4731a2f95.jpg"
+          },
+          "background": {
+            "source": "https://media.licdn.com/dms/image/v2/D4E16AQHcWloaDynt9A/profile-displaybackgroundimage-shrink_350_1400/B4EZ2UBuxEIMAc-/0/1776304975284?e=1789603200&v=beta&t=HPCck1hyfoGT_WDuy7av2O7DTDcM5sy39DpccYADsUE"
+          },
+          "summary": "Education: Columbia University - B.A. Joint Major in Finance and Economics 2012"
+        },
+        "link": {
+          "linkedin": "https://www.linkedin.com/in/brianjenkins01",
+          "twitter": null,
+          "github": null,
+          "facebook": null
+        },
+        "location": {
+          "default": "Mexico City, Mexico, North America",
+          "short": "Mexico City",
+          "country": "Mexico",
+          "state": null,
+          "city": "Mexico City",
+          "position": null
+        },
+        "languages": {
+          "primary_locale": {
+            "country": "US",
+            "language": "en"
+          },
+          "supported_locales": [
+            {
+              "country": "US",
+              "language": "en"
+            }
+          ],
+          "profile_languages": [
+            {
+              "name": "English",
+              "proficiency": "NATIVE_OR_BILINGUAL"
+            }
+          ]
+        },
+        "industry": "Hospitality",
+        "educations": [
+          {
+            "school": {
+              "id": "3c07a868-f2ed-9552-73a8-edc4fb716b8b",
+              "name": "Columbia University",
+              "logo": "https://images.ai-ark.com/-JJ0SD6LsIVUuGaF5DEPOukbpwIQE08AXZETyAGqPRA/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/3c07a868-f2ed-9552-73a8-edc4fb716b8b.jpg",
+              "url": "https://www.linkedin.com/school/columbia-university"
+            },
+            "degree_name": "B.A. Joint Major in Finance and Economics. Concentration in Political Science",
+            "field_of_study": null,
+            "grade": null,
+            "date": {
+              "start": "2008-01-01",
+              "end": "2012-12-31"
+            }
+          }
+        ],
+        "awards": [
+          {
+            "title": "Morgan Stanley Foundation Scholar",
+            "description": "Columbia University",
+            "issuer": null,
+            "date": null
+          }
+        ],
+        "position_groups": [
+          {
+            "company": {
+              "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+              "name": "Hotel Equities",
+              "logo": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg",
+              "url": "https://www.linkedin.com/company/hotel-equities",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2025-06-01",
+              "end": null
+            },
+            "profile_positions": [
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "Head of HE Labs, EVP Strategy",
+                "employment_type": "Full-time",
+                "location": null,
+                "date": {
+                  "start": "2026-05-01",
+                  "end": null
+                }
+              },
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "Vice President Strategy",
+                "employment_type": null,
+                "location": null,
+                "date": {
+                  "start": "2025-06-01",
+                  "end": "2026-05-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "a6424080-606a-ff5d-43ac-ee3fbdad2468",
+              "name": "Springboard Hospitality",
+              "logo": "https://images.ai-ark.com/NUW4hYr9By67VSXydC4HxDWIuMIZpcLFsevq4j8v4OE/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/a6424080-606a-ff5d-43ac-ee3fbdad2468.jpg",
+              "url": "https://www.linkedin.com/company/springboardhospitality",
+              "employees": {
+                "start": 1001,
+                "end": 5000
+              }
+            },
+            "date": {
+              "start": "2016-11-01",
+              "end": "2025-06-30"
+            },
+            "profile_positions": [
+              {
+                "company": "Springboard Hospitality",
+                "description": null,
+                "title": "Vice President Strategy, Partner",
+                "employment_type": null,
+                "location": "Seattle, WA",
+                "date": {
+                  "start": "2016-11-01",
+                  "end": "2025-06-30"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "291f6403-a53b-9c18-8469-57187195542c",
+              "name": "Capco",
+              "logo": "https://images.ai-ark.com/bOd3Kn5HcA8zYYFwv1mpfG8HBIiE1ZZ6BcKXms36YTI/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/291f6403-a53b-9c18-8469-57187195542c.jpg",
+              "url": "https://www.linkedin.com/company/capco",
+              "employees": {
+                "start": 5001,
+                "end": 10000
+              }
+            },
+            "date": {
+              "start": "2013-01-01",
+              "end": "2016-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Capco",
+                "description": "Capco is a global management consultancy and subsidiary of Fidelity Information Services (S&P 500).\n\n\nSelected clients include HSBC, Morgan Stanley and Jefferies.",
+                "title": "Strategy Consultant",
+                "employment_type": null,
+                "location": "New York",
+                "date": {
+                  "start": "2013-01-01",
+                  "end": "2016-12-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "b8096b74-c31e-0a4b-e347-9937bd4482cf",
+              "name": "The River Club of New York",
+              "logo": "https://images.ai-ark.com/Vd5nlvYHnYWXFgk6crZXAy_xQ_fiLJey2xZBJeGql8c/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/b8096b74-c31e-0a4b-e347-9937bd4482cf.jpg",
+              "url": "https://www.linkedin.com/company/the-river-club-of-new-york",
+              "employees": {
+                "start": 51,
+                "end": 200
+              }
+            },
+            "date": {
+              "start": "2009-01-01",
+              "end": "2012-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "The River Club of New York",
+                "description": null,
+                "title": "Tennis Professional",
+                "employment_type": null,
+                "location": "Greater New York City Area",
+                "date": {
+                  "start": "2009-01-01",
+                  "end": "2012-12-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "06dacabd-6a0b-60eb-e281-6eb600a8bcda",
+              "name": "Thomson Reuters",
+              "logo": "https://images.ai-ark.com/oC_XxEXmbj-uMyBuP_Xl1z2FxHU5XccmYJFBTHa3Zks/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/06dacabd-6a0b-60eb-e281-6eb600a8bcda.jpg",
+              "url": "https://www.linkedin.com/company/thomson-reuters",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2011-06-01",
+              "end": "2011-08-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Thomson Reuters",
+                "description": null,
+                "title": "Investor Relations - Summer Analyst",
+                "employment_type": null,
+                "location": "New York, NY",
+                "date": {
+                  "start": "2011-06-01",
+                  "end": "2011-08-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": null,
+              "name": "Fleckenstein Capital",
+              "logo": null,
+              "url": null
+            },
+            "date": {
+              "start": "2010-06-01",
+              "end": "2010-09-30"
+            },
+            "profile_positions": [
+              {
+                "company": "Fleckenstein Capital",
+                "description": null,
+                "title": "Hedge Fund - Summer Research Analyst",
+                "employment_type": null,
+                "location": "Seattle, Washington",
+                "date": {
+                  "start": "2010-06-01",
+                  "end": "2010-09-30"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "d75eada9-7d6a-8fdf-42c8-4954f3a7fca0",
+              "name": "Nike",
+              "logo": "https://images.ai-ark.com/AEhoOePrdq2-aQVj530cR_3naBMF5TmUbE98Z7PZsCE/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/d75eada9-7d6a-8fdf-42c8-4954f3a7fca0.jpg",
+              "url": "https://www.linkedin.com/company/nike",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2006-01-01",
+              "end": "2009-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Nike",
+                "description": null,
+                "title": "Director of Summer Tennis Camps",
+                "employment_type": null,
+                "location": "Sun Valley, Idaho",
+                "date": {
+                  "start": "2006-01-01",
+                  "end": "2009-12-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "a8806cbf-21d7-d6e5-d2c7-89a7206d96cb",
+              "name": "Sun Valley Resort",
+              "logo": "https://images.ai-ark.com/eJ7R2oEauOcN13Ef5kLLfZ4_o81D2nDVCGJrxrStnRQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/a8806cbf-21d7-d6e5-d2c7-89a7206d96cb.jpg",
+              "url": "https://www.linkedin.com/company/sun-valley-resort",
+              "employees": {
+                "start": 1001,
+                "end": 5000
+              }
+            },
+            "date": {
+              "start": "2006-01-01",
+              "end": "2009-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Sun Valley Resort",
+                "description": null,
+                "title": "Tennis Professional",
+                "employment_type": null,
+                "location": "Sun Valley, Idaho",
+                "date": {
+                  "start": "2006-01-01",
+                  "end": "2009-12-31"
+                }
+              }
+            ]
+          }
+        ],
+        "skills": [
+          "Financial Modeling",
+          "Program Management",
+          "Project Management",
+          "Business Strategy",
+          "Business Analysis",
+          "IT Strategy",
+          "Operations Management",
+          "Business Development",
+          "Data Analysis",
+          "Management Consulting",
+          "Strategy",
+          "Valuation",
+          "Equity Research",
+          "Capital Markets",
+          "Financial Analysis",
+          "Economics",
+          "Corporate Finance"
+        ],
+        "member_badges": {
+          "premium": false,
+          "creator": false,
+          "open_to_work": false,
+          "hiring": false,
+          "verified": true,
+          "influencer": false
+        },
+        "statistics": {
+          "network": {
+            "influencer": false,
+            "followable": null,
+            "followers_count": 828,
+            "connections_count": 831
+          },
+          "experience": {
+            "prev_job_titles": null,
+            "tenure": {
+              "company": "2025-06-01",
+              "start": "2006-01-01",
+              "title": "2026-05-01"
+            }
+          }
+        },
+        "company": {
+          "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+          "summary": {
+            "name": "Hotel Equities",
+            "legal_name": "Hotel Equities Group, LLC.",
+            "description": "Hotel Equities (HE) is a best-in-class hospitality management company with a diverse portfolio of premium-branded and independent\u00a0hotels, resorts, and outdoor hospitality destinations throughout the United States, Canada, the Caribbean, and Latin America (CALA). We deliver proven results and drive long-term value for stakeholders through a comprehensive suite of services, a people-first and performance-driven culture, and a commitment to excellence.\n\nOver 11,000+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "overview": "Hotel Equities (HE) is an award-winning hotel development, ownership and management company.  For 30 years, our team has collaborated with premier brands and entrepreneurial owners to deliver best in class results.  HE is hyper focused on managing upper midscale and full-service hotels in the U.S and Canada.  Whether we\u2019re executing ground-up development, re-positioning a property or managing one of the 135+ hotels in our portfolio, HE provides the highest and best value for owners, while prioritizing guest satisfaction and profitability.  Over 2500+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "seo": "Choose the management team at Hotel Equities when you want to expand your hotels company brand like never before.",
+            "founded_year": 1989,
+            "type": "PRIVATELY_HELD",
+            "industry": "hospitality",
+            "staff": {
+              "total": 990,
+              "range": {
+                "start": 10001
+              }
+            },
+            "logo": {
+              "source": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg"
+            }
+          },
+          "link": {
+            "website": "http://www.hotelequities.com",
+            "domain": "hotelequities.com",
+            "domain_ltd": "hotelequities.com",
+            "linkedin": "https://www.linkedin.com/company/hotel-equities",
+            "facebook": "https://www.facebook.com/hotelequities",
+            "twitter": "https://x.com/HotelEquities",
+            "crunchbase": "https://www.crunchbase.com/organization/hotel-equities"
+          },
+          "financial": {
+            "revenue": {
+              "annual": {
+                "start": 50000000,
+                "end": 100000000,
+                "amount": "50000000-100000000"
+              }
+            },
+            "funding": {
+              "type": "PRIVATE_EQUITY_ROUND",
+              "total_amount": 500000000,
+              "last_amount": 500000000,
+              "num_investor": 1,
+              "num_funding_rounds": 1,
+              "rounds": [
+                {
+                  "announced_at": "2018-09-12",
+                  "raised_amount": 500000000,
+                  "type": "PRIVATE_EQUITY_ROUND",
+                  "investors": [
+                    "Virtua Partners"
+                  ]
+                }
+              ],
+              "date": "2018-09-12"
+            },
+            "acquisition": {
+              "total": 1,
+              "contents": [
+                {
+                  "identifier": {
+                    "id": "springboard-hospitality",
+                    "name": "Springboard Hospitality",
+                    "image": "8b78eddb33524976bedb6fc30110f672"
+                  },
+                  "role": "acquiree",
+                  "announced_at": "2025-05-01"
+                }
+              ]
+            },
+            "aberdeen": {
+              "it_spend": 8712352
+            }
+          },
+          "location": {
+            "headquarter": {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Georgia",
+              "city": "Alpharetta",
+              "street": "North Point Pkwy",
+              "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+              "position": {
+                "lng": -84.38857,
+                "lat": 33.74975
+              }
+            },
+            "locations": [
+              {
+                "continent": "North America",
+                "country": "United States",
+                "state": "Georgia",
+                "city": "Alpharetta",
+                "street": "North Point Pkwy",
+                "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+                "position": {
+                  "lng": -84.38857,
+                  "lat": 33.74975
+                }
+              }
+            ]
+          },
+          "technologies": [
+            {
+              "name": "viewport meta",
+              "category": "mobile"
+            },
+            {
+              "name": "iphone / mobile compatible",
+              "category": "mobile"
+            },
+            {
+              "name": "ssl by default",
+              "category": "ssl"
+            },
+            {
+              "name": "hsts",
+              "category": "ssl"
+            },
+            {
+              "name": "apple mobile web clips icon",
+              "category": "mobile"
+            },
+            {
+              "name": "dnssec",
+              "category": "ns"
+            },
+            {
+              "name": "google tag manager",
+              "category": "widgets"
+            },
+            {
+              "name": "google font api",
+              "category": "widgets"
+            },
+            {
+              "name": "content delivery network",
+              "category": "cdn"
+            },
+            {
+              "name": "google analytics",
+              "category": "analytics"
+            },
+            {
+              "name": "html5"
+            },
+            {
+              "name": "symantec email security.cloud"
+            },
+            {
+              "name": "godaddy premium dns"
+            },
+            {
+              "name": "google fonts"
+            },
+            {
+              "name": "google tag manager"
+            },
+            {
+              "name": "bootstrap"
+            },
+            {
+              "name": "google cloud translation api"
+            },
+            {
+              "name": "office 365"
+            },
+            {
+              "name": "google analytics"
+            },
+            {
+              "name": "vimeo"
+            },
+            {
+              "name": "Adobe Marketing Cloud",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Adobe Media Optimizer",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Google Analytics",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Google Font API",
+              "category": "Fonts"
+            },
+            {
+              "name": "Google Tag Manager",
+              "category": "Tag Management"
+            },
+            {
+              "name": "Google translate API",
+              "category": "Widgets"
+            },
+            {
+              "name": "Google translate widget",
+              "category": "Widgets"
+            },
+            {
+              "name": "Microsoft Office 365",
+              "category": "Other"
+            },
+            {
+              "name": "Mobile Friendly",
+              "category": "Other"
+            },
+            {
+              "name": "Multilingual",
+              "category": "Widgets"
+            },
+            {
+              "name": "Omniture (Adobe)",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Outlook",
+              "category": "Email Providers"
+            },
+            {
+              "name": "Remote",
+              "category": "Other"
+            },
+            {
+              "name": "SynXis (Sabre Hospitality)",
+              "category": "Reservation Software"
+            },
+            {
+              "name": "Vimeo",
+              "category": "Online Video Platforms"
+            },
+            {
+              "name": "iCIMS",
+              "category": "Recruitment"
+            }
+          ],
+          "industries": [
+            "hospitality"
+          ],
+          "keywords": [
+            "rooms operations",
+            "revenue generation",
+            "finance & accounting",
+            "food & beverage",
+            "human resources",
+            "procurement",
+            "commercial strategy",
+            "development services",
+            "content storytelling",
+            "brand development",
+            "online reputation management",
+            "talent acquistion & development",
+            "tech innovation",
+            "guest experience"
+          ],
+          "hashtags": [
+            "hotelmanagement",
+            "hospitalitystrong",
+            "hoteliers"
+          ],
+          "languages": [
+            "english"
+          ],
+          "sic": [
+            "7011"
+          ],
+          "naics": [
+            "721110",
+            "561499"
+          ],
+          "last_updated": "2026-09-21"
+        },
+        "department": {
+          "departments": [
+            "consulting"
+          ],
+          "sub_departments": [
+            "strategy_consulting"
+          ],
+          "functions": [
+            "consulting"
+          ],
+          "seniority": "vp"
+        },
+        "last_updated": "2026-09-21"
+      }
+    ],
+    "size": 3,
+    "totalElements": 1,
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 3,
+      "sort": {
+        "sorted": true,
+        "unsorted": false,
+        "empty": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "last": true,
+    "totalPages": 1,
+    "sort": {
+      "sorted": true,
+      "unsorted": false,
+      "empty": false
+    },
+    "numberOfElements": 1,
+    "trackId": "41f68ec7-6278-4174-afb5-83cb2bae7922",
+    "number": 0,
+    "first": true,
+    "empty": false
+  }
+}

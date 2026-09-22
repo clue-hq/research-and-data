@@ -1,0 +1,25 @@
+== A. name-scoped + domain-scoped people lookups (0.5 cr per profile returned) ==
+  ark[h9_people_ben_rafter] http=200 0.55s total=1 returned=1 cr~1.5
+   [KEEP] Ben Rafter             | CEO                                    | Hotel Equities | since=2025-05-01 | https://www.linkedin.com/in/ben-rafter-623a702
+  ark[h9_people_al_smith] http=200 0.5s total=1 returned=1 cr~1.5
+   [KEEP] Albert Smith           | Chief Operating Officer                | Hotel Equities | since=2021-07-01 | https://www.linkedin.com/in/albert-smith-3aa9318
+  ark[h9_people_brian_jenkins] http=200 0.51s total=1 returned=1 cr~1.5
+   [KEEP] Brian Jenkins          | Head of HE Labs, EVP Strategy          | Hotel Equities | since=2025-06-01 | https://www.linkedin.com/in/brianjenkins01
+  ark[h9_people_stephen_hahn] http=200 0.52s total=1 returned=1 cr~1.5
+   [KEEP] Stephen Hahn           | Vice President of Information Technolo | Hotel Equities | since=2022-10-01 | https://www.linkedin.com/in/stephen-hahn-41028112
+  ark[h9_people_david_rosenberg] http=200 0.73s total=1 returned=1 cr~1.5
+   [KEEP] David Rosenberg        | President-Focused Service Division     | Hotel Equities | since=2020-02-01 | https://www.linkedin.com/in/david-rosenberg-4a244312
+  ark[h9_people_bill_stachler] http=200 0.8s total=1 returned=1 cr~1.5
+   [KEEP] Bill Stachler          | Senior Vice President Revenue Manageme | Hotel Equities | since=2021-03-01 | https://www.linkedin.com/in/billstachler
+
+== B. email export, priority order, <=4 (1 cr when found) ==
+  ark[h9_email_ben-rafter-623a702] http=200 1.02s total=None returned=0 cr~1.0
+   ben_rafter       -> ben.rafter@hotelequities.com  status=VALID/EMPTY mx=microsoft verified=2026-09-22T05:26:58.000420
+  ark[h9_email_albert-smith-3aa9318] http=404 0.72s total=None returned=0 cr~1.0
+   al_smith         -> None  status=None/None mx=None verified=None
+  ark[h9_email_brianjenkins01] http=200 0.94s total=None returned=0 cr~1.0
+   brian_jenkins    -> bjenkins@hotelequities.com  status=VALID/EMPTY mx=microsoft verified=2026-09-22T05:27:04.000665
+  ark[h9_email_stephen-hahn-41028112] http=200 0.92s total=None returned=0 cr~1.0
+   stephen_hahn     -> shahn@hotelequities.com  status=VALID/EMPTY mx=microsoft verified=2026-09-22T05:26:48.000709
+
+H9 101.8s credits=13.3 spend=0.1768 ark_halted=False

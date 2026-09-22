@@ -1,0 +1,182 @@
+{
+  "slug": "rafter_tech_ceo",
+  "person": "Ben Rafter",
+  "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+  "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+  "mp3": "https://www.buzzsprout.com/2103299/episodes/16397083-what-happens-when-a-tech-ceo-leads-a-hotel-company-ben-rafter-springboard-hospitality.mp3",
+  "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+  "duration_seconds": 958,
+  "faithful": {
+    "model": "gemini-3.5-transcribe",
+    "usageMetadata": {
+      "promptTokenCount": 24068,
+      "totalTokenCount": 24068,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 114
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 23954
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.007198,
+    "elapsed_s": 12.33,
+    "chars": 16209,
+    "words": 2954
+  },
+  "timestamped": {
+    "model": "gemini-3.5-flash-lite",
+    "usageMetadata": {
+      "promptTokenCount": 24351,
+      "candidatesTokenCount": 4997,
+      "totalTokenCount": 29348,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 23954
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 397
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.009225,
+    "elapsed_s": 17.54,
+    "chars": 19656,
+    "timestamped_lines": 55,
+    "unique_lines": 55,
+    "loop_starts_at": null
+  },
+  "total_cost_usd": 0.016423,
+  "audio_tokens_per_second": 25.0,
+  "quotes": [
+    {
+      "timestamp": "03:41",
+      "quote": "never forget that that we're in the business of hospitality and I I I think as we launch these new concepts and we adopt new technologies, there's always this pressure to forget why we're here to begin with.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "05:18",
+      "quote": "And I think you saw a lot of owners who would they were like, \"Oh, okay, you know, not a lot of owners, a lot of operators who were, you know, okay, we'll weather through this.\" And we took a very aggressive approach, particularly to quant and the revenue management.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "06:51",
+      "quote": "And so, we started making customized reports that were if the lowest common denominator or something like Expedia did these direct marketing efforts, beat just selling your room on Expedia and Expedia's not the enemy in this case, Expedia's a tool that you want to manage like anything else.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "07:51",
+      "quote": "We overinvest and have a dedicated apartment just to try to make new things stick, if you if you will.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "10:37",
+      "quote": "Always introduce things that are new and I do get worried about being getting too comfortable, right?",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": true
+    }
+  ],
+  "tech_and_vendor_signals": [
+    {
+      "timestamp": "05:18",
+      "text": "revenue management -> Quantitative revenue management tools and analytics used aggressively during crises.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "06:51",
+      "text": "Expedia -> Online Travel Agency (OTA) utilized as a managed channel rather than an enemy.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "06:51",
+      "text": "SEM campaign -> Search engine marketing campaigns used for direct customer acquisition.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "06:51",
+      "text": "paper click campaign -> Pay-per-click digital advertising used in hotel marketing.",
+      "verbatim_check": "NOT_FOUND"
+    }
+  ],
+  "loop_rescored": {
+    "sustained_loop_starts_at": null,
+    "duplicate_long_lines": 0,
+    "long_lines": 55,
+    "duplicate_rate_pct": 0.0,
+    "verdict": "clean"
+  },
+  "quotes_repaired": [
+    {
+      "timestamp": "03:41",
+      "quote_published": "And I think as we launch these new concepts and we adopt new technologies, there's always this pressure to forget why we're here to begin with.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "never forget that that we're in the business of hospitality and I I I think as we launch these new concepts and we adopt new technologies, there's always this pressure to forget why we're here to begin with.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_ceo"
+    },
+    {
+      "timestamp": "05:18",
+      "quote_published": "And I think you saw a lot of owners who would, they were like, \"Oh, okay, you know,\" or not a lot of owners, a lot of operators who were, \"Okay, you know, we'll weather through this.\" And we took a very aggressive approach, particularly to quant and revenue management.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "And I think you saw a lot of owners who would they were like, \"Oh, okay, you know, not a lot of owners, a lot of operators who were, you know, okay, we'll weather through this.\" And we took a very aggressive approach, particularly to quant and the revenue management.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_ceo"
+    },
+    {
+      "timestamp": "06:51",
+      "quote_published": "It's a useless number and eight to one in my view would not even be a good number, right? And so we started making customized reports that were, if the lowest common denominator is something like Expedia, did these direct marketing efforts beat just selling a room on Expedia? And Expedia is not the enemy in this case.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "And so, we started making customized reports that were if the lowest common denominator or something like Expedia did these direct marketing efforts, beat just selling your room on Expedia and Expedia's not the enemy in this case, Expedia's a tool that you want to manage like anything else.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_ceo"
+    },
+    {
+      "timestamp": "07:51",
+      "quote_published": "We'll beta any technology we have for the size we are, which we're about 50 hotels, so we're not a large company, we overinvest and have a dedicated department just to try to make new things stick if you will.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "We overinvest and have a dedicated apartment just to try to make new things stick, if you if you will.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_ceo"
+    },
+    {
+      "timestamp": "10:37",
+      "quote_published": "How do you stay fired up and excited by what you do? Always introduce things that are new and I do get worried about being getting too comfortable, right? What used to be one of the greater fears in life was there's always, I was never worried about the people in front of me, right? And this is a classic tech thing.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "Always introduce things that are new and I do get worried about being getting too comfortable, right?",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_ceo"
+    }
+  ],
+  "quotes_dropped": []
+}

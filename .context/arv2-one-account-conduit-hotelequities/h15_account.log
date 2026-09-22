@@ -1,0 +1,4 @@
+  bundle chars: 80620
+  openrouter[h15_structure_account] http=200 61.79s usage={"prompt_tokens": 18337, "completion_tokens": 7102, "total_tokens": 25439, "cost": 0, "is_byok": true, "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "audio_tokens": 0, "video_
+  claims=32 proposed=7 negatives=4 | spans verbatim 26 / failed 13
+H15[account] 61.8s spend=0.4244

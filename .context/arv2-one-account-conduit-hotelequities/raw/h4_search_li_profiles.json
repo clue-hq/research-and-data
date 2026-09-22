@@ -1,0 +1,1355 @@
+{
+  "requestId": "e603f42e1c343fc48d5b76ee5abe9d97",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/c685fn78xc1",
+      "title": "Jeff Shockley",
+      "url": "https://www.linkedin.com/in/jeff-shockley-04b76632",
+      "publishedDate": "2026-08-28T04:26:02.000Z",
+      "text": "# Jeff Shockley\n\nExecutive Vice President - Business Development & Analytics\n\nAtlanta, Georgia, United States (US)\n\n500 connections \u2022 1,481 followers\n\n## About\n\nExecutive Vice President - Business Development & Analytics\n\nTotal Experience: 33 years and 2 months\n\n## Experience\n\n### Executive Vice President - Business Development & Analytics - [Dimension Hospitality](https://www.linkedin.com/company/dimension-hospitality) (Current)\n\nSep 2023 - Present (2 years and 11 months) in Brookhaven, Georgia, United States\n\nDepartment: General Management \u2022 Level: President/Vice President\n\nDimension Hospitality is a Hospitality company. Dimension Hospitality is a premier hotel management company with a diverse portfolio of nearly 80 hotels, including leading brands of marriott, hilton, hyatt, and ihg. They focus on delivering measurable results and creating a culture where associates can reach their potential and provide exceptional guest experiences. Dimension Hospitality has 200-300 employees (+7-8% YoY) and has annual revenue in the $100M-$150M range, founded in 1989. with an office in Fort Lauderdale. Its workforce is distributed across United States and Indonesia.\n\n### [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\n#### Vice President - Acquisitions and Financial Analysis\n\nOct 2013 - Sep 2023 (9 years and 11 months) in Greater Atlanta Area\n\nResponsible for the growth of third party management contracts and leadership of the Financial Analysis department. Jeff brings over twenty years of leadership experience in hotel operations as well as property, asset, and financial management to his new development role.\n\nDepartment: Finance & Accounting \u2022 Level: President/Vice President\n\n#### Director of Financial Analysis and Owner Relations, IT Manager & Operations Coach\n\nApr 2009 - Sep 2023 (14 years and 5 months) in Greater Atlanta Area\n\n#### Financial Analyst, Regional Manager, Team Leader & General Manager\n\nFeb 2005 - Apr 2009 (4 years and 2 months) in Greater Atlanta Area\n\nDepartment: General Management \u2022 Level: Manager\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Financial Analyst, Team Leader and General Manager - Sivica",
+      "image": "https://media.licdn.com/dms/image/v2/C5603AQGZt-OsDpb4gw/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1516510830892?e=2147483647&v=beta&t=D65gkqR4saREK3ljVbc8yhXeQctruWnTXAZOAe3Nchw",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/c685fn78xc1",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Jeff Shockley",
+            "firstName": "Jeff",
+            "lastName": "Shockley",
+            "location": "Atlanta, Georgia, United States",
+            "workHistory": [
+              {
+                "title": "Executive Vice President - Business Development & Analytics",
+                "location": "Brookhaven, Georgia, United States",
+                "dates": {
+                  "from": "2023-09-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dmkygr7r3j7",
+                  "name": "Dimension Hospitality"
+                }
+              },
+              {
+                "title": "Vice President - Acquisitions and Financial Analysis",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2023-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Director of Financial Analysis and Owner Relations, IT Manager & Operations Coach",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2009-04-01",
+                  "to": "2023-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Financial Analyst, Regional Manager, Team Leader & General Manager",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2005-02-01",
+                  "to": "2009-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Financial Analyst, Team Leader and General Manager",
+                "location": "Buckhead, Gerogia",
+                "dates": {
+                  "from": "2003-08-01",
+                  "to": "2005-02-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Sivica Hospitality"
+                }
+              },
+              {
+                "title": "Lead General Manager and General Manager",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "1995-06-01",
+                  "to": "2003-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Day Hospitality Group"
+                }
+              },
+              {
+                "title": "Sales Manager",
+                "location": null,
+                "dates": {
+                  "from": "1994-01-01",
+                  "to": "1995-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lg0858t9bwj",
+                  "name": "Marriott International"
+                }
+              },
+              {
+                "title": "Sales Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "1993-01-01",
+                  "to": "1994-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n1wxw8fcxyy",
+                  "name": "McKibbon Hotel Management"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": null,
+                "institution": {
+                  "id": null,
+                  "name": "Marist"
+                }
+              },
+              {
+                "degree": "Bachelor of Science, Political Science",
+                "dates": {
+                  "from": "1989",
+                  "to": "1993"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/fkwzr0s5jv3",
+                  "name": "The University of Georgia"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/h64p49xzvsw",
+      "title": "David Murphy - Vice President of Operations | Hospitality Executive ...",
+      "url": "https://www.linkedin.com/in/david-murphy-4ba92b37",
+      "publishedDate": "2026-08-09T04:16:45.000Z",
+      "text": "# David Murphy\n\nVice President of Operations | Hospitality Executive Leading 18 Hotels & 3,000+ Rooms | Marriott \u2022 Hilton \u2022 Hyatt \u2022 IHG\n\nSeattle, Washington, United States (US)\n\n500 connections \u2022 2,277 followers\n\n## About\n\nHospitality executive with more than 20 years of experience leading hotel operations\u2026\n\nTotal Experience: 16 years and 8 months\n\n## Experience\n\n### Vice President Operations - [Hotel Equities](https://www.linkedin.com/company/hotel-equities) (Current)\n\nJan 2022 - Present (4 years and 7 months) in Seattle, Washington, United States\n\nExecutive leader responsible for the operational and financial performance of an 18-hotel portfolio of full service and select service properties representing more than 3,000 rooms across the Pacific Northwest and Mountain West. Partner closely with ownership groups and brand partners including Marriott, Hilton, Hyatt, and IHG to drive revenue growth, operational excellence, and long term asset value. Key Responsibilities\n- Provide strategic oversight for hotel operations, financial performance, and market positioning across a multi-state portfolio\n- Lead annual budgeting, forecasting, and performance management to maximize profitability and owner returns\n- Drive RevPAR index growth through revenue management, sales leadership, and demand generation initiatives\n- Partner with ownership and asset managers on capital planning, property improvements, and brand compliance initiatives\n- Recruit, mentor, and develop General Managers and leadership teams across the portfolio\n- Collaborate with revenue management, sales, finance, and development teams to support portfolio growth and performance\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Regional Vice President of Operations - [Island Hospitality Management](https://www.linkedin.com/company/island-hospitality-management)\n\nJan 2015 - Jan 2022 (7 years) in Greater Seattle Area\n\nOversaw operations and financial performance for a 14 hotel portfolio ranging from 80 to 231 rooms across multiple markets, supporting Marriott and Hilton branded properties. Key Achievements\n- Led portfolio rev",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQEVTm19fRllIQ/profile-displayphoto-scale_200_200/B56Z512xsVHcAc-/0/1780093756204?e=2147483647&v=beta&t=4OKpELNSfu6HZpXnkFfU2IyqnWgmECoXq9wFuwwOYLQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/h64p49xzvsw",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "David Murphy",
+            "firstName": "David",
+            "lastName": "Murphy",
+            "location": "Seattle, Washington, United States",
+            "workHistory": [
+              {
+                "title": "Vice President Operations",
+                "location": "Seattle, Washington, United States",
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Dual General Manager",
+                "location": "Houston Westchase",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2015-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Courtyard/Residence Inn by Marriott Houston"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Tukwila, WA",
+                "dates": {
+                  "from": "2012-01-01",
+                  "to": "2014-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Residence Inn by Marriott Tukwila, WA"
+                }
+              },
+              {
+                "title": "Regional Vice President of Operations",
+                "location": "Greater Seattle Area",
+                "dates": {
+                  "from": "2015-01-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dx07k6hd64m",
+                  "name": "Island Hospitality Management"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Sunnyvale, CA",
+                "dates": {
+                  "from": "2010-01-01",
+                  "to": "2012-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dx07k6hd64m",
+                  "name": "Residence Inn by Marriott Silicon Valley 2"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2000",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Cascadia College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/dm3w6927dnx",
+      "title": "albert smith",
+      "url": "https://www.linkedin.com/in/albert-smith-3aa9318",
+      "publishedDate": "2026-07-26T23:22:12.000Z",
+      "text": "# Albert Smith\n\nChief Operating Officer, Hotel Equities\n\nAlpharetta, Georgia, United States (US)\n\n500 connections \u2022 10,719 followers\n\n## About\n\nExperienced Senior Level Executive with a history of exceptional performance results, talent development and portfolio growth within the hospitality industry. Skilled in Sales, Marketing, Revenue Management and Operations within upper up-scale and luxury independent and soft-soft branded hotels and resorts.\n\nTotal Experience: 30 years and 6 months\n\n## Experience\n\n### [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\n#### Chief Operating Officer (Current)\n\nMay 2025 - Present (1 year and 2 months) in Alpharetta, Georgia, United States\n\nAlpharetta, Georgia, United States\n\nDepartment: General Management \u2022 Level: C-Level\n\n#### President, Hotel Operations\n\nJul 2021 - May 2025 (3 years and 10 months) in Alpharetta, Georgia, United States\n\nAlpharetta, Georgia, United States\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Senior Vice President, Lifestyle - [Highgate](https://www.linkedin.com/company/highgate)\n\nMar 2020 - Jul 2021 (1 year and 4 months)\n\nDepartment: General Management \u2022 Level: President/Vice President\n\nHighgate is a Hospitality company. Highgate is a hospitality investment and management company with a diverse portfolio of hotels across north America, the caribbean, Latin America, and Europe. They have a 30-year track record as an innovator in the hospitality industry and have expertise in revenue management & distribution, hotel branding, experiential curation development, ground-up development, adaptive re-use, redevelopment projects, and hotel renovations investment management.[/. Highgate has 1,000-2,000 employees (+6-7% YoY) and has annual revenue in the $1B-$2B range. Headquartered in New York, New York, United States, with an office in Irving. Its workforce is distributed across 18 countries (including United States, Portugal, Puerto Rico, United Kingdom, and India).\n\n### Senior Vice President - [Pivot Hotels & Resorts](https://www.linkedin.com/company/pivothotels)\n\nMar 2015 - Mar 2020 (5 years)\n\nDepartm",
+      "image": "https://media.licdn.com/dms/image/v2/C4E03AQEjGw4aTPiNPA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1517739180728?e=2147483647&v=beta&t=kgdYsY3cxsxy78lPz7EnPcZIMqAivmnWv-q3OTOYQkw",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/dm3w6927dnx",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Albert Smith",
+            "firstName": "Albert",
+            "lastName": "Smith",
+            "location": "Alpharetta, Georgia, United States",
+            "workHistory": [
+              {
+                "title": "Chief Operating Officer",
+                "location": "Alpharetta, Georgia, United States",
+                "dates": {
+                  "from": "2025-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "President, Hotel Operations",
+                "location": "Alpharetta, Georgia, United States",
+                "dates": {
+                  "from": "2021-07-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Senior Vice President, Lifestyle",
+                "location": null,
+                "dates": {
+                  "from": "2020-03-01",
+                  "to": "2021-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bnz2qfx8vx1",
+                  "name": "Highgate"
+                }
+              },
+              {
+                "title": "Senior Vice President",
+                "location": null,
+                "dates": {
+                  "from": "2015-03-01",
+                  "to": "2020-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g9scvmzw28y",
+                  "name": "Pivot Hotels & Resorts"
+                }
+              },
+              {
+                "title": "Vice President of Hotel Operations for SLS Las Vegas",
+                "location": null,
+                "dates": {
+                  "from": "2013-09-01",
+                  "to": "2015-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ddgf8krk5qj",
+                  "name": "SBE Entertainment"
+                }
+              },
+              {
+                "title": "Regional Director of Operations, Southern California",
+                "location": null,
+                "dates": {
+                  "from": "2009-07-01",
+                  "to": "2013-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9869z6jbgnr",
+                  "name": "Kimpton Hotels"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Chamberlain West Hollywood",
+                "dates": {
+                  "from": "2004-02-01",
+                  "to": "2009-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xrb3qrzyqtm",
+                  "name": "Viceroy Hotel Group"
+                }
+              },
+              {
+                "title": "Director of Front Office Operations, Los Angeles Biltmore Hotel",
+                "location": "Downtown Los Angeles",
+                "dates": {
+                  "from": "1998-01-01",
+                  "to": "2004-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qtg2d55cbrq",
+                  "name": "Millennium & Copthorne Hotels"
+                }
+              },
+              {
+                "title": "Front Desk Supervisor",
+                "location": null,
+                "dates": {
+                  "from": "1996-01-01",
+                  "to": "1998-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hd2ypzmswwp",
+                  "name": "Westin Hotels & Resorts"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "1995",
+                  "to": "1997"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "American College of Hotel & Restaurant MGMT."
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/lybhy6xtlpp",
+      "title": "Junior Lacayo",
+      "url": "https://www.linkedin.com/in/junior-lacayo-33a0b6ab",
+      "publishedDate": "2026-08-09T18:16:38.000Z",
+      "text": "# Junior Lacayo\n\nRegional Director Of operations - Hotel Equities\n\nAtlanta Metropolitan Area (US)\n\n500 connections \u2022 2,783 followers\n\n## About\n\nExperienced Senior Operations Manager with a demonstrated history of working in the hospitality industry. Skilled in Budgeting, Event Planning, Customer Service, Sales, and Hotel Management. Strong operations professional graduated from Lone Star College System.\n\nTotal Experience: 10 years and 10 months\n\n## Experience\n\n### [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\n#### Regional Director of Operations (Current)\n\nFeb 2023 - Present (3 years and 6 months) in United States\n\nDepartment: Operations \u2022 Level: Director\n\n#### Area General Manager\n\nJan 2022 - Feb 2023 (1 year and 1 month)\n\nDepartment: General Management \u2022 Level: Manager\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Sr roooms operation Manager - [Marriott International](https://www.linkedin.com/company/marriott-international)\n\nFeb 2023 - Present (1 year and 11 months) in United States\n\nMarriott International (MAR) is a Hospitality company. Marriott Bonvoy is a company that offers luxury hotels, resorts, extended stay hotels, pet-friendly hotels, and more. They provide a wide range of services including booking directly and saving at their hotels. Marriott International has 30,000-40,000 employees (+10% YoY) and has annual revenue in the $20B-$30B range, founded in 1993. Headquartered in Bethesda, Maryland, United States, with presence in United Arab Emirates, Egypt, and Qatar. Its workforce is distributed across 162 countries (including United States, India, United Arab Emirates, Canada, and United Kingdom). Has $4.5B in total funding, with 5 prior funding rounds.\n\n### Director Of Operations - [W Atlanta \u2013 Buckhead](https://www.linkedin.com/company/w-atlanta-buckhead)\n\nApr 2019 - Feb 2023 (3 years and 10 months) in Atlanta, Georgia\n\nDepartment: Operations \u2022 Level: Director\n\nW Atlanta \u2013 Buckhead is a Hospitality company. W Atlanta \u2013 Buckhead has 1-10 employees (4-5% YoY decline), founded in 2008. Headquartered in atlanta, georgia, United States.\n\n### General Manager - [Marriott International](https://www.linke",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQGzEa_JVk6XRw/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1676883654394?e=2147483647&v=beta&t=NiCtkKJSAOMa0D9hncb0IbbLIyg34uyZVW6vZ8JXDYc",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/lybhy6xtlpp",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Junior Lacayo",
+            "firstName": "Lacayo",
+            "lastName": null,
+            "location": "Atlanta Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Regional Director of Operations",
+                "location": "United States",
+                "dates": {
+                  "from": "2023-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Area General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2023-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Sr roooms operation Manager",
+                "location": "United States",
+                "dates": {
+                  "from": "2023-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lg0858t9bwj",
+                  "name": "Marriott International"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Georgia",
+                "dates": {
+                  "from": "2015-10-01",
+                  "to": "2022-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lg0858t9bwj",
+                  "name": "Marriott International"
+                }
+              },
+              {
+                "title": "Director Of Operations",
+                "location": "Atlanta, Georgia",
+                "dates": {
+                  "from": "2019-04-01",
+                  "to": "2023-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pdy1p3qfpqp",
+                  "name": "W Atlanta \u2013 Buckhead"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": null,
+                "institution": {
+                  "id": null,
+                  "name": "Lone Star College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/j8q1g7mxlqw",
+      "title": "Daniel Block - Senior Vice President Operations, Full ... - LinkedIn",
+      "url": "https://www.linkedin.com/in/daniel-block-550b0511",
+      "publishedDate": "2026-08-20T08:51:00.000Z",
+      "text": "# Daniel Block\n\nSenior Vice President Operations, Lifestyle Division Hotel Equities\n\nEnglewood, Colorado, United States (US)\n\n500 connections \u2022 5,887 followers\n\n## About\n\nSenior Vice President Operations, Lifestyle Division Hotel Equities\n\nTotal Experience: 29 years and 7 months\n\n## Experience\n\n### Vice President Hotel Operations - Lewis Properties\n\nJan 2015 - Oct 2018 (3 years and 9 months) in Greater Denver Area\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n### Director Grand Heritage Hotel Group - [The Stanley Hotel](https://www.linkedin.com/company/the-stanley-hotel)\n\nJan 2014 - Dec 2014 (11 months) in Estes Park Colorado\n\nThe Stanley Hotel is a Hospitality company. Stanley Hotel is a hotel located in Estes Park, CO that offers 4 types of hotel accommodations including 1909 historic hotel rooms, historic boutique hotel, modern hotel rooms, and 1 to 3 bedroom condominiums perfect for groups. The hotel provides stunning views of the Rocky Mountains. The Stanley Hotel has 40-50 employees (+8-9% YoY) and has annual revenue in the $1M-$10M range, founded in 1909. Headquartered in Estes Park, Colorado, United States, with presence in Greece. Its workforce is distributed across 6 countries (including United States, Kenya, Papua New Guinea, Jamaica, and Bahrain).\n\n### Area Director, Food and Beverage - [Omni Hotels & Resorts](https://www.linkedin.com/company/omni-hotels)\n\nJun 2010 - Jan 2014 (3 years and 7 months)\n\nDepartment: Operations \u2022 Level: Director\n\nOmni Hotels & Resorts is a Hospitality company. Omni Hotels & Resorts is a company that offers hotels and resorts for vacation, wedding, and business travel. They have over 50 locations across the US and Canada. Omni Hotels & Resorts has 3,000-4,000 employees (+5-6% YoY) and has annual revenue in the $2B-$3B range. Headquartered in Dallas, Texas, United States. Its workforce is distributed across 31 countries (including United States, Canada, Mexico, India, and United Kingdom).\n\n### Managing Partner-Business Owner - Managing Partner-Business Owner\n\nSep 2006 - Jun 2010 (3 years and 9 months)\n\nDepartment: General Management \u2022 Level: Owner\n\n### Resort Manager - [Destination Hotels- Two Roads Hospitality](https://www.linkedin.com/company/destination-by-hyatt)\n\nApr 1996 - Sep 2006 (10 years and 5 months)\n\nHeld Director of Operations position at the Inverness Hotel and at The Garden of the Gods Club.\n\nDepartment: General Management \u2022 Level: Manager\n\nDestination by Hyatt is a Hospitality company. Desti",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQEN3M_na-BkVg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1684028777130?e=2147483647&v=beta&t=doo6HAU5AVmx1JvK4xabJpfeSBFCedyyad9jfk4QMy8",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/j8q1g7mxlqw",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Daniel Block",
+            "firstName": "Daniel",
+            "lastName": "Block",
+            "location": "Englewood, Colorado, United States",
+            "workHistory": [
+              {
+                "title": "Vice President Hotel Operations",
+                "location": "Greater Denver Area",
+                "dates": {
+                  "from": "2015-01-01",
+                  "to": "2018-10-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Lewis Properties"
+                }
+              },
+              {
+                "title": "Director Grand Heritage Hotel Group",
+                "location": "Estes Park Colorado",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2014-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kw27580wdfx",
+                  "name": "The Stanley Hotel"
+                }
+              },
+              {
+                "title": "Area Director, Food and Beverage",
+                "location": null,
+                "dates": {
+                  "from": "2010-06-01",
+                  "to": "2014-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/b9wm2mp7cfx",
+                  "name": "Omni Hotels & Resorts"
+                }
+              },
+              {
+                "title": "Managing Partner-Business Owner",
+                "location": null,
+                "dates": {
+                  "from": "2006-09-01",
+                  "to": "2010-06-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Managing Partner-Business Owner"
+                }
+              },
+              {
+                "title": "Resort Manager",
+                "location": null,
+                "dates": {
+                  "from": "1996-04-01",
+                  "to": "2006-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qpgtg0m92my",
+                  "name": "Destination Hotels- Two Roads Hospitality"
+                }
+              },
+              {
+                "title": "Director of Food and Beverage",
+                "location": null,
+                "dates": {
+                  "from": "1993-02-01",
+                  "to": "1996-04-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "La Mansion Del Rio Hotel"
+                }
+              },
+              {
+                "title": "Executive Chef",
+                "location": null,
+                "dates": {
+                  "from": "1989-02-01",
+                  "to": "1993-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dyszp6pcf99",
+                  "name": "The Ritz-Carlton Hotel Company"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Culinary",
+                "dates": {
+                  "from": "1985",
+                  "to": "1987"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/3cfmgyv5zvf",
+                  "name": "The Culinary Institute of America"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/r3wlz2nrxy7",
+      "title": "Jeff Miles - Superior Results-Generating Hospitality Executive",
+      "url": "https://www.linkedin.com/in/jeff-miles-11259b105",
+      "publishedDate": "2026-08-06T18:09:22.000Z",
+      "text": "# Jeff Miles\n\nSuperior Results-Generating Hospitality Executive\n\nAtlanta Metropolitan Area (US)\n\n500 connections \u2022 1,214 followers\n\n## About\n\nExperienced, award-winning, and results-generating hospitality professional possessing above-property leadership roles in operations, sales, and revenue management. Skilled in Budgeting, Hospitality Management, Yield Management, Hotel Management, and Revenue Analysis. Strong business development professional with a Bachelor of Arts (BA) focused in Business Administration and Management from the University of Northern Iowa. I'm also passionate about Cybersecurity and its applications in the hospitality industry, and I am completing a Computer Science degree in Cybersecurity at Gwinnett Technical College, where I am learning the latest skills and techniques to protect organizations' data, networks, and systems from cyber threats.\n\nTotal Experience: 18 years\n\n## Experience\n\n### Vice President of Finance and Administration, Member of Board of Directors - [Innovative Learning Center](https://www.linkedin.com/company/innovative-learning-center-llc) (Current)\n\nJan 2016 - Present (10 years and 7 months) in Atlanta, Georgia\n\nInnovative Learning Center STEM Education Research and Evaluation is an educational institution. The company offers program evaluation research services, data analytics, proposal development, and STEM education programming. Innovative Learning Center STEM Education Research and Evaluation has 1-10 employees (+10% YoY), founded in 2007. Headquartered in Atlanta, Georgia, United States.\n\n### Regional Director of Operations - [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\nAug 2024 - Jul 2025 (11 months) in South Carolina, United States\n\nDepartment: Operations \u2022 Level: Director\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Vice President Operations - Duke Hospitality\n\nMay 2017 - Mar 2019 (1 year and 10 months) in Greater Atlanta Area\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n### Corporate Director of Revenue Management - Duke Hospitality\n\nSep 2014 - May 2017 (2 years and 8 months) in Greater Atlanta Area\n\nDepartment: Finance & Accounting \u2022 Level:",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/r3wlz2nrxy7",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Jeff Miles",
+            "firstName": "Jeff",
+            "lastName": "Miles",
+            "location": "Atlanta Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Vice President of Finance and Administration, Member of Board of Directors",
+                "location": "Atlanta, Georgia",
+                "dates": {
+                  "from": "2016-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/4g8qxpjpdg0",
+                  "name": "Innovative Learning Center"
+                }
+              },
+              {
+                "title": "Regional Director of Operations",
+                "location": "South Carolina, United States",
+                "dates": {
+                  "from": "2024-08-01",
+                  "to": "2025-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Vice President Operations",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2017-05-01",
+                  "to": "2019-03-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Duke Hospitality"
+                }
+              },
+              {
+                "title": "Corporate Director of Revenue Management",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2014-09-01",
+                  "to": "2017-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Duke Hospitality"
+                }
+              },
+              {
+                "title": "Hotel General Manager",
+                "location": "Conyers, Georgia",
+                "dates": {
+                  "from": "2014-03-01",
+                  "to": "2014-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/jlqvgpx3nv7",
+                  "name": "Courtyard by Marriott"
+                }
+              },
+              {
+                "title": "Regional Director Revenue Management",
+                "location": "Spartanburg, South Carolina",
+                "dates": {
+                  "from": "2012-09-01",
+                  "to": "2013-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/4wsnbj89vrm",
+                  "name": "OTO Development"
+                }
+              },
+              {
+                "title": "Hotel General Manager",
+                "location": "Hoover, AL",
+                "dates": {
+                  "from": "2008-03-01",
+                  "to": "2012-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2q1x2yqfsp6",
+                  "name": "Residence Inn by Marriott"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (BA), Business Administration and Management",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/8gzs0syqrr5",
+                  "name": "University of Northern Iowa"
+                }
+              },
+              {
+                "degree": "Computer Science (Cybersecurity Discipline), 4.0",
+                "dates": {
+                  "from": "2022",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/nln0535r001",
+                  "name": "Gwinnett Technical College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/bnrpyszpkc4",
+      "title": "Kris Kermanshahi - Corporate Director of Transitions at Hotel Equities",
+      "url": "https://www.linkedin.com/in/kris-kermanshahi-7b2900103",
+      "publishedDate": "2026-08-19T00:32:16.000Z",
+      "text": "# Kris Kermanshahi\n\nCorporate Director of Transitions at Hotel Equities\n\nUnited States (US)\n\n500 connections \u2022 529 followers\n\n## About\n\nCorporate Director of Transitions at Hotel Equities\n\nTotal Experience: 10 years and 9 months\n\n## Experience\n\n### Corporate Director of Transitions - [Hotel Equities](https://www.linkedin.com/company/hotel-equities) (Current)\n\nOct 2023 - Present (2 years and 10 months) in Alpharetta, Georgia, United States\n\nDepartment: General Management \u2022 Level: Director\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Manager - Operations Delivery Brand Activation - [Marriott International](https://www.linkedin.com/company/marriott-international)\n\nMar 2019 - May 2023 (4 years and 2 months)\n\nDepartment: Operations \u2022 Level: Manager\n\nMarriott International (MAR) is a Hospitality company. Marriott Bonvoy is a company that offers luxury hotels, resorts, extended stay hotels, pet-friendly hotels, and more. They provide a wide range of services including booking directly and saving at their hotels. Marriott International has 30,000-40,000 employees (+10% YoY) and has annual revenue in the $20B-$30B range, founded in 1993. Headquartered in Bethesda, Maryland, United States, with presence in United Arab Emirates, Egypt, and Qatar. Its workforce is distributed across 162 countries (including United States, India, United Arab Emirates, Canada, and United Kingdom). Has $4.5B in total funding, with 5 prior funding rounds.\n\n### [McKibbon Hospitality](https://www.linkedin.com/company/mckibbon-hotel-management)\n\n#### Operations Manager\n\nOct 2018 - Mar 2019 (5 months) in Atlanta, GA\n\nMoxy Atlanta Midtown & AC Hotel Atlanta Midtown\n\nDepartment: Operations \u2022 Level: Manager\n\n#### Operations Manager\n\nSep 2016 - Oct 2018 (2 years and 1 month) in Asheville, NC\n\nAC Hotel Asheville Downtown\n\nDepartment: Operations \u2022 Level: Manager\n\n#### Manager In Training\n\nApr 2016 - Sep 2016 (5 months) in Tampa, FL\n\nHilton Garden Inn Tampa Airport Westshore, TownePlace Suites Tampa Westshore/Airport, Courtyard Tampa Downtown, Home2 Suites Atlanta Downtown, TownePlace Suites Albany University Area\n\nDepartment: General Management \u2022 Level: Intern\n\n#### Oper",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFHzqf6TUquJw/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1723148285136?e=2147483647&v=beta&t=rCMZTs8SIVSWUk_URNxmpaq4MjHzHeMDNUv0YN_zsrM",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/bnrpyszpkc4",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Kris Kermanshahi",
+            "firstName": "Kris",
+            "lastName": "Kermanshahi",
+            "location": "United States",
+            "workHistory": [
+              {
+                "title": "Corporate Director of Transitions",
+                "location": "Alpharetta, Georgia, United States",
+                "dates": {
+                  "from": "2023-10-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Manager - Operations Delivery Brand Activation",
+                "location": null,
+                "dates": {
+                  "from": "2019-03-01",
+                  "to": "2023-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lg0858t9bwj",
+                  "name": "Marriott International"
+                }
+              },
+              {
+                "title": "Operations Manager",
+                "location": "Atlanta, GA",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2019-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n1wxw8fcxyy",
+                  "name": "McKibbon Hospitality"
+                }
+              },
+              {
+                "title": "Operations Manager",
+                "location": "Asheville, NC",
+                "dates": {
+                  "from": "2016-09-01",
+                  "to": "2018-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n1wxw8fcxyy",
+                  "name": "McKibbon Hospitality"
+                }
+              },
+              {
+                "title": "Manager In Training",
+                "location": "Tampa, FL",
+                "dates": {
+                  "from": "2016-04-01",
+                  "to": "2016-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n1wxw8fcxyy",
+                  "name": "McKibbon Hospitality"
+                }
+              },
+              {
+                "title": "Operations Intern",
+                "location": "Tallahassee, FL",
+                "dates": {
+                  "from": "2015-06-01",
+                  "to": "2016-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n1wxw8fcxyy",
+                  "name": "McKibbon Hospitality"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Science - BS, Hospitality Administration/Management",
+                "dates": {
+                  "from": "2011",
+                  "to": "2015"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/00r50ly12z0",
+                  "name": "University of Florida"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/frq7x6v49qw",
+      "title": "Anita Lane - Regional Director @ Hotel Equities - LinkedIn",
+      "url": "https://www.linkedin.com/in/anitajlane",
+      "publishedDate": "2026-08-09T02:11:30.000Z",
+      "text": "# Anita Lane\n\nRegional Director @ Hotel Equities | Hospitality Operations Expert\n\nKnoxville, Tennessee, United States (US)\n\n500 connections \u2022 5,964 followers\n\n## About\n\nI am a hospitality professional with over 25 years of experience in delivering exceptional results while serving General Managers, Owners, and Stakeholders. As the Regional Director of Operations at Hotel Equities, I support a strong portfolio of Select and Full-service Hilton, Marriott, and IHG branded hotels in Georgia, South Carolina, and the Southeast region. My core competencies include operations, finance, asset management, coaching, mentoring, and development. I provide financial oversight, brand performance improvement, executive coaching, recruiting, retention, revenue management strategies, and sales support to each property leader and team. I am passionate about growing other leaders and practicing servant leadership. I am also a development enthusiast, involved in site selection, investments, opening, and ramp-up of new hotels.\n\nTotal Experience: 30 years and 8 months\n\n## Experience\n\n### Regional Director Of Operations - [Hotel Equities](https://www.linkedin.com/company/hotel-equities) (Current)\n\nMay 2022 - Present (4 years and 3 months) in Central Region\n\n- Provided financial oversight, brand performance improvement, and executive coaching to General Managers and Stakeholders.\n- Implemented revenue management strategies and sales support for Hilton, Marriott, and IHG branded hotels.\n- Supported operations for a strong portfolio of hotels in multiple states, ensuring optimal performance and guest satisfaction.\n\nDepartment: Operations \u2022 Level: Director\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Vice President Operations - M Gibson Hotels\n\nNov 2021 - May 2022 (6 months) in On-site\n\nAsset Managment including hotel operations, sales, revenue managment, recruiting and retention, professional mentoring and project managment. Development enthusiast in site selection, investments, opening, ramp-up.\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n### Regional Director Of Operations - M Gibson Hotels\n\nJun 2021 - Nov 2021 (5 months)\n\nAssisting our o",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQF4ZC32WRmXBQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1730240879448?e=2147483647&v=beta&t=FhMi6SD1yckz0uH6uyGrfxPMfOuBvW4fBWyd4gIgkwU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/frq7x6v49qw",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Anita Lane",
+            "firstName": "Anita",
+            "lastName": "Lane",
+            "location": "Knoxville, Tennessee, United States",
+            "workHistory": [
+              {
+                "title": "Regional Director Of Operations",
+                "location": "Central Region",
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Vice President Operations",
+                "location": "On-site",
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "M Gibson Hotels"
+                }
+              },
+              {
+                "title": "Regional Director Of Operations",
+                "location": null,
+                "dates": {
+                  "from": "2021-06-01",
+                  "to": "2021-11-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "M Gibson Hotels"
+                }
+              },
+              {
+                "title": "AGM PM Riverstone Resort & Spa",
+                "location": "Pigeon Forge, Tennessee, United States",
+                "dates": {
+                  "from": "2020-06-01",
+                  "to": "2021-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rn50csj533b",
+                  "name": "Shular Companies"
+                }
+              },
+              {
+                "title": "Director of Operations",
+                "location": "Knoxville, Tennessee Area",
+                "dates": {
+                  "from": "2015-12-01",
+                  "to": "2020-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wzvjd72hb90",
+                  "name": "The 9 Group"
+                }
+              },
+              {
+                "title": "Area General Manager",
+                "location": "Downtown and Cedar Bluff Knoxville & Clinton, TN",
+                "dates": {
+                  "from": "2015-07-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kqxpbb63ls5",
+                  "name": "Hampton Inn & Suites Downtown Knoxville"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Knoxville, Tennessee, United States",
+                "dates": {
+                  "from": "2008-05-01",
+                  "to": "2015-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kqxpbb63ls5",
+                  "name": "Hampton Inn & Suites Downtown Knoxville"
+                }
+              },
+              {
+                "title": "Controller",
+                "location": null,
+                "dates": {
+                  "from": "1996-12-01",
+                  "to": "2008-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g2k8nfnrdct",
+                  "name": "Crowne Plaza Knoxville"
+                }
+              },
+              {
+                "title": "Payroll Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "1994-11-01",
+                  "to": "1995-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qqzq459qj4n",
+                  "name": "Lawler-Wood, LLC"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Accounting",
+                "dates": {
+                  "from": "1994",
+                  "to": "1995"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Pellissippi State"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/0q1tlp1n3q7",
+      "title": "peter tziahanas",
+      "url": "https://www.linkedin.com/in/petertziahanas",
+      "publishedDate": "2026-07-15T02:56:40.000Z",
+      "text": "# Peter Tziahanas\n\nPresident, Full Service at Hotel Equities\n\nAtlanta Metropolitan Area (US)\n\n500 connections \u2022 4,655 followers\n\n## About\n\nSpecialties: Specializing in Hotel and Restaurant Operations, Sales & Marketing, Financial Management, and Human Resources.\n\nTotal Experience: 26 years and 4 months\n\n## Experience\n\n### [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\n#### President, Full Service at Hotel Equities (Current)\n\nOct 2025 - Present (9 months)\n\nDepartment: General Management \u2022 Level: President/Vice President\n\n#### Executive Vice President Operations\n\nApr 2024 - Oct 2025 (1 year and 6 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n#### Senior Vice President Operations\n\nSep 2021 - Apr 2024 (2 years and 7 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Regional Vice President Of Operations at Pivot Hotels & Resort - [Pivot Hotels & Resorts](https://www.linkedin.com/company/pivothotels)\n\nJan 2020 - Sep 2021 (1 year and 8 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nPivot is a Hospitality company. Pivot Lifestyle Group is a hotel portfolio that serves a bold and design-forward portfolio. They value bold strategy, data-driven insights, and signature adaptability. Pivot has 20-30 employees, founded in 2016. Headquartered in Atlanta, Georgia, United States. Its workforce is distributed across 5 countries (including United States, United Arab Emirates, United Kingdom, Brazil, and Colombia).\n\n### Area Vice President HRI Lodging General Manager Holston House - HRI Lodging / Holston House\n\nJun 2017 - Jan 2020 (2 years and 7 months) in Nashville, Tennessee\n\n### Vice President of Operations - [Atrium Hospitality](https://www.linkedin.com/company/atrium-hospitality)\n\nNov 2015 - Apr 2017 (1 year and 5 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nAtrium Hospitality is a Hospitality company. Atrium Hospitality is a hotel management company that offers excellence in service, sustainability, and community engagement. Atrium Hospitality has 800-900 employees and has annual revenue in the $1B-$2",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/0q1tlp1n3q7",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Peter Tziahanas",
+            "firstName": "Peter",
+            "lastName": "Tziahanas",
+            "location": "Atlanta Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "President, Full Service at Hotel Equities",
+                "location": null,
+                "dates": {
+                  "from": "2025-10-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Executive Vice President Operations",
+                "location": null,
+                "dates": {
+                  "from": "2024-04-01",
+                  "to": "2025-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Senior Vice President Operations",
+                "location": null,
+                "dates": {
+                  "from": "2021-09-01",
+                  "to": "2024-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Regional Vice President Of Operations at Pivot Hotels & Resort",
+                "location": null,
+                "dates": {
+                  "from": "2020-01-01",
+                  "to": "2021-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g9scvmzw28y",
+                  "name": "Pivot Hotels & Resorts"
+                }
+              },
+              {
+                "title": "Area Vice President HRI Lodging General Manager Holston House",
+                "location": "Nashville, Tennessee",
+                "dates": {
+                  "from": "2017-06-01",
+                  "to": "2020-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "HRI Lodging / Holston House"
+                }
+              },
+              {
+                "title": "Vice President of Operations",
+                "location": null,
+                "dates": {
+                  "from": "2015-11-01",
+                  "to": "2017-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rfvwx18gdz8",
+                  "name": "Atrium Hospitality"
+                }
+              },
+              {
+                "title": "General Manager Embassy Suites Nashville SE - Murfreesboro Hotel and Conference Center",
+                "location": null,
+                "dates": {
+                  "from": "2011-05-01",
+                  "to": "2015-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kldt4twd8h3",
+                  "name": "John Q Hammons"
+                }
+              },
+              {
+                "title": "General Manager Doubletree by Hilton Boston Westborough",
+                "location": null,
+                "dates": {
+                  "from": "2007-01-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bnz2qfx8vx1",
+                  "name": "Highgate Hotels"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2005-01-01",
+                  "to": "2007-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/t3zs9srd82v",
+                  "name": "Noble Investment Group"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2002-01-01",
+                  "to": "2005-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fcz21jrnxmp",
+                  "name": "Winegardner & Hammons"
+                }
+              },
+              {
+                "title": "Assistant General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2000-01-01",
+                  "to": "2002-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fcz21jrnxmp",
+                  "name": "Winegardner & Hammons"
+                }
+              }
+            ],
+            "educationHistory": [],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/0dkz2jbwb0z",
+      "title": "david rosenberg",
+      "url": "https://www.linkedin.com/in/david-rosenberg-4a244312",
+      "publishedDate": "2026-08-07T18:55:49.000Z",
+      "text": "# David Rosenberg\n\nPresident-Focused Service Division\n\nAtlanta Metropolitan Area (US)\n\n500 connections \u2022 2,145 followers\n\n## About\n\nPresident Operations with a demonstrated history of building high performing teams to drive results for all stakeholders.\n\nTotal Experience: 30 years and 9 months\n\n## Experience\n\n### [Hotel Equities](https://www.linkedin.com/company/hotel-equities)\n\n#### President-Focused Service Division (Current)\n\nOct 2025 - Present (10 months) in Alpharetta, GA\n\nDepartment: Operations \u2022 Level: Specialist\n\n#### Executive Vice President-Operations\n\nApr 2024 - Oct 2025 (1 year and 6 months) in Atlanta Metropolitan Area\n\nDepartment: General Management \u2022 Level: President/Vice President\n\n#### Senior Vice President Operations\n\nAug 2021 - Apr 2024 (2 years and 8 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n#### Vice President Operations\n\nFeb 2020 - Aug 2021 (1 year and 6 months) in Atlanta, Georgia\n\nDepartment: Operations \u2022 Level: President/Vice President\n\nHotel Equities is a Hospitality company. Hotel Equities has 400-500 employees (+10% YoY) and has annual revenue in the $700M-$800M range, founded in 1989. Headquartered in Alpharetta, Georgia, United States, with an office in Atlanta. Its workforce is distributed across 28 countries (including United States, Canada, India, Mexico, and Kenya). Has $500M in total funding.\n\n### Vice President Operations - HP Hotels\n\nDec 2018 - Feb 2020 (1 year and 2 months) in Alpharetta, GA, United States\n\n- Reviews and improves business processes, policies, procedures and technology across Professional Services in order to identify and implement best practices.\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n### [Winegardner & Hammons Hotel Group](https://www.linkedin.com/company/winegardner-%26-hammons)\n\n#### Regional Vice President Of Operations\n\nApr 2017 - Nov 2018 (1 year and 7 months)\n\nDepartment: Operations \u2022 Level: President/Vice President\n\n#### General Manager\n\nMar 2016 - Apr 2017 (1 year and 1 month) in Marriott Cleveland East\n\nDepartment: General Management \u2022 Level: Manager\n\nWinegardner & Hammons Hotel Group is a Hospitality company. Winegardner & Hammons Hotel Group has 60-70 employees and has annual revenue in the $20M-$30M range, founded in 1958. Headquartered in Cincinnati, Ohio, United States, with offices in Blue Ash and Round Rock.\n\n### General Manager - Hyatt Atlanta midtown\n\nMay 2014 - Mar 2016 (1 year and 10 months)\n\nDepartment: General Management \u2022 Level: Manag",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQF0v6yYXldzwg/profile-displayphoto-shrink_200_200/B4EZO4pKiQHAAY-/0/1733969621007?e=2147483647&v=beta&t=oi6PUkXOW4xpQ1zBZdYOR1RZrYVUOo6pW1U93uJc7ms",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/0dkz2jbwb0z",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "David Rosenberg",
+            "firstName": "David",
+            "lastName": "Rosenberg",
+            "location": "Atlanta Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "President-Focused Service Division",
+                "location": "Alpharetta, GA",
+                "dates": {
+                  "from": "2025-10-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Executive Vice President-Operations",
+                "location": "Atlanta Metropolitan Area",
+                "dates": {
+                  "from": "2024-04-01",
+                  "to": "2025-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Senior Vice President Operations",
+                "location": null,
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2024-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Vice President Operations",
+                "location": "Atlanta, Georgia",
+                "dates": {
+                  "from": "2020-02-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/0q60ql4tws9",
+                  "name": "Hotel Equities"
+                }
+              },
+              {
+                "title": "Vice President Operations",
+                "location": "Alpharetta, GA, United States",
+                "dates": {
+                  "from": "2018-12-01",
+                  "to": "2020-02-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "HP Hotels"
+                }
+              },
+              {
+                "title": "Regional Vice President Of Operations",
+                "location": null,
+                "dates": {
+                  "from": "2017-04-01",
+                  "to": "2018-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fcz21jrnxmp",
+                  "name": "Winegardner & Hammons Hotel Group"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Marriott Cleveland East",
+                "dates": {
+                  "from": "2016-03-01",
+                  "to": "2017-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fcz21jrnxmp",
+                  "name": "Winegardner & Hammons Hotel Group"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2014-05-01",
+                  "to": "2016-03-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Hyatt Atlanta midtown"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": "Greater Atlanta Area",
+                "dates": {
+                  "from": "2013-04-01",
+                  "to": "2014-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "FG Management"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2010-06-01",
+                  "to": "2013-04-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Westin New Orleans Canal Place- Interstate Hotels and Resorts"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "2003-08-01",
+                  "to": "2010-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/t3zs9srd82v",
+                  "name": "Noble Investment Group"
+                }
+              },
+              {
+                "title": "General Manager",
+                "location": null,
+                "dates": {
+                  "from": "1995-01-01",
+                  "to": "2003-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Winegardner and Hammons"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "AOS Culinary Arts",
+                "dates": {
+                  "from": "1987",
+                  "to": "1989"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/3cfmgyv5zvf",
+                  "name": "The Culinary Institute of America"
+                }
+              },
+              {
+                "degree": "BS Hospitality Hospitality",
+                "dates": {
+                  "from": "1989",
+                  "to": "1991"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/x4fghlbwzdm",
+                  "name": "Florida International University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1577.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.75,
+  "_request": {
+    "query": "site:linkedin.com/in Hotel Equities Atlanta operations technology executive",
+    "type": "auto",
+    "numResults": 10,
+    "contents": {
+      "text": {
+        "maxCharacters": 2500
+      }
+    }
+  }
+}

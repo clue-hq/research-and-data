@@ -1,0 +1,151 @@
+== ADP centre US management & sales (9200396175623_2) ==
+  live[adp_9200396175623_2_0] http=200 1.01s bytes=98537
+   cc=9200396175623_2 skip=0 got=19 total=32 props=557
+  live[adp_9200396175623_2_19] http=200 1.03s bytes=87854
+   cc=9200396175623_2 skip=19 got=14 total=32 props=557
+== ADP centre US hourly / property (9200402480447_2) ==
+  live[adp_9200402480447_2_0] http=200 1.21s bytes=98369
+   cc=9200402480447_2 skip=0 got=19 total=97 props=557
+  live[adp_9200402480447_2_19] http=200 1.14s bytes=100322
+   cc=9200402480447_2 skip=19 got=20 total=97 props=557
+  live[adp_9200402480447_2_39] http=200 1.28s bytes=100324
+   cc=9200402480447_2 skip=39 got=20 total=97 props=557
+  live[adp_9200402480447_2_59] http=200 1.39s bytes=100658
+   cc=9200402480447_2 skip=59 got=20 total=97 props=557
+  live[adp_9200402480447_2_79] http=200 1.33s bytes=98421
+   cc=9200402480447_2 skip=79 got=19 total=97 props=557
+== ADP centre Canada hourly (9200585439604_2) ==
+  live[adp_9200585439604_2_0] http=200 0.93s bytes=74453
+   cc=9200585439604_2 skip=0 got=8 total=8 props=557
+== ADP centre Canada management (9200585441819_2) ==
+  live[adp_9200585441819_2_0] http=200 0.85s bytes=70056
+   cc=9200585441819_2 skip=0 got=6 total=6 props=557
+
+=== ADP SUMMARY ===
+{
+  "pulled_at": "2026-09-22",
+  "centres": {
+    "9200396175623_2": {
+      "label": "US management & sales",
+      "total_reported": 32,
+      "pulled": 33,
+      "properties_listed": 557
+    },
+    "9200402480447_2": {
+      "label": "US hourly / property",
+      "total_reported": 97,
+      "pulled": 98,
+      "properties_listed": 557
+    },
+    "9200585439604_2": {
+      "label": "Canada hourly",
+      "total_reported": 8,
+      "pulled": 8,
+      "properties_listed": 557
+    },
+    "9200585441819_2": {
+      "label": "Canada management",
+      "total_reported": 6,
+      "pulled": 6,
+      "properties_listed": 557
+    }
+  },
+  "total_open_reqs": 145,
+  "conduit_seat_reqs": 19,
+  "conduit_seat_share_pct": 13.1,
+  "conduit_seats_by_kind": {
+    "front_desk": 5,
+    "guest_service": 11,
+    "night_audit": 5
+  },
+  "gm_reqs": 12,
+  "posted_last_7_days": 0,
+  "posted_last_30_days": 106,
+  "oldest_open_days": 45,
+  "median_days_open": 24,
+  "by_state_or_country": {
+    "PA": 27,
+    "MO": 21,
+    "CA": 15,
+    "TX": 9,
+    "MI": 7,
+    "HI": 6,
+    "CO": 6,
+    "ND": 5,
+    "AR": 4,
+    "OH": 4,
+    "NE": 4,
+    "ON": 4,
+    "BC": 4,
+    "AB": 4,
+    "GA": 3,
+    "KS": 3,
+    "VA": 3,
+    "IA": 3,
+    "AZ": 2,
+    "NY": 2,
+    "OK": 2,
+    "TN": 2,
+    "NS": 2,
+    "NC": 1,
+    "IL": 1,
+    "NH": 1
+  },
+  "by_brand_mentioned": {
+    "hilton": 31,
+    "marriott": 15,
+    "crowne plaza": 10,
+    "holiday inn": 6,
+    "postcard cabins": 5,
+    "home2": 4,
+    "towneplace": 3,
+    "fairfield": 3,
+    "courtyard": 3,
+    "element": 2,
+    "hyatt": 2,
+    "springhill": 2,
+    "sheraton": 2,
+    "moxy": 2,
+    "residence inn": 1,
+    "staybridge": 1,
+    "ac hotel": 1
+  },
+  "properties_in_location_filter": 552,
+  "no_job_description_text": "The ADP public requisition object carries NO description field; the per-requisition detail endpoint returns the same object. Titles, locations, post dates and salary ranges are the whole payload \u2014 verified by probing /job-requisitions/<itemID> and <itemID>?$expand=all, both 200 with identical bodies."
+}
+
+Conduit-seat titles:
+   - Front Desk Manager | Hilton Garden Inn Redondo Beach, CA
+   - Front Office Manager - Hilton - Harrisburg, PA
+   - Guest Relations Associate - Hotel Paso Del Norte - El Paso, TX
+   - Guest Service Agent - Hilton - Harrisburg, PA
+   - Guest Service Representative - Hotel Paso Del Norte-El Paso, TX
+   - Guest Services Manager - Kansas City Airport Marriott, KC, Mo 
+   - Guest Services Representative - Chamberlain West Hollywood, CA
+   - Guest Services Representative - TownePlace Suites Gainesville GA
+   - Guest Services Representative @ Sheraton in Brentwood, TN
+   - Guest Services Representative Home2 Suites Coralville Iowa
+   - Guest Services Representative- Fairfield Inn Kansas City, KS
+   - Guest Services Supervisor - Days Inn Encinitas, CA
+   - Guest Services Supervisor, Moxy Halifax Downtown, Halifax, NS
+   - Night Auditor Fridays & Saturdays Home2 Suites Coralville Iowa
+   - Night Auditor I The Farnam I Omaha, NE
+   - Night Auditor, Front Desk Agent - Crowne Plaza KC Downtown
+   - Night Auditor, Montrose at Beverly Hills, Wes Hollywood, CA 
+   - Night Auditor-Home2 Suites Chenal Parkway in Little Rock, AR
+   - Rooms Controller-The Glidden House Cleveland, OH
+
+GM titles:
+   - Assistant General Manager - Hyatt Place, Boulder, CO
+   - Dual General Manager SpringHill I Element, Colorado Springs
+   - General Manager - Comfort Inn & Suites, Medicine Hat, AB
+   - General Manager -Postcard Cabins Big Bear in Running Springs, CA
+   - General Manager-Courtyard by Marriott Jonesboro, AR
+   - General Manager-Fairfield Inn Kansas City Legends Kansas City
+   - General Manager-Holiday Inn Express SW Fargo, ND
+   - General Manager-Ohia Waikiki Studio Suites Honolulu, HI
+   - General Manager-Staybridge Suites Dayton North Dayton, OH
+   - General Manager-TownePlace Suites Lubbock, TX
+   - General Manager| Orangewood Inn and Suites Kansas City, MO
+
+H1 10.3s reqs=145 seats=19 spend=0.056

@@ -1,0 +1,25 @@
+=== rafter_owner_economics | Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities | 682s ===
+  downloaded 8213324 bytes in 0.95s
+  files.start http=200 upload_url=YES
+  files.upload http=200 1.22s
+
+-- gemini-3.5-transcribe (faithful) --
+    retry 429 in 12s ({
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing deta)
+  gemini[h10_faithful_rafter_owner_economics] http=200 8.66s usage={"promptTokenCount": 17190, "totalTokenCount": 17190, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 120}, {"modality": "AUDIO", "tokenCount": 17070}], "serviceTier": "standard"} cost=$0.005133
+   chars=11288 words=2086 wpm=183.5
+
+-- gemini-3.5-flash-lite (timestamps + quotes) --
+  gemini[h10_timestamped_rafter_owner_economics] http=200 14.45s usage={"promptTokenCount": 17473, "candidatesTokenCount": 4446, "totalTokenCount": 21919, "promptTokensDetails": [{"modality": "AUDIO", "tokenCount": 17070}, {"modality": "TEXT", "tokenCount": 403}], "serviceTier": "standard"} cost=$0.00694
+   timestamped lines=98 unique=95 loop_starts_at=01:18
+
+   quote verification vs the faithful ASR:
+     [02:12] PARTIAL   uniq=False :: I maintain that unless we all change uh the industry that that we're in is not sustainable in i
+     [02:51] EXACT     uniq=False :: And unless we figure out a way to harness costs well still maintaining, you know, sort of forwa
+     [04:32] PARTIAL   uniq=False :: Yeah, so we look at technology as the solution here, which is if we can make the hotel more eff
+     [07:09] PARTIAL   uniq=False :: We observed that there were plenty of great technologies in the industry. Those technologies we
+     [08:46] EXACT     uniq=False :: We can't just say that labor management is problem. Right? We have to break it down and saying 
+
+H10[rafter_owner_economics] 38.4s cost=$0.012073 spend=0.2324

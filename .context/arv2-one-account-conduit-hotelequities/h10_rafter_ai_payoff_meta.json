@@ -1,0 +1,167 @@
+{
+  "slug": "rafter_ai_payoff",
+  "person": "Ben Rafter",
+  "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+  "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+  "mp3": "https://www.buzzsprout.com/2103299/episodes/19376570-where-ai-actually-pays-off-in-hospitality-and-what-owners-should-demand-ben-rafter-hotel-equities.mp3",
+  "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+  "duration_seconds": 684,
+  "faithful": {
+    "model": "gemini-3.5-transcribe",
+    "usageMetadata": {
+      "promptTokenCount": 17223,
+      "totalTokenCount": 17223,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 117
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17106
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.005143,
+    "elapsed_s": 10.48,
+    "chars": 11533,
+    "words": 2088
+  },
+  "timestamped": {
+    "model": "gemini-3.5-flash-lite",
+    "usageMetadata": {
+      "promptTokenCount": 17506,
+      "candidatesTokenCount": 3224,
+      "totalTokenCount": 20730,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17106
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 400
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.006461,
+    "elapsed_s": 11.71,
+    "chars": 13378,
+    "timestamped_lines": 20,
+    "unique_lines": 20,
+    "loop_starts_at": null
+  },
+  "total_cost_usd": 0.011604,
+  "audio_tokens_per_second": 25.01,
+  "quotes": [
+    {
+      "timestamp": "02:32",
+      "quote": "AI is now very rapidly and aggressively outsourcing the the outsource outsourcer, if that makes any sense.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "03:22",
+      "quote": "we decompose it into all of these different opportunities. Many of those opportunities still don't have what we view as a viable solution.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "06:21",
+      "quote": "here are the three biggest problems you have, Mr. GM, Mr. Regional Director of Ops, Mr. Revenue Manager, and you need to solve these problems within X amount of time.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "07:46",
+      "quote": "real-time forecasting should be to a point where it gets incredibly accurate. And budget processes should be to a point where it's 98% automated based on data inputs.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    },
+    {
+      "timestamp": "08:27",
+      "quote": "And pretty soon there should be so much science into it that an owner will be able to look at and say, my hotel is being run efficiently and here are my 10 data points as I know why.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": true
+    }
+  ],
+  "tech_and_vendor_signals": [
+    {
+      "timestamp": "03:19",
+      "text": "[AT Labs] - [06:05] [Hotel Effectiveness] - [06:06] [Profit Sword] -",
+      "verbatim_check": "NOT_FOUND"
+    }
+  ],
+  "loop_rescored": {
+    "sustained_loop_starts_at": null,
+    "duplicate_long_lines": 0,
+    "long_lines": 20,
+    "duplicate_rate_pct": 0.0,
+    "verdict": "clean"
+  },
+  "quotes_repaired": [
+    {
+      "timestamp": "02:32",
+      "quote_published": "AI is now very rapidly and aggressively outsourcing the outsource outsourcer, if that makes any sense.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "AI is now very rapidly and aggressively outsourcing the the outsource outsourcer, if that makes any sense.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_ai_payoff"
+    },
+    {
+      "timestamp": "03:22",
+      "quote_published": "And by the way, when I referenced how we started with AT Labs and all these solutions, we decomposed it into all of these different opportunities. Many of those opportunities still don't have what we view as a viable solution. And so Brian in in his role as leading AT Labs, he's out there looking for people who are developing those solutions actively, and he's reaching out to them and or they're coming to us.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "we decompose it into all of these different opportunities. Many of those opportunities still don't have what we view as a viable solution.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_ai_payoff"
+    },
+    {
+      "timestamp": "06:21",
+      "quote_published": "Regional Director of Ops, Mr. Revenue Manager, and you need to solve these problems within X amount of time.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "here are the three biggest problems you have, Mr. GM, Mr. Regional Director of Ops, Mr. Revenue Manager, and you need to solve these problems within X amount of time.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_ai_payoff"
+    },
+    {
+      "timestamp": "07:46",
+      "quote_published": "Not not so much here because we put a lot of time and effort into this is what your budget should be, but that just real-time forecasting should be to a point where it gets incredibly accurate and budget processes should be to a point where it's 98% automated based on data inputs. And then you're going to have an owner that says, okay, I need a bank budget or whatever.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "real-time forecasting should be to a point where it gets incredibly accurate. And budget processes should be to a point where it's 98% automated based on data inputs.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_ai_payoff"
+    },
+    {
+      "timestamp": "08:27",
+      "quote_published": "But that's we didn't even talk about that, but that to me is is a next, right? And pretty soon there should be so much science into it that an owner will be able to look at it and say, my hotel's being run efficiently and here are my 10 data points as I know why.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "And pretty soon there should be so much science into it that an owner will be able to look at and say, my hotel is being run efficiently and here are my 10 data points as I know why.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_ai_payoff"
+    }
+  ],
+  "quotes_dropped": []
+}

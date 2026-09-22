@@ -1,0 +1,4 @@
+  bundle chars: 32944
+  openrouter[h15_structure_al_smith] http=200 73.47s usage={"prompt_tokens": 8409, "completion_tokens": 7731, "total_tokens": 16140, "cost": 0, "is_byok": true, "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "audio_tokens": 0, "video_t
+  claims=30 proposed=8 negatives=3 | spans verbatim 32 / failed 6
+H15[al_smith] 73.5s spend=0.4911

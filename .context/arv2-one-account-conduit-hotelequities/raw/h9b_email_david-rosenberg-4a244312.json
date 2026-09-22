@@ -1,0 +1,696 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 5.61,
+  "_request_body": {
+    "url": "https://www.linkedin.com/in/david-rosenberg-4a244312"
+  },
+  "_body": {
+    "id": "d6ce4b67-6f4c-9955-3321-7577238644e9",
+    "identifier": "david-rosenberg-4a244312",
+    "profile": {
+      "first_name": "David",
+      "middle_name": null,
+      "last_name": "Rosenberg",
+      "full_name": "David Rosenberg",
+      "headline": "President-Focused Service Division",
+      "title": "President-Focused Service Division",
+      "picture": {
+        "source": "https://images.ai-ark.com/i52nvn9XoZiD_YYWv1UoJTndpZtE8ABsDmyqYzUXPZo/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/d6ce4b67-6f4c-9955-3321-7577238644e9.jpg"
+      },
+      "background": null,
+      "summary": "President Operations with a demonstrated history of building high performing teams to drive results for all stakeholders."
+    },
+    "link": {
+      "linkedin": "https://www.linkedin.com/in/david-rosenberg-4a244312",
+      "twitter": null,
+      "github": null,
+      "facebook": "https://www.facebook.com/david.rosenberg.79827"
+    },
+    "location": {
+      "default": "Atlanta Metropolitan Area, United States, North America",
+      "short": "Atlanta Metropolitan Area",
+      "country": "United States",
+      "state": null,
+      "city": "Atlanta Metropolitan Area",
+      "position": null
+    },
+    "languages": {
+      "primary_locale": {
+        "country": "US",
+        "language": "en"
+      },
+      "supported_locales": [
+        {
+          "country": "US",
+          "language": "en"
+        }
+      ],
+      "profile_languages": null
+    },
+    "industry": "Hospitality",
+    "educations": [
+      {
+        "school": {
+          "id": "380b922f-d5ca-8252-596f-83aea36f8083",
+          "name": "Florida International University",
+          "logo": "https://images.ai-ark.com/4hASU5pqUK6D1IXHKwF4Sag4532QnfiMVSxE7OQf3SU/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/380b922f-d5ca-8252-596f-83aea36f8083.jpg",
+          "url": "https://www.linkedin.com/school/florida-international-university"
+        },
+        "degree_name": "BS Hospitality",
+        "field_of_study": "Hospitality",
+        "grade": null,
+        "date": {
+          "start": "1989-01-01",
+          "end": "1991-12-31"
+        }
+      },
+      {
+        "school": {
+          "id": "392eb23d-1ea1-4fb7-f578-33262a37042a",
+          "name": "The Culinary Institute of America",
+          "logo": "https://images.ai-ark.com/T4JmGHviDkefevkJMo9EqcPjmqImKWWsmfH3gJVadHQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/392eb23d-1ea1-4fb7-f578-33262a37042a.jpg",
+          "url": "https://www.linkedin.com/school/the-culinary-institute-of-america"
+        },
+        "degree_name": "AOS",
+        "field_of_study": "Culinary Arts",
+        "grade": null,
+        "date": {
+          "start": "1987-01-01",
+          "end": "1989-12-31"
+        }
+      }
+    ],
+    "position_groups": [
+      {
+        "company": {
+          "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+          "name": "Hotel Equities",
+          "logo": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg",
+          "url": "https://www.linkedin.com/company/hotel-equities",
+          "employees": {
+            "start": 10001,
+            "end": null
+          }
+        },
+        "date": {
+          "start": "2020-02-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Hotel Equities",
+            "description": null,
+            "title": "President-Focused Service Division",
+            "employment_type": "Full-time",
+            "location": "Alpharetta, GA",
+            "date": {
+              "start": "2025-10-01",
+              "end": null
+            }
+          },
+          {
+            "company": "Hotel Equities",
+            "description": null,
+            "title": "Executive Vice President-Operations",
+            "employment_type": "Full-time",
+            "location": "Atlanta Metropolitan Area",
+            "date": {
+              "start": "2024-04-01",
+              "end": "2025-10-31"
+            }
+          },
+          {
+            "company": "Hotel Equities",
+            "description": null,
+            "title": "Senior Vice President Operations",
+            "employment_type": "Full-time",
+            "location": null,
+            "date": {
+              "start": "2021-08-01",
+              "end": "2024-04-30"
+            }
+          },
+          {
+            "company": "Hotel Equities",
+            "description": null,
+            "title": "Vice President Operations",
+            "employment_type": "Full-time",
+            "location": "Atlanta, Georgia",
+            "date": {
+              "start": "2020-02-01",
+              "end": "2021-08-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "HP Hotels",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2018-12-01",
+          "end": "2020-02-29"
+        },
+        "profile_positions": [
+          {
+            "company": "HP Hotels",
+            "description": "\u2022 Reviews and improves business processes, policies, procedures and technology across Professional Services in order to identify and implement best practices.",
+            "title": "Vice President Operations",
+            "employment_type": null,
+            "location": "Alpharetta, GA, United States",
+            "date": {
+              "start": "2018-12-01",
+              "end": "2020-02-29"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "bf9fcd94-1648-2e5a-76b7-5d8f8cd7bfd5",
+          "name": "Winegardner & Hammons Hotel Group",
+          "logo": "https://images.ai-ark.com/cHbO8HaVe5ebnXcENfNxit2z02i6NH0UM-akBP7Vi-Q/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/bf9fcd94-1648-2e5a-76b7-5d8f8cd7bfd5.jpg",
+          "url": "https://www.linkedin.com/company/winegardner-&-hammons",
+          "employees": {
+            "start": 10001,
+            "end": null
+          }
+        },
+        "date": {
+          "start": "2016-03-01",
+          "end": "2018-11-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Winegardner & Hammons Hotel Group",
+            "description": null,
+            "title": "Regional Vice President Of Operations",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2017-04-01",
+              "end": "2018-11-30"
+            }
+          },
+          {
+            "company": "Winegardner & Hammons Hotel Group",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": "Marriott Cleveland East",
+            "date": {
+              "start": "2016-03-01",
+              "end": "2017-04-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Hyatt Atlanta midtown",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2014-05-01",
+          "end": "2016-03-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Hyatt Atlanta midtown",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2014-05-01",
+              "end": "2016-03-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "FG Management",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2013-04-01",
+          "end": "2014-05-31"
+        },
+        "profile_positions": [
+          {
+            "company": "FG Management",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": "Greater Atlanta Area",
+            "date": {
+              "start": "2013-04-01",
+              "end": "2014-05-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Westin New Orleans Canal Place- Interstate Hotels and Resorts",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2010-06-01",
+          "end": "2013-04-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Westin New Orleans Canal Place- Interstate Hotels and Resorts",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2010-06-01",
+              "end": "2013-04-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "f4966bb7-d52a-0c1a-a4dd-4a1b8561b3a8",
+          "name": "Noble Investment Group",
+          "logo": "https://images.ai-ark.com/0L-GdUoTYBywg6RSlWQWNWazK0Vw5PNjBlODqMSoAyQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/f4966bb7-d52a-0c1a-a4dd-4a1b8561b3a8.jpg",
+          "url": "https://www.linkedin.com/company/nobleinvestment",
+          "employees": {
+            "start": 51,
+            "end": 200
+          }
+        },
+        "date": {
+          "start": "2003-08-01",
+          "end": "2010-04-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Noble Investment Group",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2003-08-01",
+              "end": "2010-04-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Winegardner and Hammons",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "1995-01-01",
+          "end": "2003-12-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Winegardner and Hammons",
+            "description": null,
+            "title": "General Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "1995-01-01",
+              "end": "2003-12-31"
+            }
+          }
+        ]
+      }
+    ],
+    "skills": [
+      "Banquets",
+      "Catering",
+      "Customer Service",
+      "Event Management",
+      "Fine Dining",
+      "Food & Beverage",
+      "Food Safety",
+      "Front Office",
+      "Hospitality",
+      "Hospitality Industry",
+      "Hospitality Management",
+      "Hotel Management",
+      "Hotels",
+      "Leisure",
+      "Menu Development",
+      "Micros",
+      "OnQ",
+      "Opening Hotels",
+      "Pre-opening",
+      "Property Management Systems"
+    ],
+    "member_badges": {
+      "premium": false,
+      "creator": false,
+      "open_to_work": false,
+      "hiring": false,
+      "verified": false,
+      "influencer": false
+    },
+    "statistics": {
+      "network": {
+        "influencer": false,
+        "followable": null,
+        "followers_count": 2146,
+        "connections_count": 2101
+      },
+      "experience": {
+        "prev_job_titles": null,
+        "tenure": {
+          "company": "2020-02-01",
+          "start": "1995-02-01",
+          "title": "2025-10-01"
+        }
+      }
+    },
+    "company": {
+      "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+      "summary": {
+        "name": "Hotel Equities",
+        "legal_name": "Hotel Equities Group, LLC.",
+        "description": "Hotel Equities (HE) is a best-in-class hospitality management company with a diverse portfolio of premium-branded and independent\u00a0hotels, resorts, and outdoor hospitality destinations throughout the United States, Canada, the Caribbean, and Latin America (CALA). We deliver proven results and drive long-term value for stakeholders through a comprehensive suite of services, a people-first and performance-driven culture, and a commitment to excellence.\n\nOver 11,000+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+        "overview": "Hotel Equities (HE) is an award-winning hotel development, ownership and management company.  For 30 years, our team has collaborated with premier brands and entrepreneurial owners to deliver best in class results.  HE is hyper focused on managing upper midscale and full-service hotels in the U.S and Canada.  Whether we\u2019re executing ground-up development, re-positioning a property or managing one of the 135+ hotels in our portfolio, HE provides the highest and best value for owners, while prioritizing guest satisfaction and profitability.  Over 2500+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+        "seo": "Choose the management team at Hotel Equities when you want to expand your hotels company brand like never before.",
+        "founded_year": 1989,
+        "type": "PRIVATELY_HELD",
+        "industry": "hospitality",
+        "staff": {
+          "total": 990,
+          "range": {
+            "start": 10001
+          }
+        },
+        "logo": {
+          "source": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg"
+        }
+      },
+      "link": {
+        "website": "http://www.hotelequities.com",
+        "domain": "hotelequities.com",
+        "domain_ltd": "hotelequities.com",
+        "linkedin": "https://www.linkedin.com/company/hotel-equities",
+        "facebook": "https://www.facebook.com/hotelequities",
+        "twitter": "https://x.com/HotelEquities",
+        "crunchbase": "https://www.crunchbase.com/organization/hotel-equities"
+      },
+      "financial": {
+        "revenue": {
+          "annual": {
+            "start": 50000000,
+            "end": 100000000,
+            "amount": "50000000-100000000"
+          }
+        },
+        "funding": {
+          "type": "PRIVATE_EQUITY_ROUND",
+          "total_amount": 500000000,
+          "last_amount": 500000000,
+          "num_investor": 1,
+          "num_funding_rounds": 1,
+          "rounds": [
+            {
+              "announced_at": "2018-09-12",
+              "raised_amount": 500000000,
+              "type": "PRIVATE_EQUITY_ROUND",
+              "investors": [
+                "Virtua Partners"
+              ]
+            }
+          ],
+          "date": "2018-09-12"
+        },
+        "acquisition": {
+          "total": 1,
+          "contents": [
+            {
+              "identifier": {
+                "id": "springboard-hospitality",
+                "name": "Springboard Hospitality",
+                "image": "8b78eddb33524976bedb6fc30110f672"
+              },
+              "role": "acquiree",
+              "announced_at": "2025-05-01"
+            }
+          ]
+        },
+        "aberdeen": {
+          "it_spend": 8712352
+        }
+      },
+      "location": {
+        "headquarter": {
+          "continent": "North America",
+          "country": "United States",
+          "state": "Georgia",
+          "city": "Alpharetta",
+          "street": "North Point Pkwy",
+          "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+          "position": {
+            "lng": -84.38857,
+            "lat": 33.74975
+          }
+        },
+        "locations": [
+          {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Georgia",
+            "city": "Alpharetta",
+            "street": "North Point Pkwy",
+            "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+            "position": {
+              "lng": -84.38857,
+              "lat": 33.74975
+            }
+          }
+        ]
+      },
+      "technologies": [
+        {
+          "name": "viewport meta",
+          "category": "mobile"
+        },
+        {
+          "name": "iphone / mobile compatible",
+          "category": "mobile"
+        },
+        {
+          "name": "ssl by default",
+          "category": "ssl"
+        },
+        {
+          "name": "hsts",
+          "category": "ssl"
+        },
+        {
+          "name": "apple mobile web clips icon",
+          "category": "mobile"
+        },
+        {
+          "name": "dnssec",
+          "category": "ns"
+        },
+        {
+          "name": "google tag manager",
+          "category": "widgets"
+        },
+        {
+          "name": "google font api",
+          "category": "widgets"
+        },
+        {
+          "name": "content delivery network",
+          "category": "cdn"
+        },
+        {
+          "name": "google analytics",
+          "category": "analytics"
+        },
+        {
+          "name": "html5"
+        },
+        {
+          "name": "symantec email security.cloud"
+        },
+        {
+          "name": "godaddy premium dns"
+        },
+        {
+          "name": "google fonts"
+        },
+        {
+          "name": "google tag manager"
+        },
+        {
+          "name": "bootstrap"
+        },
+        {
+          "name": "google cloud translation api"
+        },
+        {
+          "name": "office 365"
+        },
+        {
+          "name": "google analytics"
+        },
+        {
+          "name": "vimeo"
+        },
+        {
+          "name": "Adobe Marketing Cloud",
+          "category": "Search Marketing"
+        },
+        {
+          "name": "Adobe Media Optimizer",
+          "category": "Search Marketing"
+        },
+        {
+          "name": "Google Analytics",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "name": "Google Font API",
+          "category": "Fonts"
+        },
+        {
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "name": "Google translate API",
+          "category": "Widgets"
+        },
+        {
+          "name": "Google translate widget",
+          "category": "Widgets"
+        },
+        {
+          "name": "Microsoft Office 365",
+          "category": "Other"
+        },
+        {
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "name": "Multilingual",
+          "category": "Widgets"
+        },
+        {
+          "name": "Omniture (Adobe)",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "name": "Outlook",
+          "category": "Email Providers"
+        },
+        {
+          "name": "Remote",
+          "category": "Other"
+        },
+        {
+          "name": "SynXis (Sabre Hospitality)",
+          "category": "Reservation Software"
+        },
+        {
+          "name": "Vimeo",
+          "category": "Online Video Platforms"
+        },
+        {
+          "name": "iCIMS",
+          "category": "Recruitment"
+        }
+      ],
+      "industries": [
+        "hospitality"
+      ],
+      "keywords": [
+        "rooms operations",
+        "revenue generation",
+        "finance & accounting",
+        "food & beverage",
+        "human resources",
+        "procurement",
+        "commercial strategy",
+        "development services",
+        "content storytelling",
+        "brand development",
+        "online reputation management",
+        "talent acquistion & development",
+        "tech innovation",
+        "guest experience"
+      ],
+      "hashtags": [
+        "hotelmanagement",
+        "hospitalitystrong",
+        "hoteliers"
+      ],
+      "languages": [
+        "english"
+      ],
+      "sic": [
+        "7011"
+      ],
+      "naics": [
+        "721110",
+        "561499"
+      ],
+      "last_updated": "2026-09-21"
+    },
+    "department": {
+      "departments": [
+        "hospitality_food_and_guest_services"
+      ],
+      "sub_departments": [
+        "food_and_beverage_service"
+      ],
+      "functions": [
+        "operations"
+      ],
+      "seniority": "c_suite"
+    },
+    "email": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "drosenberg@hotelequities.com",
+          "mx": {
+            "record": "hotelequities-com.mail.protection.outlook.com",
+            "google": false,
+            "found": true,
+            "provider": "microsoft"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-09-22T06:46:21.000973",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "last_updated": "2026-09-21"
+  }
+}

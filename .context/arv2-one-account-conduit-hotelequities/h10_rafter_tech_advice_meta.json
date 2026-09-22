@@ -1,0 +1,182 @@
+{
+  "slug": "rafter_tech_advice",
+  "person": "Ben Rafter",
+  "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+  "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+  "mp3": "https://www.buzzsprout.com/2103299/episodes/16412086-tech-ceo-turned-hotel-ceo-shares-tech-advice-ben-rafter-springboard-hospitality.mp3",
+  "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+  "duration_seconds": 1176,
+  "faithful": {
+    "model": "gemini-3.5-transcribe",
+    "usageMetadata": {
+      "promptTokenCount": 29537,
+      "totalTokenCount": 29537,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 115
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 29422
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.008838,
+    "elapsed_s": 14.22,
+    "chars": 19299,
+    "words": 3447
+  },
+  "timestamped": {
+    "model": "gemini-3.5-flash-lite",
+    "usageMetadata": {
+      "promptTokenCount": 29820,
+      "candidatesTokenCount": 7410,
+      "totalTokenCount": 37230,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 398
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 29422
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.01183,
+    "elapsed_s": 24.64,
+    "chars": 26286,
+    "timestamped_lines": 179,
+    "unique_lines": 176,
+    "loop_starts_at": "01:13"
+  },
+  "total_cost_usd": 0.020668,
+  "audio_tokens_per_second": 25.02,
+  "quotes": [
+    {
+      "timestamp": "02:42",
+      "quote": "Beta testing distills whether or not it actually provides the value and we're very guest-focused as you might guess.",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "03:49",
+      "quote": "That's another reason why you beta things, right? Is can you get it to talk to all the other systems?",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "07:44",
+      "quote": "We're in mainly leisure markets. So I'm not a big fan of just go check in at the Marriott or the Hilton box.",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "10:17",
+      "quote": "luxury is knowing what I want to do and then offering a real customized version of that, way more than it is staying in sort of that little bit stuffier formal version of a inter-city midtown hotel",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "12:04",
+      "quote": "trying to find technologies that make it so that instead of just providing service, you're providing true hospitality.",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    }
+  ],
+  "tech_and_vendor_signals": [
+    {
+      "timestamp": "06:27",
+      "text": "S2 (Ben Rafter): People soft and SAP -> Enterprise Resource Planning (ERP) systems used as an example of slow, massive deployments.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "17:57",
+      "text": "S1 (Josiah Mackenzie): Apple Podcasts -> podcast directory and listening app.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "18:17",
+      "text": "S1 (Josiah Mackenzie): Spotify -> music and podcast streaming platform.",
+      "verbatim_check": "NOT_FOUND"
+    },
+    {
+      "timestamp": "19:06",
+      "text": "S1 (Josiah Mackenzie): hospitalitydaily.com -> website hosting podcast episodes and daily recaps.",
+      "verbatim_check": "NOT_FOUND"
+    }
+  ],
+  "loop_rescored": {
+    "sustained_loop_starts_at": null,
+    "duplicate_long_lines": 3,
+    "long_lines": 175,
+    "duplicate_rate_pct": 1.7,
+    "verdict": "clean"
+  },
+  "quotes_repaired": [
+    {
+      "timestamp": "02:42",
+      "quote_published": "What's important about beta testing? Well, if the seller, the company is doing its job, all the technology sound good, right? Beta testing distills whether or not it actually provides the value and we're very guest focused as you might guess. So if it's a guest focused technology, whether the guest not only adopts it but actually wants it.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "Beta testing distills whether or not it actually provides the value and we're very guest-focused as you might guess.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_advice"
+    },
+    {
+      "timestamp": "03:49",
+      "quote_published": "That's another reason why you beta things, right? Is can you get it to talk to all the other systems? That we're more interested in, do the product that you sold us to begin with and just keep making it better rather than saying you have to cross over into some complementary but not necessarily similar area or technology.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "That's another reason why you beta things, right? Is can you get it to talk to all the other systems?",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_advice"
+    },
+    {
+      "timestamp": "07:44",
+      "quote_published": "We're in mainly leisure markets, so I'm not a big fan of just go check in at the Marriott or the Hilton box. I get it in the business market.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "We're in mainly leisure markets. So I'm not a big fan of just go check in at the Marriott or the Hilton box.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_advice"
+    },
+    {
+      "timestamp": "10:17",
+      "quote_published": "And to me, luxury, we're staying far away from technology now, but to me, luxury is knowing what I want to do and then offering a real customized version of that way more than it is staying in sort of that little bit stuffier formal version of a inner city midtown hotel that was built 200 years ago and has lots of marble.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "luxury is knowing what I want to do and then offering a real customized version of that, way more than it is staying in sort of that little bit stuffier formal version of a inter-city midtown hotel",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_advice"
+    },
+    {
+      "timestamp": "12:04",
+      "quote_published": "But where we're getting at is trying to find technologies that make it so that instead of just providing service, you're providing true hospitality. And that's what I want in a stay.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "trying to find technologies that make it so that instead of just providing service, you're providing true hospitality.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "slug": "rafter_tech_advice"
+    }
+  ],
+  "quotes_dropped": []
+}

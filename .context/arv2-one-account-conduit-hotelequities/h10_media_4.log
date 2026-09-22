@@ -1,0 +1,21 @@
+=== rafter_tech_ceo | What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality | 958s ===
+  downloaded 11525425 bytes in 2.72s
+  files.start http=200 upload_url=YES
+  files.upload http=200 1.33s
+
+-- gemini-3.5-transcribe (faithful) --
+  gemini[h10_faithful_rafter_tech_ceo] http=200 12.33s usage={"promptTokenCount": 24068, "totalTokenCount": 24068, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 114}, {"modality": "AUDIO", "tokenCount": 23954}], "serviceTier": "standard"} cost=$0.007198
+   chars=16209 words=2954 wpm=185.0
+
+-- gemini-3.5-flash-lite (timestamps + quotes) --
+  gemini[h10_timestamped_rafter_tech_ceo] http=200 17.54s usage={"promptTokenCount": 24351, "candidatesTokenCount": 4997, "totalTokenCount": 29348, "promptTokensDetails": [{"modality": "AUDIO", "tokenCount": 23954}, {"modality": "TEXT", "tokenCount": 397}], "serviceTier": "standard"} cost=$0.009225
+   timestamped lines=55 unique=55 loop_starts_at=None
+
+   quote verification vs the faithful ASR:
+     [03:41] PARTIAL   uniq=True :: never forget that that we're in the business of hospitality and I I I think as we launch these 
+     [05:18] PARTIAL   uniq=True :: And I think you saw a lot of owners who would they were like, "Oh, okay, you know, not a lot of
+     [06:51] PARTIAL   uniq=True :: And so, we started making customized reports that were if the lowest common denominator or some
+     [07:51] PARTIAL   uniq=True :: We overinvest and have a dedicated apartment just to try to make new things stick, if you if yo
+     [10:37] EXACT     uniq=True :: Always introduce things that are new and I do get worried about being getting too comfortable, 
+
+H10[rafter_tech_ceo] 34.7s cost=$0.016423 spend=0.2254

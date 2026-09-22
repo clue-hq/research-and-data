@@ -1,0 +1,729 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 0.5,
+  "_request_body": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "STRICT",
+            "content": [
+              "Albert Smith",
+              "Al Smith"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "hotelequities.com"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  },
+  "_body": {
+    "content": [
+      {
+        "id": "c44a19cf-ad36-3c1c-c13a-0247fc9a101a",
+        "identifier": "albert-smith-3aa9318",
+        "profile": {
+          "first_name": "Albert",
+          "middle_name": null,
+          "last_name": "Smith",
+          "full_name": "Albert Smith",
+          "headline": "Chief Operating Officer, Hotel Equities",
+          "title": "Chief Operating Officer",
+          "picture": {
+            "source": "https://images.ai-ark.com/bkDQEgbzIRMzYo5QJ9FgFWAgt4NkgAeU1wRtsi1MIYI/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/c44a19cf-ad36-3c1c-c13a-0247fc9a101a.jpg"
+          },
+          "background": null,
+          "summary": "Experienced Senior Level Executive with a history of exceptional performance results, talent development and portfolio growth within the hospitality industry. Skilled in Sales, Marketing, Revenue Management and Operations within upper up-scale and luxury independent and soft-soft branded hotels and resorts."
+        },
+        "link": {
+          "linkedin": "https://www.linkedin.com/in/albert-smith-3aa9318",
+          "twitter": null,
+          "github": null,
+          "facebook": null
+        },
+        "location": {
+          "default": "Alpharetta, Georgia, United States, North America",
+          "short": "Alpharetta, Georgia",
+          "country": "United States",
+          "state": "Georgia",
+          "city": "Alpharetta",
+          "position": null
+        },
+        "languages": {
+          "primary_locale": {
+            "country": "US",
+            "language": "en"
+          },
+          "supported_locales": [
+            {
+              "country": "US",
+              "language": "en"
+            }
+          ],
+          "profile_languages": [
+            {
+              "name": "English",
+              "proficiency": "NATIVE_OR_BILINGUAL"
+            },
+            {
+              "name": "Spanish",
+              "proficiency": "LIMITED_WORKING"
+            }
+          ]
+        },
+        "industry": "Hospitality",
+        "educations": [
+          {
+            "school": {
+              "id": null,
+              "name": "American College of Hotel & Restaurant MGMT.",
+              "logo": null,
+              "url": null
+            },
+            "degree_name": null,
+            "field_of_study": null,
+            "grade": null,
+            "date": {
+              "start": "1995-01-01",
+              "end": "1997-12-31"
+            }
+          },
+          {
+            "school": {
+              "id": null,
+              "name": "St. Francis High School",
+              "logo": null,
+              "url": null
+            },
+            "degree_name": null,
+            "field_of_study": null,
+            "grade": null,
+            "date": null
+          }
+        ],
+        "awards": [
+          {
+            "title": "General Manager of the Year",
+            "description": null,
+            "issuer": "CH&LA - Stars of the Industry Awards",
+            "date": "2012-11-01"
+          }
+        ],
+        "position_groups": [
+          {
+            "company": {
+              "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+              "name": "Hotel Equities",
+              "logo": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg",
+              "url": "https://www.linkedin.com/company/hotel-equities",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2021-07-01",
+              "end": null
+            },
+            "profile_positions": [
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "Chief Operating Officer",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2025-05-01",
+                  "end": null
+                }
+              },
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "President, Hotel Operations",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2021-07-01",
+                  "end": "2025-05-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "58f26beb-83f9-c63b-ff65-66bf07021660",
+              "name": "Highgate",
+              "logo": "https://images.ai-ark.com/GPh9tbEIvPcErMGzcV4bMT0r7xmRNIP5exJ443Xl4BY/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/58f26beb-83f9-c63b-ff65-66bf07021660.jpg",
+              "url": "https://www.linkedin.com/company/highgate",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2020-03-01",
+              "end": "2021-07-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Highgate",
+                "description": null,
+                "title": "Senior Vice President, Lifestyle",
+                "employment_type": null,
+                "location": null,
+                "date": {
+                  "start": "2020-03-01",
+                  "end": "2021-07-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "0a8669e5-1b99-1aa2-9c73-d2d60304865d",
+              "name": "Pivot",
+              "logo": "https://images.ai-ark.com/kejqzoZJ1ckoTSvwx084mZSVJnhbvt6Nk4nVDnewd7g/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/0a8669e5-1b99-1aa2-9c73-d2d60304865d.jpg",
+              "url": "https://www.linkedin.com/company/pivothotels",
+              "employees": {
+                "start": 5001,
+                "end": 10000
+              }
+            },
+            "date": {
+              "start": "2015-03-01",
+              "end": "2020-03-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Pivot Hotels & Resorts",
+                "description": "Founding member and developer of Pivot, Lifestyle management from Davidson Hospitality",
+                "title": "Senior Vice President",
+                "employment_type": null,
+                "location": "Greater Los Angeles Area",
+                "date": {
+                  "start": "2015-03-01",
+                  "end": "2020-03-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "b46d3f11-5d51-6c5e-4222-0734b24c613c",
+              "name": "sbe Lifestyle Hospitality",
+              "logo": "https://images.ai-ark.com/6ANb919rS2sy0QCtl8an7x2-5NOew9Mp39rarvWNAs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/b46d3f11-5d51-6c5e-4222-0734b24c613c.jpg",
+              "url": "https://www.linkedin.com/company/sbe-entertainment",
+              "employees": {
+                "start": 1001,
+                "end": 5000
+              }
+            },
+            "date": {
+              "start": "2013-09-01",
+              "end": "2015-03-31"
+            },
+            "profile_positions": [
+              {
+                "company": "SBE Entertainment",
+                "description": null,
+                "title": "Vice President of Hotel Operations for SLS Las Vegas",
+                "employment_type": null,
+                "location": "Las Vegas, Nevada Area",
+                "date": {
+                  "start": "2013-09-01",
+                  "end": "2015-03-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "a9753436-b347-6a5f-70df-39ebe8f01d0a",
+              "name": "Kimpton Hotels & Restaurants",
+              "logo": "https://images.ai-ark.com/9HA4zBQrGQAxOOeiIp6u4PDIvp9umTHgxNuHpaP_gCU/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/a9753436-b347-6a5f-70df-39ebe8f01d0a.jpg",
+              "url": "https://www.linkedin.com/company/kimpton-hotels-&-restaurants",
+              "employees": {
+                "start": 5001,
+                "end": 10000
+              }
+            },
+            "date": {
+              "start": "2009-07-01",
+              "end": "2013-09-30"
+            },
+            "profile_positions": [
+              {
+                "company": "Kimpton Hotels",
+                "description": "Other roles: General Manager at Hotel Palomar-Westwood July 2009-September 2013",
+                "title": "Regional Director of Operations, Southern California",
+                "employment_type": null,
+                "location": null,
+                "date": {
+                  "start": "2009-07-01",
+                  "end": "2013-09-30"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "94955f89-ca24-fd69-d398-dfbbef122be0",
+              "name": "Viceroy Hotels and Resorts",
+              "logo": "https://images.ai-ark.com/xI50neOZ6a1v4x9QhSyQwg-m7Pqp__Mu67JuESKquFA/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/94955f89-ca24-fd69-d398-dfbbef122be0.jpg",
+              "url": "https://www.linkedin.com/company/viceroyhotelandresorts",
+              "employees": {
+                "start": 1001,
+                "end": 5000
+              }
+            },
+            "date": {
+              "start": "2004-02-01",
+              "end": "2009-07-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Viceroy Hotels and Resorts",
+                "description": "Other roles held with Viceroy Hotel Group: \n\nHotel Manager, Viceroy Santa Monica 2005-2007\nHotel Manager, Maison 140 August 2005-November 2005\nDirector of Rooms, avalon February 2004-August 2005",
+                "title": "General Manager",
+                "employment_type": null,
+                "location": "Chamberlain West Hollywood",
+                "date": {
+                  "start": "2004-02-01",
+                  "end": "2009-07-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "4fad7ebe-eb91-0dd3-e16a-81683d567a59",
+              "name": "Millennium Hotels and Resorts",
+              "logo": "https://images.ai-ark.com/VmS7Tk1KFDnXG5oeyXymGijy_ScxGKSi5QCSkypI1ZY/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4fad7ebe-eb91-0dd3-e16a-81683d567a59.jpg",
+              "url": "https://www.linkedin.com/company/millennium-hotels-&-resorts",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "1998-01-01",
+              "end": "2004-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Millennium & Copthorne Hotels",
+                "description": "Other roles at Millennium Biltmore:\n\nAssistant Director of Front Office\nManager on Duty\nHousekeeping Manager\nAssistant Front Office Manager\nFront Office Supervisor",
+                "title": "Director of Front Office Operations, Los Angeles Biltmore Hotel",
+                "employment_type": null,
+                "location": "Downtown Los Angeles",
+                "date": {
+                  "start": "1998-01-01",
+                  "end": "2004-12-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "4d24f098-74cc-e54f-54c7-6c226f8e7418",
+              "name": "Westin Hotels & Resorts",
+              "logo": "https://images.ai-ark.com/2wcKpkov_cGq0U2nyWwF2K8JgWIAnpwtw1SxEE0Jqtk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d24f098-74cc-e54f-54c7-6c226f8e7418.jpg",
+              "url": "https://www.linkedin.com/company/westin-hotels-&-resorts",
+              "employees": {
+                "start": 5001,
+                "end": 10000
+              }
+            },
+            "date": {
+              "start": "1996-01-01",
+              "end": "1998-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Westin Hotels & Resorts",
+                "description": null,
+                "title": "Front Desk Supervisor",
+                "employment_type": null,
+                "location": null,
+                "date": {
+                  "start": "1996-01-01",
+                  "end": "1998-12-31"
+                }
+              }
+            ]
+          }
+        ],
+        "skills": [
+          "Hotel Management",
+          "Hospitality",
+          "Hospitality Management",
+          "Management",
+          "Leadership",
+          "Hotels",
+          "Resorts",
+          "Customer Satisfaction",
+          "Catering",
+          "Customer Service",
+          "Front Office",
+          "Food & Beverage",
+          "Teamwork",
+          "Menu Development",
+          "New Restaurant Openings",
+          "Pre-opening",
+          "Hospitality Industry",
+          "Meeting Planning",
+          "Rooms Division",
+          "Tourism"
+        ],
+        "member_badges": {
+          "premium": false,
+          "creator": false,
+          "open_to_work": false,
+          "hiring": false,
+          "verified": true,
+          "influencer": false
+        },
+        "statistics": {
+          "network": {
+            "influencer": false,
+            "followable": null,
+            "followers_count": 10617,
+            "connections_count": 10721
+          },
+          "experience": {
+            "prev_job_titles": null,
+            "tenure": {
+              "company": "2021-07-01",
+              "start": "1996-01-01",
+              "title": "2025-05-01"
+            }
+          }
+        },
+        "company": {
+          "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+          "summary": {
+            "name": "Hotel Equities",
+            "legal_name": "Hotel Equities Group, LLC.",
+            "description": "Hotel Equities (HE) is a best-in-class hospitality management company with a diverse portfolio of premium-branded and independent\u00a0hotels, resorts, and outdoor hospitality destinations throughout the United States, Canada, the Caribbean, and Latin America (CALA). We deliver proven results and drive long-term value for stakeholders through a comprehensive suite of services, a people-first and performance-driven culture, and a commitment to excellence.\n\nOver 11,000+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "overview": "Hotel Equities (HE) is an award-winning hotel development, ownership and management company.  For 30 years, our team has collaborated with premier brands and entrepreneurial owners to deliver best in class results.  HE is hyper focused on managing upper midscale and full-service hotels in the U.S and Canada.  Whether we\u2019re executing ground-up development, re-positioning a property or managing one of the 135+ hotels in our portfolio, HE provides the highest and best value for owners, while prioritizing guest satisfaction and profitability.  Over 2500+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "seo": "Choose the management team at Hotel Equities when you want to expand your hotels company brand like never before.",
+            "founded_year": 1989,
+            "type": "PRIVATELY_HELD",
+            "industry": "hospitality",
+            "staff": {
+              "total": 990,
+              "range": {
+                "start": 10001
+              }
+            },
+            "logo": {
+              "source": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg"
+            }
+          },
+          "link": {
+            "website": "http://www.hotelequities.com",
+            "domain": "hotelequities.com",
+            "domain_ltd": "hotelequities.com",
+            "linkedin": "https://www.linkedin.com/company/hotel-equities",
+            "facebook": "https://www.facebook.com/hotelequities",
+            "twitter": "https://x.com/HotelEquities",
+            "crunchbase": "https://www.crunchbase.com/organization/hotel-equities"
+          },
+          "financial": {
+            "revenue": {
+              "annual": {
+                "start": 50000000,
+                "end": 100000000,
+                "amount": "50000000-100000000"
+              }
+            },
+            "funding": {
+              "type": "PRIVATE_EQUITY_ROUND",
+              "total_amount": 500000000,
+              "last_amount": 500000000,
+              "num_investor": 1,
+              "num_funding_rounds": 1,
+              "rounds": [
+                {
+                  "announced_at": "2018-09-12",
+                  "raised_amount": 500000000,
+                  "type": "PRIVATE_EQUITY_ROUND",
+                  "investors": [
+                    "Virtua Partners"
+                  ]
+                }
+              ],
+              "date": "2018-09-12"
+            },
+            "acquisition": {
+              "total": 1,
+              "contents": [
+                {
+                  "identifier": {
+                    "id": "springboard-hospitality",
+                    "name": "Springboard Hospitality",
+                    "image": "8b78eddb33524976bedb6fc30110f672"
+                  },
+                  "role": "acquiree",
+                  "announced_at": "2025-05-01"
+                }
+              ]
+            },
+            "aberdeen": {
+              "it_spend": 8712352
+            }
+          },
+          "location": {
+            "headquarter": {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Georgia",
+              "city": "Alpharetta",
+              "street": "North Point Pkwy",
+              "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+              "position": {
+                "lng": -84.38857,
+                "lat": 33.74975
+              }
+            },
+            "locations": [
+              {
+                "continent": "North America",
+                "country": "United States",
+                "state": "Georgia",
+                "city": "Alpharetta",
+                "street": "North Point Pkwy",
+                "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+                "position": {
+                  "lng": -84.38857,
+                  "lat": 33.74975
+                }
+              }
+            ]
+          },
+          "technologies": [
+            {
+              "name": "viewport meta",
+              "category": "mobile"
+            },
+            {
+              "name": "iphone / mobile compatible",
+              "category": "mobile"
+            },
+            {
+              "name": "ssl by default",
+              "category": "ssl"
+            },
+            {
+              "name": "hsts",
+              "category": "ssl"
+            },
+            {
+              "name": "apple mobile web clips icon",
+              "category": "mobile"
+            },
+            {
+              "name": "dnssec",
+              "category": "ns"
+            },
+            {
+              "name": "google tag manager",
+              "category": "widgets"
+            },
+            {
+              "name": "google font api",
+              "category": "widgets"
+            },
+            {
+              "name": "content delivery network",
+              "category": "cdn"
+            },
+            {
+              "name": "google analytics",
+              "category": "analytics"
+            },
+            {
+              "name": "html5"
+            },
+            {
+              "name": "symantec email security.cloud"
+            },
+            {
+              "name": "godaddy premium dns"
+            },
+            {
+              "name": "google fonts"
+            },
+            {
+              "name": "google tag manager"
+            },
+            {
+              "name": "bootstrap"
+            },
+            {
+              "name": "google cloud translation api"
+            },
+            {
+              "name": "office 365"
+            },
+            {
+              "name": "google analytics"
+            },
+            {
+              "name": "vimeo"
+            },
+            {
+              "name": "Adobe Marketing Cloud",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Adobe Media Optimizer",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Google Analytics",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Google Font API",
+              "category": "Fonts"
+            },
+            {
+              "name": "Google Tag Manager",
+              "category": "Tag Management"
+            },
+            {
+              "name": "Google translate API",
+              "category": "Widgets"
+            },
+            {
+              "name": "Google translate widget",
+              "category": "Widgets"
+            },
+            {
+              "name": "Microsoft Office 365",
+              "category": "Other"
+            },
+            {
+              "name": "Mobile Friendly",
+              "category": "Other"
+            },
+            {
+              "name": "Multilingual",
+              "category": "Widgets"
+            },
+            {
+              "name": "Omniture (Adobe)",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Outlook",
+              "category": "Email Providers"
+            },
+            {
+              "name": "Remote",
+              "category": "Other"
+            },
+            {
+              "name": "SynXis (Sabre Hospitality)",
+              "category": "Reservation Software"
+            },
+            {
+              "name": "Vimeo",
+              "category": "Online Video Platforms"
+            },
+            {
+              "name": "iCIMS",
+              "category": "Recruitment"
+            }
+          ],
+          "industries": [
+            "hospitality"
+          ],
+          "keywords": [
+            "rooms operations",
+            "revenue generation",
+            "finance & accounting",
+            "food & beverage",
+            "human resources",
+            "procurement",
+            "commercial strategy",
+            "development services",
+            "content storytelling",
+            "brand development",
+            "online reputation management",
+            "talent acquistion & development",
+            "tech innovation",
+            "guest experience"
+          ],
+          "hashtags": [
+            "hotelmanagement",
+            "hospitalitystrong",
+            "hoteliers"
+          ],
+          "languages": [
+            "english"
+          ],
+          "sic": [
+            "7011"
+          ],
+          "naics": [
+            "721110",
+            "561499"
+          ],
+          "last_updated": "2026-09-21"
+        },
+        "department": {
+          "departments": [
+            "operations"
+          ],
+          "sub_departments": [
+            "business_operations"
+          ],
+          "functions": [
+            "operations"
+          ],
+          "seniority": "c_suite"
+        },
+        "last_updated": "2026-09-21"
+      }
+    ],
+    "size": 3,
+    "totalElements": 1,
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 3,
+      "sort": {
+        "sorted": true,
+        "unsorted": false,
+        "empty": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "last": true,
+    "totalPages": 1,
+    "sort": {
+      "sorted": true,
+      "unsorted": false,
+      "empty": false
+    },
+    "numberOfElements": 1,
+    "trackId": "1afb27f4-1d2f-4298-abd5-402207cb81ef",
+    "first": true,
+    "number": 0,
+    "empty": false
+  }
+}

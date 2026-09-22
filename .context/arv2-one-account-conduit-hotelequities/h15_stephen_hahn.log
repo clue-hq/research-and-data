@@ -1,0 +1,4 @@
+  bundle chars: 30521
+  openrouter[h15_structure_stephen_hahn] http=200 58.76s usage={"prompt_tokens": 7931, "completion_tokens": 6920, "total_tokens": 14851, "cost": 0, "is_byok": true, "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "audio_tokens": 0, "video_t
+  claims=31 proposed=5 negatives=4 | spans verbatim 27 / failed 9
+H15[stephen_hahn] 58.8s spend=0.4559

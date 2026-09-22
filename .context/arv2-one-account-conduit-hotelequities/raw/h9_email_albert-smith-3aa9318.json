@@ -1,0 +1,13 @@
+{
+  "_http_status": 404,
+  "_elapsed_s": 0.72,
+  "_request_body": {
+    "url": "https://www.linkedin.com/in/albert-smith-3aa9318"
+  },
+  "_body": {
+    "timestamp": "2026-09-22T06:44:29.030Z",
+    "status": 404,
+    "error": "no email found",
+    "path": ""
+  }
+}

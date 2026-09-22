@@ -1,0 +1,44 @@
+  rafter_ai_payoff         2 chunks
+  rafter_ai_labor          10 chunks
+  rafter_owner_economics   10 chunks
+  rafter_tech_advice       18 chunks
+  rafter_tech_ceo          6 chunks
+
+== embedding 46 document chunks (gemini-embedding-2, 768d) ==
+   46 chunks | 21665 tokens | $0.004333 | 17.93s | dim=768
+
+== 4 retrieval queries ==
+
+Q: What does Ben Rafter say about AI or technology in hotel operations?
+  #1 score=0.8261 [00:59–01:49] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people 
+  #2 score=0.8128 [02:03–02:58] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [02:03] S2 (Ben Rafter): And AI and some of our technology partners can can help solve that problem. [02:07] S2 (Ben Rafter): And if we can change scheduling, we can get an immediate quantifiable impact quantifiable impact for our owners. [02:15] S1 (Josiah Ma
+  #3 score=0.8032 [07:14–08:21] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [07:14] S1 (Josiah Mackenzie): So that's a proposition that you're building and you're delivering these kind of above market returns through technology. [07:20] S1 (Josiah Mackenzie): And then you're also thinking both in the short and long term how your leade
+
+Q: What does Ben Rafter say frustrates consistency, service or labor at scale across hotels?
+  #1 score=0.8026 [02:03–02:58] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [02:03] S2 (Ben Rafter): And AI and some of our technology partners can can help solve that problem. [02:07] S2 (Ben Rafter): And if we can change scheduling, we can get an immediate quantifiable impact quantifiable impact for our owners. [02:15] S1 (Josiah Ma
+  #2 score=0.7995 [00:59–01:49] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people 
+  #3 score=0.7978 [01:15–01:57] :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, S
+     [01:15] S1 (Josiah Mackenzie): Hospitality. [01:16] S1 (Josiah Mackenzie): Hospitality brings people together. [01:22] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people 
+
+Q: How does Hotel Equities choose, beta-test or evaluate vendors and new technology?
+  #1 score=0.791 [01:59–02:56] :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, S
+     [01:59] S2 (Ben Rafter): But um we have a director of strategy and again I'm I'm a big believer in diverse backgrounds. [02:05] S2 (Ben Rafter): So this person was came from the investment banking industry and get classically trained a little bit differently. 
+  #2 score=0.773 [02:59–03:50] :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, S
+     [02:59] S2 (Ben Rafter): Yeah, okay, great. [03:00] S2 (Ben Rafter): But the guest isn't going to go home and say, I'm glad I stayed at that particular hotel or resort. [03:06] S2 (Ben Rafter): I had had a better experience because that technology is is there,
+  #3 score=0.73 [06:35–07:14] :: Why Hotel Ownership Is Becoming Unsustainable, and What We'r
+     [06:35] S1 (Josiah Mackenzie): I wonder if we could talk a little bit about HE Labs. [06:37] S1 (Josiah Mackenzie): I think just to build on this framework that you've described, I can link in the show notes to Skift's coverage of some of how you've been think
+
+Q: What does Ben Rafter say about guest-facing service, the front desk and guest interaction?
+  #1 score=0.7674 [07:51–08:36] :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, S
+     [07:51] S2 (Ben Rafter): We're in mainly leisure markets. [07:53] S2 (Ben Rafter): So I'm not a big fan of just go check in at the Marriott or the Hilton box. [07:58] S2 (Ben Rafter): I get it in the business market, you may not want to talk to somebody, maybe
+  #2 score=0.7658 [13:06–14:10] :: Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, S
+     [13:06] S1 (Josiah Mackenzie): Are you looking at sort of behind the scenes operational tech as an interesting area? [13:10] S2 (Ben Rafter): Yeah, it's not not very exciting, um, but well it's exciting to me, it's not very exciting to most people. [13:16] S2 
+  #3 score=0.763 [00:59–01:49] :: How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Raf
+     [00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people 
+
+H13 19.6s embed_total=$0.004347 | raw-audio embedding would have cost $0.6624 (152.4x) | run spend=0.3766

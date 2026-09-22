@@ -1,0 +1,5 @@
+{
+  "ai_ark_actual_credits": 7.1,
+  "ceiling": 20.0,
+  "method": "0.1/company returned + 0.5/profile returned + 1.0/email found; non-200 and not-found cost 0"
+}

@@ -1,0 +1,664 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 0.8,
+  "_request_body": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "STRICT",
+            "content": [
+              "Bill Stachler",
+              "William Stachler"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "hotelequities.com"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  },
+  "_body": {
+    "content": [
+      {
+        "id": "25da444a-6f5f-75cd-d9c5-bdc2d3e0953b",
+        "identifier": "billstachler",
+        "profile": {
+          "first_name": "Bill",
+          "middle_name": null,
+          "last_name": "Stachler",
+          "full_name": "Bill Stachler",
+          "headline": "SVP of Revenue Optimization at Hotel Equities",
+          "title": "Senior Vice President Revenue Management",
+          "picture": {
+            "source": "https://images.ai-ark.com/YY_S1ig-kN4U0nAXgU1cuEOl5esuJfVaFh3zhnFAGxY/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/25da444a-6f5f-75cd-d9c5-bdc2d3e0953b.jpg"
+          },
+          "background": {
+            "source": "https://media.licdn.com/dms/image/v2/C5616AQFYZ6iEM9p-nw/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1592963490302?e=1789603200&v=beta&t=aPmSXGJjRMIRIq2VHyPywB1fhokMwR8jAVilN-ZUNkk"
+          },
+          "summary": "Commercial leader with extensive consulting, analytical, and execution skills.  Demonstrated history in achieving market-leading performance, backed by an established record of success leading teams in delivering profitable results. Long tenure in cultivating strategic relationships and accomplishing key \ufb01nancial and customer service objectives. Vision to guide and in\ufb02uence complex, cross-functional objectives, while leveraging time, budget, and scope constraints. Solicits input to understand client issues and provide effective business solutions.\n\nVendor Management / Retention | Strategic Planner | Relationship Builder | Customer-Centric\nOperations | Sales | Competitor Analysis | Market / Brand Research | Team Development | Yield Management"
+        },
+        "link": {
+          "linkedin": "https://www.linkedin.com/in/billstachler",
+          "twitter": null,
+          "github": null,
+          "facebook": null
+        },
+        "location": {
+          "default": "Atlanta Metropolitan Area, United States, North America",
+          "short": "Atlanta Metropolitan Area",
+          "country": "United States",
+          "state": null,
+          "city": "Atlanta Metropolitan Area",
+          "position": null
+        },
+        "languages": {
+          "primary_locale": {
+            "country": "US",
+            "language": "en"
+          },
+          "supported_locales": [
+            {
+              "country": "US",
+              "language": "en"
+            }
+          ],
+          "profile_languages": null
+        },
+        "industry": "Hospitality",
+        "educations": [
+          {
+            "school": {
+              "id": "abb08d94-1610-b59d-fad8-6acc974c1696",
+              "name": "Radford University - College of Business and Economics",
+              "logo": "https://images.ai-ark.com/dPDAs37PdsOblzNlZjuvqedhX89FUOPUVvgvWRUWfvk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/abb08d94-1610-b59d-fad8-6acc974c1696.jpg",
+              "url": "https://www.linkedin.com/school/rucbe"
+            },
+            "degree_name": "BS",
+            "field_of_study": "Political Sc.",
+            "grade": null,
+            "date": {
+              "start": "1984-01-01",
+              "end": "1988-12-31"
+            }
+          }
+        ],
+        "awards": [
+          {
+            "title": "Regional Director of the Year Full Service Hotels Hilton Worldwide",
+            "description": "Regional Director of the Year Full Service Hotels Hilton Worldwide",
+            "issuer": "Hilton",
+            "date": "2011-01-01"
+          },
+          {
+            "title": "Doubletree Revenue Manager of the Year",
+            "description": "Doubletree Revenue Manager of the Year",
+            "issuer": "Hilton Revenue Management",
+            "date": "2009-01-01"
+          }
+        ],
+        "position_groups": [
+          {
+            "company": {
+              "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+              "name": "Hotel Equities",
+              "logo": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg",
+              "url": "https://www.linkedin.com/company/hotel-equities",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2021-03-01",
+              "end": null
+            },
+            "profile_positions": [
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "Senior Vice President Revenue Management",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2024-07-01",
+                  "end": null
+                }
+              },
+              {
+                "company": "Hotel Equities",
+                "description": null,
+                "title": "Vice President of Revenue Optimization",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2021-03-01",
+                  "end": null
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "292d1ec0-04a3-7be0-206f-cc16a49b1238",
+              "name": "Hilton",
+              "logo": "https://images.ai-ark.com/I82AeJMw2qCHCUe21li_ObnRZc0Li7AR7L7BYD681eY/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/292d1ec0-04a3-7be0-206f-cc16a49b1238.jpg",
+              "url": "https://www.linkedin.com/company/hilton",
+              "employees": {
+                "start": 10001,
+                "end": null
+              }
+            },
+            "date": {
+              "start": "2000-01-01",
+              "end": "2020-07-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Hilton",
+                "description": null,
+                "title": "Hilton Worldwide",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2000-01-01",
+                  "end": "2020-07-31"
+                }
+              },
+              {
+                "company": "Hilton",
+                "description": "Designed and directed new Revenue Management support organization and associated key performance indicators (KPIs) to ensure success for 575 franchise hotels within the Americas.\n\u2022\tBuilt demand analysis, strategy reviews, and consultation for hotels.\n\u2022\tMentored, formed, and directed sta\ufb00 of 5 Regional Directors and 5 Revenue Operations Managers, achieving highest leadership index in division for 3 consecutive years.\n\u2022\tExecuted strategic plans and change management, growing market share.\n\u2022\tDevised and implemented program to support new conversion hotels, ensuring achievements of share goals, revenue expectations, and brand engagement with growth in market share.\n\u2022\tActed as subject matter expert for guest loyalty program, developing enterprise-wide programs, launches, and reporting analysis for award winning guest program.\n\u2022\tEvaluated performance and markets trends for Commercial team, identifying market needs, shortfalls, and instituting strategies to address trends resulting in 3 years of positive results.",
+                "title": "Senior Director Revenue Management, Full Service, Lifestyle, and Luxury Brands",
+                "employment_type": "Full-time",
+                "location": "United States",
+                "date": {
+                  "start": "2017-01-01",
+                  "end": "2020-06-30"
+                }
+              },
+              {
+                "company": "Hilton",
+                "description": "Supervised and maximized pro\ufb01ts for 300+ assets in the Eastern region. Guided 4 East coast Regional Directors and generated market share growth for 13 straight years.\n\u2022\tOversaw regional pricing, positioning, and inventory of all hotels monthly, quarterly, and yearly.\n\u2022\tDevised and facilitated training of inventory management and revenue analysis for brands.\n\u2022\tDeveloped 3-day RM@ work training course focused on daily revenue management functions and leveraging tools/reports that were mandatory for all hotels.",
+                "title": "Regional Director of Revenue Management, Full Service, Lifestyle, and Luxury Brands",
+                "employment_type": "Full-time",
+                "location": "Alpharetta, Georgia, United States",
+                "date": {
+                  "start": "2004-03-01",
+                  "end": "2016-03-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": null,
+              "name": "Hilton Hotels",
+              "logo": null,
+              "url": null
+            },
+            "date": {
+              "start": "2000-08-01",
+              "end": "2004-02-29"
+            },
+            "profile_positions": [
+              {
+                "company": "Hilton Hotels",
+                "description": "Directed Revenue Managers in recommending rooms, group and event pricing, and function space inventory for 9 Hilton company-managed hotels in Boston with room budget of $210M.\n\u2022\tLed and coached sta\ufb00 of 7 Revenue Managers and 4 Group Coordinators.\n\u2022\tPerformed critical analysis of strategies, room statistics, and demand factors, resulting in positive performance of teams for over 4 years.\n\u2022\tEstablished weekly, monthly, and rolling forecasts for all hotels, reporting information to owners.",
+                "title": "Area Director of Revenue Management Boston Cluster",
+                "employment_type": "Full-time",
+                "location": "Boston, Massachusetts, United States",
+                "date": {
+                  "start": "2000-08-01",
+                  "end": "2004-02-29"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": null,
+              "name": "Promus Hotels",
+              "logo": null,
+              "url": null
+            },
+            "date": {
+              "start": "1999-07-01",
+              "end": "2000-07-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Promus Hotels",
+                "description": "\u2022\tResponsible for maximizing revenue and profit associated with rooms and function space inventory for 20 hotels made up of company-managed Doubletrees and Embassy Suites in Arizona \n\u2022\tDeveloped start up budget and delivered positive P&L performance in first year.\n\u2022\tAccountable for strategic pricing, positioning and inventory decisions\n\u2022\tSet pricing for transient and group rooms for all hotels in cluster.\n\u2022\tAnalyzed demand to aid in pricing process and forecasting.\n\u2022\tDetermined hotels sales strategy for transient and group segmentations.\n\u2022\tIdentified future sales opportunities for all hotels and guided strategies to steal share from competitors.\n\u2022\tConducted weekly group pick up meetings.  \n\u2022\tFacilitated on-going training and evaluation of reservation functions\n\u2022\tResponsible for management of four revenue managers and 30 reservation agents.",
+                "title": "General Manager",
+                "employment_type": "Full-time",
+                "location": "Phoenix, Arizona, United States",
+                "date": {
+                  "start": "1999-07-01",
+                  "end": "2000-07-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": null,
+              "name": "Red Lion/Doubletree Hotels",
+              "logo": null,
+              "url": null
+            },
+            "date": {
+              "start": "1994-01-01",
+              "end": "1999-07-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Red Lion/Doubletree Hotels",
+                "description": "Provided strategic pricing and guest service delivery for resort destination. Developed demand analysis and strategy implementation for 263-room resort. Managed all Front O\ufb03ce operations resulting in achieving highest scores for resorts. Performed reservation and sales strategy training for hotel associates that grew satisfaction scores by 10%. Expansive",
+                "title": "Director of Revenue Management and Front Office Services",
+                "employment_type": "Full-time",
+                "location": "Scottsdale, Arizona, United States",
+                "date": {
+                  "start": "1994-01-01",
+                  "end": "1999-07-31"
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": null,
+              "name": "Eastman Construction",
+              "logo": null,
+              "url": null
+            },
+            "date": {
+              "start": "1988-01-01",
+              "end": "1993-12-31"
+            },
+            "profile_positions": [
+              {
+                "company": "Eastman Construction",
+                "description": "\u2022\tPerformed conceptual estimation for construction projects\n\u2022\tAwarded contracts for multi-million-dollar projects \n\u2022\tPlanned and fulfilled tenant construction needs in 2 million square feet of mixed office use.",
+                "title": "Project Manager",
+                "employment_type": "Full-time",
+                "location": "Livingston, New Jersey, United States",
+                "date": {
+                  "start": "1988-01-01",
+                  "end": "1993-12-31"
+                }
+              }
+            ]
+          }
+        ],
+        "skills": [
+          "Revenue Analysis",
+          "Yield Management",
+          "Hospitality Industry",
+          "OnQ",
+          "Opening Hotels",
+          "Project Management",
+          "Revenue Forecasting",
+          "Rooms Division Management",
+          "Front Office",
+          "Hospitality",
+          "Hospitality Management",
+          "Hotel Booking",
+          "Hotel Management",
+          "Pre-opening",
+          "Hotels",
+          "Management",
+          "Property Management Systems",
+          "Resorts",
+          "Rooms Division",
+          "Cross-functional Team Leadership"
+        ],
+        "member_badges": {
+          "premium": false,
+          "creator": false,
+          "open_to_work": false,
+          "hiring": false,
+          "verified": false,
+          "influencer": false
+        },
+        "statistics": {
+          "network": {
+            "influencer": false,
+            "followable": null,
+            "followers_count": 1249,
+            "connections_count": 1236
+          },
+          "experience": {
+            "prev_job_titles": null,
+            "tenure": {
+              "company": "2021-03-01",
+              "start": "1988-07-31",
+              "title": "2024-07-01"
+            }
+          }
+        },
+        "company": {
+          "id": "8d12a1a5-5640-2ef8-d600-a45bf43f0d49",
+          "summary": {
+            "name": "Hotel Equities",
+            "legal_name": "Hotel Equities Group, LLC.",
+            "description": "Hotel Equities (HE) is a best-in-class hospitality management company with a diverse portfolio of premium-branded and independent\u00a0hotels, resorts, and outdoor hospitality destinations throughout the United States, Canada, the Caribbean, and Latin America (CALA). We deliver proven results and drive long-term value for stakeholders through a comprehensive suite of services, a people-first and performance-driven culture, and a commitment to excellence.\n\nOver 11,000+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "overview": "Hotel Equities (HE) is an award-winning hotel development, ownership and management company.  For 30 years, our team has collaborated with premier brands and entrepreneurial owners to deliver best in class results.  HE is hyper focused on managing upper midscale and full-service hotels in the U.S and Canada.  Whether we\u2019re executing ground-up development, re-positioning a property or managing one of the 135+ hotels in our portfolio, HE provides the highest and best value for owners, while prioritizing guest satisfaction and profitability.  Over 2500+ dynamic HE associates execute on our mission daily; to make a distinctive difference in people's lives.",
+            "seo": "Choose the management team at Hotel Equities when you want to expand your hotels company brand like never before.",
+            "founded_year": 1989,
+            "type": "PRIVATELY_HELD",
+            "industry": "hospitality",
+            "staff": {
+              "total": 990,
+              "range": {
+                "start": 10001
+              }
+            },
+            "logo": {
+              "source": "https://images.ai-ark.com/icRykKwDx88zNA4EIGDgrDf7yBnb7u9YGQtkkF8pxs4/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/8d12a1a5-5640-2ef8-d600-a45bf43f0d49.jpg"
+            }
+          },
+          "link": {
+            "website": "http://www.hotelequities.com",
+            "domain": "hotelequities.com",
+            "domain_ltd": "hotelequities.com",
+            "linkedin": "https://www.linkedin.com/company/hotel-equities",
+            "facebook": "https://www.facebook.com/hotelequities",
+            "twitter": "https://x.com/HotelEquities",
+            "crunchbase": "https://www.crunchbase.com/organization/hotel-equities"
+          },
+          "financial": {
+            "revenue": {
+              "annual": {
+                "start": 50000000,
+                "end": 100000000,
+                "amount": "50000000-100000000"
+              }
+            },
+            "funding": {
+              "type": "PRIVATE_EQUITY_ROUND",
+              "total_amount": 500000000,
+              "last_amount": 500000000,
+              "num_investor": 1,
+              "num_funding_rounds": 1,
+              "rounds": [
+                {
+                  "announced_at": "2018-09-12",
+                  "raised_amount": 500000000,
+                  "type": "PRIVATE_EQUITY_ROUND",
+                  "investors": [
+                    "Virtua Partners"
+                  ]
+                }
+              ],
+              "date": "2018-09-12"
+            },
+            "acquisition": {
+              "total": 1,
+              "contents": [
+                {
+                  "identifier": {
+                    "id": "springboard-hospitality",
+                    "name": "Springboard Hospitality",
+                    "image": "8b78eddb33524976bedb6fc30110f672"
+                  },
+                  "role": "acquiree",
+                  "announced_at": "2025-05-01"
+                }
+              ]
+            },
+            "aberdeen": {
+              "it_spend": 8712352
+            }
+          },
+          "location": {
+            "headquarter": {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Georgia",
+              "city": "Alpharetta",
+              "street": "North Point Pkwy",
+              "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+              "position": {
+                "lng": -84.38857,
+                "lat": 33.74975
+              }
+            },
+            "locations": [
+              {
+                "continent": "North America",
+                "country": "United States",
+                "state": "Georgia",
+                "city": "Alpharetta",
+                "street": "North Point Pkwy",
+                "raw_address": "North Point Pkwy, Alpharetta, Georgia, United States, North America",
+                "position": {
+                  "lng": -84.38857,
+                  "lat": 33.74975
+                }
+              }
+            ]
+          },
+          "technologies": [
+            {
+              "name": "viewport meta",
+              "category": "mobile"
+            },
+            {
+              "name": "iphone / mobile compatible",
+              "category": "mobile"
+            },
+            {
+              "name": "ssl by default",
+              "category": "ssl"
+            },
+            {
+              "name": "hsts",
+              "category": "ssl"
+            },
+            {
+              "name": "apple mobile web clips icon",
+              "category": "mobile"
+            },
+            {
+              "name": "dnssec",
+              "category": "ns"
+            },
+            {
+              "name": "google tag manager",
+              "category": "widgets"
+            },
+            {
+              "name": "google font api",
+              "category": "widgets"
+            },
+            {
+              "name": "content delivery network",
+              "category": "cdn"
+            },
+            {
+              "name": "google analytics",
+              "category": "analytics"
+            },
+            {
+              "name": "html5"
+            },
+            {
+              "name": "symantec email security.cloud"
+            },
+            {
+              "name": "godaddy premium dns"
+            },
+            {
+              "name": "google fonts"
+            },
+            {
+              "name": "google tag manager"
+            },
+            {
+              "name": "bootstrap"
+            },
+            {
+              "name": "google cloud translation api"
+            },
+            {
+              "name": "office 365"
+            },
+            {
+              "name": "google analytics"
+            },
+            {
+              "name": "vimeo"
+            },
+            {
+              "name": "Adobe Marketing Cloud",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Adobe Media Optimizer",
+              "category": "Search Marketing"
+            },
+            {
+              "name": "Google Analytics",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Google Font API",
+              "category": "Fonts"
+            },
+            {
+              "name": "Google Tag Manager",
+              "category": "Tag Management"
+            },
+            {
+              "name": "Google translate API",
+              "category": "Widgets"
+            },
+            {
+              "name": "Google translate widget",
+              "category": "Widgets"
+            },
+            {
+              "name": "Microsoft Office 365",
+              "category": "Other"
+            },
+            {
+              "name": "Mobile Friendly",
+              "category": "Other"
+            },
+            {
+              "name": "Multilingual",
+              "category": "Widgets"
+            },
+            {
+              "name": "Omniture (Adobe)",
+              "category": "Analytics and Tracking"
+            },
+            {
+              "name": "Outlook",
+              "category": "Email Providers"
+            },
+            {
+              "name": "Remote",
+              "category": "Other"
+            },
+            {
+              "name": "SynXis (Sabre Hospitality)",
+              "category": "Reservation Software"
+            },
+            {
+              "name": "Vimeo",
+              "category": "Online Video Platforms"
+            },
+            {
+              "name": "iCIMS",
+              "category": "Recruitment"
+            }
+          ],
+          "industries": [
+            "hospitality"
+          ],
+          "keywords": [
+            "rooms operations",
+            "revenue generation",
+            "finance & accounting",
+            "food & beverage",
+            "human resources",
+            "procurement",
+            "commercial strategy",
+            "development services",
+            "content storytelling",
+            "brand development",
+            "online reputation management",
+            "talent acquistion & development",
+            "tech innovation",
+            "guest experience"
+          ],
+          "hashtags": [
+            "hotelmanagement",
+            "hospitalitystrong",
+            "hoteliers"
+          ],
+          "languages": [
+            "english"
+          ],
+          "sic": [
+            "7011"
+          ],
+          "naics": [
+            "721110",
+            "561499"
+          ],
+          "last_updated": "2026-09-21"
+        },
+        "department": {
+          "departments": [
+            "hospitality_food_and_guest_services"
+          ],
+          "sub_departments": [
+            "hospitality_revenue_management"
+          ],
+          "functions": [
+            "operations"
+          ],
+          "seniority": "vp"
+        },
+        "last_updated": "2026-09-21"
+      }
+    ],
+    "size": 3,
+    "totalElements": 1,
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 3,
+      "sort": {
+        "sorted": true,
+        "empty": false,
+        "unsorted": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "last": true,
+    "totalPages": 1,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "numberOfElements": 1,
+    "trackId": "756faaa3-f6e1-425c-8300-55ac67413a0e",
+    "first": true,
+    "number": 0,
+    "empty": false
+  }
+}

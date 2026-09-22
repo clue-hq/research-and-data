@@ -1,0 +1,156 @@
+{
+  "model": "gemini-embedding-2",
+  "dim": 768,
+  "chunks": 46,
+  "doc_tokens": 21665,
+  "doc_cost_usd": 0.004333,
+  "doc_elapsed_s": 17.93,
+  "query_tokens": 68,
+  "query_cost_usd": 1.36e-05,
+  "total_embed_cost_usd": 0.004347,
+  "media_seconds_indexed": 4140,
+  "raw_audio_embedding_would_have_cost_usd": 0.6624,
+  "raw_audio_multiple": 152.4,
+  "queries": [
+    {
+      "query": "What does Ben Rafter say about AI or technology in hotel operations?",
+      "query_tokens": 14,
+      "query_cost_usd": 2.8e-06,
+      "latency_s": 0.51,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.8261,
+          "person": "Ben Rafter",
+          "timestamp": "[00:59\u201301:49]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people in hospitality. [01:14] S1 (Josiah Mackenzie): My name is Josiah Mackenzie and my goal is to help you reconnect with why you work in this industry and get fired up to go out there, delight others and reach your goals. [01:23] S1 (Josiah Mackenzie): Let's get started. [01:30] S2 (Ben Rafter): Well, they are everybody so excited and talking about how it changes the consumers' purchasing mechanism, because that's the fun stuff. [01:37] S2 (Ben Rafter): But, but the value of AI is going to be almost entirely operational on the back end, r"
+        },
+        {
+          "rank": 2,
+          "score": 0.8128,
+          "person": "Ben Rafter",
+          "timestamp": "[02:03\u201302:58]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[02:03] S2 (Ben Rafter): And AI and some of our technology partners can can help solve that problem. [02:07] S2 (Ben Rafter): And if we can change scheduling, we can get an immediate quantifiable impact quantifiable impact for our owners. [02:15] S1 (Josiah Mackenzie): I wonder Ben if you can tell me a little bit more about that, because I, I mean, labor is often the single largest controllable cost for, for a hotel on an operating perspective. [02:22] S2 (Ben Rafter): And so you have that. [02:24] S2 (Ben Rafter): I've also had some people tell me in my conversations that as an industry, we kind of know that we we have that relatively well managed. [02:31] S2 (Ben Rafter): It sounds like you still see opportunity here to drive performance and I like how you're thinking granularly about th"
+        },
+        {
+          "rank": 3,
+          "score": 0.8032,
+          "person": "Ben Rafter",
+          "timestamp": "[07:14\u201308:21]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[07:14] S1 (Josiah Mackenzie): So that's a proposition that you're building and you're delivering these kind of above market returns through technology. [07:20] S1 (Josiah Mackenzie): And then you're also thinking both in the short and long term how your leaders on property can think like owners and act in that way. [07:27] S1 (Josiah Mackenzie): I I wonder if you could tell me a little bit about kind of the role that you see for technology or data in that, in helping the on-property leaders think like owners and act like owners. [07:37] S2 (Ben Rafter): Well, start starts with the technology serving up easier decisions for them, right? [07:41] S2 (Ben Rafter): Which we get back to, okay, how am I going to shift my team members today or tomorrow or the next day, right? [07:48] S2 (Ben Raft"
+        }
+      ]
+    },
+    {
+      "query": "What does Ben Rafter say frustrates consistency, service or labor at scale across hotels?",
+      "query_tokens": 18,
+      "query_cost_usd": 3.6e-06,
+      "latency_s": 0.31,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.8026,
+          "person": "Ben Rafter",
+          "timestamp": "[02:03\u201302:58]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[02:03] S2 (Ben Rafter): And AI and some of our technology partners can can help solve that problem. [02:07] S2 (Ben Rafter): And if we can change scheduling, we can get an immediate quantifiable impact quantifiable impact for our owners. [02:15] S1 (Josiah Mackenzie): I wonder Ben if you can tell me a little bit more about that, because I, I mean, labor is often the single largest controllable cost for, for a hotel on an operating perspective. [02:22] S2 (Ben Rafter): And so you have that. [02:24] S2 (Ben Rafter): I've also had some people tell me in my conversations that as an industry, we kind of know that we we have that relatively well managed. [02:31] S2 (Ben Rafter): It sounds like you still see opportunity here to drive performance and I like how you're thinking granularly about th"
+        },
+        {
+          "rank": 2,
+          "score": 0.7995,
+          "person": "Ben Rafter",
+          "timestamp": "[00:59\u201301:49]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people in hospitality. [01:14] S1 (Josiah Mackenzie): My name is Josiah Mackenzie and my goal is to help you reconnect with why you work in this industry and get fired up to go out there, delight others and reach your goals. [01:23] S1 (Josiah Mackenzie): Let's get started. [01:30] S2 (Ben Rafter): Well, they are everybody so excited and talking about how it changes the consumers' purchasing mechanism, because that's the fun stuff. [01:37] S2 (Ben Rafter): But, but the value of AI is going to be almost entirely operational on the back end, r"
+        },
+        {
+          "rank": 3,
+          "score": 0.7978,
+          "person": "Ben Rafter",
+          "timestamp": "[01:15\u201301:57]",
+          "episode": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitali",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+          "text": "[01:15] S1 (Josiah Mackenzie): Hospitality. [01:16] S1 (Josiah Mackenzie): Hospitality brings people together. [01:22] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people in hospitality. [01:29] S1 (Josiah Mackenzie): My name is Josiah McKenzie, and my goal is to help you reconnect with why you work in this industry and get fired up to go out there, delight others, and reach your goals. [01:39] S1 (Josiah Mackenzie): Let's get started. [01:46] S2 (Ben Rafter): For about 50 hotels, we're not a large company. [01:49] S2 (Ben Rafter): We over-invest and have a dedicated department just to try to make new things stick. [01:54] S1 (Josiah Mackenzie): A dedicated department? [01:55] S1 (Josiah Mackenzie): Wh"
+        }
+      ]
+    },
+    {
+      "query": "How does Hotel Equities choose, beta-test or evaluate vendors and new technology?",
+      "query_tokens": 17,
+      "query_cost_usd": 3.4e-06,
+      "latency_s": 0.34,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.791,
+          "person": "Ben Rafter",
+          "timestamp": "[01:59\u201302:56]",
+          "episode": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitali",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+          "text": "[01:59] S2 (Ben Rafter): But um we have a director of strategy and again I'm I'm a big believer in diverse backgrounds. [02:05] S2 (Ben Rafter): So this person was came from the investment banking industry and get classically trained a little bit differently. [02:13] S2 (Ben Rafter): We have Cornell trained people, we have economists, we have everybody and he leads this department that effectively does nothing but beta new not just technologies, but new opportunities. [02:25] S1 (Josiah Mackenzie): I would love for you to explain for our listeners why beta testing is important, because you might see a technology out there, it might look and sound good. [02:34] S1 (Josiah Mackenzie): What's important about beta testing? [02:36] S2 (Ben Rafter): Well, if the seller, the company is doing its "
+        },
+        {
+          "rank": 2,
+          "score": 0.773,
+          "person": "Ben Rafter",
+          "timestamp": "[02:59\u201303:50]",
+          "episode": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitali",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+          "text": "[02:59] S2 (Ben Rafter): Yeah, okay, great. [03:00] S2 (Ben Rafter): But the guest isn't going to go home and say, I'm glad I stayed at that particular hotel or resort. [03:06] S2 (Ben Rafter): I had had a better experience because that technology is is there, right? [03:09] S2 (Ben Rafter): So we beta almost everything. [03:12] S2 (Ben Rafter): We of course look at the return on ad spend. [03:13] S2 (Ben Rafter): There's great analytic packages out there that just don't pencil for 120 room independent hotel, right? [03:20] S2 (Ben Rafter): The other problem we have that and that I think is relatively new and interesting, and I'd be curious if you've seen this is we keep a starting down the path with a new vendor that's doing one thing and before we can even get the one thing implemented, "
+        },
+        {
+          "rank": 3,
+          "score": 0.73,
+          "person": "Ben Rafter",
+          "timestamp": "[06:35\u201307:14]",
+          "episode": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - B",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+          "text": "[06:35] S1 (Josiah Mackenzie): I wonder if we could talk a little bit about HE Labs. [06:37] S1 (Josiah Mackenzie): I think just to build on this framework that you've described, I can link in the show notes to Skift's coverage of some of how you've been thinking about this. [06:45] S1 (Josiah Mackenzie): And also on your website, I think you do a great job laying out the unique approach. [06:49] S1 (Josiah Mackenzie): But I'd love to to talk about this for a few moments because if you kind of do it the way everyone else is doing, you're going to get going to get the same results. [06:55] S1 (Josiah Mackenzie): It's not going to outperform the market. [06:57] S1 (Josiah Mackenzie): That's especially important in a market with some headwinds. [07:00] S1 (Josiah Mackenzie): Tell me a little "
+        }
+      ]
+    },
+    {
+      "query": "What does Ben Rafter say about guest-facing service, the front desk and guest interaction?",
+      "query_tokens": 19,
+      "query_cost_usd": 3.8e-06,
+      "latency_s": 0.52,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.7674,
+          "person": "Ben Rafter",
+          "timestamp": "[07:51\u201308:36]",
+          "episode": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitali",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+          "text": "[07:51] S2 (Ben Rafter): We're in mainly leisure markets. [07:53] S2 (Ben Rafter): So I'm not a big fan of just go check in at the Marriott or the Hilton box. [07:58] S2 (Ben Rafter): I get it in the business market, you may not want to talk to somebody, maybe 11:00 at night. [08:02] S2 (Ben Rafter): But in leisure markets, the person should be able to enhance and enrich your experience backed by technology if that makes any sense. [08:11] S2 (Ben Rafter): And if they're not if you go in and you just get service, perfectly nice person has your key and says thank you for staying Mr. [08:17] S2 (Ben Rafter): After or whatever. [08:19] S2 (Ben Rafter): That's a big failure on on the hotel, hotel yours part. [08:24] S1 (Josiah Mackenzie): I'm just thinking back to what you just mentioned a few"
+        },
+        {
+          "rank": 2,
+          "score": 0.7658,
+          "person": "Ben Rafter",
+          "timestamp": "[13:06\u201314:10]",
+          "episode": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitali",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+          "text": "[13:06] S1 (Josiah Mackenzie): Are you looking at sort of behind the scenes operational tech as an interesting area? [13:10] S2 (Ben Rafter): Yeah, it's not not very exciting, um, but well it's exciting to me, it's not very exciting to most people. [13:16] S2 (Ben Rafter): Uh, I would say two out of three maybe four out of five technologies we adopt the consumer probably or the the traveler probably never sees. [13:25] S2 (Ben Rafter): Some of that is is government mandated, we're having to make our team members more efficient. [13:31] S2 (Ben Rafter): Case in point in in West Hollywood, we have four hotels, a housekeeper only clean so many square feet a day. [13:37] S2 (Ben Rafter): So how do we maximize the efficiency because at the end of the day, we still report to an owner there and t"
+        },
+        {
+          "rank": 3,
+          "score": 0.763,
+          "person": "Ben Rafter",
+          "timestamp": "[00:59\u201301:49]",
+          "episode": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+          "source": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+          "text": "[00:59] S1 (Josiah Mackenzie): Hospitality. [01:00] S1 (Josiah Mackenzie): Hospitality brings people together. [01:06] S1 (Josiah Mackenzie): This is Hospitality Daily, the show that helps you stay informed and inspired each day by the most interesting people in hospitality. [01:14] S1 (Josiah Mackenzie): My name is Josiah Mackenzie and my goal is to help you reconnect with why you work in this industry and get fired up to go out there, delight others and reach your goals. [01:23] S1 (Josiah Mackenzie): Let's get started. [01:30] S2 (Ben Rafter): Well, they are everybody so excited and talking about how it changes the consumers' purchasing mechanism, because that's the fun stuff. [01:37] S2 (Ben Rafter): But, but the value of AI is going to be almost entirely operational on the back end, r"
+        }
+      ]
+    }
+  ]
+}

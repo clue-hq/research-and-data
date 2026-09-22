@@ -1,0 +1,25 @@
+=== rafter_tech_advice | Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality | 1176s ===
+  downloaded 14151349 bytes in 1.24s
+  files.start http=200 upload_url=YES
+  files.upload http=200 1.52s
+
+-- gemini-3.5-transcribe (faithful) --
+    retry 429 in 12s ({
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing deta)
+  gemini[h10_faithful_rafter_tech_advice] http=200 14.22s usage={"promptTokenCount": 29537, "totalTokenCount": 29537, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 115}, {"modality": "AUDIO", "tokenCount": 29422}], "serviceTier": "standard"} cost=$0.008838
+   chars=19299 words=3447 wpm=175.9
+
+-- gemini-3.5-flash-lite (timestamps + quotes) --
+  gemini[h10_timestamped_rafter_tech_advice] http=200 24.64s usage={"promptTokenCount": 29820, "candidatesTokenCount": 7410, "totalTokenCount": 37230, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 398}, {"modality": "AUDIO", "tokenCount": 29422}], "serviceTier": "standard"} cost=$0.01183
+   timestamped lines=179 unique=176 loop_starts_at=01:13
+
+   quote verification vs the faithful ASR:
+     [02:42] EXACT     uniq=False :: Beta testing distills whether or not it actually provides the value and we're very guest-focuse
+     [03:49] EXACT     uniq=False :: That's another reason why you beta things, right? Is can you get it to talk to all the other sy
+     [07:44] EXACT     uniq=False :: We're in mainly leisure markets. So I'm not a big fan of just go check in at the Marriott or th
+     [10:17] PARTIAL   uniq=False :: luxury is knowing what I want to do and then offering a real customized version of that, way mo
+     [12:04] EXACT     uniq=False :: trying to find technologies that make it so that instead of just providing service, you're prov
+
+H10[rafter_tech_advice] 54.6s cost=$0.020668 spend=0.2442

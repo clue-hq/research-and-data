@@ -1,0 +1,2899 @@
+[
+  {
+    "provider": "live_http",
+    "label": "probe_adp",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US&$top=2&$skip=0",
+    "http": 200,
+    "elapsed_s": 1.03,
+    "cost_usd": 0.0,
+    "bytes": 59138,
+    "ts": "2026-09-22T06:35:53Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "probe_detail",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/9200887749012_1?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US",
+    "http": 200,
+    "elapsed_s": 0.31,
+    "cost_usd": 0.0,
+    "bytes": 10480,
+    "ts": "2026-09-22T06:36:03Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "probe_detail",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/9200887749012_1?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US&$expand=a",
+    "http": 200,
+    "elapsed_s": 0.26,
+    "cost_usd": 0.0,
+    "bytes": 10480,
+    "ts": "2026-09-22T06:36:03Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h3_credit_before",
+    "op": "/v1/credit",
+    "http": 401,
+    "elapsed_s": 0.95,
+    "credits": 0.0,
+    "cost_usd": 0.0,
+    "request": null,
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:38:40Z",
+    "credits_reserved": 0.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200396175623_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 1.13,
+    "cost_usd": 0.0,
+    "bytes": 98537,
+    "ts": "2026-09-22T06:38:40Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_leadership",
+    "op": "auto",
+    "query": "Hotel Equities executive leadership team Atlanta Alpharetta CEO COO president chief officer 2025 2026",
+    "http": 200,
+    "elapsed_s": 1.26,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:40Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_merger",
+    "op": "auto",
+    "query": "Hotel Equities Springboard Hospitality merger 2025 Ben Rafter chief executive announcement",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:41Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 1.29,
+    "cost_usd": 0.0,
+    "bytes": 98369,
+    "ts": "2026-09-22T06:38:41Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_appointments_nov",
+    "op": "auto",
+    "query": "Hotel Equities November 2025 executive appointments division presidents full service focused service lifestyle",
+    "http": 200,
+    "elapsed_s": 1.09,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:42Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_50",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=50",
+    "http": 200,
+    "elapsed_s": 1.31,
+    "cost_usd": 0.0,
+    "bytes": 100392,
+    "ts": "2026-09-22T06:38:42Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_ops_leader",
+    "op": "auto",
+    "query": "\"Hotel Equities\" senior vice president operations OR \"vice president of operations\" OR \"guest experience\" leader appointed",
+    "http": 200,
+    "elapsed_s": 1.09,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:43Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200585439604_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200585439604_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 0.78,
+    "cost_usd": 0.0,
+    "bytes": 74453,
+    "ts": "2026-09-22T06:38:43Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200585441819_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200585441819_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 0.82,
+    "cost_usd": 0.0,
+    "bytes": 70056,
+    "ts": "2026-09-22T06:38:44Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_tech_leader",
+    "op": "auto",
+    "query": "\"Hotel Equities\" chief information officer OR \"vice president of technology\" OR \"information technology\" leader hotel systems",
+    "http": 200,
+    "elapsed_s": 1.47,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:45Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_commercial",
+    "op": "auto",
+    "query": "\"Hotel Equities\" chief commercial officer OR chief revenue officer OR senior vice president sales marketing appointed",
+    "http": 200,
+    "elapsed_s": 3.49,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:48Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_li_profiles",
+    "op": "auto",
+    "query": "site:linkedin.com/in Hotel Equities Atlanta operations technology executive",
+    "http": 200,
+    "elapsed_s": 1.75,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:50Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h3_companies_hotelequities",
+    "op": "/v1/companies",
+    "http": 200,
+    "elapsed_s": 0.97,
+    "credits": 0.1,
+    "cost_usd": 0.0,
+    "request": {
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:38:51Z",
+    "credits_reserved": 0.3,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "exa",
+    "label": "h4_search_rafter_voice",
+    "op": "auto",
+    "query": "Ben Rafter Hotel Equities OR Springboard Hospitality interview podcast technology hotels AI",
+    "http": 200,
+    "elapsed_s": 1.56,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:38:51Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_home",
+    "op": "GET https://hotelequities.com/",
+    "http": 0,
+    "elapsed_s": 20.02,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:38:59Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_team",
+    "op": "GET https://hotelequities.com/meet-our-team.htm",
+    "http": 0,
+    "elapsed_s": 20.0,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:39:19Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200396175623_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 1.01,
+    "cost_usd": 0.0,
+    "bytes": 98537,
+    "ts": "2026-09-22T06:39:21Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200396175623_2_19",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200396175623_2&locale=en_US&$top=50&$skip=19",
+    "http": 200,
+    "elapsed_s": 1.03,
+    "cost_usd": 0.0,
+    "bytes": 87854,
+    "ts": "2026-09-22T06:39:22Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 1.21,
+    "cost_usd": 0.0,
+    "bytes": 98369,
+    "ts": "2026-09-22T06:39:23Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_19",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=19",
+    "http": 200,
+    "elapsed_s": 1.14,
+    "cost_usd": 0.0,
+    "bytes": 100322,
+    "ts": "2026-09-22T06:39:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_39",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=39",
+    "http": 200,
+    "elapsed_s": 1.28,
+    "cost_usd": 0.0,
+    "bytes": 100324,
+    "ts": "2026-09-22T06:39:25Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_59",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=59",
+    "http": 200,
+    "elapsed_s": 1.39,
+    "cost_usd": 0.0,
+    "bytes": 100658,
+    "ts": "2026-09-22T06:39:27Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200402480447_2_79",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200402480447_2&locale=en_US&$top=50&$skip=79",
+    "http": 200,
+    "elapsed_s": 1.33,
+    "cost_usd": 0.0,
+    "bytes": 98421,
+    "ts": "2026-09-22T06:39:28Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200585439604_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200585439604_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 0.93,
+    "cost_usd": 0.0,
+    "bytes": 74453,
+    "ts": "2026-09-22T06:39:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "adp_9200585441819_2_0",
+    "op": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions?cid=30fbf914-a807-419c-b19e-409fa2c6a5f6&ccId=9200585441819_2&locale=en_US&$top=50&$skip=0",
+    "http": 200,
+    "elapsed_s": 0.85,
+    "cost_usd": 0.0,
+    "bytes": 70056,
+    "ts": "2026-09-22T06:39:30Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h5_deep_hotelequities",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Hotel Equities (hotelequities.com),\norganised under EXACTLY these numbered headings:\n\n1. WHAT THEY ACTUALLY MANAGE. The portfolio: how many hotels/resorts/outdoor destinations, how\n   many rooms/keys, broken down as precisely as the sources allow by division (Full Service,\n   Focused Service, Lifestyle), by brand family (Marriott, Hilton, IHG, Choic",
+    "http": 200,
+    "elapsed_s": 52.76,
+    "cost_usd": 0.03,
+    "cost_breakdown": {
+      "total": 0.03
+    },
+    "n_results": 25,
+    "ts": "2026-09-22T06:39:31Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_careers",
+    "op": "GET https://hotelequities.com/careers",
+    "http": 0,
+    "elapsed_s": 20.0,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:39:39Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_blog",
+    "op": "GET https://hotelequities.com/blog/",
+    "http": 0,
+    "elapsed_s": 20.0,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:39:59Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_about",
+    "op": "GET https://hotelequities.com/about-us.htm",
+    "http": 0,
+    "elapsed_s": 20.01,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:40:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h6_committee_pages",
+    "op": "contents/preferred",
+    "http": 200,
+    "elapsed_s": 10.16,
+    "cost_usd": 0.012,
+    "cost_breakdown": {
+      "total": 0.012,
+      "contents": {
+        "text": 0.012
+      }
+    },
+    "n_requested": 12,
+    "n_results": 12,
+    "statuses": [
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-strengthens-leadership-team-with-key-executive-appointments-across-new-divisions/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-announces-key-leadership-appointments-after-strategic-merger-with-springboard-hospitality/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-announces-key-executive-appointments-across-operations--finance--and-marketing-teams/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-appoints-brian-jenkins-to-lead-he-labs--the-management-companys-new-innovation-division/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/meet-our-team.htm",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-and-springboard-hospitality-announce-strategic-merger/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hospitalitynet.org/appointment/79030411.html",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.hospitalitynet.org/appointment/79032251/brian-jenkins",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.hoteldive.com/news/hotel-equities-multiple-executive-changes/805275/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.costar.com/article/1415665623/us-hotel-hires-promotions-hotel-equities-promotes-two-executives-to-division-presidents",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.linkedin.com/posts/hotel-equities_hotelequities-hospitalitytechnology-hotelmanagement-activity-7471283773595238400-nH7w",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://people.equilar.com/bio/person/stephen-hahn-hotel-equities/41982685",
+        "status": "success",
+        "source": "crawled"
+      }
+    ],
+    "ts": "2026-09-22T06:40:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h2_direct_portfolio",
+    "op": "GET https://hotelequities.com/our-hotels.htm",
+    "http": 0,
+    "elapsed_s": 20.0,
+    "cost_usd": 0.0,
+    "bytes": 55,
+    "ts": "2026-09-22T06:40:39Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h2_exa_fallback",
+    "op": "contents/preferred",
+    "http": 200,
+    "elapsed_s": 1.81,
+    "cost_usd": 0.004,
+    "cost_breakdown": {
+      "total": 0.004,
+      "contents": {
+        "text": 0.004
+      }
+    },
+    "n_requested": 6,
+    "n_results": 4,
+    "statuses": [
+      {
+        "id": "https://hotelequities.com/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://hotelequities.com/meet-our-team.htm",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://hotelequities.com/careers",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://hotelequities.com/blog/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://hotelequities.com/about-us.htm",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      },
+      {
+        "id": "https://hotelequities.com/our-hotels.htm",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      }
+    ],
+    "ts": "2026-09-22T06:40:41Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_ai_payoff",
+    "op": "GET https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+    "http": 200,
+    "elapsed_s": 0.6,
+    "cost_usd": 0.0,
+    "bytes": 56176,
+    "ts": "2026-09-22T06:41:23Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_it_seat",
+    "op": "auto",
+    "query": "\"Hotel Equities\" \"Stephen Hahn\" vice president information technology hotel management magazine",
+    "http": 200,
+    "elapsed_s": 1.2,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_tech_ceo",
+    "op": "GET https://podcast.hospitalitydaily.com/ben-rafter/",
+    "http": 200,
+    "elapsed_s": 0.67,
+    "cost_usd": 0.0,
+    "bytes": 55685,
+    "ts": "2026-09-22T06:41:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_ai_labor",
+    "op": "GET https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+    "http": 200,
+    "elapsed_s": 0.41,
+    "cost_usd": 0.0,
+    "bytes": 55825,
+    "ts": "2026-09-22T06:41:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_tech",
+    "op": "GET https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+    "http": 200,
+    "elapsed_s": 0.46,
+    "cost_usd": 0.0,
+    "bytes": 72881,
+    "ts": "2026-09-22T06:41:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_owner_econ",
+    "op": "GET https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "cost_usd": 0.0,
+    "bytes": 57875,
+    "ts": "2026-09-22T06:41:25Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_pms_stack",
+    "op": "auto",
+    "query": "\"Hotel Equities\" property management system PMS Opera OR FOSSE OR OnQ OR Lightspeed OR choiceADVANTAGE hotel technology",
+    "http": 200,
+    "elapsed_s": 1.85,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:25Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_no_vacancy",
+    "op": "GET https://novacancynews.com/springboards-ben-rafter-on-building-smarter-faster-and-more-human-hotels/",
+    "http": 200,
+    "elapsed_s": 1.96,
+    "cost_usd": 0.0,
+    "bytes": 184372,
+    "ts": "2026-09-22T06:41:27Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_guest_messaging",
+    "op": "auto",
+    "query": "\"Hotel Equities\" guest messaging texting Canary OR Kipsu OR Akia OR Quore OR Actabl OR Medallia OR Revinate technology partner",
+    "http": 200,
+    "elapsed_s": 1.94,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:27Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_page_rafter_tmg",
+    "op": "GET https://www.travelmediagroup.com/190-tmg-hospitality-trailblazers-ben-rafter/",
+    "http": 200,
+    "elapsed_s": 1.14,
+    "cost_usd": 0.0,
+    "bytes": 260683,
+    "ts": "2026-09-22T06:41:28Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_rss_hospitality-daily",
+    "op": "GET https://feeds.transistor.fm/hospitality-daily",
+    "http": 404,
+    "elapsed_s": 0.43,
+    "cost_usd": 0.0,
+    "bytes": 10,
+    "ts": "2026-09-22T06:41:28Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_he_labs",
+    "op": "auto",
+    "query": "\"HE Labs\" Hotel Equities innovation incubation division Brian Jenkins AI workflows technology",
+    "http": 200,
+    "elapsed_s": 1.49,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_rss_rss",
+    "op": "GET https://podcast.hospitalitydaily.com/rss",
+    "http": 404,
+    "elapsed_s": 0.54,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-22T06:41:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8_rss_hospitality-daily.rs",
+    "op": "GET https://feeds.buzzsprout.com/hospitality-daily.rss",
+    "http": 404,
+    "elapsed_s": 0.4,
+    "cost_usd": 0.0,
+    "bytes": 2877,
+    "ts": "2026-09-22T06:41:29Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_itr_marriott",
+    "op": "auto",
+    "query": "\"Hotel Equities\" Marriott \"intent to recommend\" number one franchise management company ranking",
+    "http": 200,
+    "elapsed_s": 1.55,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:30Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_sls_pipeline",
+    "op": "auto",
+    "query": "\"Hotel Equities\" SLS Punta del Este operator 2029 OR new openings pipeline 2026 management contract",
+    "http": 200,
+    "elapsed_s": 1.48,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:32Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_labor",
+    "op": "auto",
+    "query": "\"Hotel Equities\" front desk staffing labor shortage turnover hiring guest services hourly associates",
+    "http": 200,
+    "elapsed_s": 1.59,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:33Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_negatives",
+    "op": "auto",
+    "query": "\"Hotel Equities\" lawsuit OR settlement OR WARN notice OR layoffs OR receiver OR foreclosure OR dispute owner hotel",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:34Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_al_smith_voice",
+    "op": "auto",
+    "query": "Albert Smith OR \"Al Smith\" Hotel Equities chief operating officer simplicity consistent luxury service at scale blog",
+    "http": 200,
+    "elapsed_s": 1.04,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:35Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h7_rafter_writing",
+    "op": "auto",
+    "query": "Ben Rafter Hotel Executive article future of hotel management OR Skift technologies owner margins Hotel Equities",
+    "http": 200,
+    "elapsed_s": 1.06,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-22T06:41:37Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_ben_rafter",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.55,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Ben Rafter",
+                "Benjamin Rafter"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:43:10Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "live_http",
+    "label": "h8b_buzzsprout_rss",
+    "op": "GET https://feeds.buzzsprout.com/2103299.rss",
+    "http": 200,
+    "elapsed_s": 0.47,
+    "cost_usd": 0.0,
+    "bytes": 8484119,
+    "ts": "2026-09-22T06:43:13Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_al_smith",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.5,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Albert Smith",
+                "Al Smith"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:43:21Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_brian_jenkins",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.51,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Brian Jenkins"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:43:32Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_stephen_hahn",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.52,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Stephen Hahn",
+                "Steve Hahn"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:43:43Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_david_rosenberg",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.73,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "David Rosenberg"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:43:55Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_people_bill_stachler",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.8,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Bill Stachler",
+                "William Stachler"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "hotelequities.com"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-22T06:44:06Z",
+    "credits_reserved": 1.5,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_email_ben-rafter-623a702",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 1.02,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/ben-rafter-623a702"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:44:17Z",
+    "credits_reserved": 1.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_email_albert-smith-3aa9318",
+    "op": "/v1/people/export/single",
+    "http": 404,
+    "elapsed_s": 0.72,
+    "credits": 0.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/albert-smith-3aa9318"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:44:29Z",
+    "credits_reserved": 1.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "live_http",
+    "label": "h10_mp3_download_rafter_ai_labor",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 0.91,
+    "cost_usd": 0.0,
+    "bytes": 7707021,
+    "ts": "2026-09-22T06:44:39Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h10_mp3_download_rafter_ai_payoff",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 1.05,
+    "cost_usd": 0.0,
+    "bytes": 8230557,
+    "ts": "2026-09-22T06:44:39Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_email_brianjenkins01",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/brianjenkins01"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:44:40Z",
+    "credits_reserved": 1.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_files_upload_rafter_ai_payoff",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 1.68,
+    "cost_usd": 0.0,
+    "bytes": 8230557,
+    "note": "Files API upload is free",
+    "ts": "2026-09-22T06:44:41Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_files_upload_rafter_ai_labor",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 1.7,
+    "cost_usd": 0.0,
+    "bytes": 7707021,
+    "note": "Files API upload is free",
+    "ts": "2026-09-22T06:44:41Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_faithful_rafter_ai_labor",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 8.82,
+    "usage": {
+      "promptTokenCount": 16131,
+      "totalTokenCount": 16131,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 16016
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 115
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.004816,
+    "audio_seconds": 640,
+    "ts": "2026-09-22T06:44:51Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9_email_stephen-hahn-41028112",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 0.92,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/stephen-hahn-41028112"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:44:52Z",
+    "credits_reserved": 1.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_faithful_rafter_ai_payoff",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 10.48,
+    "usage": {
+      "promptTokenCount": 17223,
+      "totalTokenCount": 17223,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 117
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17106
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.005143,
+    "audio_seconds": 684,
+    "ts": "2026-09-22T06:44:52Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_timestamped_rafter_ai_payoff",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 11.71,
+    "usage": {
+      "promptTokenCount": 17506,
+      "candidatesTokenCount": 3224,
+      "totalTokenCount": 20730,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17106
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 400
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.006461,
+    "audio_seconds": 684,
+    "ts": "2026-09-22T06:45:04Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_timestamped_rafter_ai_labor",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 13.78,
+    "usage": {
+      "promptTokenCount": 16414,
+      "candidatesTokenCount": 4440,
+      "totalTokenCount": 20854,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 16016
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 398
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.006621,
+    "audio_seconds": 640,
+    "ts": "2026-09-22T06:45:04Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h10_mp3_download_rafter_owner_economics",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 0.95,
+    "cost_usd": 0.0,
+    "bytes": 8213324,
+    "ts": "2026-09-22T06:45:38Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h10_mp3_download_rafter_tech_advice",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 1.24,
+    "cost_usd": 0.0,
+    "bytes": 14151349,
+    "ts": "2026-09-22T06:45:38Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "h10_mp3_download_rafter_tech_ceo",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 2.72,
+    "cost_usd": 0.0,
+    "bytes": 11525425,
+    "ts": "2026-09-22T06:45:40Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_files_upload_rafter_owner_economics",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 1.22,
+    "cost_usd": 0.0,
+    "bytes": 8213324,
+    "note": "Files API upload is free",
+    "ts": "2026-09-22T06:45:40Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_files_upload_rafter_tech_advice",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 1.52,
+    "cost_usd": 0.0,
+    "bytes": 14151349,
+    "note": "Files API upload is free",
+    "ts": "2026-09-22T06:45:40Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_files_upload_rafter_tech_ceo",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 1.33,
+    "cost_usd": 0.0,
+    "bytes": 11525425,
+    "note": "Files API upload is free",
+    "ts": "2026-09-22T06:45:42Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_faithful_rafter_tech_ceo",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 12.33,
+    "usage": {
+      "promptTokenCount": 24068,
+      "totalTokenCount": 24068,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 114
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 23954
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.007198,
+    "audio_seconds": 958,
+    "ts": "2026-09-22T06:45:54Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_faithful_rafter_owner_economics",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 8.66,
+    "usage": {
+      "promptTokenCount": 17190,
+      "totalTokenCount": 17190,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 120
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17070
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.005133,
+    "audio_seconds": 682,
+    "ts": "2026-09-22T06:46:01Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_faithful_rafter_tech_advice",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 14.22,
+    "usage": {
+      "promptTokenCount": 29537,
+      "totalTokenCount": 29537,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 115
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 29422
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.008838,
+    "audio_seconds": 1176,
+    "ts": "2026-09-22T06:46:07Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_timestamped_rafter_tech_ceo",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 17.54,
+    "usage": {
+      "promptTokenCount": 24351,
+      "candidatesTokenCount": 4997,
+      "totalTokenCount": 29348,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 23954
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 397
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.009225,
+    "audio_seconds": 958,
+    "ts": "2026-09-22T06:46:12Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_timestamped_rafter_owner_economics",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 14.45,
+    "usage": {
+      "promptTokenCount": 17473,
+      "candidatesTokenCount": 4446,
+      "totalTokenCount": 21919,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17070
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 403
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.00694,
+    "audio_seconds": 682,
+    "ts": "2026-09-22T06:46:15Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "h9b_email_david-rosenberg-4a244312",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 5.61,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/david-rosenberg-4a244312"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-22T06:46:22Z",
+    "credits_reserved": 1.0,
+    "credits_note": "actual billed credits: 0.1/company returned, 0.5/profile returned, 1.0/email found, 0 on a non-200 or not-found"
+  },
+  {
+    "provider": "gemini",
+    "label": "h10_timestamped_rafter_tech_advice",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 24.64,
+    "usage": {
+      "promptTokenCount": 29820,
+      "candidatesTokenCount": 7410,
+      "totalTokenCount": 37230,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 398
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 29422
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.01183,
+    "audio_seconds": 1176,
+    "ts": "2026-09-22T06:46:32Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h11_person_ben_rafter",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown dossier on Ben Rafter (Benjamin Rafter), Chief Executive Officer, Hotel Equities, under EXACTLY these\nnumbered headings. Use \"not found\" liberally and honestly.\n\nKnown long-form appearances to read first: the Hospitality Daily podcast episodes with Josiah Mackenzie (podcast.hospitalitydaily.com/ben-rafter/, /ben-rafter-tech/, /ben-rafter-ai-labor/, /ben-rafter-ai-hotel-per",
+    "http": 200,
+    "elapsed_s": 31.66,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "ts": "2026-09-22T06:48:04Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h11_person_brian_jenkins",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown dossier on Brian Jenkins, Head of HE Labs | EVP of Strategy, Hotel Equities, under EXACTLY these\nnumbered headings. Use \"not found\" liberally and honestly.\n\nRead the Hotel Equities announcement of his appointment to lead HE Labs and the Hospitality Net appointment notice 79032251. Find anything he has said or written about how he evaluates technology, what makes a pilot su",
+    "http": 200,
+    "elapsed_s": 29.31,
+    "cost_usd": 0.02,
+    "cost_breakdown": {
+      "total": 0.02
+    },
+    "n_results": 15,
+    "ts": "2026-09-22T06:48:04Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h11_person_al_smith",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown dossier on Albert 'Al' Smith, Chief Operating Officer, Hotel Equities, under EXACTLY these\nnumbered headings. Use \"not found\" liberally and honestly.\n\nHotel Equities has published a blog post attributed to him about simplicity driving consistent luxury service at scale \u2014 find it and quote it at length. Also find his July 2025 appointment coverage (Hospitality Net appointme",
+    "http": 200,
+    "elapsed_s": 34.6,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "ts": "2026-09-22T06:48:08Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h11_person_stephen_hahn",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown dossier on Stephen Hahn, Vice President of Information Technology, Hotel Equities, under EXACTLY these\nnumbered headings. Use \"not found\" liberally and honestly.\n\nFind the HOTEL MANAGEMENT Magazine feature and quote it at length \u2014 it is the single most valuable source for this person. Also look for any 'Tech Titan' or similar hospitality-technology recognition, conference ",
+    "http": 200,
+    "elapsed_s": 32.33,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "ts": "2026-09-22T06:48:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h11_person_david_rosenberg",
+    "op": "deep-reasoning",
+    "query": "Produce a cited markdown dossier on David Rosenberg, President, Focused Service Division, Hotel Equities, under EXACTLY these\nnumbered headings. Use \"not found\" liberally and honestly.\n\nRead the 10 November 2025 Hotel Equities appointments release and the CoStar and Hotel Dive coverage of it.\n\n1. IDENTITY AND CAREER, WITH DATES. Every role with employer, exact title and start/end dates,\n   newest ",
+    "http": 200,
+    "elapsed_s": 34.97,
+    "cost_usd": 0.027,
+    "cost_breakdown": {
+      "total": 0.027
+    },
+    "n_results": 22,
+    "ts": "2026-09-22T06:48:13Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.46,
+    "usage": {
+      "promptTokenCount": 802,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 802
+        }
+      ]
+    },
+    "cost_usd": 0.0001604,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:19Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.48,
+    "usage": {
+      "promptTokenCount": 1999,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 1999
+        }
+      ]
+    },
+    "cost_usd": 0.0003998,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:19Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 340,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 340
+        }
+      ]
+    },
+    "cost_usd": 6.8e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:20Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.54,
+    "usage": {
+      "promptTokenCount": 333,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 333
+        }
+      ]
+    },
+    "cost_usd": 6.66e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:20Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 370,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 370
+        }
+      ]
+    },
+    "cost_usd": 7.4e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:21Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.41,
+    "usage": {
+      "promptTokenCount": 383,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 383
+        }
+      ]
+    },
+    "cost_usd": 7.66e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:21Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 447,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 447
+        }
+      ]
+    },
+    "cost_usd": 8.94e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:21Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 430,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 430
+        }
+      ]
+    },
+    "cost_usd": 8.6e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:22Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "usage": {
+      "promptTokenCount": 373,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 373
+        }
+      ]
+    },
+    "cost_usd": 7.46e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:22Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.37,
+    "usage": {
+      "promptTokenCount": 424,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 424
+        }
+      ]
+    },
+    "cost_usd": 8.48e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:22Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.44,
+    "usage": {
+      "promptTokenCount": 324,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 324
+        }
+      ]
+    },
+    "cost_usd": 6.48e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:23Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.48,
+    "usage": {
+      "promptTokenCount": 358,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 358
+        }
+      ]
+    },
+    "cost_usd": 7.16e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:23Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 449,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 449
+        }
+      ]
+    },
+    "cost_usd": 8.98e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:24Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.31,
+    "usage": {
+      "promptTokenCount": 283,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 283
+        }
+      ]
+    },
+    "cost_usd": 5.66e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:24Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 535,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 535
+        }
+      ]
+    },
+    "cost_usd": 0.000107,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:24Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "usage": {
+      "promptTokenCount": 399,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 399
+        }
+      ]
+    },
+    "cost_usd": 7.98e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:25Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.56,
+    "usage": {
+      "promptTokenCount": 336,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 336
+        }
+      ]
+    },
+    "cost_usd": 6.72e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:25Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.5,
+    "usage": {
+      "promptTokenCount": 356,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 356
+        }
+      ]
+    },
+    "cost_usd": 7.12e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:26Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 366,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 366
+        }
+      ]
+    },
+    "cost_usd": 7.32e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:26Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.63,
+    "usage": {
+      "promptTokenCount": 474,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 474
+        }
+      ]
+    },
+    "cost_usd": 9.48e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:27Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 373,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 373
+        }
+      ]
+    },
+    "cost_usd": 7.46e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:27Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 346,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 346
+        }
+      ]
+    },
+    "cost_usd": 6.92e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:27Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 379,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 379
+        }
+      ]
+    },
+    "cost_usd": 7.58e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:28Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 273,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 273
+        }
+      ]
+    },
+    "cost_usd": 5.46e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:28Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 359,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 359
+        }
+      ]
+    },
+    "cost_usd": 7.18e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:28Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.54,
+    "usage": {
+      "promptTokenCount": 353,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 353
+        }
+      ]
+    },
+    "cost_usd": 7.06e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:29Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "usage": {
+      "promptTokenCount": 349,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 349
+        }
+      ]
+    },
+    "cost_usd": 6.98e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:29Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.54,
+    "usage": {
+      "promptTokenCount": 329,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 329
+        }
+      ]
+    },
+    "cost_usd": 6.58e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:30Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 325,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 325
+        }
+      ]
+    },
+    "cost_usd": 6.5e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:30Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.31,
+    "usage": {
+      "promptTokenCount": 391,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 391
+        }
+      ]
+    },
+    "cost_usd": 7.82e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 363,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 363
+        }
+      ]
+    },
+    "cost_usd": 7.26e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 365,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 365
+        }
+      ]
+    },
+    "cost_usd": 7.3e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.42,
+    "usage": {
+      "promptTokenCount": 561,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 561
+        }
+      ]
+    },
+    "cost_usd": 0.0001122,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.29,
+    "usage": {
+      "promptTokenCount": 464,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 464
+        }
+      ]
+    },
+    "cost_usd": 9.28e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.31,
+    "usage": {
+      "promptTokenCount": 395,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 395
+        }
+      ]
+    },
+    "cost_usd": 7.9e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 393,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 393
+        }
+      ]
+    },
+    "cost_usd": 7.86e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:33Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 397,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 397
+        }
+      ]
+    },
+    "cost_usd": 7.94e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:33Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 434,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 434
+        }
+      ]
+    },
+    "cost_usd": 8.68e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:33Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 381,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 381
+        }
+      ]
+    },
+    "cost_usd": 7.62e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 223,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 223
+        }
+      ]
+    },
+    "cost_usd": 4.46e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 920,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 920
+        }
+      ]
+    },
+    "cost_usd": 0.000184,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 1015,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 1015
+        }
+      ]
+    },
+    "cost_usd": 0.000203,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:35Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 801,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 801
+        }
+      ]
+    },
+    "cost_usd": 0.0001602,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:35Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "usage": {
+      "promptTokenCount": 849,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 849
+        }
+      ]
+    },
+    "cost_usd": 0.0001698,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:36Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "usage": {
+      "promptTokenCount": 784,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 784
+        }
+      ]
+    },
+    "cost_usd": 0.0001568,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:36Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 62,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 62
+        }
+      ]
+    },
+    "cost_usd": 1.24e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-22T06:49:36Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.5,
+    "usage": {
+      "promptTokenCount": 14,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 14
+        }
+      ]
+    },
+    "cost_usd": 2.8e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-22T06:49:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "usage": {
+      "promptTokenCount": 18,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 18
+        }
+      ]
+    },
+    "cost_usd": 3.6e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-22T06:49:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 17,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 17
+        }
+      ]
+    },
+    "cost_usd": 3.4e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-22T06:49:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "h13_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.51,
+    "usage": {
+      "promptTokenCount": 19,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 19
+        }
+      ]
+    },
+    "cost_usd": 3.8e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-22T06:49:38Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h14_key_pages",
+    "op": "contents/preferred",
+    "http": 200,
+    "elapsed_s": 2.26,
+    "cost_usd": 0.011,
+    "cost_breakdown": {
+      "total": 0.011,
+      "contents": {
+        "text": 0.011
+      }
+    },
+    "n_requested": 12,
+    "n_results": 11,
+    "statuses": [
+      {
+        "id": "https://www.hotelequities.com/he-labs.htm",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-ceo-talks-he-labs--our-new-innovation-and-incubation-division/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/al-smith-discusses-how-simplicity-drives-consistent-luxury-service-at-scale/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/files/6564/Hotel_Equities_Names_Al_Smith_as_President.pdf",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://hotelmanagement.mydigitalpublication.com/june-july-2026/page-13",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelinvestmenttoday.com/Deals/Management/Hotel-Equities-new-CEO-charts-path",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.travelmediagroup.com/190-tmg-hospitality-trailblazers-ben-rafter/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://novacancynews.com/springboards-ben-rafter-on-building-smarter-faster-and-more-human-hotels/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-ceo-ben-rafter-joins-american-hotel-and-lodging-associations-board-of-directors/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.springboardhospitality.com/team/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/our-hotels.htm",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-selected-to-operate-postcard-cabins/",
+        "status": "success",
+        "source": "crawled"
+      }
+    ],
+    "ts": "2026-09-22T06:50:22Z"
+  },
+  {
+    "provider": "exa",
+    "label": "h14b_itr_pages",
+    "op": "contents/preferred",
+    "http": 200,
+    "elapsed_s": 1.34,
+    "cost_usd": 0.003,
+    "cost_breakdown": {
+      "total": 0.003,
+      "contents": {
+        "text": 0.003
+      }
+    },
+    "n_requested": 3,
+    "n_results": 3,
+    "statuses": [
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-earns-fourth-consecutive-1-ranking-as-marriotts-top-performing-franchise-management-company-based-on-intent-to-recommend-itr-scores/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/blog/hotel-equities-new-ceo-charts-path/",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.hotelequities.com/files/6564/Hotel_Equities_Announces_Three_Key_Promotions_to_Executive_Leadership_Team.pdf",
+        "status": "success",
+        "source": "crawled"
+      }
+    ],
+    "ts": "2026-09-22T06:51:14Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_brian_jenkins",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 54.76,
+    "usage": {
+      "prompt_tokens": 9305,
+      "completion_tokens": 6376,
+      "total_tokens": 15681,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01507825,
+        "upstream_inference_prompt_cost": 0.00232625,
+        "upstream_inference_completions_cost": 0.012752
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01507825,
+    "ts": "2026-09-22T06:53:19Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_account",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 61.79,
+    "usage": {
+      "prompt_tokens": 18337,
+      "completion_tokens": 7102,
+      "total_tokens": 25439,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01878825,
+        "upstream_inference_prompt_cost": 0.00458425,
+        "upstream_inference_completions_cost": 0.014204
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01878825,
+    "ts": "2026-09-22T06:53:23Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_david_rosenberg",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 57.56,
+    "usage": {
+      "prompt_tokens": 7978,
+      "completion_tokens": 6849,
+      "total_tokens": 14827,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0156925,
+        "upstream_inference_prompt_cost": 0.0019945,
+        "upstream_inference_completions_cost": 0.013698
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0156925,
+    "ts": "2026-09-22T06:53:24Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_stephen_hahn",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 58.76,
+    "usage": {
+      "prompt_tokens": 7931,
+      "completion_tokens": 6920,
+      "total_tokens": 14851,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01582275,
+        "upstream_inference_prompt_cost": 0.00198275,
+        "upstream_inference_completions_cost": 0.01384
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01582275,
+    "ts": "2026-09-22T06:53:24Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_ben_rafter",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 62.84,
+    "usage": {
+      "prompt_tokens": 14327,
+      "completion_tokens": 7009,
+      "total_tokens": 21336,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01759975,
+        "upstream_inference_prompt_cost": 0.00358175,
+        "upstream_inference_completions_cost": 0.014018
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01759975,
+    "ts": "2026-09-22T06:53:25Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "h15_structure_al_smith",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 73.47,
+    "usage": {
+      "prompt_tokens": 8409,
+      "completion_tokens": 7731,
+      "total_tokens": 16140,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.01756425,
+        "upstream_inference_prompt_cost": 0.00210225,
+        "upstream_inference_completions_cost": 0.015462
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.01756425,
+    "ts": "2026-09-22T06:53:37Z"
+  }
+]

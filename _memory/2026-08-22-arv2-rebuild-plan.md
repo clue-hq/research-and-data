@@ -436,3 +436,23 @@ Direct HTTP GETs to hotelequities.com intermittently hang (2-min stall) → Exa 
 AI Ark credits recorded so far across runs: 44.1 (smoke 32.5 + Zafran 11.6; person-depth unmetered).
 Priority rubric re-keyed to Conduit's fit (front-desk/guest-services/night-audit hiring, PMS/OPERA,
 messaging-tool gaps, merger timing, exec quotes on technology/guest experience/labor).
+
+### 2026-09-22 close-out — Conduit → Hotel Equities run DONE (agent-executed, verified)
+Result: 6-person committee web-confirmed then AI-Ark-enriched (Rafter CEO/sponsor, Jenkins Head of
+HE Labs/champion, Hahn VP IT/evaluator, Al Smith COO/buyer — export 404, Rosenberg President Focused
+Service, Stachler SVP Revenue — not requested); 4 SMTP-VALID emails (pattern NOT uniform: first.last@
+for the CEO, finitial+last@ for the rest); 350 claims (135 P1, 38 outreach_safe:false); 5 Rafter
+podcast episodes (69 min) transcribed two-model, 25/25 quotes verbatim-verified; retrieval demo over
+46 chunks. Cost $0.4911 cash + 7.1 AI Ark credits; 19m30s live research, 33m34s incl. authoring.
+Headline finds: Marriott's Aug-2026 ITR incentive (rebates up to 50 bps of gross room revenue, from
+Marriott's own P&L) + HE is #1 ITR FMC for the 4th time; 19/145 open reqs are guest services/front
+desk/night audit (one weekend-only night-audit shift; oldest 45 days); HE Labs innovation division
+with four published buying gates, led by Jenkins since 29 May 2026; CEO on a podcast names Hotel
+Effectiveness/ProfitSword and describes the proactive-GM-alert product he wishes existed; VP IT's
+disqualifier "If it creates unnecessary complexity, we move on." Honest gaps: PMS unknown (OPERA NOT
+FOUND — offer, never assert); no guest-messaging vendor evidenced. Wire lessons: ADP feed honours
+`$skip` but ignores `$top` (advance by returned page length); AI Ark's own LinkedIn URL can 404 on
+its export endpoint (budget one extra); structuring (6 × gpt-5-mini, 55–74s each) was the slowest
+phase, slower than media + deep research combined → next optimisation target. Deliverables:
+ONE-ACCOUNT-REPORT.md, HOTEL-EQUITIES-PAGES.md (Insights · Overview · Jenkins/Hahn/Rafter contact
+pages · link register), claims_hotelequities.json, transcripts/, raw/ (53 MB), h1–h19 scripts.

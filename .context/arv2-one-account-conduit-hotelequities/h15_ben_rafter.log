@@ -1,0 +1,4 @@
+  bundle chars: 55435
+  openrouter[h15_structure_ben_rafter] http=200 62.84s usage={"prompt_tokens": 14327, "completion_tokens": 7009, "total_tokens": 21336, "cost": 0, "is_byok": true, "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "audio_tokens": 0, "video_
+  claims=31 proposed=6 negatives=4 | spans verbatim 29 / failed 8
+H15[ben_rafter] 62.9s spend=0.4735

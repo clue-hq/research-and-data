@@ -1,0 +1,801 @@
+{
+  "run": {
+    "client": "Conduit (conduit.ai)",
+    "account": "Hotel Equities (hotelequities.com)",
+    "date": "2026-09-22",
+    "run_started_utc": "2026-09-22T06:34:07Z",
+    "total_wall_clock_seconds": 2014,
+    "total_wall_clock_hms": "0h 33m 34s",
+    "sum_of_phase_seconds": 1087.9,
+    "parallelism_factor": 0.93,
+    "total_cash_usd": 0.4911,
+    "cash_ceiling_usd": 3.5,
+    "cash_ceiling_used_pct": 14.0,
+    "ai_ark_credits_actual": 7.1,
+    "credit_ceiling": 20.0,
+    "credit_ceiling_used_pct": 35.5,
+    "media_seconds": 4140,
+    "media_ceiling_used_pct": 46.0,
+    "total_calls": 151,
+    "apollo_calls": 0,
+    "firecrawl_calls": 0,
+    "ceilings_hit": [],
+    "claims": 350,
+    "last_provider_call_utc": "2026-09-22T06:53:37Z",
+    "research_wall_clock_seconds": 1170,
+    "research_wall_clock_hms": "0h 19m 30s"
+  },
+  "per_provider": {
+    "live_http": {
+      "calls": 39,
+      "cash": 0.0,
+      "credits": 0.0,
+      "seconds": 151.5,
+      "non_200": 3,
+      "labels": [],
+      "avg_latency_s": 3.88
+    },
+    "ai_ark": {
+      "calls": 13,
+      "cash": 0.0,
+      "credits": 7.1,
+      "seconds": 14.7,
+      "non_200": 2,
+      "labels": [],
+      "avg_latency_s": 1.13
+    },
+    "exa": {
+      "calls": 28,
+      "cash": 0.314,
+      "credits": 0.0,
+      "seconds": 258.0,
+      "non_200": 0,
+      "labels": [],
+      "avg_latency_s": 9.21
+    },
+    "gemini": {
+      "calls": 65,
+      "cash": 0.076552,
+      "credits": 0.0,
+      "seconds": 163.4,
+      "non_200": 0,
+      "labels": [],
+      "avg_latency_s": 2.51
+    },
+    "openrouter": {
+      "calls": 6,
+      "cash": 0.100546,
+      "credits": 0.0,
+      "seconds": 369.2,
+      "non_200": 0,
+      "labels": [],
+      "avg_latency_s": 61.53
+    }
+  },
+  "per_op_latency": {
+    "openrouter :: openai/gpt-5-mini": {
+      "n": 6,
+      "total_s": 369.2,
+      "max_s": 73.47,
+      "cash": 0.10055,
+      "avg_s": 61.53
+    },
+    "exa :: deep-reasoning": {
+      "n": 6,
+      "total_s": 215.6,
+      "max_s": 52.76,
+      "cash": 0.158,
+      "avg_s": 35.94
+    },
+    "gemini :: gemini-3.5-flash-lite:generateContent": {
+      "n": 5,
+      "total_s": 82.1,
+      "max_s": 24.64,
+      "cash": 0.04108,
+      "avg_s": 16.42
+    },
+    "gemini :: gemini-3.5-transcribe:generateContent": {
+      "n": 5,
+      "total_s": 54.5,
+      "max_s": 14.22,
+      "cash": 0.03113,
+      "avg_s": 10.9
+    },
+    "exa :: auto": {
+      "n": 18,
+      "total_s": 26.8,
+      "max_s": 3.49,
+      "cash": 0.126,
+      "avg_s": 1.49
+    },
+    "live_http :: GET https://hotelequities.com/": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.02,
+      "cash": 0.0,
+      "avg_s": 20.02
+    },
+    "live_http :: GET https://hotelequities.com/meet-our-team.htm": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.0,
+      "cash": 0.0,
+      "avg_s": 20.0
+    },
+    "live_http :: GET https://hotelequities.com/careers": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.0,
+      "cash": 0.0,
+      "avg_s": 20.0
+    },
+    "live_http :: GET https://hotelequities.com/blog/": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.0,
+      "cash": 0.0,
+      "avg_s": 20.0
+    },
+    "live_http :: GET https://hotelequities.com/about-us.htm": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.01,
+      "cash": 0.0,
+      "avg_s": 20.01
+    },
+    "live_http :: GET https://hotelequities.com/our-hotels.htm": {
+      "n": 1,
+      "total_s": 20.0,
+      "max_s": 20.0,
+      "cash": 0.0,
+      "avg_s": 20.0
+    },
+    "gemini :: gemini-embedding-2:embedContent": {
+      "n": 50,
+      "total_s": 19.4,
+      "max_s": 0.63,
+      "cash": 0.00435,
+      "avg_s": 0.39
+    },
+    "live_http :: GET https://workforcenow.adp.com/mascsr/default/care": {
+      "n": 17,
+      "total_s": 17.1,
+      "max_s": 1.39,
+      "cash": 0.0,
+      "avg_s": 1.01
+    },
+    "exa :: contents/preferred": {
+      "n": 4,
+      "total_s": 15.6,
+      "max_s": 10.16,
+      "cash": 0.03,
+      "avg_s": 3.89
+    },
+    "ai_ark :: /v1/people/export/single": {
+      "n": 5,
+      "total_s": 9.2,
+      "max_s": 5.61,
+      "cash": 0.0,
+      "avg_s": 1.84
+    },
+    "gemini :: files.upload": {
+      "n": 5,
+      "total_s": 7.4,
+      "max_s": 1.7,
+      "cash": 0.0,
+      "avg_s": 1.49
+    },
+    "live_http :: GET mp3 enclosure": {
+      "n": 5,
+      "total_s": 6.9,
+      "max_s": 2.72,
+      "cash": 0.0,
+      "avg_s": 1.37
+    },
+    "ai_ark :: /v1/people": {
+      "n": 6,
+      "total_s": 3.6,
+      "max_s": 0.8,
+      "cash": 0.0,
+      "avg_s": 0.6
+    },
+    "live_http :: GET https://novacancynews.com/springboards-ben-rafte": {
+      "n": 1,
+      "total_s": 2.0,
+      "max_s": 1.96,
+      "cash": 0.0,
+      "avg_s": 1.96
+    },
+    "live_http :: GET https://podcast.hospitalitydaily.com/ben-rafter-": {
+      "n": 4,
+      "total_s": 1.9,
+      "max_s": 0.6,
+      "cash": 0.0,
+      "avg_s": 0.46
+    },
+    "live_http :: GET https://www.travelmediagroup.com/190-tmg-hospita": {
+      "n": 1,
+      "total_s": 1.1,
+      "max_s": 1.14,
+      "cash": 0.0,
+      "avg_s": 1.14
+    },
+    "ai_ark :: /v1/companies": {
+      "n": 1,
+      "total_s": 1.0,
+      "max_s": 0.97,
+      "cash": 0.0,
+      "avg_s": 0.97
+    },
+    "ai_ark :: /v1/credit": {
+      "n": 1,
+      "total_s": 0.9,
+      "max_s": 0.95,
+      "cash": 0.0,
+      "avg_s": 0.95
+    },
+    "live_http :: GET https://podcast.hospitalitydaily.com/ben-rafter/": {
+      "n": 1,
+      "total_s": 0.7,
+      "max_s": 0.67,
+      "cash": 0.0,
+      "avg_s": 0.67
+    },
+    "live_http :: GET https://podcast.hospitalitydaily.com/rss": {
+      "n": 1,
+      "total_s": 0.5,
+      "max_s": 0.54,
+      "cash": 0.0,
+      "avg_s": 0.54
+    },
+    "live_http :: GET https://feeds.buzzsprout.com/2103299.rss": {
+      "n": 1,
+      "total_s": 0.5,
+      "max_s": 0.47,
+      "cash": 0.0,
+      "avg_s": 0.47
+    },
+    "live_http :: GET https://feeds.transistor.fm/hospitality-daily": {
+      "n": 1,
+      "total_s": 0.4,
+      "max_s": 0.43,
+      "cash": 0.0,
+      "avg_s": 0.43
+    },
+    "live_http :: GET https://feeds.buzzsprout.com/hospitality-daily.r": {
+      "n": 1,
+      "total_s": 0.4,
+      "max_s": 0.4,
+      "cash": 0.0,
+      "avg_s": 0.4
+    }
+  },
+  "full_recipe": {
+    "lines": [
+      {
+        "item": "ADP WorkforceNow public feed \u2014 4 career centres, all pages",
+        "unit": "free",
+        "qty": 14,
+        "credits": 0,
+        "cash": 0.0
+      },
+      {
+        "item": "AI Ark company object",
+        "unit": "0.1 cr/company returned",
+        "qty": 1,
+        "credits": 0.1,
+        "cash": 0.0
+      },
+      {
+        "item": "AI Ark people, name-scoped + domain-scoped (the committee)",
+        "unit": "0.5 cr/profile returned",
+        "qty": 6,
+        "credits": 3.0,
+        "cash": 0.0
+      },
+      {
+        "item": "AI Ark email export",
+        "unit": "1 cr when found",
+        "qty": "5 asked, 4 found",
+        "credits": 4.0,
+        "cash": 0.0
+      },
+      {
+        "item": "Own-site direct fetches (all hung, 20s timeout each)",
+        "unit": "free",
+        "qty": 6,
+        "credits": 0,
+        "cash": 0.0
+      },
+      {
+        "item": "Exa /contents \u2014 own site, committee pages, key primary pages",
+        "unit": "~$0.001/page",
+        "qty": 4,
+        "credits": 0,
+        "cash": 0.03
+      },
+      {
+        "item": "Exa /search \u2014 committee discovery + gap searches",
+        "unit": "$0.007/search",
+        "qty": 18,
+        "credits": 0,
+        "cash": 0.126
+      },
+      {
+        "item": "Exa deep-reasoning \u2014 ONE account call",
+        "unit": "$0.03/call",
+        "qty": 1,
+        "credits": 0,
+        "cash": 0.03
+      },
+      {
+        "item": "Exa deep-reasoning \u2014 5 per-person calls",
+        "unit": "~$0.025/call",
+        "qty": 5,
+        "credits": 0,
+        "cash": 0.128
+      },
+      {
+        "item": "Podcast RSS + 5 MP3 downloads",
+        "unit": "free",
+        "qty": 16,
+        "credits": 0,
+        "cash": 0.0
+      },
+      {
+        "item": "Gemini transcription \u2014 5 episodes, two models each (69 min of audio)",
+        "unit": "measured",
+        "qty": 10,
+        "credits": 0,
+        "cash": 0.072205
+      },
+      {
+        "item": "Gemini embedding-2 index + 4 retrieval queries",
+        "unit": "$0.20/1M",
+        "qty": 50,
+        "credits": 0,
+        "cash": 0.004347
+      },
+      {
+        "item": "gpt-5-mini structuring \u2014 6 calls, one subject each",
+        "unit": "measured",
+        "qty": 6,
+        "credits": 0,
+        "cash": 0.100546
+      }
+    ],
+    "total_credits": 7.1,
+    "total_cash_usd": 0.491098
+  },
+  "trimmed_recipe": {
+    "lines": [
+      {
+        "item": "ADP WorkforceNow feed (all four centres)",
+        "credits": 0,
+        "cash": 0.0,
+        "why": "free, typed, and it is the P1 pain signal \u2014 never cut"
+      },
+      {
+        "item": "AI Ark company object",
+        "credits": 0.1,
+        "cash": 0.0,
+        "why": "highest yield per credit in the run; the only source of the SynXis fingerprint"
+      },
+      {
+        "item": "AI Ark name-scoped lookups x 4 (sponsor, buyer, champion, evaluator)",
+        "credits": 2.0,
+        "cash": 0.0,
+        "why": "employer re-confirmation + LinkedIn locator; the divisional and adjacent seats can wait for a second call"
+      },
+      {
+        "item": "AI Ark email export x 3",
+        "credits": 3.0,
+        "cash": 0.0,
+        "why": "sponsor, champion and evaluator are the send targets"
+      },
+      {
+        "item": "Exa /contents \u2014 6 primary pages (team, HE Labs, ITR, the two appointment posts)",
+        "credits": 0,
+        "cash": 0.006,
+        "why": "these six pages carry the committee, the buying process and the money signal"
+      },
+      {
+        "item": "Exa /search x 4 (committee, technology seat, ITR, negatives)",
+        "credits": 0,
+        "cash": 0.028,
+        "why": "four narrow questions beat ten broad ones"
+      },
+      {
+        "item": "Exa deep-reasoning \u2014 1 account call",
+        "credits": 0,
+        "cash": 0.03,
+        "why": "the only source of the reputation/negatives sweep"
+      },
+      {
+        "item": "Exa deep-reasoning \u2014 2 person calls (sponsor + evaluator)",
+        "credits": 0,
+        "cash": 0.05,
+        "why": "the CEO and the IT chief are the two whose words change the email"
+      },
+      {
+        "item": "Gemini transcription \u2014 2 episodes, two models (21 min)",
+        "credits": 0,
+        "cash": 0.023,
+        "why": "one on-topic episode per key voice is enough"
+      },
+      {
+        "item": "Gemini embedding index + queries",
+        "credits": 0,
+        "cash": 0.0043,
+        "why": "essentially free once the text exists"
+      },
+      {
+        "item": "gpt-5-mini structuring x 3 (account + 2 people)",
+        "credits": 0,
+        "cash": 0.028,
+        "why": "required"
+      }
+    ],
+    "total_credits": 5.1,
+    "total_cash_usd": 0.1693
+  },
+  "credit_price_scenarios": [
+    {
+      "credit_price_usd": 0.0,
+      "label": "free tier (today)",
+      "full_per_account": 0.491098,
+      "trimmed_per_account": 0.1693,
+      "trimmed_x1000": 169.3
+    },
+    {
+      "credit_price_usd": 0.02,
+      "label": "$0.02/credit",
+      "full_per_account": 0.6331,
+      "trimmed_per_account": 0.2713,
+      "trimmed_x1000": 271.3
+    },
+    {
+      "credit_price_usd": 0.05,
+      "label": "$0.05/credit",
+      "full_per_account": 0.8461,
+      "trimmed_per_account": 0.4243,
+      "trimmed_x1000": 424.3
+    }
+  ],
+  "per_person_media": {
+    "Ben Rafter": {
+      "items": 5,
+      "seconds": 4140,
+      "cash": 0.072205,
+      "minutes": 69.0,
+      "cost_per_hour": 0.0628
+    }
+  },
+  "media_items": [
+    {
+      "slug": "rafter_ai_payoff",
+      "person": "Ben Rafter",
+      "title": "Where AI Actually Pays Off in Hospitality, and What Owners Should Demand - Ben Rafter, Hotel Equities",
+      "show": "Hospitality Daily (host Josiah Mackenzie)",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "mp3": "https://www.buzzsprout.com/2103299/episodes/19376570-where-ai-actually-pays-off-in-hospitality-and-what-owners-should-demand-ben-rafter-hotel-equities.mp3",
+      "published": "Fri, 26 Jun 2026 01:00:00 -0700",
+      "duration_seconds": 684,
+      "duration_mmss": "11:24",
+      "modality": "audio (mp3 enclosure)",
+      "faithful_model": "gemini-3.5-transcribe",
+      "timestamped_model": "gemini-3.5-flash-lite",
+      "audio_tokens": 17106,
+      "audio_tokens_per_second": 25.01,
+      "faithful_cost_usd": 0.005143,
+      "timestamped_cost_usd": 0.006461,
+      "total_cost_usd": 0.011604,
+      "faithful_words": 2088,
+      "words_per_minute": 183.2,
+      "latency_s": 22.2,
+      "loop_verdict": "clean",
+      "loop_starts_at": null,
+      "quotes_kept": 5,
+      "quotes_dropped": 0,
+      "usable": true
+    },
+    {
+      "slug": "rafter_ai_labor",
+      "person": "Ben Rafter",
+      "title": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities)",
+      "show": "Hospitality Daily (host Josiah Mackenzie)",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+      "mp3": "https://www.buzzsprout.com/2103299/episodes/19376569-how-ai-addresses-the-biggest-cost-in-a-hotel-labor-ben-rafter-hotel-equities.mp3",
+      "published": "Thu, 25 Jun 2026 01:00:00 -0700",
+      "duration_seconds": 640,
+      "duration_mmss": "10:40",
+      "modality": "audio (mp3 enclosure)",
+      "faithful_model": "gemini-3.5-transcribe",
+      "timestamped_model": "gemini-3.5-flash-lite",
+      "audio_tokens": 16016,
+      "audio_tokens_per_second": 25.02,
+      "faithful_cost_usd": 0.004816,
+      "timestamped_cost_usd": 0.006621,
+      "total_cost_usd": 0.011437,
+      "faithful_words": 1926,
+      "words_per_minute": 180.6,
+      "latency_s": 22.6,
+      "loop_verdict": "clean",
+      "loop_starts_at": null,
+      "quotes_kept": 5,
+      "quotes_dropped": 0,
+      "usable": true
+    },
+    {
+      "slug": "rafter_owner_economics",
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "show": "Hospitality Daily (host Josiah Mackenzie)",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "mp3": "https://www.buzzsprout.com/2103299/episodes/19376568-why-hotel-ownership-is-becoming-unsustainable-and-what-we-re-doing-about-it-ben-rafter-hotel-equities.mp3",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "duration_seconds": 682,
+      "duration_mmss": "11:22",
+      "modality": "audio (mp3 enclosure)",
+      "faithful_model": "gemini-3.5-transcribe",
+      "timestamped_model": "gemini-3.5-flash-lite",
+      "audio_tokens": 17070,
+      "audio_tokens_per_second": 25.03,
+      "faithful_cost_usd": 0.005133,
+      "timestamped_cost_usd": 0.00694,
+      "total_cost_usd": 0.012073,
+      "faithful_words": 2086,
+      "words_per_minute": 183.5,
+      "latency_s": 23.1,
+      "loop_verdict": "clean",
+      "loop_starts_at": null,
+      "quotes_kept": 5,
+      "quotes_dropped": 0,
+      "usable": true
+    },
+    {
+      "slug": "rafter_tech_advice",
+      "person": "Ben Rafter",
+      "title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Springboard Hospitality",
+      "show": "Hospitality Daily (host Josiah Mackenzie)",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "mp3": "https://www.buzzsprout.com/2103299/episodes/16412086-tech-ceo-turned-hotel-ceo-shares-tech-advice-ben-rafter-springboard-hospitality.mp3",
+      "published": "Fri, 10 Jan 2025 01:00:00 -0800",
+      "duration_seconds": 1176,
+      "duration_mmss": "19:36",
+      "modality": "audio (mp3 enclosure)",
+      "faithful_model": "gemini-3.5-transcribe",
+      "timestamped_model": "gemini-3.5-flash-lite",
+      "audio_tokens": 29422,
+      "audio_tokens_per_second": 25.02,
+      "faithful_cost_usd": 0.008838,
+      "timestamped_cost_usd": 0.01183,
+      "total_cost_usd": 0.020668,
+      "faithful_words": 3447,
+      "words_per_minute": 175.9,
+      "latency_s": 38.9,
+      "loop_verdict": "clean",
+      "loop_starts_at": null,
+      "quotes_kept": 5,
+      "quotes_dropped": 0,
+      "usable": true
+    },
+    {
+      "slug": "rafter_tech_ceo",
+      "person": "Ben Rafter",
+      "title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter, Springboard Hospitality",
+      "show": "Hospitality Daily (host Josiah Mackenzie)",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "mp3": "https://www.buzzsprout.com/2103299/episodes/16397083-what-happens-when-a-tech-ceo-leads-a-hotel-company-ben-rafter-springboard-hospitality.mp3",
+      "published": "Thu, 09 Jan 2025 01:00:00 -0800",
+      "duration_seconds": 958,
+      "duration_mmss": "15:58",
+      "modality": "audio (mp3 enclosure)",
+      "faithful_model": "gemini-3.5-transcribe",
+      "timestamped_model": "gemini-3.5-flash-lite",
+      "audio_tokens": 23954,
+      "audio_tokens_per_second": 25.0,
+      "faithful_cost_usd": 0.007198,
+      "timestamped_cost_usd": 0.009225,
+      "total_cost_usd": 0.016423,
+      "faithful_words": 2954,
+      "words_per_minute": 185.0,
+      "latency_s": 29.9,
+      "loop_verdict": "clean",
+      "loop_starts_at": null,
+      "quotes_kept": 5,
+      "quotes_dropped": 0,
+      "usable": true
+    }
+  ],
+  "embedding": {
+    "model": "gemini-embedding-2",
+    "dim": 768,
+    "chunks": 46,
+    "doc_tokens": 21665,
+    "doc_cost_usd": 0.004333,
+    "doc_elapsed_s": 17.93,
+    "query_tokens": 68,
+    "query_cost_usd": 1.36e-05,
+    "total_embed_cost_usd": 0.004347,
+    "media_seconds_indexed": 4140,
+    "raw_audio_embedding_would_have_cost_usd": 0.6624,
+    "raw_audio_multiple": 152.4
+  },
+  "phases": [
+    {
+      "phase": "H2_own_site",
+      "seconds": 121.88,
+      "note": "6 pages, 6 via exa fallback",
+      "ts": "2026-09-22T06:40:41Z"
+    },
+    {
+      "phase": "H9_ark_people",
+      "seconds": 101.76,
+      "note": "6 name-scoped + 4 email exports",
+      "ts": "2026-09-22T06:44:52Z"
+    },
+    {
+      "phase": "H15_structure_al_smith",
+      "seconds": 73.49,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:37Z"
+    },
+    {
+      "phase": "H15_structure_ben_rafter",
+      "seconds": 62.86,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:25Z"
+    },
+    {
+      "phase": "H15_structure_account",
+      "seconds": 61.8,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:23Z"
+    },
+    {
+      "phase": "H15_structure_stephen_hahn",
+      "seconds": 58.78,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:24Z"
+    },
+    {
+      "phase": "H15_structure_david_rosenberg",
+      "seconds": 57.58,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:24Z"
+    },
+    {
+      "phase": "H15_structure_brian_jenkins",
+      "seconds": 54.77,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-22T06:53:19Z"
+    },
+    {
+      "phase": "H10_media_rafter_tech_advice",
+      "seconds": 54.64,
+      "note": "1176s audio, two models",
+      "ts": "2026-09-22T06:46:32Z"
+    },
+    {
+      "phase": "H5_exa_deep_account",
+      "seconds": 52.77,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:39:31Z"
+    },
+    {
+      "phase": "H10_media_rafter_owner_economics",
+      "seconds": 38.37,
+      "note": "682s audio, two models",
+      "ts": "2026-09-22T06:46:15Z"
+    },
+    {
+      "phase": "H11_person_deep_david_rosenberg",
+      "seconds": 34.97,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:13Z"
+    },
+    {
+      "phase": "H10_media_rafter_tech_ceo",
+      "seconds": 34.71,
+      "note": "958s audio, two models",
+      "ts": "2026-09-22T06:46:12Z"
+    },
+    {
+      "phase": "H11_person_deep_al_smith",
+      "seconds": 34.61,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:08Z"
+    },
+    {
+      "phase": "H11_person_deep_stephen_hahn",
+      "seconds": 32.34,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:09Z"
+    },
+    {
+      "phase": "H11_person_deep_ben_rafter",
+      "seconds": 31.67,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:04Z"
+    },
+    {
+      "phase": "H11_person_deep_brian_jenkins",
+      "seconds": 29.32,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-22T06:48:04Z"
+    },
+    {
+      "phase": "H10_media_rafter_ai_labor",
+      "seconds": 26.24,
+      "note": "640s audio, two models",
+      "ts": "2026-09-22T06:45:04Z"
+    },
+    {
+      "phase": "H10_media_rafter_ai_payoff",
+      "seconds": 25.71,
+      "note": "684s audio, two models",
+      "ts": "2026-09-22T06:45:04Z"
+    },
+    {
+      "phase": "H13_embed_retrieval",
+      "seconds": 19.62,
+      "note": "46 chunks + 4 queries",
+      "ts": "2026-09-22T06:49:38Z"
+    },
+    {
+      "phase": "H7_gap_searches",
+      "seconds": 14.19,
+      "note": "10 targeted exa searches",
+      "ts": "2026-09-22T06:41:37Z"
+    },
+    {
+      "phase": "H4_committee_web",
+      "seconds": 12.68,
+      "note": "8 exa searches",
+      "ts": "2026-09-22T06:38:51Z"
+    },
+    {
+      "phase": "H3_ark_company",
+      "seconds": 12.43,
+      "note": "credit probe + company search",
+      "ts": "2026-09-22T06:38:51Z"
+    },
+    {
+      "phase": "H1_adp_feed",
+      "seconds": 10.26,
+      "note": "4 centres, 145 reqs, free",
+      "ts": "2026-09-22T06:39:30Z"
+    },
+    {
+      "phase": "H6_committee_confirm",
+      "seconds": 10.18,
+      "note": "12 primary pages",
+      "ts": "2026-09-22T06:40:29Z"
+    },
+    {
+      "phase": "H8_media_resolve",
+      "seconds": 7.02,
+      "note": "7 pages + rss",
+      "ts": "2026-09-22T06:41:29Z"
+    },
+    {
+      "phase": "H9b_ark_extra_email",
+      "seconds": 5.62,
+      "note": "1 export + credit reconciliation",
+      "ts": "2026-09-22T06:46:22Z"
+    },
+    {
+      "phase": "H1_adp_feed",
+      "seconds": 5.38,
+      "note": "4 centres, 72 reqs, free",
+      "ts": "2026-09-22T06:38:44Z"
+    },
+    {
+      "phase": "H14_key_pages",
+      "seconds": 2.27,
+      "note": "12 primary pages",
+      "ts": "2026-09-22T06:50:22Z"
+    }
+  ]
+}

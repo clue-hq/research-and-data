@@ -1,0 +1,4 @@
+  bundle chars: 30346
+  openrouter[h15_structure_david_rosenberg] http=200 57.56s usage={"prompt_tokens": 7978, "completion_tokens": 6849, "total_tokens": 14827, "cost": 0, "is_byok": true, "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0, "audio_tokens": 0, "video_t
+  claims=25 proposed=6 negatives=5 | spans verbatim 26 / failed 5
+H15[david_rosenberg] 57.6s spend=0.4401

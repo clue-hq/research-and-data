@@ -1,0 +1,161 @@
+{
+  "slug": "rafter_owner_economics",
+  "person": "Ben Rafter",
+  "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+  "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+  "mp3": "https://www.buzzsprout.com/2103299/episodes/19376568-why-hotel-ownership-is-becoming-unsustainable-and-what-we-re-doing-about-it-ben-rafter-hotel-equities.mp3",
+  "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+  "duration_seconds": 682,
+  "faithful": {
+    "model": "gemini-3.5-transcribe",
+    "usageMetadata": {
+      "promptTokenCount": 17190,
+      "totalTokenCount": 17190,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 120
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17070
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.005133,
+    "elapsed_s": 8.66,
+    "chars": 11288,
+    "words": 2086
+  },
+  "timestamped": {
+    "model": "gemini-3.5-flash-lite",
+    "usageMetadata": {
+      "promptTokenCount": 17473,
+      "candidatesTokenCount": 4446,
+      "totalTokenCount": 21919,
+      "promptTokensDetails": [
+        {
+          "modality": "AUDIO",
+          "tokenCount": 17070
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 403
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.00694,
+    "elapsed_s": 14.45,
+    "chars": 15946,
+    "timestamped_lines": 98,
+    "unique_lines": 95,
+    "loop_starts_at": "01:18"
+  },
+  "total_cost_usd": 0.012073,
+  "audio_tokens_per_second": 25.03,
+  "quotes": [
+    {
+      "timestamp": "02:12",
+      "quote": "I maintain that unless we all change uh the industry that that we're in is not sustainable in in many ways and right now the big losers are anybody who owns their assets...",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "02:51",
+      "quote": "And unless we figure out a way to harness costs well still maintaining, you know, sort of forward-facing heavy guest interaction because that's what hotels and hospitality is, we're all we're all going to lose in the long term.",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "04:32",
+      "quote": "Yeah, so we look at technology as the solution here, which is if we can make the hotel more efficient, well still being guest friendly, then owners can recoup some of the some of the losses of the higher expenses, right?",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "07:09",
+      "quote": "We observed that there were plenty of great technologies in the industry. Those technologies were either not being implemented in a way that helps solve our our problems, or they or or they weren't directly targeting a problem that that we felt we had.",
+      "verbatim_check": "PARTIAL",
+      "inside_unique_window": false
+    },
+    {
+      "timestamp": "08:46",
+      "quote": "We can't just say that labor management is problem. Right? We have to break it down and saying what parts specifically are problems and how can we fix them.",
+      "verbatim_check": "EXACT",
+      "inside_unique_window": false
+    }
+  ],
+  "tech_and_vendor_signals": [],
+  "loop_rescored": {
+    "sustained_loop_starts_at": null,
+    "duplicate_long_lines": 2,
+    "long_lines": 95,
+    "duplicate_rate_pct": 2.1,
+    "verdict": "clean"
+  },
+  "quotes_repaired": [
+    {
+      "timestamp": "02:12",
+      "quote_published": "So there's some shoots out there, but I maintain that unless we all change uh the industry that that we're in is not sustainable in in many ways. And right now the big losers are anybody who owns their assets and uh the asset light entities out there, mainly the the brands are winning right now.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "I maintain that unless we all change uh the industry that that we're in is not sustainable in in many ways and right now the big losers are anybody who owns their assets...",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_owner_economics"
+    },
+    {
+      "timestamp": "02:51",
+      "quote_published": "And unless we figure out a way to harness costs well still maintaining, you know, sort of forward facing heavy guest interaction because that's what hotels and hospitality is, we're all we're all going to lose in the long term. There's a lot of participants in the industry and of course you know you mentioned the asset light model as opposed to owning assets.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "And unless we figure out a way to harness costs well still maintaining, you know, sort of forward-facing heavy guest interaction because that's what hotels and hospitality is, we're all we're all going to lose in the long term.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_owner_economics"
+    },
+    {
+      "timestamp": "04:32",
+      "quote_published": "How do you think about delivering those sort of returns at Hotel Equities? Yeah, so we look at technology as the solution here, which is if we can make the hotel more efficient well still being guest friendly, then owners can recoup some of the some of the losses of the higher expenses, right? And so and I I think people approach technology the wrong way.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "Yeah, so we look at technology as the solution here, which is if we can make the hotel more efficient, well still being guest friendly, then owners can recoup some of the some of the losses of the higher expenses, right?",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_owner_economics"
+    },
+    {
+      "timestamp": "07:09",
+      "quote_published": "Yeah, I mean, what what I just described a couple minutes ago was was basically what HE Labs was designed for, right? And we observed that there were plenty of great technologies in the industry. Those technologies were either not being implemented in a way that helped solve our our problems or they or or they weren't directly targeting a problem that that we felt we had.",
+      "match_kind": "WINDOW",
+      "flash_lite_wording": "We observed that there were plenty of great technologies in the industry. Those technologies were either not being implemented in a way that helps solve our our problems, or they or or they weren't directly targeting a problem that that we felt we had.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_owner_economics"
+    },
+    {
+      "timestamp": "08:46",
+      "quote_published": "But we did work our way down and say, okay, we can't just say that labor management is problem, right? We have to break it down and saying what parts specifically are problems and how can we fix them? If you enjoyed today's conversation, I just have one favor to ask and that is to take out your phone now and text or email this episode to someone you work with or an industry friend and tell them what stood out to you.",
+      "match_kind": "EXACT",
+      "flash_lite_wording": "We can't just say that labor management is problem. Right? We have to break it down and saying what parts specifically are problems and how can we fix them.",
+      "inside_unique_window": true,
+      "person": "Ben Rafter",
+      "title": "Why Hotel Ownership Is Becoming Unsustainable, and What We're Doing About It - Ben Rafter, Hotel Equities",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "published": "Wed, 24 Jun 2026 01:00:00 -0700",
+      "slug": "rafter_owner_economics"
+    }
+  ],
+  "quotes_dropped": []
+}

@@ -1,0 +1,5941 @@
+{
+  "jobRequisitions": [
+    {
+      "itemID": "9200883831520_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Valet - Chamberlain Hotel - West Hollywood, CA",
+      "postDate": "2026-09-01T15:28:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 20.87,
+          "currencyCode": "USD"
+        }
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-09-01T15:28Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523114",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 20.87 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18972",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "West Hollywood",
+            "countrySubdivisionLevel1": {
+              "codeValue": "CA"
+            },
+            "postalCode": "90069"
+          },
+          "nameCode": {
+            "shortName": " West Hollywood, CA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883778581_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Banquet Server - Tulsa Club Hotel - Tulsa, OK 74103",
+      "postDate": "2026-09-01T14:40:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 14.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "On-Call"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "AN",
+            "shortName": "Annually",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-09-01T14:40Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523095",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Restaurant Banquet",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 14.00 (USD) Annually",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18953",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Tulsa",
+            "countrySubdivisionLevel1": {
+              "codeValue": "OK"
+            },
+            "postalCode": "74103"
+          },
+          "nameCode": {
+            "shortName": " Tulsa, OK, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883827368_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Security Officer - Hilton - Harrisburg, PA",
+      "postDate": "2026-09-01T12:35:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 18.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 19.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-09-01T12:35Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523111",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "18 To 19 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18969",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": "Hilton Harrisburg, Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883774437_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Cook - Hotel Paso Del Norte - El Paso, TX",
+      "postDate": "2026-09-01T11:57:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 13.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 14.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-09-01T11:57Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523094",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Restaurant Banquet",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "13 To 14 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18952",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "El Paso",
+            "countrySubdivisionLevel1": {
+              "codeValue": "TX"
+            },
+            "postalCode": "79901"
+          },
+          "nameCode": {
+            "shortName": " El Paso, TX, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883817869_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Server - The Henry, Dearborn, MI ",
+      "postDate": "2026-09-01T10:01:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 5.99,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "AN",
+            "shortName": "Annually",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-09-01T10:01Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523107",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 5.99 (USD) Annually",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18965",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Dearborn",
+            "countrySubdivisionLevel1": {
+              "codeValue": "MI"
+            },
+            "postalCode": "48126"
+          },
+          "nameCode": {
+            "shortName": " Dearborn, MI, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883785808_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Maintenance Technician I- Courtyard Marriott of Jonesboro, AR. ",
+      "postDate": "2026-08-31T15:17:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 15.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 17.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-31T15:17Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523097",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "15 To 17 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18955",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Jonesboro",
+            "countrySubdivisionLevel1": {
+              "codeValue": "AR"
+            },
+            "postalCode": "72401"
+          },
+          "nameCode": {
+            "shortName": " Jonesboro, AR, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880252385_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Facilities Technician PC -Postcard Cabins Blake Brook, Epsom NH",
+      "postDate": "2026-08-31T13:27:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 22.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-31T13:27Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523053",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 22 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18946",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Epsom",
+            "countrySubdivisionLevel1": {
+              "codeValue": "NH"
+            },
+            "postalCode": "03234"
+          },
+          "nameCode": {
+            "shortName": " Epsom, NH, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200883760300_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Maintenance Technician - The Henry, Dearborn, MI ",
+      "postDate": "2026-08-31T10:26:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 21.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 23.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-31T10:26Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523091",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "21 To 23 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18949",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Dearborn",
+            "countrySubdivisionLevel1": {
+              "codeValue": "MI"
+            },
+            "postalCode": "48126"
+          },
+          "nameCode": {
+            "shortName": " Dearborn, MI, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880206310_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Housekeeper-AC Hotel in Downtown Kansas City, MO.",
+      "postDate": "2026-08-28T15:25:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 17.25,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 17.25,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-28T15:25Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523023",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Rooms",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "17.25 To 17.25 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18934",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Kansas City",
+            "countrySubdivisionLevel1": {
+              "codeValue": "MO"
+            },
+            "postalCode": "64106"
+          },
+          "nameCode": {
+            "shortName": " Kansas City, MO, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880186544_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Guest Service Representative - Hotel Paso Del Norte-El Paso, TX",
+      "postDate": "2026-08-28T13:06:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 14.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 15.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-28T13:06Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523015",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "14 To 15 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18926",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "El Paso",
+            "countrySubdivisionLevel1": {
+              "codeValue": "TX"
+            },
+            "postalCode": "79901"
+          },
+          "nameCode": {
+            "shortName": " El Paso, TX, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880182514_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Barista-The Richardson Hotel, Buffalo NY",
+      "postDate": "2026-08-27T16:52:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 14.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 18.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T16:52Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523014",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Restaurant",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "14 To 18 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18925",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Buffalo",
+            "countrySubdivisionLevel1": {
+              "codeValue": "NY"
+            },
+            "postalCode": "14213"
+          },
+          "nameCode": {
+            "shortName": " Buffalo, NY, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880179476_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "House Attendant - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:51:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 16.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:51Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523013",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Rooms",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 16 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18924",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880178851_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Public Space Attendant - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:45:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 14.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:45Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523012",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 14 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18923",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880178375_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Server Assistant - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:39:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 3.51,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:39Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523011",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 3.51 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18922",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": "Hilton Harrisburg, Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880177476_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Host/Hostess - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:28:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 12.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 15.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:28Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523007",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": "12 To 15 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18918",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880177289_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Banquet Setup - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:23:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 13.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:23Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523006",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Restaurant Banquet",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 13 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18917",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880176822_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Breakfast Attendant - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T15:19:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 12.0,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T15:19Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523005",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "stringValue": "Restaurant",
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 12 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18916",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": "Hilton Harrisburg, Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880175194_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Breakfast Server - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T14:51:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 3.03,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T14:51Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523004",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 3.03 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18915",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880175061_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Dishwasher - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T14:44:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 13.5,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Full Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T14:44Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523003",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 13.50 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18914",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": " Harrisburg, PA, US"
+          }
+        }
+      ]
+    },
+    {
+      "itemID": "9200880174024_1",
+      "postingInstructions": [],
+      "links": [],
+      "additionalProperties": {},
+      "requisitionTitle": "Server - Hilton - Harrisburg, PA",
+      "postDate": "2026-08-27T14:22:00.000-04:00",
+      "screeningRequirements": [],
+      "organizationalUnits": [],
+      "payGradeRange": {
+        "minimumRate": {
+          "amountValue": 0.0,
+          "currencyCode": "USD"
+        },
+        "maximumRate": {
+          "amountValue": 3.03,
+          "currencyCode": "USD"
+        }
+      },
+      "workLevelCode": {
+        "shortName": "Part Time"
+      },
+      "sponsoredVisaTypeCodes": [],
+      "customFieldGroup": {
+        "codeFields": [
+          {
+            "codeValue": "HR",
+            "shortName": "Hourly",
+            "nameCode": {
+              "codeValue": "SalaryType"
+            }
+          },
+          {
+            "codeValue": "RANGE",
+            "shortName": "RANGE",
+            "nameCode": {
+              "codeValue": "SalaryRangeType"
+            }
+          }
+        ],
+        "dateFields": [
+          {
+            "dateValue": "2026-08-27T14:22Z",
+            "nameCode": {
+              "codeValue": "PostingDate"
+            }
+          },
+          {
+            "dateValue": "2026-09-22T02:39Z",
+            "nameCode": {
+              "codeValue": "CurrentServerDateTime"
+            }
+          }
+        ],
+        "indicatorFields": [
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "PriortyStatusFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "InternalPostingFlag"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "MinValue"
+            }
+          },
+          {
+            "indicatorValue": true,
+            "nameCode": {
+              "codeValue": "IsVsidApplicable"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForExtPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsSassDlReqForIntPostFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsMonetaryFlag"
+            }
+          },
+          {
+            "indicatorValue": false,
+            "nameCode": {
+              "codeValue": "IsNonMonetaryFlag"
+            }
+          }
+        ],
+        "numberFields": [
+          {
+            "numberValue": 0.0,
+            "categoryCode": {
+              "codeValue": "ApplicantCount"
+            }
+          },
+          {
+            "categoryCode": {
+              "codeValue": "AwardAmount"
+            }
+          }
+        ],
+        "stringFields": [
+          {
+            "stringValue": "523002",
+            "nameCode": {
+              "codeValue": "ExternalJobID"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CareerCenterRefId"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "GuidelineOid"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "CurrencySymbolOrCode"
+            }
+          },
+          {
+            "stringValue": "",
+            "nameCode": {
+              "codeValue": "HomeDepartment"
+            }
+          },
+          {
+            "nameCode": {
+              "codeValue": "JobClass"
+            }
+          },
+          {
+            "stringValue": " Up to 3.03 (USD) Hourly",
+            "nameCode": {
+              "codeValue": "SalaryRange"
+            }
+          }
+        ]
+      },
+      "clientRequisitionID": "18913",
+      "requisitionLocations": [
+        {
+          "aliasNames": [],
+          "address": {
+            "cityName": "Harrisburg",
+            "countrySubdivisionLevel1": {
+              "codeValue": "PA"
+            },
+            "postalCode": "17101"
+          },
+          "nameCode": {
+            "shortName": "Hilton Harrisburg, Harrisburg, PA, US"
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "startSequence": 39,
+    "totalNumber": 97,
+    "links": [
+      {
+        "schema": "LOCATION",
+        "payLoadArguments": [
+          {
+            "argumentPath": "9200711141813_1",
+            "argumentValue": "Bibb Mill Event Center, Columbus, GA, US"
+          },
+          {
+            "argumentPath": "9200030452840_1",
+            "argumentValue": "Fairfield Inn & Suites Austintown, Austintown, OH, US"
+          },
+          {
+            "argumentPath": "9200721167855_1",
+            "argumentValue": "Postcard Shenandoah, Stanardsville, VA, US"
+          },
+          {
+            "argumentPath": "9200721166934_1",
+            "argumentValue": "Postcard Starved Rock, Ottawa, IL, US"
+          },
+          {
+            "argumentPath": "9200173754695_1",
+            "argumentValue": "Marriott Kansas City Airport, Kansas City, MO, US"
+          },
+          {
+            "argumentPath": "9200811805287_1",
+            "argumentValue": "Courtyard Los Angeles LAX, Hawthorne, CA, US"
+          },
+          {
+            "argumentPath": "9200764998947_1",
+            "argumentValue": "Sonesta Seattle Bellevue, Bellevue, WA, US"
+          },
+          {
+            "argumentPath": "9200616644751_1",
+            "argumentValue": "Wyndham Bloomington, Bloomington, MN, US"
+          },
+          {
+            "argumentPath": "9200511543644_1",
+            "argumentValue": "Holiday Inn Express Indianapolis, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200038720305_1",
+            "argumentValue": "Springhill Suites Topeka, Topeka, KS, US"
+          },
+          {
+            "argumentPath": "9200124998788_1",
+            "argumentValue": "Home 2 Suites Whitestown, Whitestown, IN, US"
+          },
+          {
+            "argumentPath": "9200524666217_1",
+            "argumentValue": "Residence Inn Indy Airport, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200040716728_1",
+            "argumentValue": "Residence Inn/ SS Keystone, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200726467749_1",
+            "argumentValue": "Hotel BPM, Brooklyn, NY, US"
+          },
+          {
+            "argumentPath": "9200402600915_1",
+            "argumentValue": "Hyatt House College Station, Bryan, TX, US"
+          },
+          {
+            "argumentPath": "9200570415500_1",
+            "argumentValue": "TownePlace Suites Belleville, Belleville, ON, CA"
+          },
+          {
+            "argumentPath": "9200511543632_1",
+            "argumentValue": "Staybridge Suites Fargo, Fargo, ND, US"
+          },
+          {
+            "argumentPath": "9151404551908_1",
+            "argumentValue": "Hotel Indigo Winston-Salem, Winston-Salem, NC, US"
+          },
+          {
+            "argumentPath": "9200566761237_1",
+            "argumentValue": "Hotel Indigo Columbus, Columbus, GA, US"
+          },
+          {
+            "argumentPath": "9200781230567_1",
+            "argumentValue": "HIE Lubbock Southwest, Wolfforth, TX, US"
+          },
+          {
+            "argumentPath": "9200752269602_1",
+            "argumentValue": "Home2/Hampton Inn and Suites, Michigan City, IN, US"
+          },
+          {
+            "argumentPath": "9200771868520_1",
+            "argumentValue": "TownePlace Suites Red Deer, Red Deer, AB, CA"
+          },
+          {
+            "argumentPath": "9200721167516_1",
+            "argumentValue": "Postcard Kettle River, Willow River, MN, US"
+          },
+          {
+            "argumentPath": "9200883873937_1",
+            "argumentValue": "HGI Austin Central, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200789647766_1",
+            "argumentValue": "The Overland Hotel, Fayetteville, AR, US"
+          },
+          {
+            "argumentPath": "9200490921689_1",
+            "argumentValue": "Hyatt House Seattle, Seattle, WA, US"
+          },
+          {
+            "argumentPath": "9200757634581_1",
+            "argumentValue": "Montrose West Hollywood, West Hollywood, CA, US"
+          },
+          {
+            "argumentPath": "9200037538166_1",
+            "argumentValue": "Holiday Inn Richmond, Richmond, IN, US"
+          },
+          {
+            "argumentPath": "9200570416335_1",
+            "argumentValue": "Moxy Halifax, Halifax, NS, CA"
+          },
+          {
+            "argumentPath": "9200721167624_1",
+            "argumentValue": "Postcard Homochitto, Meadville, MS, US"
+          },
+          {
+            "argumentPath": "9200030453225_1",
+            "argumentValue": "Holiday Inn Express Akron, Akron, OH, US"
+          },
+          {
+            "argumentPath": "9200757656073_1",
+            "argumentValue": "The Carriage House, Las Vegas, NV, US"
+          },
+          {
+            "argumentPath": "9200750037502_1",
+            "argumentValue": "Hotel Equities Hawaii, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9151366331694_1",
+            "argumentValue": "Home2Suites Iowa City Coralville, Coralville, IA, US"
+          },
+          {
+            "argumentPath": "9200387087212_1",
+            "argumentValue": "Hilton Harrisburg, Harrisburg, PA, US"
+          },
+          {
+            "argumentPath": "9200764997689_1",
+            "argumentValue": "ES Denver South Park Meadows, Lone Tree, CO, US"
+          },
+          {
+            "argumentPath": "9200511543620_1",
+            "argumentValue": "Fairfield Inn Lakewood, Lakewood, CO, US"
+          },
+          {
+            "argumentPath": "9200386111794_1",
+            "argumentValue": "Doubletree Charlottesville, Charlottesville, VA, US"
+          },
+          {
+            "argumentPath": "9200030452557_1",
+            "argumentValue": "Hampton Inn Akron, Akron, OH, US"
+          },
+          {
+            "argumentPath": "9200757654331_1",
+            "argumentValue": "Oasis Waikiki Hotel, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200693427063_1",
+            "argumentValue": "Tru by Hilton Oshawa, Oshawa, ON, CA"
+          },
+          {
+            "argumentPath": "9200700296968_1",
+            "argumentValue": "LaQuinta Moab, Moab, UT, US"
+          },
+          {
+            "argumentPath": "9200764993579_1",
+            "argumentValue": "ES Suites Flagstaff, Flagstaff, AZ, US"
+          },
+          {
+            "argumentPath": "9200829211042_1",
+            "argumentValue": "Hampton Inn Menifee, Menifee, CA, US"
+          },
+          {
+            "argumentPath": "9200524666992_1",
+            "argumentValue": "Wyndham Moline, Moline, IL, US"
+          },
+          {
+            "argumentPath": "9200410263045_1",
+            "argumentValue": "TownePlace Suites Rock Hill, Rock Hill, SC, US"
+          },
+          {
+            "argumentPath": "9200570094436_1",
+            "argumentValue": "Hotel Equities, Fargo, ND, US"
+          },
+          {
+            "argumentPath": "9200347500131_1",
+            "argumentValue": "Hampton Inn & Suites Yuma, Yuma, AZ, US"
+          },
+          {
+            "argumentPath": "9200757656709_1",
+            "argumentValue": "Cache House, Jackson, WY, US"
+          },
+          {
+            "argumentPath": "9200030466563_1",
+            "argumentValue": "Residence Inn Lafayette, Lafayette, IN, US"
+          },
+          {
+            "argumentPath": "9200121954224_1",
+            "argumentValue": "Trilogy Residences"
+          },
+          {
+            "argumentPath": "9200811805405_1",
+            "argumentValue": "Hilton Garden Inn Redondo Beach, Redondo Beach, CA, US"
+          },
+          {
+            "argumentPath": "9200386113089_1",
+            "argumentValue": "Glidden House, Cleveland, OH, US"
+          },
+          {
+            "argumentPath": "9200131844184_1",
+            "argumentValue": "Co-Working Venture, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200387087829_1",
+            "argumentValue": "Hotel Northland, Green Bay, WI, US"
+          },
+          {
+            "argumentPath": "9200511521639_1",
+            "argumentValue": "Residence Inn Ft Collins, Fort Collins, CO, US"
+          },
+          {
+            "argumentPath": "9200721166378_1",
+            "argumentValue": "PC Big Bear, Running Springs, CA, US"
+          },
+          {
+            "argumentPath": "9200015111899_1",
+            "argumentValue": "Courtyard Tuscaloosa AL, Tuscaloosa, AL, US"
+          },
+          {
+            "argumentPath": "9200730309940_1",
+            "argumentValue": "Courtyard Hot Springs, Hot Springs, AR, US"
+          },
+          {
+            "argumentPath": "9200757656085_1",
+            "argumentValue": "Harbor Front Inn, Greenport, NY, US"
+          },
+          {
+            "argumentPath": "9200654039972_1",
+            "argumentValue": "AC Hotel Kansas City, Kansas City, MO, US"
+          },
+          {
+            "argumentPath": "9200779289697_1",
+            "argumentValue": "Bamboo Bar, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200732869933_1",
+            "argumentValue": "Fairfield/Townplace Forrest City, Forrest City, AR, US"
+          },
+          {
+            "argumentPath": "9200757621693_1",
+            "argumentValue": "Hotel Winters, Winters, CA, US"
+          },
+          {
+            "argumentPath": "9200730310056_1",
+            "argumentValue": "Holiday Inn Exp Little Rock Downtown, Little Rock, AR, US"
+          },
+          {
+            "argumentPath": "9200757634637_1",
+            "argumentValue": "Outbound Yosmite, Oakhurst, CA, US"
+          },
+          {
+            "argumentPath": "9200773718960_1",
+            "argumentValue": "TownePlace Suites Bozeman West, Bozeman, MT, US"
+          },
+          {
+            "argumentPath": "9200347500189_1",
+            "argumentValue": "DoubleTree By Hilton Las Vegas, Las Vegas, NV, US"
+          },
+          {
+            "argumentPath": "9200379120408_1",
+            "argumentValue": "Aloft Euless, Euless, TX, US"
+          },
+          {
+            "argumentPath": "9200410263571_1",
+            "argumentValue": "Fairfield Inn & Suites Rock Hill, Rock Hill, SC, US"
+          },
+          {
+            "argumentPath": "9200030446941_1",
+            "argumentValue": "Holiday Inn Express New Philadephia, New Philadelphia, OH, US"
+          },
+          {
+            "argumentPath": "9200030449507_1",
+            "argumentValue": "Homewood Suites Polaris, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200781230870_1",
+            "argumentValue": "Country Inn Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200721167646_1",
+            "argumentValue": "Postcard Asheboro, Asheboro, NC, US"
+          },
+          {
+            "argumentPath": "9200757654499_1",
+            "argumentValue": "Royal Grove Hotel, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200511543642_1",
+            "argumentValue": "Hilton Garden Inn Tinley Park, Tinley Park, IL, US"
+          },
+          {
+            "argumentPath": "9200727933969_1",
+            "argumentValue": "HEG-00109"
+          },
+          {
+            "argumentPath": "9200570411734_1",
+            "argumentValue": "Holiday Inn Hotel & Suites - Lloydminster, Lloydminster, AB, CA"
+          },
+          {
+            "argumentPath": "168112875692_1",
+            "argumentValue": "Fairfield Inn - Tolleson, Tolleson, AZ, US"
+          },
+          {
+            "argumentPath": "9200570412323_1",
+            "argumentValue": "Holiday Inn Express & Suites Slave Lake, Slave Lake, AB, CA"
+          },
+          {
+            "argumentPath": "9200173754749_1",
+            "argumentValue": "KLC Residence Inn Wenatchee, Wenatchee, WA, US"
+          },
+          {
+            "argumentPath": "9200030453740_1",
+            "argumentValue": "Courtyard by Marriott Kokomo, Kokomo, IN, US"
+          },
+          {
+            "argumentPath": "9200757655397_1",
+            "argumentValue": "Paia Inn, Paia, HI, US"
+          },
+          {
+            "argumentPath": "9200347498155_1",
+            "argumentValue": "C & W"
+          },
+          {
+            "argumentPath": "9200690971884_1",
+            "argumentValue": "Fairfield Inn & Suites Piedmont, Piedmont, SC, US"
+          },
+          {
+            "argumentPath": "9200721166364_1",
+            "argumentValue": "PC Talladega Valley, Childersburg, AL, US"
+          },
+          {
+            "argumentPath": "9200764998147_1",
+            "argumentValue": "Sonesta Raleigh Durham Airport, Morrisville, NC, US"
+          },
+          {
+            "argumentPath": "9200730310020_1",
+            "argumentValue": "Hilton Garden Little Rock Downtown, Little Rock, AR, US"
+          },
+          {
+            "argumentPath": "9200757634755_1",
+            "argumentValue": "Royal Sun Palm Springs, Palm Springs, CA, US"
+          },
+          {
+            "argumentPath": "9200747755830_1",
+            "argumentValue": "Springhill Suites Bryce, Bryce Canyon City, UT, US"
+          },
+          {
+            "argumentPath": "9200511543630_1",
+            "argumentValue": "Holiday Inn Bismarck, Bismarck, ND, US"
+          },
+          {
+            "argumentPath": "9200876441824_1",
+            "argumentValue": "Aloft Austin NW, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200757654321_1",
+            "argumentValue": "Maui  Seaside, Kahului, HI, US"
+          },
+          {
+            "argumentPath": "9200764998914_1",
+            "argumentValue": "ES Portland Vancouver, Vancouver, WA, US"
+          },
+          {
+            "argumentPath": "9200766586020_1",
+            "argumentValue": "Clarita's Resort, Jaco, Puntarenas, CR"
+          },
+          {
+            "argumentPath": "9200517776933_1",
+            "argumentValue": "Hampton Inn Cucamonga, Rancho Cucamonga, CA, US"
+          },
+          {
+            "argumentPath": "9200030464109_1",
+            "argumentValue": "Hampton Inn Dayton Mall, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "9200764997500_1",
+            "argumentValue": "Sonesta San Jose Airport, San Jose, CA, US"
+          },
+          {
+            "argumentPath": "9200675624188_1",
+            "argumentValue": "The Vanguard, Ann Arbor, MI, US"
+          },
+          {
+            "argumentPath": "9200720744062_1",
+            "argumentValue": "Towne Place Suites by Marriott Wood Stock, Woodstock, ON, CA"
+          },
+          {
+            "argumentPath": "9200511522076_1",
+            "argumentValue": "Holiday Inn Colorado Springs, Colorado Springs, CO, US"
+          },
+          {
+            "argumentPath": "9200436214990_1",
+            "argumentValue": "Springhill Suites Columbia, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200347499863_1",
+            "argumentValue": "Homewood Suites Chula Vista, Chula Vista, CA, US"
+          },
+          {
+            "argumentPath": "9200811805438_1",
+            "argumentValue": "Homewood Suites Redondo Beach, Redondo Beach, CA, US"
+          },
+          {
+            "argumentPath": "9200347499666_1",
+            "argumentValue": "Hyatt Place Fresno, Fresno, CA, US"
+          },
+          {
+            "argumentPath": "9200721167668_1",
+            "argumentValue": "Postcard Blake Brook, Epsom, NH, US"
+          },
+          {
+            "argumentPath": "9200576455462_1",
+            "argumentValue": "HI Xenia, OH, Xenia, OH, US"
+          },
+          {
+            "argumentPath": "9200410258485_1",
+            "argumentValue": "Courtyard Suwanee, Suwanee, GA, US"
+          },
+          {
+            "argumentPath": "9200757635208_1",
+            "argumentValue": "Hampton Inn Maui North Shore, Kahului, HI, US"
+          },
+          {
+            "argumentPath": "9200347498033_1",
+            "argumentValue": "Courtyard Earth City/St. Louis, St Louis, MO, US"
+          },
+          {
+            "argumentPath": "9200570415862_1",
+            "argumentValue": "Sawridge Inn and Conference Centre, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200757654310_1",
+            "argumentValue": "Luana Waikiki Hotel & Suites, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200764993806_1",
+            "argumentValue": "ES Suites Tempe, Tempe, AZ, US"
+          },
+          {
+            "argumentPath": "9200742039390_1",
+            "argumentValue": "SpringHill Suites Bryce, Bryce Canyon City, UT, US"
+          },
+          {
+            "argumentPath": "9200764993675_1",
+            "argumentValue": "ES Suites Scottsdale, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200430502558_1",
+            "argumentValue": "Doubletree by Hilton Pikesville, Pikesville, MD, US"
+          },
+          {
+            "argumentPath": "9200062584550_1",
+            "argumentValue": "RI Middle Bagley, Middleburg Heights, OH, US"
+          },
+          {
+            "argumentPath": "9200781230719_1",
+            "argumentValue": "Days Inn Lubbock South, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200781230443_1",
+            "argumentValue": "Aloft Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200570405033_1",
+            "argumentValue": "Fairfield Inn and Suites Edmonton Airport, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200386113623_1",
+            "argumentValue": "Embassy Suites Oklahoma City, Oklahoma City, OK, US"
+          },
+          {
+            "argumentPath": "9200757621517_1",
+            "argumentValue": "Hotel Erwin, Venice, CA, US"
+          },
+          {
+            "argumentPath": "9200387090067_1",
+            "argumentValue": "Tulsa Club Hotel, Tulsa, OK, US"
+          },
+          {
+            "argumentPath": "9200599553367_1",
+            "argumentValue": "Home 2 Suites Columbus Airport, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200347504275_1",
+            "argumentValue": "Simpatico Communities, Goodyear, AZ, US"
+          },
+          {
+            "argumentPath": "9200844863480_1",
+            "argumentValue": "Hyatt Place Boulder/Pearl Street, Boulder, CO, US"
+          },
+          {
+            "argumentPath": "9200730310031_1",
+            "argumentValue": "Tru Little Rock West, Little Rock, AR, US"
+          },
+          {
+            "argumentPath": "9200037538498_1",
+            "argumentValue": "Hilton Garden Inn West Chester, West Chester, OH, US"
+          },
+          {
+            "argumentPath": "9200721166784_1",
+            "argumentValue": "Post Card Chattahoochee, Suches, GA, US"
+          },
+          {
+            "argumentPath": "9200719361725_1",
+            "argumentValue": "Tru by Hilton Bracebridge, Bracebridge, ON, CA"
+          },
+          {
+            "argumentPath": "9200721167836_1",
+            "argumentValue": "Postcard Hill Country, Wimberley, TX, US"
+          },
+          {
+            "argumentPath": "9200750037605_1",
+            "argumentValue": "Hampton Inn and Suites Michigan City, Michigan City, IN, US"
+          },
+          {
+            "argumentPath": "9200570416207_1",
+            "argumentValue": "Courtyard Nanaimo, Nanaimo, BC, CA"
+          },
+          {
+            "argumentPath": "9200511543640_1",
+            "argumentValue": "Sheraton Northbrook, Northbrook, IL, US"
+          },
+          {
+            "argumentPath": "9200387088078_1",
+            "argumentValue": "Hyatt Place Champaign, Champaign, IL, US"
+          },
+          {
+            "argumentPath": "9200781230575_1",
+            "argumentValue": "HIE Lubbock South, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200511543592_1",
+            "argumentValue": "Holiday Inn Express Cleveland Downtown, Cleveland, OH, US"
+          },
+          {
+            "argumentPath": "9200131845946_1",
+            "argumentValue": "Comfort Inn & Ste Tallahassee, Tallahassee, FL, US"
+          },
+          {
+            "argumentPath": "9200436213454_1",
+            "argumentValue": "Holiday Inn Express Columbia, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200757582068_1",
+            "argumentValue": "Days Inn Encinitas, Encinitas, CA, US"
+          },
+          {
+            "argumentPath": "9200436215344_1",
+            "argumentValue": "Atlantic Hotel & Spa, Fort Lauderdale, FL, US"
+          },
+          {
+            "argumentPath": "9200430498168_1",
+            "argumentValue": "Days Inn Washington DC, Washington, DC, US"
+          },
+          {
+            "argumentPath": "9200347502730_1",
+            "argumentValue": "Courtyard Chesapeake, Chesapeake, VA, US"
+          },
+          {
+            "argumentPath": "9200764998473_1",
+            "argumentValue": "Sonesta Nashville Brentwood, Brentwood, TN, US"
+          },
+          {
+            "argumentPath": "9200876441778_1",
+            "argumentValue": "HGI Austin Central, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200030449264_1",
+            "argumentValue": "Residence Inn Akron, Akron, OH, US"
+          },
+          {
+            "argumentPath": "9200730310041_1",
+            "argumentValue": "Hampton Inn & Suites Conway, Conway, AR, US"
+          },
+          {
+            "argumentPath": "9200880162289_1",
+            "argumentValue": "Phoenix, AZ, US"
+          },
+          {
+            "argumentPath": "9200730310206_1",
+            "argumentValue": "Home2 Suites Little Rock Midtown Med Center, Little Rock, AR, US"
+          },
+          {
+            "argumentPath": "9200844863407_1",
+            "argumentValue": "Hilton Garden Inn Austin North, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200721167847_1",
+            "argumentValue": "Postcard Piney Woods, Larue, TX, US"
+          },
+          {
+            "argumentPath": "9200745552108_1",
+            "argumentValue": "The Richardson Hotel, Buffalo, NY, US"
+          },
+          {
+            "argumentPath": "9200037537991_1",
+            "argumentValue": "Best Western New Philadelphia, New Philadelphia, OH, US"
+          },
+          {
+            "argumentPath": "9200069456558_1",
+            "argumentValue": "Courtyard - Charlotte/Waverly NC, Charlotte, NC, US"
+          },
+          {
+            "argumentPath": "9200478033113_1",
+            "argumentValue": "Hampton Inn Stockton, Stockton, CA, US"
+          },
+          {
+            "argumentPath": "9200811805257_1",
+            "argumentValue": "Holiday Inn Exp Waikiki, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200526601446_1",
+            "argumentValue": "Fairfield Inn Kansas City, Kansas City, KS, US"
+          },
+          {
+            "argumentPath": "9200561871194_1",
+            "argumentValue": "Mainstay Williston, Williston, ND, US"
+          },
+          {
+            "argumentPath": "9200757634923_1",
+            "argumentValue": "Strawberry Lodge, Kyburz, CA, US"
+          },
+          {
+            "argumentPath": "9200085041629_1",
+            "argumentValue": "33 Degrees, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200347500014_1",
+            "argumentValue": "Hyatt Place Phoenix/Gilbert, Gilbert, AZ, US"
+          },
+          {
+            "argumentPath": "9200727935790_1",
+            "argumentValue": "Takhini Hot Springs, Whitehorse, YT, CA"
+          },
+          {
+            "argumentPath": "9200397092099_1",
+            "argumentValue": "THG Corporate Office, Edmonds, WA, US"
+          },
+          {
+            "argumentPath": "9200764994621_1",
+            "argumentValue": "Sonesta Select Phoenix Chandler, Chandler, AZ, US"
+          },
+          {
+            "argumentPath": "9200173750859_1",
+            "argumentValue": "Crowne Plaza KC Downtown, Kansas City, MO, US"
+          },
+          {
+            "argumentPath": "9200764994851_1",
+            "argumentValue": "Sonesta Scottsdale Mayo Clinic, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200768268272_1",
+            "argumentValue": "Home2Suites Michigan City, Michigan City, IN, US"
+          },
+          {
+            "argumentPath": "9200764998123_1",
+            "argumentValue": "ES Suites Baton Rouge, Baton Rouge, LA, US"
+          },
+          {
+            "argumentPath": "9200714253646_1",
+            "argumentValue": "Hotel Equities, LLC, Edmonds, WA, US"
+          },
+          {
+            "argumentPath": "9200708686655_1",
+            "argumentValue": "Little Missouri Inn New Town, New Town, ND, US"
+          },
+          {
+            "argumentPath": "9200524665630_1",
+            "argumentValue": "Fairfield Inn Indy Airport, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200764994458_1",
+            "argumentValue": "Sonesta Select Phoenix Camelback, Phoenix, AZ, US"
+          },
+          {
+            "argumentPath": "9200030466713_1",
+            "argumentValue": "Home2 Suites Lafayette, Lafayette, IN, US"
+          },
+          {
+            "argumentPath": "9200570413915_1",
+            "argumentValue": "Comfort Inn and Suites Medicine Hat, Medicine Hat, AB, CA"
+          },
+          {
+            "argumentPath": "9200880162278_1",
+            "argumentValue": "Rancho Santa Fe, CA, US"
+          },
+          {
+            "argumentPath": "9200131843199_1",
+            "argumentValue": "Pickle and Social, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200811805447_1",
+            "argumentValue": "Residence Inn Los Angeles Redondo, Redondo Beach, CA, US"
+          },
+          {
+            "argumentPath": "9200721167802_1",
+            "argumentValue": "Postcard Dale Hollow, Celina, TN, US"
+          },
+          {
+            "argumentPath": "9200757654528_1",
+            "argumentValue": "White Sands, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200750037594_1",
+            "argumentValue": "Fairfield Inn Dallas Medical/Market, Dallas, TX, US"
+          },
+          {
+            "argumentPath": "9200844849655_1",
+            "argumentValue": "Hotel Embarque, Phoenix, AZ, US"
+          },
+          {
+            "argumentPath": "9200570413253_1",
+            "argumentValue": "Comfort Suites Saskatoon, Saskatoon, SK, CA"
+          },
+          {
+            "argumentPath": "9200721166446_1",
+            "argumentValue": "Postcard Machimoodus, East Haddam, CT, US"
+          },
+          {
+            "argumentPath": "9200757621882_1",
+            "argumentValue": "Le Parc Suite Hotel, West Hollywood, CA, US"
+          },
+          {
+            "argumentPath": "9200607655879_1",
+            "argumentValue": "Four Points Seatac, Des Moines, WA, US"
+          },
+          {
+            "argumentPath": "9200173752505_1",
+            "argumentValue": "Hilton Garden Inn Issaquah, Issaquah, WA, US"
+          },
+          {
+            "argumentPath": "9200616644911_1",
+            "argumentValue": "Marriott Tacoma Downtown, Tacoma, WA, US"
+          },
+          {
+            "argumentPath": "9200764998614_1",
+            "argumentValue": "ES San Antonio Downtown, San Antonio, TX, US"
+          },
+          {
+            "argumentPath": "9200727796191_1",
+            "argumentValue": "Hotel Equities New York, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200757582131_1",
+            "argumentValue": "Guesthouse Hotel at La Valle, Rancho Santa Fe, CA, US"
+          },
+          {
+            "argumentPath": "9200511521889_1",
+            "argumentValue": "Hyatt Place Austin, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200511521820_1",
+            "argumentValue": "Country Inn Plymouth, Plymouth, MN, US"
+          },
+          {
+            "argumentPath": "9200887712152_1",
+            "argumentValue": "Springboard Hospitality-Hawaii, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200511522237_1",
+            "argumentValue": "Fairfield Inn Green Bay, Green Bay, WI, US"
+          },
+          {
+            "argumentPath": "9200040707148_1",
+            "argumentValue": "Home2 Suites Richmond, Richmond, IN, US"
+          },
+          {
+            "argumentPath": "2689162570_1",
+            "argumentValue": "Four Points Bakersfield, Bakersfield, CA, US"
+          },
+          {
+            "argumentPath": "9200770103091_1",
+            "argumentValue": "Fairfield Inn Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200750037712_1",
+            "argumentValue": "Hampton Inn and Suites Ypsilanti, Ypsilanti, MI, US"
+          },
+          {
+            "argumentPath": "9200787679452_1",
+            "argumentValue": "Courtyard Kalamazoo Portage, Portage, MI, US"
+          },
+          {
+            "argumentPath": "9200761980821_1",
+            "argumentValue": "Hotel Equities CALA, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200566761992_1",
+            "argumentValue": "Four Points Spartanburg, Spartanburg, SC, US"
+          },
+          {
+            "argumentPath": "9200387091878_1",
+            "argumentValue": "Doubletree Wichita, Wichita, KS, US"
+          },
+          {
+            "argumentPath": "9200410262564_1",
+            "argumentValue": "Fairfield Inn & Suites Stockbridge, Stockbridge, GA, US"
+          },
+          {
+            "argumentPath": "9200721167736_1",
+            "argumentValue": "Postcard Beaver Creek, Lisbon, OH, US"
+          },
+          {
+            "argumentPath": "9200721167713_1",
+            "argumentValue": "ProCo, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200820229389_1",
+            "argumentValue": "Home2Suites LR West Chenal, Little Rock, AR, US"
+          },
+          {
+            "argumentPath": "9200511543594_1",
+            "argumentValue": "Hampton Inn Riverfront, Fresno, CA, US"
+          },
+          {
+            "argumentPath": "9200781230550_1",
+            "argumentValue": "TownePlace Suites Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200721167680_1",
+            "argumentValue": "Postcard Eastern Catskills, Catskill, NY, US"
+          },
+          {
+            "argumentPath": "9200347501262_1",
+            "argumentValue": "Springhill Suites & Element, Colorado Springs, CO, US"
+          },
+          {
+            "argumentPath": "9200511543608_1",
+            "argumentValue": "Hilton Garden Inn Tyler, Tyler, TX, US"
+          },
+          {
+            "argumentPath": "9200721167529_1",
+            "argumentValue": "Postcard Ozark Highlands, Osceola, MO, US"
+          },
+          {
+            "argumentPath": "9200030453322_1",
+            "argumentValue": "Holiday Inn Express Polaris, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200524668560_1",
+            "argumentValue": "The Publisher Hotel, Fredericksburg, VA, US"
+          },
+          {
+            "argumentPath": "9200876441843_1",
+            "argumentValue": "Tru Austin NW Arboretum, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200054998080_1",
+            "argumentValue": "Fairfield Inn Arkadelphia, Arkadelphia, AR, US"
+          },
+          {
+            "argumentPath": "9200030467194_1",
+            "argumentValue": "Hampton Inn and Suites Ashland, Ashland, OH, US"
+          },
+          {
+            "argumentPath": "9200173754331_1",
+            "argumentValue": "Home2Suites Yakima Location, Yakima, WA, US"
+          },
+          {
+            "argumentPath": "9200757581937_1",
+            "argumentValue": "Inn Above Oak Creek, Sedona, AZ, US"
+          },
+          {
+            "argumentPath": "9200511519557_1",
+            "argumentValue": "Candlewood Suites Fargo, South Fargo, ND, US"
+          },
+          {
+            "argumentPath": "9200570414391_1",
+            "argumentValue": "Towneplace Suites Medicine Hat, Medicine Hat, AB, CA"
+          },
+          {
+            "argumentPath": "168141035712_1",
+            "argumentValue": "Pensacola Grand"
+          },
+          {
+            "argumentPath": "9200883874059_1",
+            "argumentValue": "Aloft Austin Northwest, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200829210881_1",
+            "argumentValue": "The Overland Hotel, Fayetteville, AR, US"
+          },
+          {
+            "argumentPath": "9200754982069_1",
+            "argumentValue": "Continental Edmonton, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200173752792_1",
+            "argumentValue": "Hilton Garden Inn Redmond, Redmond, WA, US"
+          },
+          {
+            "argumentPath": "2687983412_1",
+            "argumentValue": "La Quinta Spring - Houston, TX, Spring, TX, US"
+          },
+          {
+            "argumentPath": "9200708686688_1",
+            "argumentValue": "Teddy's Residential Watford, Watford City, ND, US"
+          },
+          {
+            "argumentPath": "9200385870011_1",
+            "argumentValue": "Hilton Chicago Oak Lawn, Oak Lawn, IL, US"
+          },
+          {
+            "argumentPath": "9200347498903_1",
+            "argumentValue": "Holiday Inn Express Chattanooga Lookout Mountain, Chattanooga, TN, US"
+          },
+          {
+            "argumentPath": "9200124998672_1",
+            "argumentValue": "Hyatt Place Polaris, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200386112247_1",
+            "argumentValue": "Delta Baltimore North, Baltimore, MD, US"
+          },
+          {
+            "argumentPath": "2641344837_2094",
+            "argumentValue": "SpringHill Suites-Hwy.290/Cypress, TX, Houston, TX, US"
+          },
+          {
+            "argumentPath": "9200570416417_1",
+            "argumentValue": "TownePlace Suites Edmonton, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "2641344837_2092",
+            "argumentValue": "Hotel Equities Group, LLC, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200347499208_1",
+            "argumentValue": "Home 2 Suites Palmdale, Palmdale, CA, US"
+          },
+          {
+            "argumentPath": "9200436214712_1",
+            "argumentValue": "Fairfield Inn Moses Lake, Moses Lake, WA, US"
+          },
+          {
+            "argumentPath": "2641344837_2090",
+            "argumentValue": "Home2 Suites Houston/Sugarland, TX, Richmond, TX, US"
+          },
+          {
+            "argumentPath": "9200570414173_1",
+            "argumentValue": "Comfort Suites Regina, Regina, SK, CA"
+          },
+          {
+            "argumentPath": "9200037538935_1",
+            "argumentValue": "Red Lion Rosslyn, Arlington, VA, US"
+          },
+          {
+            "argumentPath": "9200823089072_1",
+            "argumentValue": "TownePlace Suites Oklahoma City, Oklahoma, OK, US"
+          },
+          {
+            "argumentPath": "9200727933966_1",
+            "argumentValue": "The Quincy, Washington, DC, US"
+          },
+          {
+            "argumentPath": "9200693421167_1",
+            "argumentValue": "Grand Oasis Hotel Minot, Minot, ND, US"
+          },
+          {
+            "argumentPath": "9200781230726_1",
+            "argumentValue": "Baymont Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200030466803_1",
+            "argumentValue": "Hme2 Suites Dayton/Vandalia, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "9200826150539_1",
+            "argumentValue": "Springhill Suites LAX Manhattan Beach, Hawthorne, CA, US"
+          },
+          {
+            "argumentPath": "9200570402170_1",
+            "argumentValue": "Hotel Equities Canada Hospitality Inc, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200173754211_1",
+            "argumentValue": "Homewood Suite Issaquah, Issaquah, WA, US"
+          },
+          {
+            "argumentPath": "9200040716054_1",
+            "argumentValue": "Fairfield Inn Dayton, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "9200030463236_1",
+            "argumentValue": "Hampton Inn and Suites Dayton North/Vandalia, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "2641344837_2098",
+            "argumentValue": "Fairfield Inn & Suites-Scottsbluff, Scottsbluff, NE, US"
+          },
+          {
+            "argumentPath": "9200654043944_1",
+            "argumentValue": "Mainstay Suites Watford, Watford City, ND, US"
+          },
+          {
+            "argumentPath": "2641344837_2096",
+            "argumentValue": "Candlewood Suites-Macon, Macon, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2084",
+            "argumentValue": "Fairfield Inn & Suites Tyler TX, Tyler, TX, US"
+          },
+          {
+            "argumentPath": "9200722552632_1",
+            "argumentValue": "Cobblestone Beulah, Beulah, ND, US"
+          },
+          {
+            "argumentPath": "2641344837_2082",
+            "argumentValue": "Fairfield Inn & Suites Terrell TX, Terrell, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2080",
+            "argumentValue": "Fairfield Inn & Suites Decatur Conf Ctr, Decatur, TX, US"
+          },
+          {
+            "argumentPath": "9200757634529_1",
+            "argumentValue": "Marin Suites Hotel, Corte Madera, CA, US"
+          },
+          {
+            "argumentPath": "9151386356649_1",
+            "argumentValue": "Hampton Inn & Suites - Keller, TX, Keller, TX, US"
+          },
+          {
+            "argumentPath": "9200764998340_1",
+            "argumentValue": "Sonesta Las Vegas Summerlin, Las Vegas, NV, US"
+          },
+          {
+            "argumentPath": "9200347499756_1",
+            "argumentValue": "Hampton Inn Chula Vista, Chula Vista, CA, US"
+          },
+          {
+            "argumentPath": "9200721167056_1",
+            "argumentValue": "Postcard Brown County, Columbus, IN, US"
+          },
+          {
+            "argumentPath": "9200511543618_1",
+            "argumentValue": "Courtyard Aurora, Aurora, CO, US"
+          },
+          {
+            "argumentPath": "9200757582054_1",
+            "argumentValue": "Chamberlain West Hollywood, West Hollywood, CA, US"
+          },
+          {
+            "argumentPath": "9200764998484_1",
+            "argumentValue": "ES Nashville Brentwood, Brentwood, TN, US"
+          },
+          {
+            "argumentPath": "2641344837_2086",
+            "argumentValue": "Fairfield Inn Tulsa, Tulsa, OK, US"
+          },
+          {
+            "argumentPath": "9200547196552_1",
+            "argumentValue": "Hotel Fusion, San Francisco, CA, US"
+          },
+          {
+            "argumentPath": "9200764995270_1",
+            "argumentValue": "ES Suites Huntington Beach, Fountain Valley, CA, US"
+          },
+          {
+            "argumentPath": "2641344837_2072",
+            "argumentValue": "Fairfield Inn & Suites-Buford/MOG, Buford, GA, US"
+          },
+          {
+            "argumentPath": "9200764994998_1",
+            "argumentValue": "ES Suites Fresno, Fresno, CA, US"
+          },
+          {
+            "argumentPath": "2641344837_2070",
+            "argumentValue": "Residence Inn -ATLPerimeterCenter/Dunwdy, Dunwoody, GA, US"
+          },
+          {
+            "argumentPath": "9200387091036_1",
+            "argumentValue": "Hotel Retlaw, Fond Du Lac, WI, US"
+          },
+          {
+            "argumentPath": "9200757655839_1",
+            "argumentValue": "Colony Surf, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200757654436_1",
+            "argumentValue": "Pacific Monarch, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200400484041_1",
+            "argumentValue": "Hyatt House College Station, Bryan, TX, US"
+          },
+          {
+            "argumentPath": "9200792165703_1",
+            "argumentValue": "Fairfield Inn Lubbock Ave Q, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200511543606_1",
+            "argumentValue": "Homewood Suites Tyler, Tyler, TX, US"
+          },
+          {
+            "argumentPath": "9200757581930_1",
+            "argumentValue": "Hotel St. Michael, Prescott, AZ, US"
+          },
+          {
+            "argumentPath": "9200511543596_1",
+            "argumentValue": "Staybridge Scottsdale, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200781230857_1",
+            "argumentValue": "Comfort Inn Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200030452671_1",
+            "argumentValue": "Springhill Suites Dayton South, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "2641344837_2076",
+            "argumentValue": "Fairfield Inn & Suites-Gainesville, Gainesville, GA, US"
+          },
+          {
+            "argumentPath": "9200700296982_1",
+            "argumentValue": "Ramada Sioux Falls, Sioux Falls, SD, US"
+          },
+          {
+            "argumentPath": "2641344837_2074",
+            "argumentValue": "Island House Hotel-Orange Beach, Orange Beach, AL, US"
+          },
+          {
+            "argumentPath": "9200490921759_1",
+            "argumentValue": "Hyatt Place Seattle, Seattle, WA, US"
+          },
+          {
+            "argumentPath": "9200757635136_1",
+            "argumentValue": "Banyan Harbor Resort, Lihue, HI, US"
+          },
+          {
+            "argumentPath": "2641344837_2062",
+            "argumentValue": "Fairfield Inn & Suites-Lynchburg, Lynchburg, VA, US"
+          },
+          {
+            "argumentPath": "9200750037599_1",
+            "argumentValue": "Holiday Inn Express Beavercreek, Beavercreek, OH, US"
+          },
+          {
+            "argumentPath": "9200173750975_1",
+            "argumentValue": "Hampton Inn Seattle, Seattle, WA, US"
+          },
+          {
+            "argumentPath": "9200751186751_1",
+            "argumentValue": "OLS Hotels & Resorts, LLC"
+          },
+          {
+            "argumentPath": "9200570412122_1",
+            "argumentValue": "Holiday Inn Express - Drayton Valley, Drayton Valley, AB, CA"
+          },
+          {
+            "argumentPath": "9200861975600_1",
+            "argumentValue": "Staybridge Suites Dayton North, Dayon, OH, US"
+          },
+          {
+            "argumentPath": "9200764994866_1",
+            "argumentValue": "Sonesta Select Tempe, Tempe, AZ, US"
+          },
+          {
+            "argumentPath": "9200764994889_1",
+            "argumentValue": "ES Suites Tucson, Tucson, AZ, US"
+          },
+          {
+            "argumentPath": "9200570414675_1",
+            "argumentValue": "Super 8 Hotel - Fox Creek, Fox Creek, AB, CA"
+          },
+          {
+            "argumentPath": "2641344837_2068",
+            "argumentValue": "Courtyard-Buford/Mall of Georgia, Buford, GA, US"
+          },
+          {
+            "argumentPath": "9200725704023_1",
+            "argumentValue": "Hampton Inn Wichita, Wichita, KS, US"
+          },
+          {
+            "argumentPath": "9200796629919_1",
+            "argumentValue": "Sun Mountain Lodge, Winthrop, WA, US"
+          },
+          {
+            "argumentPath": "9200386111482_1",
+            "argumentValue": "The Henry, Dearborn, MI, US"
+          },
+          {
+            "argumentPath": "2641344837_2066",
+            "argumentValue": "Holiday Inn Express Trinity FL, Trinity, FL, US"
+          },
+          {
+            "argumentPath": "9200570411115_1",
+            "argumentValue": "Best Western Wainwright Inn & Suites, Wainwright, AB, CA"
+          },
+          {
+            "argumentPath": "9200570413501_1",
+            "argumentValue": "Comfort Suites Kelowna, Kelowna, BC, CA"
+          },
+          {
+            "argumentPath": "2641344837_2064",
+            "argumentValue": "Hampton Inn-Gainesville, Gainesville, GA, US"
+          },
+          {
+            "argumentPath": "9200387089662_1",
+            "argumentValue": "Farnam Hotel, Omaha, NE, US"
+          },
+          {
+            "argumentPath": "2641344837_2172",
+            "argumentValue": "Home2 Suites-St.Louis/Forest Park, St. Louis, MO, US"
+          },
+          {
+            "argumentPath": "2641344837_2170",
+            "argumentValue": "Courtyard-McDonough, Mcdonough, GA, US"
+          },
+          {
+            "argumentPath": "9200727229744_1",
+            "argumentValue": "Delta Hotels Guelph Conference Centre, Guelph, ON, CA"
+          },
+          {
+            "argumentPath": "9200781230701_1",
+            "argumentValue": "Staybridge Suites Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200173752378_1",
+            "argumentValue": "Doubletree Billings, Billings, MT, US"
+          },
+          {
+            "argumentPath": "2641329984_2170",
+            "argumentValue": "Fairfield Inn & Suites Uncasville, Uncasville, CT, US"
+          },
+          {
+            "argumentPath": "9200721167609_1",
+            "argumentValue": "Postcard St Francois, Bloomsdale, MO, US"
+          },
+          {
+            "argumentPath": "9200037538762_1",
+            "argumentValue": "Aloft West Chester, West Chester, OH, US"
+          },
+          {
+            "argumentPath": "9200570413064_1",
+            "argumentValue": "Hampton By Hilton Lloydminister, Lloydminster, AB, CA"
+          },
+          {
+            "argumentPath": "9200764995981_1",
+            "argumentValue": "ES Suites San Jose Airport, San Jose, CA, US"
+          },
+          {
+            "argumentPath": "2641329984_2172",
+            "argumentValue": "Courtyard by Marriott North Brunswick, North Brunswick, NJ, US"
+          },
+          {
+            "argumentPath": "9200430500069_1",
+            "argumentValue": "Holiday Inn Central DC, Washington, DC, US"
+          },
+          {
+            "argumentPath": "9200511543628_1",
+            "argumentValue": "Wingate Bismarck, Bismarck, ND, US"
+          },
+          {
+            "argumentPath": "9200711317963_1",
+            "argumentValue": "Hotel Equities Canada, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200757655949_1",
+            "argumentValue": "Maui Beach Hotel, Kahului, HI, US"
+          },
+          {
+            "argumentPath": "2641344837_2058",
+            "argumentValue": "Holiday Inn Express & Suites-San Angelo, San Angelo, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2056",
+            "argumentValue": "Fairfield Inn & Suites Mobile AL, Mobile, AL, US"
+          },
+          {
+            "argumentPath": "9200524667986_1",
+            "argumentValue": "Elmont Water Park, El Paso, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2054",
+            "argumentValue": "Courtyard by Marriott Avalon/Alpharetta, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2052",
+            "argumentValue": "Hampton Inn & Suites Snellville, Snellville, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2174",
+            "argumentValue": "Fairfield Inn-Aransas Pass, TX, Aransas Pass, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2160",
+            "argumentValue": "Fairfield Inn GRVL/Spartanburg Airport, Greenville, SC, US"
+          },
+          {
+            "argumentPath": "9200757582218_1",
+            "argumentValue": "Holiday Inn Monterey Park, Monterey Park, CA, US"
+          },
+          {
+            "argumentPath": "9200745552224_1",
+            "argumentValue": "Homewood Suites Kalamazoo, Portage, MI, US"
+          },
+          {
+            "argumentPath": "9200570411455_1",
+            "argumentValue": "Holiday Inn Hotel & Suites Edmonton, Edmonton, AB, CA"
+          },
+          {
+            "argumentPath": "9200131843675_1",
+            "argumentValue": "Thrive 3D, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "2641372757_15289",
+            "argumentValue": "Hampton Inn Plymouth Meeting, Plymouth Meeting, PA, US"
+          },
+          {
+            "argumentPath": "9200410199827_1",
+            "argumentValue": "Springhill Suites Lancaster Palmdale, Lancaster, CA, US"
+          },
+          {
+            "argumentPath": "2641372757_15285",
+            "argumentValue": "Four Points Long Island City, Long Island City, NY, US"
+          },
+          {
+            "argumentPath": "9200347546901_1",
+            "argumentValue": "Doubletree Palmdale, Palmdale, CA, US"
+          },
+          {
+            "argumentPath": "9200764997560_1",
+            "argumentValue": "Sonesta Select San Ramon, San Ramon, CA, US"
+          },
+          {
+            "argumentPath": "9200173754644_1",
+            "argumentValue": "Tru by Hilton Location, Spokane Valley, WA, US"
+          },
+          {
+            "argumentPath": "9200511543616_1",
+            "argumentValue": "Microtel Casper, Casper, WY, US"
+          },
+          {
+            "argumentPath": "2641344837_2168",
+            "argumentValue": "SpringHill Suites-Pensacola Beach, Pensacola Beach, FL, US"
+          },
+          {
+            "argumentPath": "2641344837_2166",
+            "argumentValue": "Courtyard GRVL-Spartanburg Airport, Greenville, SC, US"
+          },
+          {
+            "argumentPath": "9200721168036_1",
+            "argumentValue": "Postcard Wild Rose, Wild Rose, WI, US"
+          },
+          {
+            "argumentPath": "9200030460476_1",
+            "argumentValue": "Hampton Inn and Suites Richmond, Richmond, IN, US"
+          },
+          {
+            "argumentPath": "2641344837_2164",
+            "argumentValue": "Hampton Inn Philadelphia Airport, Philadelphia, PA, US"
+          },
+          {
+            "argumentPath": "2641344837_2162",
+            "argumentValue": "Fairfield Inn & Suites El Reno, El Reno, OK, US"
+          },
+          {
+            "argumentPath": "9200517776558_1",
+            "argumentValue": "Springhill Suites Portage, Portage, MI, US"
+          },
+          {
+            "argumentPath": "9200693419121_1",
+            "argumentValue": "Springhill Suites St Louis Earth City, St Louis, MO, US"
+          },
+          {
+            "argumentPath": "9200030464221_1",
+            "argumentValue": "Hampton Inn Middletown, Middletown, OH, US"
+          },
+          {
+            "argumentPath": "2641344837_2150",
+            "argumentValue": "Fairfield Inn & Suites-Tifton, Tifton, GA, US"
+          },
+          {
+            "argumentPath": "9200764998041_1",
+            "argumentValue": "ES Atlanta Perimeter Center, Atlanta, GA, US"
+          },
+          {
+            "argumentPath": "9200723572503_1",
+            "argumentValue": "Hyatt Regency Atlanta Perimeter, Atlanta, GA, US"
+          },
+          {
+            "argumentPath": "9200095976639_1",
+            "argumentValue": "Competitive Sports Ventures, Suwanee, GA, US"
+          },
+          {
+            "argumentPath": "168112879578_1",
+            "argumentValue": "Fairfield Chesterfield, Chesterfield, MO, US"
+          },
+          {
+            "argumentPath": "9200757621819_1",
+            "argumentValue": "Hotel Ziggy, West Hollywood, CA, US"
+          },
+          {
+            "argumentPath": "9200757656034_1",
+            "argumentValue": "Hilton St. Louis Frontenac, Frontenac, MO, US"
+          },
+          {
+            "argumentPath": "9200511543598_1",
+            "argumentValue": "Fairfield Inn Lubbock SW, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200511543604_1",
+            "argumentValue": "Hampton Inn Livingston, Livingston, TX, US"
+          },
+          {
+            "argumentPath": "9200030454435_1",
+            "argumentValue": "Hampton Inn and Suites Muncie, Muncie, IN, US"
+          },
+          {
+            "argumentPath": "9200801218116_1",
+            "argumentValue": "Corporate California Employees, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2158",
+            "argumentValue": "Fairfield Inn Gastonia, Gastonia, NC, US"
+          },
+          {
+            "argumentPath": "9200723572710_1",
+            "argumentValue": "Hotel Equities AMHT, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200387088535_1",
+            "argumentValue": "Embassy Suites Brookfield, Brookfield, WI, US"
+          },
+          {
+            "argumentPath": "2641344837_2156",
+            "argumentValue": "Fairfield Inn & Suites Dublin, Dublin, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2154",
+            "argumentValue": "Fairfield Inn & Suites Battle Creek MI, Battle Creek, MI, US"
+          },
+          {
+            "argumentPath": "9200015112890_1",
+            "argumentValue": "Fairfield Tuscaloosa AL, Tuscaloosa, AL, US"
+          },
+          {
+            "argumentPath": "9200410261859_1",
+            "argumentValue": "Residence Inn & Suites Augusta, Augusta, GA, US"
+          },
+          {
+            "argumentPath": "9200757581857_1",
+            "argumentValue": "Aviator Wildbirch, Anchorage, AK, US"
+          },
+          {
+            "argumentPath": "9200566762182_1",
+            "argumentValue": "Hampton Inn Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200781230712_1",
+            "argumentValue": "LaQuinta Lubbock South, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200757654427_1",
+            "argumentValue": "Pacific 19, Kailua-Kona, HI, US"
+          },
+          {
+            "argumentPath": "9200764996182_1",
+            "argumentValue": "Sonesta Select Pleasant Hill, Pleasant Hill, CA, US"
+          },
+          {
+            "argumentPath": "9200131843424_1",
+            "argumentValue": "Austin, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200607655720_1",
+            "argumentValue": "Springhill Suites Avondale, Avondale, AZ, US"
+          },
+          {
+            "argumentPath": "9200883874129_1",
+            "argumentValue": "Tru Austin NW Arboretum, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200511520667_1",
+            "argumentValue": "Fairfield Inn Blaine, Blaine, MN, US"
+          },
+          {
+            "argumentPath": "9200727933973_1",
+            "argumentValue": "SpringHill Suites Orlando North/Sanford, Sanford, FL, US"
+          },
+          {
+            "argumentPath": "9200511521381_1",
+            "argumentValue": "Holiday Inn Express Cedar Rapids, Cedar Rapids, IA, US"
+          },
+          {
+            "argumentPath": "2687967984_1",
+            "argumentValue": "Four Points Fairview Heights, Fairview Heights, IL, US"
+          },
+          {
+            "argumentPath": "9200511543638_1",
+            "argumentValue": "Delta Hotels Green Bay, Green Bay, WI, US"
+          },
+          {
+            "argumentPath": "9200487206091_1",
+            "argumentValue": "Fairfield Inn San Marcos, San Marcos, TX, US"
+          },
+          {
+            "argumentPath": "9200829211037_1",
+            "argumentValue": "TownePlace Suites Oklahoma City Downtown, Oklahoma City, OK, US"
+          },
+          {
+            "argumentPath": "2641344837_2148",
+            "argumentValue": "Tru-Cypress, TX, Cypress, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2146",
+            "argumentValue": "SpringHill Suites- St. Pete-Clearwater, Clearwater, FL, US"
+          },
+          {
+            "argumentPath": "9200643203708_1",
+            "argumentValue": "Springhill Suites Lincolnshire, Lincolnshire, IL, US"
+          },
+          {
+            "argumentPath": "9200727889243_1",
+            "argumentValue": "Twin Peaks Hospitaly Inc"
+          },
+          {
+            "argumentPath": "9200473997681_1",
+            "argumentValue": "Marriott Fort Collins, Fort Collins, CO, US"
+          },
+          {
+            "argumentPath": "9200576399676_1",
+            "argumentValue": "Hotel Equities, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200721167367_1",
+            "argumentValue": "Postcard Barber Creek, Grand Junction, MI, US"
+          },
+          {
+            "argumentPath": "9200436213605_1",
+            "argumentValue": "Holiday Inn Express Garners Ferry, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200400695772_1",
+            "argumentValue": "TownePlace Suites Ellensburg, Ellensburg, WA, US"
+          },
+          {
+            "argumentPath": "9200721168027_1",
+            "argumentValue": "Postcard Skagit Valley, Mount Vernon, WA, US"
+          },
+          {
+            "argumentPath": "9200173752432_1",
+            "argumentValue": "Hilton Suites Brentwood, Brentwood, TN, US"
+          },
+          {
+            "argumentPath": "9200757635027_1",
+            "argumentValue": "Pacific Edge, Laguna Beach, CA, US"
+          },
+          {
+            "argumentPath": "9200757634662_1",
+            "argumentValue": "Piccadilly Inn Fresno, Fresno, CA, US"
+          },
+          {
+            "argumentPath": "9200030467116_1",
+            "argumentValue": "Holiday Inn Express Chillcothe, Chillicothe, OH, US"
+          },
+          {
+            "argumentPath": "9200511518135_1",
+            "argumentValue": "Quality Inn Louisville, Louisville, CO, US"
+          },
+          {
+            "argumentPath": "9200511543626_1",
+            "argumentValue": "Staybridge Suites Minot, Minot, ND, US"
+          },
+          {
+            "argumentPath": "9200511520996_1",
+            "argumentValue": "Staybridge Suites Rochester, Rochester, MN, US"
+          },
+          {
+            "argumentPath": "2641344837_2136",
+            "argumentValue": "Home 2 Suites-Carbondale, IL, Carbondale, IL, US"
+          },
+          {
+            "argumentPath": "9200730310080_1",
+            "argumentValue": "Courtyard Jonesboro, Jonesboro, AR, US"
+          },
+          {
+            "argumentPath": "2641344837_2134",
+            "argumentValue": "DoubleTree-DFW Arlington South, Arlington, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2130",
+            "argumentValue": "TownePlace Suites Mobile AL, Mobile, AL, US"
+          },
+          {
+            "argumentPath": "9200436214206_1",
+            "argumentValue": "Delta Columbia Hotel, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200781230942_1",
+            "argumentValue": "Sleep Inn Lubbock West, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200747755794_1",
+            "argumentValue": "Courtyard Midlothian, Midlothian, TX, US"
+          },
+          {
+            "argumentPath": "9200764995510_1",
+            "argumentValue": "Sonesta Select Huntington Beach, Fountain Valley, CA, US"
+          },
+          {
+            "argumentPath": "9200040716412_1",
+            "argumentValue": "Home2 Suites Carmel, Carmel, IN, US"
+          },
+          {
+            "argumentPath": "9200757656351_1",
+            "argumentValue": "Yarrow Doubletree, Park City, UT, US"
+          },
+          {
+            "argumentPath": "9200690971253_1",
+            "argumentValue": "Hotel King George, King George, VA, US"
+          },
+          {
+            "argumentPath": "9200721167827_1",
+            "argumentValue": "Postcard Brazos Valley, Navasota, TX, US"
+          },
+          {
+            "argumentPath": "9200747755816_1",
+            "argumentValue": "Springboard Hospitality, Los Angeles, CA, US"
+          },
+          {
+            "argumentPath": "9200757654360_1",
+            "argumentValue": "Ohia Waikiki, Honolulu, HI, US"
+          },
+          {
+            "argumentPath": "9200757656680_1",
+            "argumentValue": "Glorietta Trattoria, Jackson, WY, US"
+          },
+          {
+            "argumentPath": "9200511543614_1",
+            "argumentValue": "Red Lion Gillette, Gillette, WY, US"
+          },
+          {
+            "argumentPath": "2641344837_2126",
+            "argumentValue": "Fairfield Inn-St. Petersburg Clearwater, Clearwater, FL, US"
+          },
+          {
+            "argumentPath": "2641344837_2124",
+            "argumentValue": "Fairfield Inn & Suites-HolidayTarponSprn, Holiday, FL, US"
+          },
+          {
+            "argumentPath": "9200723572721_1",
+            "argumentValue": "Hotel Equities Pass Through, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200052030235_1",
+            "argumentValue": "Double Tree By Hilton Dublin, Dublin, OH, US"
+          },
+          {
+            "argumentPath": "2641344837_2122",
+            "argumentValue": "Fairfield Inn & Suites-ColoradoSprings N, Colorado Springs, CO, US"
+          },
+          {
+            "argumentPath": "9200724597703_1",
+            "argumentValue": "SureStay Best Western"
+          },
+          {
+            "argumentPath": "9200764998567_1",
+            "argumentValue": "ES Austin Arboretum, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200832255875_1",
+            "argumentValue": "JSW - Revival English Bay, Vancouver, BC, CA"
+          },
+          {
+            "argumentPath": "9200757656612_1",
+            "argumentValue": "Alpine House, Jackson, WY, US"
+          },
+          {
+            "argumentPath": "9200757656360_1",
+            "argumentValue": "Outbound Stowe, Stowe, VT, US"
+          },
+          {
+            "argumentPath": "9200721166614_1",
+            "argumentValue": "Postcard Gilchrist Springs, High Springs, FL, US"
+          },
+          {
+            "argumentPath": "9200511543602_1",
+            "argumentValue": "Courtyard Round Rock, Round Rock, TX, US"
+          },
+          {
+            "argumentPath": "9200764997838_1",
+            "argumentValue": "ES Ft Lauderdale Plantation, Plantation, FL, US"
+          },
+          {
+            "argumentPath": "9200721167490_1",
+            "argumentValue": "Postcard The Thumb, Columbiaville, MI, US"
+          },
+          {
+            "argumentPath": "2641344837_2118",
+            "argumentValue": "Fairfield Inn & Suites-Marianna, Marianna, FL, US"
+          },
+          {
+            "argumentPath": "9200745552364_1",
+            "argumentValue": "Fairfield Inn Zion National Park, Virgin, UT, US"
+          },
+          {
+            "argumentPath": "9200826150564_1",
+            "argumentValue": "TownePlace LAX Manhattan Beach, Hawthorne, CA, US"
+          },
+          {
+            "argumentPath": "2641344837_2114",
+            "argumentValue": "Fairfield Inn & Suites N Charleston Univ, North Charleston, SC, US"
+          },
+          {
+            "argumentPath": "9200723572637_1",
+            "argumentValue": "Hotel Equities OSR, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200582909341_1",
+            "argumentValue": "Home2 Suites Intech Indiana, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200030447943_1",
+            "argumentValue": "Hampton Inn Kent"
+          },
+          {
+            "argumentPath": "9200757656199_1",
+            "argumentValue": "The Shelby, Myrtle Beach, SC, US"
+          },
+          {
+            "argumentPath": "9200131835112_1",
+            "argumentValue": "Fairway Social, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200724651359_1",
+            "argumentValue": "Hampton Inn & Suites Irving, Irving, TX, US"
+          },
+          {
+            "argumentPath": "9200561870552_1",
+            "argumentValue": "Moxy Hotel Columbia, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200524667472_1",
+            "argumentValue": "Element Moline, Moline, IL, US"
+          },
+          {
+            "argumentPath": "9200570415189_1",
+            "argumentValue": "Ramada Inn - Edson, Edson, AB, CA"
+          },
+          {
+            "argumentPath": "9200727933971_1",
+            "argumentValue": "Home2Suites Kalispell, Kalispell, MT, US"
+          },
+          {
+            "argumentPath": "9200131836274_1",
+            "argumentValue": "Roaring Social, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200757634449_1",
+            "argumentValue": "Mar Monte Hotel, Santa Barbara, CA, US"
+          },
+          {
+            "argumentPath": "9200700296975_1",
+            "argumentValue": "Riverfront Cafe, Columbus, GA, US"
+          },
+          {
+            "argumentPath": "2641344837_2108",
+            "argumentValue": "TownePlace Suites-Tallahassee, FL, Tallahassee, FL, US"
+          },
+          {
+            "argumentPath": "9200511543636_1",
+            "argumentValue": "Hampton Inn Eagan, Eagan, MN, US"
+          },
+          {
+            "argumentPath": "9200708686682_1",
+            "argumentValue": "Teddy's Residential New Town, New Town, ND, US"
+          },
+          {
+            "argumentPath": "2641344837_2104",
+            "argumentValue": "SpringHill Suites Houston Medical Center, Houston, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2102",
+            "argumentValue": "Fairfield Inn & Suites-Waxahachie, TX, Waxahachie, TX, US"
+          },
+          {
+            "argumentPath": "2641344837_2100",
+            "argumentValue": "Courtyard Marriott Tampa NW Expressway, Tampa, FL, US"
+          },
+          {
+            "argumentPath": "9200811552402_1",
+            "argumentValue": "Hampton Inn Menifee, Menifee, CA, US"
+          },
+          {
+            "argumentPath": "9200693420815_1",
+            "argumentValue": "Holiday Inn Rochester, Rochester, NY, US"
+          },
+          {
+            "argumentPath": "9200069457531_1",
+            "argumentValue": "Towneplace Stes Fort Mill, Fort Mill, SC, US"
+          },
+          {
+            "argumentPath": "9200757635142_1",
+            "argumentValue": "Banyan Harbor Timeshare, Lihue, HI, US"
+          },
+          {
+            "argumentPath": "9151366019852_1",
+            "argumentValue": "Hampton Inn South - Heritage Park"
+          },
+          {
+            "argumentPath": "9200131845344_1",
+            "argumentValue": "33D LR, Indianapolis, IN, US"
+          },
+          {
+            "argumentPath": "9200131844361_1",
+            "argumentValue": "Legacy, Scottsdale, AZ, US"
+          },
+          {
+            "argumentPath": "9200768268320_1",
+            "argumentValue": "Hotel Windrow, Ellensburg, WA, US"
+          },
+          {
+            "argumentPath": "9200757635044_1",
+            "argumentValue": "BW Orlando Gateway, Orlando, FL, US"
+          },
+          {
+            "argumentPath": "9200410264012_1",
+            "argumentValue": "Courtyard by Marriott Lithia Springs, Lithia Springs, GA, US"
+          },
+          {
+            "argumentPath": "9200387091553_1",
+            "argumentValue": "Maritime Fort Lauderdale, Fort Lauderdale, FL, US"
+          },
+          {
+            "argumentPath": "9200829210889_1",
+            "argumentValue": "Holiday Inn Express Fargo SW, Fargo, ND, US"
+          },
+          {
+            "argumentPath": "168141062944_1",
+            "argumentValue": "Courtyard Mobile, Mobile, AL, US"
+          },
+          {
+            "argumentPath": "9200764998217_1",
+            "argumentValue": "ES Suites Albuquerque, Albuquerque, NM, US"
+          },
+          {
+            "argumentPath": "9200526601168_1",
+            "argumentValue": "Holiday Inn Express Prattville, Prattville, AL, US"
+          },
+          {
+            "argumentPath": "9200764998413_1",
+            "argumentValue": "ES Suites Reno, Reno, NV, US"
+          },
+          {
+            "argumentPath": "9200708686670_1",
+            "argumentValue": "Little Missouri Inn Watford, Watford City, ND, US"
+          },
+          {
+            "argumentPath": "9200654046005_1",
+            "argumentValue": "Tru Yakima, Yakima, WA, US"
+          },
+          {
+            "argumentPath": "9200757656743_1",
+            "argumentValue": "The Virginian Lodge & RV Park, Jackson, WY, US"
+          },
+          {
+            "argumentPath": "9200511543624_1",
+            "argumentValue": "Delta Hotels Fargo, Fargo, ND, US"
+          },
+          {
+            "argumentPath": "9200511522614_1",
+            "argumentValue": "Staybridge Suites Wilmington, Wilmington, NC, US"
+          },
+          {
+            "argumentPath": "9200069457347_1",
+            "argumentValue": "Hamilton Hotel, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200347498302_1",
+            "argumentValue": "LaQuinta Inn & Suites Wyndham Harrisburg, Harrisburg, PA, US"
+          },
+          {
+            "argumentPath": "9200721722720_1",
+            "argumentValue": "Grande Prairie, Grande Prairie, AB, CA"
+          },
+          {
+            "argumentPath": "9200757635131_1",
+            "argumentValue": "Neptune Resort, Fort Myers Beach, FL, US"
+          },
+          {
+            "argumentPath": "9200387087557_1",
+            "argumentValue": "Paso del Norte, El Paso, TX, US"
+          },
+          {
+            "argumentPath": "9200781230732_1",
+            "argumentValue": "Quality Inn Lubbock South, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200030448030_1",
+            "argumentValue": "Holiday Inn Express Westlake, Westlake, OH, US"
+          },
+          {
+            "argumentPath": "168141036384_1",
+            "argumentValue": "Hampton Inn Ft. Worth"
+          },
+          {
+            "argumentPath": "9200347504133_1",
+            "argumentValue": "Revive Living Development, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200511520414_1",
+            "argumentValue": "Staybridge Suites Grand Forks, Grand Forks, ND, US"
+          },
+          {
+            "argumentPath": "9200173754504_1",
+            "argumentValue": "The Sound Hotel Location, Seattle, WA, US"
+          },
+          {
+            "argumentPath": "9200727933972_1",
+            "argumentValue": "Courtyard Orlando Lake Mary North, Lake Mary, FL, US"
+          },
+          {
+            "argumentPath": "9200478032251_1",
+            "argumentValue": "Fairfield Inn Whitsett, Whitsett, NC, US"
+          },
+          {
+            "argumentPath": "168141041586_1",
+            "argumentValue": "TPS Gainesville, Gainesville, GA, US"
+          },
+          {
+            "argumentPath": "9200143717826_1",
+            "argumentValue": "Holiday Inn Cary, Cary, NC, US"
+          },
+          {
+            "argumentPath": "9200347502365_1",
+            "argumentValue": "Towneplace Suites, Tehachapi, CA, US"
+          },
+          {
+            "argumentPath": "9200721167765_1",
+            "argumentValue": "Postcard Lake Hartwell, Seneca, SC, US"
+          },
+          {
+            "argumentPath": "9200511543612_1",
+            "argumentValue": "Crowne Plaza Virginia Beach, Virginia Beach, VA, US"
+          },
+          {
+            "argumentPath": "9200570415626_1",
+            "argumentValue": "Stoneridge Mountain Resort, Canmore, AB, CA"
+          },
+          {
+            "argumentPath": "9200131842855_1",
+            "argumentValue": "Roaring Social Hamilton, Alpharetta, GA, US"
+          },
+          {
+            "argumentPath": "9200030449652_1",
+            "argumentValue": "Residence Inn Middleburg Heights, Berea, OH, US"
+          },
+          {
+            "argumentPath": "9200750037589_1",
+            "argumentValue": "Courtyard Dallas Medical/Market, Dallas, TX, US"
+          },
+          {
+            "argumentPath": "9200764995088_1",
+            "argumentValue": "ES Suites Chatsworth, Los Angeles, CA, US"
+          },
+          {
+            "argumentPath": "9200721167917_1",
+            "argumentValue": "Postcard Shenandoah North, Basye, VA, US"
+          },
+          {
+            "argumentPath": "9200764993446_1",
+            "argumentValue": "ES Suites Birmingham Homewood, Birmingham, AL, US"
+          },
+          {
+            "argumentPath": "9151366331841_1",
+            "argumentValue": "Homewood Suites Iowa River Landing, Coralville, IA, US"
+          },
+          {
+            "argumentPath": "9200723572319_1",
+            "argumentValue": "Aloft Austin South, Austin, TX, US"
+          },
+          {
+            "argumentPath": "9200347499038_1",
+            "argumentValue": "Hampton Inn Patterson, Patterson, CA, US"
+          },
+          {
+            "argumentPath": "9200030467341_1",
+            "argumentValue": "Homes2 Suites Columbus Downtown, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200570413741_1",
+            "argumentValue": "Fairfield Inn West Kelowna, West Kelowna, BC, CA"
+          },
+          {
+            "argumentPath": "9200436213260_1",
+            "argumentValue": "Fairfield Inn & Suites Columbia, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200757582149_1",
+            "argumentValue": "Harbor Court Hotel, San Francisco, CA, US"
+          },
+          {
+            "argumentPath": "9200511543600_1",
+            "argumentValue": "LaQuinta Hawthorn, Pflugerville, TX, US"
+          },
+          {
+            "argumentPath": "9200757656723_1",
+            "argumentValue": "Hawthorne Alpine, Alpine, WY, US"
+          },
+          {
+            "argumentPath": "9200764995712_1",
+            "argumentValue": "ES San Diego Rancho Bernardo, San Diego, CA, US"
+          },
+          {
+            "argumentPath": "9200511543646_1",
+            "argumentValue": "Grand Forks Lodge and Suites, Grand Forks, ND, US"
+          },
+          {
+            "argumentPath": "9200757656174_1",
+            "argumentValue": "Sound View Greenport, Greenport, NY, US"
+          },
+          {
+            "argumentPath": "9200757656645_1",
+            "argumentValue": "Anvil Hotel, Jackson, WY, US"
+          },
+          {
+            "argumentPath": "9200670145258_1",
+            "argumentValue": "Hampton Inn Columbus Easton, Columbus, OH, US"
+          },
+          {
+            "argumentPath": "9200566762577_1",
+            "argumentValue": "Broadway Pub and Grub, Nashville, TN, US"
+          },
+          {
+            "argumentPath": "9200030466412_1",
+            "argumentValue": "Spring Hill Suites Dayton North/Vandalia, Dayton, OH, US"
+          },
+          {
+            "argumentPath": "9200757635036_1",
+            "argumentValue": "The Parker, Parker, CO, US"
+          },
+          {
+            "argumentPath": "9200478032857_1",
+            "argumentValue": "Powerhouse Restaurant, Scottsbluff, NE, US"
+          },
+          {
+            "argumentPath": "9200757634929_1",
+            "argumentValue": "Studio City Court Yard, Los Angeles, CA, US"
+          },
+          {
+            "argumentPath": "9200601212529_1",
+            "argumentValue": "The Gerald Hotel, Grand Rapids, MI, US"
+          },
+          {
+            "argumentPath": "9200756401117_1",
+            "argumentValue": "Holiday Inn Express Dallas Market Center, Dallas, TX, US"
+          },
+          {
+            "argumentPath": "9200511543634_1",
+            "argumentValue": "Country Inn & Suites Lincoln, Lincoln, NE, US"
+          },
+          {
+            "argumentPath": "9200764996015_1",
+            "argumentValue": "ES Suites Sunnyvale, Sunnyvale, CA, US"
+          },
+          {
+            "argumentPath": "9200757655780_1",
+            "argumentValue": "Plantation Hale Suites, Kappa, HI, US"
+          },
+          {
+            "argumentPath": "9200511522361_1",
+            "argumentValue": "Homewood Suites Virginia Beach, Virginia Beach, VA, US"
+          },
+          {
+            "argumentPath": "9200376210556_1",
+            "argumentValue": "Confidential, Dearborn, MI, US"
+          },
+          {
+            "argumentPath": "168146195120_1",
+            "argumentValue": "Island Hotel RL, Fort Walton Beach, FL, US"
+          },
+          {
+            "argumentPath": "9200763365877_1",
+            "argumentValue": "Hilton UF Conf Cntr Gainesville, Gainesville, FL, US"
+          },
+          {
+            "argumentPath": "9200700184574_1",
+            "argumentValue": "Hampton Inn St. Thomas, St. Thomas, VI, US"
+          },
+          {
+            "argumentPath": "9200757656052_1",
+            "argumentValue": "The Ozarker Lodge, Branson, MO, US"
+          },
+          {
+            "argumentPath": "9200811805308_1",
+            "argumentValue": "MidiCi Wood Fired Pizza & Kitchen, Hawthorne, CA, US"
+          },
+          {
+            "argumentPath": "9200410259383_1",
+            "argumentValue": "Hampton Inn Fort Mill, Fort Mill, SC, US"
+          },
+          {
+            "argumentPath": "9200721167752_1",
+            "argumentValue": "Postcard Hocking Hills, Nelsonville, OH, US"
+          },
+          {
+            "argumentPath": "9200511543622_1",
+            "argumentValue": "Country Inn & Suites Garden City, Garden City, KS, US"
+          },
+          {
+            "argumentPath": "9200757581975_1",
+            "argumentValue": "Element Sedona, Sedona, AZ, US"
+          },
+          {
+            "argumentPath": "9200347500724_1",
+            "argumentValue": "Water's Edge, Belcamp, MD, US"
+          },
+          {
+            "argumentPath": "9200702817074_1",
+            "argumentValue": "Holiday Inn Ft. Meyers, Fort Myers, FL, US"
+          },
+          {
+            "argumentPath": "9200757621733_1",
+            "argumentValue": "Carboni's, Winters, CA, US"
+          },
+          {
+            "argumentPath": "9200646290435_1",
+            "argumentValue": "AC Hotel Wichita, Wichita, KS, US"
+          },
+          {
+            "argumentPath": "9200622680915_1",
+            "argumentValue": "Holiday Inn Lafayette, Lafayette, IN, US"
+          },
+          {
+            "argumentPath": "9200410261608_1",
+            "argumentValue": "Springhill Suites Augusta, Augusta, GA, US"
+          },
+          {
+            "argumentPath": "9200410260997_1",
+            "argumentValue": "Holiday Inn Express & Suites Salt Lake City South, Murray, UT, US"
+          },
+          {
+            "argumentPath": "9200721167929_1",
+            "argumentValue": "Postcard Mount Adams, Glenwood, WA, US"
+          },
+          {
+            "argumentPath": "9200829210734_1",
+            "argumentValue": "Orangewood Inn & Suites Kansas City Airport, Kansas City, MO, US"
+          },
+          {
+            "argumentPath": "9200347499113_1",
+            "argumentValue": "Hampton Inn Turlock, Turlock, CA, US"
+          },
+          {
+            "argumentPath": "9200436213867_1",
+            "argumentValue": "Sheraton Columbia Hotel, Columbia, SC, US"
+          },
+          {
+            "argumentPath": "9200511543610_1",
+            "argumentValue": "Home 2 Suites Prattville, Prattville, AL, US"
+          },
+          {
+            "argumentPath": "9200173753013_1",
+            "argumentValue": "Hampton Inn Pullman, Pullman, WA, US"
+          },
+          {
+            "argumentPath": "9151366331877_1",
+            "argumentValue": "Staybridge Suites Des Moines Downtown, Des Moines, IA, US"
+          },
+          {
+            "argumentPath": "9200721167699_1",
+            "argumentValue": "Postcard Western Catskills, Roscoe, NY, US"
+          },
+          {
+            "argumentPath": "9200757581987_1",
+            "argumentValue": "Airtel Plaza Hotel, Los Angeles, CA, US"
+          },
+          {
+            "argumentPath": "9200727933970_1",
+            "argumentValue": "Candlewood Suites Mesa, Mesa, AZ, US"
+          },
+          {
+            "argumentPath": "9200566761537_1",
+            "argumentValue": "Sheraton Brentwood, TN, Brentwood, TN, US"
+          },
+          {
+            "argumentPath": "9200561871418_1",
+            "argumentValue": "Candlewood Suites Bismarck, Bismarck, ND, US"
+          },
+          {
+            "argumentPath": "9200570412681_1",
+            "argumentValue": "Holiday Inn Express & Suites Whitecourt, Whitecourt, AB, CA"
+          },
+          {
+            "argumentPath": "9151366332137_1",
+            "argumentValue": "Courtyard Winston Salem, Winston-Salem, NC, US"
+          },
+          {
+            "argumentPath": "168112875417_1",
+            "argumentValue": "Fairfield Inn Federal Plaza"
+          },
+          {
+            "argumentPath": "9200757582114_1",
+            "argumentValue": "El Rancho Inn, Millbrae, CA, US"
+          },
+          {
+            "argumentPath": "9200511521444_1",
+            "argumentValue": "Home 2 Suites Lubbock, Lubbock, TX, US"
+          },
+          {
+            "argumentPath": "9200792165655_1",
+            "argumentValue": "CY Dallas DFW Airport N. Irving, Irving, TX, US"
+          },
+          {
+            "argumentPath": "9200195240295_1",
+            "argumentValue": "Fairfield Inn Berry College, Rome, GA, US"
+          },
+          {
+            "argumentPath": "9200030445396_1",
+            "argumentValue": "Holiday Inn Boone NC"
+          }
+        ]
+      },
+      {
+        "schema": "WORKER CATEGORY",
+        "payLoadArguments": [
+          {
+            "argumentPath": "1:137",
+            "argumentValue": "Part Time"
+          },
+          {
+            "argumentPath": "9200400814982_1",
+            "argumentValue": "Full Time"
+          },
+          {
+            "argumentPath": "9200425665842_1",
+            "argumentValue": "Public Space person"
+          },
+          {
+            "argumentPath": "1:139",
+            "argumentValue": "Seasonal"
+          },
+          {
+            "argumentPath": "1:133",
+            "argumentValue": "Contract"
+          },
+          {
+            "argumentPath": "1:141",
+            "argumentValue": "Student"
+          },
+          {
+            "argumentPath": "1:140",
+            "argumentValue": "Summer"
+          },
+          {
+            "argumentPath": "1:132",
+            "argumentValue": "Consultant"
+          },
+          {
+            "argumentPath": "1:142",
+            "argumentValue": "Temporary"
+          },
+          {
+            "argumentPath": "9200773665066_1",
+            "argumentValue": "P16 under 24hrs - NOT eligible for GRP BEN"
+          },
+          {
+            "argumentPath": "72674:0009",
+            "argumentValue": "Trainee"
+          },
+          {
+            "argumentPath": "9200773665051_1",
+            "argumentValue": "R40 working 40 hrs per week - Eligible for GRP BEN"
+          },
+          {
+            "argumentPath": "72674:0008",
+            "argumentValue": "Retired"
+          },
+          {
+            "argumentPath": "72674:0007",
+            "argumentValue": "Resident Alien"
+          },
+          {
+            "argumentPath": "72674:0006",
+            "argumentValue": "Intern"
+          },
+          {
+            "argumentPath": "72674:0005",
+            "argumentValue": "Expatriate"
+          },
+          {
+            "argumentPath": "72674:0004",
+            "argumentValue": "Contractor - 3rd Party"
+          },
+          {
+            "argumentPath": "72674:0003",
+            "argumentValue": "Contractor - 1099"
+          },
+          {
+            "argumentPath": "72674:0002",
+            "argumentValue": "Casual"
+          },
+          {
+            "argumentPath": "9200471228615_1",
+            "argumentValue": "On-Call"
+          },
+          {
+            "argumentPath": "72674:0001",
+            "argumentValue": "Apprentice"
+          },
+          {
+            "argumentPath": "9200773665045_1",
+            "argumentValue": "P24 Working 24 hrs per week - Eligible for GRP BEN"
+          },
+          {
+            "argumentPath": "9200773665057_1",
+            "argumentValue": "CASUAL- NOT Eligible for GRP BEN"
+          }
+        ]
+      },
+      {
+        "schema": "JOB CLASS",
+        "payLoadArguments": [
+          {
+            "argumentPath": "9200773659763_1",
+            "argumentValue": "Food & Beverage"
+          },
+          {
+            "argumentPath": "1:156",
+            "argumentValue": "Technical"
+          },
+          {
+            "argumentPath": "1:155",
+            "argumentValue": "Sales"
+          },
+          {
+            "argumentPath": "1:152",
+            "argumentValue": "Manual Labor"
+          },
+          {
+            "argumentPath": "1:151",
+            "argumentValue": "Management"
+          },
+          {
+            "argumentPath": "1:154",
+            "argumentValue": "Senior Management"
+          },
+          {
+            "argumentPath": "1:153",
+            "argumentValue": "Professional"
+          },
+          {
+            "argumentPath": "9200773659768_1",
+            "argumentValue": "Accounting & Finance"
+          },
+          {
+            "argumentPath": "1:150",
+            "argumentValue": "Clerical"
+          },
+          {
+            "argumentPath": "2641344856_1262",
+            "argumentValue": "Controller"
+          },
+          {
+            "argumentPath": "2641344856_1261",
+            "argumentValue": "Rooms"
+          },
+          {
+            "argumentPath": "9200399064092_1",
+            "argumentValue": "Supervisor"
+          },
+          {
+            "argumentPath": "2641344856_1264",
+            "argumentValue": "Maintenance"
+          },
+          {
+            "argumentPath": "2641344856_1263",
+            "argumentValue": "Development"
+          },
+          {
+            "argumentPath": "2641372757_15128",
+            "argumentValue": "Restaurant Banquet"
+          },
+          {
+            "argumentPath": "2641344856_1260",
+            "argumentValue": "Sales"
+          },
+          {
+            "argumentPath": "2641344856_1259",
+            "argumentValue": "Executive"
+          },
+          {
+            "argumentPath": "2641344856_1258",
+            "argumentValue": "Administration"
+          },
+          {
+            "argumentPath": "9200105590771_1",
+            "argumentValue": "Restaurant"
+          },
+          {
+            "argumentPath": "9200845000202_1",
+            "argumentValue": "Revenue Management"
+          },
+          {
+            "argumentPath": "2641344856_1265",
+            "argumentValue": "Lounge"
+          },
+          {
+            "argumentPath": "2641344856_1257",
+            "argumentValue": "Accounting"
+          },
+          {
+            "argumentPath": "2641344856_1256",
+            "argumentValue": "Operations"
+          }
+        ]
+      }
+    ]
+  }
+}

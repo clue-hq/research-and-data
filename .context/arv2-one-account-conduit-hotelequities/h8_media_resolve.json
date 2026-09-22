@@ -1,0 +1,106 @@
+{
+  "episode_pages": [
+    {
+      "slug": "rafter_ai_payoff",
+      "person": "Ben Rafter",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-hotel-performance/",
+      "http": 200,
+      "page_title": "Where AI Actually Pays Off in Hospitality, and What Owners Shoul\u2026",
+      "mp3_candidates": [
+        "https://www.buzzsprout.com/2103299/episodes/19376570-where-ai-actually-pays-off-in-hospitality-and-what-owners-should-demand-ben-rafter-hotel-equities.mp3"
+      ],
+      "feed_candidates": [
+        "https://feeds.buzzsprout.com/2103299.rss"
+      ],
+      "duration_seconds_hint": null,
+      "bytes": 56176
+    },
+    {
+      "slug": "rafter_tech_ceo",
+      "person": "Ben Rafter",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter/",
+      "http": 200,
+      "page_title": "What Happens When a Tech CEO Leads a Hotel Company - Ben Rafter,\u2026",
+      "mp3_candidates": [
+        "https://www.buzzsprout.com/2103299/episodes/16397083-what-happens-when-a-tech-ceo-leads-a-hotel-company-ben-rafter-springboard-hospitality.mp3"
+      ],
+      "feed_candidates": [
+        "https://feeds.buzzsprout.com/2103299.rss"
+      ],
+      "duration_seconds_hint": null,
+      "bytes": 55685
+    },
+    {
+      "slug": "rafter_ai_labor",
+      "person": "Ben Rafter",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-ai-labor/",
+      "http": 200,
+      "page_title": "How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter,\u2026",
+      "mp3_candidates": [
+        "https://www.buzzsprout.com/2103299/episodes/19376569-how-ai-addresses-the-biggest-cost-in-a-hotel-labor-ben-rafter-hotel-equities.mp3"
+      ],
+      "feed_candidates": [
+        "https://feeds.buzzsprout.com/2103299.rss"
+      ],
+      "duration_seconds_hint": null,
+      "bytes": 55825
+    },
+    {
+      "slug": "rafter_tech",
+      "person": "Ben Rafter",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-tech/",
+      "http": 200,
+      "page_title": "Tech CEO-Turned-Hotel CEO Shares Tech Advice - Ben Rafter, Sprin\u2026",
+      "mp3_candidates": [
+        "https://www.buzzsprout.com/2103299/episodes/16412086-tech-ceo-turned-hotel-ceo-shares-tech-advice-ben-rafter-springboard-hospitality.mp3"
+      ],
+      "feed_candidates": [
+        "https://feeds.buzzsprout.com/2103299.rss"
+      ],
+      "duration_seconds_hint": null,
+      "bytes": 72881
+    },
+    {
+      "slug": "rafter_owner_econ",
+      "person": "Ben Rafter",
+      "page_url": "https://podcast.hospitalitydaily.com/ben-rafter-owner-economics/",
+      "http": 200,
+      "page_title": "Why Hotel Ownership Is Becoming Unsustainable, and What We&#x27;re Do\u2026",
+      "mp3_candidates": [
+        "https://www.buzzsprout.com/2103299/episodes/19376568-why-hotel-ownership-is-becoming-unsustainable-and-what-we-re-doing-about-it-ben-rafter-hotel-equities.mp3"
+      ],
+      "feed_candidates": [
+        "https://feeds.buzzsprout.com/2103299.rss"
+      ],
+      "duration_seconds_hint": null,
+      "bytes": 57875
+    },
+    {
+      "slug": "rafter_no_vacancy",
+      "person": "Ben Rafter",
+      "page_url": "https://novacancynews.com/springboards-ben-rafter-on-building-smarter-faster-and-more-human-hotels/",
+      "http": 200,
+      "page_title": "Springboard\u2019s Ben Rafter on Building Smarter, Faster, and More Human Hotels - No Vacancy News",
+      "mp3_candidates": [],
+      "feed_candidates": [
+        "https://novacancynews.com/comments/feed/",
+        "https://novacancynews.com/feed/"
+      ],
+      "duration_seconds_hint": 400,
+      "bytes": 184372
+    },
+    {
+      "slug": "rafter_tmg",
+      "person": "Ben Rafter",
+      "page_url": "https://www.travelmediagroup.com/190-tmg-hospitality-trailblazers-ben-rafter/",
+      "http": 200,
+      "page_title": "190 - TMG Hospitality Trailblazers: Ben Rafter | Travel Media Group",
+      "mp3_candidates": [],
+      "feed_candidates": [],
+      "duration_seconds_hint": null,
+      "bytes": 260683
+    }
+  ],
+  "show_rss": null,
+  "rafter_episodes_from_rss": []
+}

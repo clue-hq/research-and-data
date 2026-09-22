@@ -1,0 +1,21 @@
+=== rafter_ai_labor | How AI Addresses the Biggest Cost in a Hotel: Labor (Ben Rafter, Hotel Equities) | 640s ===
+  downloaded 7707021 bytes in 0.91s
+  files.start http=200 upload_url=YES
+  files.upload http=200 1.7s
+
+-- gemini-3.5-transcribe (faithful) --
+  gemini[h10_faithful_rafter_ai_labor] http=200 8.82s usage={"promptTokenCount": 16131, "totalTokenCount": 16131, "promptTokensDetails": [{"modality": "AUDIO", "tokenCount": 16016}, {"modality": "TEXT", "tokenCount": 115}], "serviceTier": "standard"} cost=$0.004816
+   chars=10490 words=1926 wpm=180.6
+
+-- gemini-3.5-flash-lite (timestamps + quotes) --
+  gemini[h10_timestamped_rafter_ai_labor] http=200 13.78s usage={"promptTokenCount": 16414, "candidatesTokenCount": 4440, "totalTokenCount": 20854, "promptTokensDetails": [{"modality": "AUDIO", "tokenCount": 16016}, {"modality": "TEXT", "tokenCount": 398}], "serviceTier": "standard"} cost=$0.006621
+   timestamped lines=99 unique=97 loop_starts_at=00:58
+
+   quote verification vs the faithful ASR:
+     [01:37] PARTIAL   uniq=False :: because that's the fun stuff. But, but the value of AI is going to be almost entirely operation
+     [01:49] PARTIAL   uniq=False :: And I use labor a lot because AI is very quantifiable in labor management and we have several p
+     [05:35] PARTIAL   uniq=False :: It's not saying this is what you can do, right? And so we're trying to add a layer not only tha
+     [06:31] PARTIAL   uniq=False :: And that that's essentially just being knowing how to read a P&L. It means actually thinking li
+     [07:49] PARTIAL   uniq=False :: And what it is is adding layers on top of the technologies that tell the GM or tell the front o
+
+H10[rafter_ai_labor] 26.2s cost=$0.011437 spend=0.195
