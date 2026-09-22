@@ -62,11 +62,11 @@ from clue_api.agent_runtime_wiring import (
     DurableDeepAgentTurnRunner,
     GovernedAgentToolFactory,
 )
-from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
+from clue_api.agent_turn_wiring import DbAgentTurnJournal
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
-from clue_api.arv2.quality_committee_tool import NominateCommitteeTool
+from clue_api.arv2.quality_committee_tool import NominateCommitteeTool, NominateWebCommitteeTool
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
@@ -94,9 +94,9 @@ from clue_api.arv2.research_operations import OperationScope
 from clue_api.execution_wiring import (
     ExecutionRunEventWriter,
     StorageExecutionParameterStore,
-    StorageParameterArtifactStore,
     build_tool_invoker,
 )
+from clue_api.quality_research_artifacts import ResearchArtifacts, ResearchParameterArtifacts
 from clue_api.recipe_wiring import (
     build_recipe_lifecycle,
     build_recipe_pin_registry,
@@ -180,6 +180,7 @@ def quality_tools(
         SearchEvidenceTool,
         ProcessingDispositionTool,
         NominateCommitteeTool,
+        NominateWebCommitteeTool,
         SubmitValueNarrativeTool,
         ReadPageInputsTool,
         PublishResearchPageTool,
@@ -190,12 +191,17 @@ def quality_tools(
 
 
 def quality_profiles(
-    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 4
+    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 5
 ) -> AgentProfileRegistry:
     authority = {
         descriptor.address: (
             frozenset({AgentRole.ACCOUNT_RESEARCH})
-            if descriptor.name in {"acquire_research_evidence", "nominate_committee_candidate"}
+            if descriptor.name
+            in {
+                "acquire_research_evidence",
+                "nominate_committee_candidate",
+                "nominate_web_committee_candidate",
+            }
             else frozenset({AgentRole.RESEARCH_NARRATIVE})
             if descriptor.name in {"submit_value_narrative", "publish_research_page"}
             else ROLES
@@ -309,8 +315,9 @@ class _ChildFactory:
 
 
 class _Workspaces:
-    def __init__(self, workspaces: AgentWorkspaceFactory):
+    def __init__(self, workspaces: AgentWorkspaceFactory, artifacts: ResearchArtifacts):
         self.workspaces = workspaces
+        self.artifacts = artifacts
 
     def acquire(
         self,
@@ -327,6 +334,7 @@ class _Workspaces:
             thread_id=thread_id,
             execution_id=execution_id,
             policy=resolved_profile.profile.workspace,
+            artifact_sink=self.artifacts,
         )
 
 
@@ -398,9 +406,11 @@ class ResearchUnitRuntime:
                 acquisition.runtime.catalog,
                 purge=settings.unevidenced_row_purge_enabled,
             )
-        self.artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=connections)
+        self.artifacts = ResearchArtifacts(storage=storage, conn_factory=connections)
+        self.artifacts.scope = scope
+        self.artifacts.context_id = context_id
         self.turns = DbAgentTurnJournal(conn_factory=connections)
-        self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 4))
+        self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 5))
         self.profiles = quality_profiles(tools, version=self.resource_version)
         self.checkpointer_factory = checkpointer_factory
         self.plans = DbAgentPlanJournal(conn_factory=connections)
@@ -411,15 +421,14 @@ class ResearchUnitRuntime:
             tool_registry=tools, conn_factory=connections, pin_registry=pins
         )
         self.recipes = DbRecipeReader(conn_factory=connections)
-        self.parameters = StorageExecutionParameterStore(
-            StorageParameterArtifactStore(storage=storage, conn_factory=connections)
-        )
+        self.parameters = StorageExecutionParameterStore(ResearchParameterArtifacts(self.artifacts))
         self.invoker = build_tool_invoker(
             registry=tools,
             idempotency_store=DbIdempotencyStore(conn_factory=connections),
             storage=storage,
             settings=settings,
             conn_factory=connections,
+            parameter_artifacts=ResearchParameterArtifacts(self.artifacts),
         )
         journal = DbExecutionJournal(transport=ExecutionRunEventWriter())
         self.starter = DbExecutionStarter(
@@ -636,6 +645,7 @@ class ResearchUnitRuntime:
             thread_id=thread,
             execution_id=execution,
             policy=resolved.profile.workspace,
+            artifact_sink=self.artifacts,
         )
         try:
             async with self.connections() as conn:
@@ -738,7 +748,7 @@ class ResearchUnitRuntime:
                 artifacts=self.artifacts,
                 tools=self.tools,
                 contexts=self.contexts,
-                workspaces=_Workspaces(self.workspaces),
+                workspaces=_Workspaces(self.workspaces, self.artifacts),
                 execution_factory=_ChildFactory(self),
                 spend=self,
                 executions=_ChildExecutions(self),

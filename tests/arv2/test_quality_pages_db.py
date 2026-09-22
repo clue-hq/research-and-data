@@ -437,3 +437,73 @@ def test_same_account_has_two_explicit_project_pages(tmp_path):
             ).scalar_one() == 2
 
     run_async(case())
+
+
+def test_independent_person_research_has_its_own_refreshable_context(tmp_path):
+    async def case():
+        from clue_api.arv2.account_research_store import create_job
+        from clue_api.arv2.display.recipes import load_display_recipes, read_recipes
+        from clue_api.arv2.quality_read import select_quality_context
+        from clue_api.arv2.research_operations import OperationScope
+        from clue_research.identity import insert_contact_entity
+
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, account, cid = await setup(conn, storage)
+            await load_display_recipes(conn)
+            contact = await insert_contact_entity(
+                conn, account_entity_id=account.account_id, full_name="Independent Person"
+            )
+            jid = uuid4()
+            await create_job(
+                conn,
+                job_id=jid,
+                run_id=op.run_id,
+                workspace_id=op.workspace_id,
+                account_entity_id=op.account_id,
+                subject_type="person",
+                subject_entity_id=contact,
+                profile_sha256="a" * 64,
+            )
+            scope = replace(
+                account, job_id=jid, subject_kind="person", contact_id=contact, catalog_version="v4"
+            )
+            own = OperationScope(op.workspace_id, op.run_id, jid, op.account_id)
+            await ensure_generation(conn, own, context_id=cid)
+            deps = await page_inputs(conn, scope, context_id=cid, page="contact")
+            assert deps.generation.initial_job_id == jid
+            sections = await read_recipes(conn, "contact", workspace_id=op.workspace_id)
+            draft = PageDraft(
+                page="contact",
+                expected_dependency_sha256=deps.sha256,
+                sections=tuple(
+                    PageSectionDraft(
+                        key=r.section_key, gaps=("Public evidence remains to be acquired.",)
+                    )
+                    for r in sections
+                ),
+            )
+            ex = await execution(conn, own, scope.project_id)
+            await publish_page(
+                conn,
+                storage,
+                scope,
+                context_id=cid,
+                execution_id=ex,
+                draft=draft,
+                model="fixture/no-model",
+            )
+            chosen = await select_quality_context(
+                conn,
+                workspace_id=op.workspace_id,
+                subject_kind="contact",
+                subject_id=contact,
+                account_id=op.account_id,
+                project_id=scope.project_id,
+            )
+            assert chosen and chosen.scope and chosen.scope.job_id == jid
+            assert chosen.metadata["generationId"] == str(deps.generation.generation_id)
+            page = await read_page(conn, scope, context_id=cid, page="contact")
+            assert page["research_quality"]["refreshPending"] is False
+
+    run_async(case())

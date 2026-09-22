@@ -32,14 +32,19 @@ async def page_inputs(
         raise ValueError("page does not belong to this research subject")
     gid = (
         await conn.execute(
-            text("""SELECT generation_id
-        FROM arv2_account_research_generation WHERE workspace_id=:ws AND run_id=:run
-          AND account_id=:account AND context_id=:context ORDER BY created_at DESC LIMIT 1"""),
+            text("""SELECT g.generation_id
+        FROM arv2_account_research_generation g
+        JOIN arv2_research_job j ON j.job_id=g.initial_job_id
+        WHERE g.workspace_id=:ws AND g.run_id=:run
+          AND g.account_id=:account AND g.context_id=:context
+          AND (j.subject_type='account' OR j.subject_entity_id=:subject)
+        ORDER BY g.created_at DESC LIMIT 1"""),
             {
                 "ws": scope.workspace_id,
                 "run": scope.run_id,
                 "account": scope.account_id,
                 "context": context_id,
+                "subject": scope.person_subject_id,
             },
         )
     ).scalar_one_or_none()
@@ -52,15 +57,18 @@ async def page_inputs(
         raise ValueError("page generation is stopped")
     latest = (
         await conn.execute(
-            text("""SELECT generation_id FROM arv2_account_research_generation
-        WHERE workspace_id=:ws AND project_id=:project AND account_id=:account
-          AND context_id=:context
-        ORDER BY created_at DESC,generation_id DESC LIMIT 1"""),
+            text("""SELECT g.generation_id FROM arv2_account_research_generation g
+        JOIN arv2_research_job j ON j.job_id=g.initial_job_id
+        WHERE g.workspace_id=:ws AND g.project_id=:project AND g.account_id=:account
+          AND g.context_id=:context
+          AND (j.subject_type='account' OR j.subject_entity_id=:subject)
+        ORDER BY g.created_at DESC,g.generation_id DESC LIMIT 1"""),
             {
                 "ws": scope.workspace_id,
                 "project": scope.project_id,
                 "account": scope.account_id,
                 "context": context_id,
+                "subject": scope.person_subject_id,
             },
         )
     ).scalar_one()

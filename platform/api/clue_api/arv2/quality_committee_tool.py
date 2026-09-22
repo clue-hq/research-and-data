@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -15,7 +15,12 @@ from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.committee_discovery import read_candidate, reference_data
 from clue_api.arv2.quality_catalog import load_quality_resources
 from clue_api.arv2.quality_claims import ClaimProposal, SemanticAssessment, submit_proposal
-from clue_api.arv2.quality_evidence import JsonSupport, resolve_source
+from clue_api.arv2.quality_evidence import (
+    JsonSupport,
+    TextSupport,
+    resolve_source,
+    validate_support,
+)
 from clue_api.arv2.quality_generation import ensure_generation, register_child
 from clue_api.arv2.quality_relationships import COMMITTEE, CommitteeAssessment, OrganizationScope
 from clue_api.arv2.quality_tools import _ResearchWriteTool
@@ -36,6 +41,16 @@ class NominateCommitteeInput(ToolInput):
     rationale: str = Field(min_length=1, max_length=6000)
 
 
+class NominateWebCommitteeInput(ToolInput):
+    name: str = Field(min_length=2, max_length=200)
+    linkedin_url: str | None = None
+    source: TextSupport
+    persona_key: str = Field(min_length=1, max_length=200)
+    role: Literal["champion", "economic_buyer", "technical_evaluator", "blocker", "other"]
+    organization_scope: OrganizationScope
+    rationale: str = Field(min_length=1, max_length=6000)
+
+
 class NominateCommitteeReceipt(ToolOutput):
     contact_id: UUID
     assessment_claim_id: UUID
@@ -47,7 +62,7 @@ class NominateCommitteeReceipt(ToolOutput):
 
 class NominateCommitteeTool(_ResearchWriteTool):
     name = "nominate_committee_candidate"
-    input_model = NominateCommitteeInput
+    input_model: ClassVar[type[ToolInput]] = NominateCommitteeInput
     output_model: ClassVar[type[ToolOutput]] = NominateCommitteeReceipt
     model_description = (
         "Nominate a candidate from an exact saved AI Ark result. Explain the persona, potential "
@@ -57,7 +72,11 @@ class NominateCommitteeTool(_ResearchWriteTool):
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        args = NominateCommitteeInput.model_validate(inputs)
+        args = (
+            NominateWebCommitteeInput.model_validate(inputs)
+            if self.name == "nominate_web_committee_candidate"
+            else NominateCommitteeInput.model_validate(inputs)
+        )
         authority = await self.authority(ctx)
         if authority.role != "account_research" or self.scope.person_subject_id:
             raise ValueError("only the account parent may nominate candidates")
@@ -67,22 +86,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 text("SELECT job_id FROM arv2_research_job WHERE job_id=:id FOR UPDATE"),
                 {"id": self.scope.job_id},
             )
-            op, person = await read_candidate(
-                conn, self.storage, authority.grant.scope, args.candidate_ref
-            )
-            if not person.full_name or not person.ark_id or not op.artifact_key:
-                raise ValueError("provider candidate lacks a stable identity or saved original")
-            contact, _ = await resolve_provider_contact(
-                conn,
-                workspace_id=self.scope.workspace_id,
-                account_id=EntityId(self.scope.account_id),
-                provider="ai_ark",
-                subject_id=person.ark_id,
-                name=person.full_name,
-                linkedin_url=person.linkedin_url,
-                artifact_key=op.artifact_key,
-                require_account_match=False,
-            )
+            contact, supports, refs = await self.candidate(conn, authority, args)
             generation = await ensure_generation(
                 conn, authority.grant.scope, context_id=authority.context_id
             )
@@ -98,44 +102,6 @@ class NominateCommitteeTool(_ResearchWriteTool):
             ).scalar_one()
             if count >= self.scope.committee_cap:
                 raise ValueError("committee candidate cap reached; reconcile existing candidates")
-            source_ids = (
-                (
-                    await conn.execute(
-                        text("""SELECT source_id FROM arv2_evidence_source
-                WHERE workspace_id=:ws AND run_id=:run AND account_id=:account
-                  AND operation_id=:operation AND kind='provider_record' ORDER BY revision"""),
-                        {
-                            "ws": self.scope.workspace_id,
-                            "run": self.scope.run_id,
-                            "account": self.scope.account_id,
-                            "operation": op.operation_id,
-                        },
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            supports = []
-            for source_id in source_ids:
-                source = await resolve_source(conn, authority.grant, source_id)
-                _, raw = await read_verified_artifact(
-                    conn,
-                    self.storage,
-                    workspace_id=self.scope.workspace_id,
-                    storage_key=source.artifact_key,
-                )
-                body = json.loads(raw)
-                for i, row in enumerate(body.get("content", [])):
-                    if isinstance(row, dict) and str(row.get("id")) == person.ark_id:
-                        supports.append(
-                            JsonSupport(
-                                source_id=source_id, pointer=f"/content/{i}", expected_value=row
-                            )
-                        )
-            if len(supports) != 1:
-                raise ValueError(
-                    "candidate original is missing or ambiguous; recover its source index"
-                )
             proposal = ClaimProposal(
                 operation_key=f"nominate:{ctx.operation_id}",
                 field_key=COMMITTEE,
@@ -160,7 +126,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
                     relationship_direction="supported",
                     temporal_scope="supported",
                     explanation="A provisional buying-role hypothesis "
-                    "based on the saved provider profile. "
+                    "based on the exact saved discovery evidence. "
                     "Employment and buying responsibility require person research. "
                     + args.rationale[:5700],
                 ),
@@ -183,7 +149,6 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 contact_id=contact,
                 claim_id=receipt.claim_id,
             )
-            refs = reference_data(op, person.ark_id, self.scope.job_id)
             refs.update(
                 subject_scope="account",
                 committee_assessment_id=str(receipt.claim_id),
@@ -200,7 +165,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 profile_sha256=bundle_pin(
                     load_quality_resources(
                         "arv2-person",
-                        version=int((self.scope.input_refs or {}).get("quality_recipe_version", 4)),
+                        version=int((self.scope.input_refs or {}).get("quality_recipe_version", 5)),
                     )
                 ),
                 profile_ref=f"agent-profile:arv2-person:{self.scope.catalog_version}",
@@ -227,3 +192,110 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 replayed=not created,
             ).model_dump(mode="json"),
         )
+
+    async def candidate(
+        self, conn: Any, authority: Any, args: NominateCommitteeInput | NominateWebCommitteeInput
+    ) -> tuple[EntityId, list[JsonSupport | TextSupport], dict[str, Any]]:
+        if isinstance(args, NominateWebCommitteeInput):
+            from clue_api.arv2.account_research_store import read_run
+            from clue_api.arv2.committee_step import _resolve_contact
+
+            ref = await validate_support(conn, self.storage, authority.grant, args.source)
+            if (
+                ref.kind != "web_snapshot"
+                or args.name.casefold() not in args.source.quote.casefold()
+            ):
+                raise ValueError(
+                    "web nomination needs the candidate's name in an exact saved page passage"
+                )
+            if (
+                args.linkedin_url
+                and args.linkedin_url not in args.source.quote
+                and args.linkedin_url != ref.source_url
+            ):
+                raise ValueError(
+                    "the LinkedIn identity must appear in the saved supporting passage"
+                )
+            run = await read_run(conn, run_id=self.scope.run_id)
+            if run is None:
+                raise ValueError("research run unavailable")
+            contact, _, _ = await _resolve_contact(
+                conn,
+                run=run,
+                account_id=self.scope.account_id,
+                name=args.name,
+                linkedin_url=args.linkedin_url,
+            )
+            return (
+                contact,
+                [args.source],
+                {
+                    "parent_job_id": str(self.scope.job_id),
+                    "discovered_via": "web_gap",
+                    "discovered_profile_source_id": str(ref.source_id),
+                },
+            )
+        op, person = await read_candidate(
+            conn, self.storage, authority.grant.scope, args.candidate_ref
+        )
+        if not person.full_name or not person.ark_id or not op.artifact_key:
+            raise ValueError("provider candidate lacks a stable identity or saved original")
+        contact, _ = await resolve_provider_contact(
+            conn,
+            workspace_id=self.scope.workspace_id,
+            account_id=EntityId(self.scope.account_id),
+            provider="ai_ark",
+            subject_id=person.ark_id,
+            name=person.full_name,
+            linkedin_url=person.linkedin_url,
+            artifact_key=op.artifact_key,
+            require_account_match=False,
+        )
+        source_ids = (
+            (
+                await conn.execute(
+                    text("""SELECT source_id FROM arv2_evidence_source
+            WHERE workspace_id=:ws AND run_id=:run AND account_id=:account
+              AND operation_id=:operation AND kind='provider_record' ORDER BY revision"""),
+                    {
+                        "ws": self.scope.workspace_id,
+                        "run": self.scope.run_id,
+                        "account": self.scope.account_id,
+                        "operation": op.operation_id,
+                    },
+                )
+            )
+            .scalars()
+            .all()
+        )
+        supports: list[JsonSupport | TextSupport] = []
+        for source_id in source_ids:
+            source = await resolve_source(conn, authority.grant, source_id)
+            _, raw = await read_verified_artifact(
+                conn,
+                self.storage,
+                workspace_id=self.scope.workspace_id,
+                storage_key=source.artifact_key,
+            )
+            body = json.loads(raw)
+            for i, row in enumerate(body.get("content", [])):
+                if isinstance(row, dict) and str(row.get("id")) == person.ark_id:
+                    supports.append(
+                        JsonSupport(
+                            source_id=source_id, pointer=f"/content/{i}", expected_value=row
+                        )
+                    )
+        if len(supports) != 1:
+            raise ValueError("candidate original is missing or ambiguous; recover its source index")
+        return contact, supports, reference_data(op, person.ark_id, self.scope.job_id)
+
+
+class NominateWebCommitteeTool(NominateCommitteeTool):
+    name = "nominate_web_committee_candidate"
+    input_model = NominateWebCommitteeInput
+    model_description = (
+        "Fill a committee gap left after AI Ark discovery using an exact saved web-page passage. "
+        "The passage must name the candidate and any LinkedIn identity provided. Explain the "
+        "specific gap, potential role and adaptive location/remit. Uses canonical identity, "
+        "candidate assessment, person job and cap as AI Ark nominations; never confirms employment."
+    )

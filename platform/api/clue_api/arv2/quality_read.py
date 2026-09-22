@@ -41,11 +41,12 @@ async def select_quality_context(
         FROM arv2_research_run r JOIN arv2_research_job j ON j.run_id=r.run_id
         JOIN project p ON p.project_id=r.project_id AND p.workspace_id=r.workspace_id
         JOIN account_entity a ON a.id=j.account_entity_id AND a.workspace_id=r.workspace_id
-        LEFT JOIN arv2_account_research_generation g ON g.initial_job_id=j.job_id
-        WHERE r.workspace_id=:ws AND r.context_id IS NOT NULL AND j.subject_type='account'
-          AND ((:kind='account' AND j.account_entity_id=:subject) OR (:kind='contact' AND EXISTS(
-            SELECT 1 FROM arv2_research_job p WHERE p.run_id=j.run_id
-              AND p.account_entity_id=j.account_entity_id AND p.subject_entity_id=:subject)))
+        LEFT JOIN arv2_account_research_generation g ON g.run_id=j.run_id
+          AND g.account_id=j.account_entity_id AND (g.initial_job_id=j.job_id
+            OR g.initial_job_id::text=j.input_refs->>'parent_job_id')
+        WHERE r.workspace_id=:ws AND r.context_id IS NOT NULL
+          AND ((:kind='account' AND j.subject_type='account' AND j.account_entity_id=:subject)
+            OR (:kind='contact' AND j.subject_type='person' AND j.subject_entity_id=:subject))
           AND (CAST(:account AS uuid) IS NULL OR j.account_entity_id=CAST(:account AS uuid))
           AND (CAST(:context AS uuid) IS NULL OR r.context_id=CAST(:context AS uuid))
         ORDER BY r.project_id,j.account_entity_id,r.created_at DESC,r.run_id DESC"""),

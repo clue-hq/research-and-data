@@ -164,3 +164,69 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path)
             ).scalar_one() == 1
 
     run_async(case())
+
+
+def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path):
+    from clue_api.arv2.quality_committee_tool import (
+        NominateWebCommitteeInput,
+        NominateWebCommitteeTool,
+    )
+    from clue_api.arv2.quality_evidence import TextSupport
+    from tests.arv2.test_quality_evidence_db import save
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4")
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = (
+                "Alex Example leads operations. Profile: https://www.linkedin.com/in/alex-example/"
+            )
+            source = await save(conn, storage, op, body)
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            tool = NominateWebCommitteeTool(scope, storage, purge_unevidenced=True)
+            args = NominateWebCommitteeInput(
+                name="Alex Example",
+                linkedin_url="https://www.linkedin.com/in/alex-example/",
+                source=TextSupport(source_id=source.source_id, start=0, end=len(body), quote=body),
+                persona_key="operations",
+                role="champion",
+                rationale="AI Ark left operations uncovered.",
+                organization_scope=OrganizationScope(
+                    relationship="exact_company",
+                    geography="local",
+                    location_relevance="supporting",
+                    rationale="Assess responsibility at this organization.",
+                ),
+            )
+            first = await tool.invoke(args, ctx)
+            second = await tool.invoke(args, ctx)
+            assert first.references["person_job_id"] == second.references["person_job_id"]
+            assert second.references["replayed"]
+            members = await read_committee(
+                conn, workspace_id=op.workspace_id, account_id=op.account_id, context_id=cid
+            )
+            assert len(members) == 1 and members[0].state == "candidate"
+            assert not members[0].outreach_eligible
+
+    run_async(case())

@@ -78,7 +78,8 @@ async def ensure_generation(
         r.workspace_id=j.workspace_id
         WHERE j.job_id=:job AND j.workspace_id=:ws AND j.run_id=:run AND
         j.account_entity_id=:account
-          AND j.subject_type='account' AND r.context_id=:context
+          AND (j.subject_type='account' OR j.input_refs->>'parent_job_id' IS NULL)
+          AND r.context_id=:context
         ON CONFLICT DO NOTHING RETURNING generation_id"""),
         {
             "id": gid,
@@ -288,7 +289,9 @@ async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) ->
           AND (CAST(:context AS uuid) IS NULL OR g.context_id=CAST(:context AS uuid))
           AND (g.account_id=:subject OR EXISTS(
             SELECT 1 FROM arv2_generation_child c WHERE c.generation_id=g.generation_id
-        AND c.contact_id=:subject))
+        AND c.contact_id=:subject) OR EXISTS (
+            SELECT 1 FROM arv2_research_job j WHERE j.job_id=g.initial_job_id
+              AND j.subject_entity_id=:subject))
         ORDER BY g.generation_id"""),
                 {"ws": event["workspace_id"], "subject": event["entity_id"], "context": context_id},
             )

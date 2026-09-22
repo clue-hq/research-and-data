@@ -887,7 +887,7 @@ class ToolRegistryAgentCatalog(AgentToolCatalog):
             admitted_roles=(
                 _roles_for(descriptor.address, descriptor.name)
                 if self._authority is None
-                else self._authority.get(descriptor.address, frozenset())
+                else tuple(sorted(self._authority.get(descriptor.address, frozenset())))
             ),
             unavailable_reason_code=(
                 None

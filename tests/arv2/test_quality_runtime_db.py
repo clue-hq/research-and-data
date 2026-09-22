@@ -239,6 +239,46 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
                 exclude={"operation_receipts"}
             )
             assert models.builds == ["account_research", "research_claims"]
+            parameters = (
+                (
+                    await conn.execute(
+                        text("""SELECT n.parameter_artifact_key FROM execution_node n
+                    JOIN arv2_quality_execution q ON q.execution_id=n.execution_id
+                    WHERE q.job_id=:job AND n.tool_name='submit_research_claim'"""),
+                        {"job": scope.job_id},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert parameters
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true,erased_at=now() WHERE storage_key=:key"
+                ),
+                {"key": source.artifact_key},
+            )
+            assert result.finalization_ref is not None
+            erased = (
+                await conn.execute(
+                    text("SELECT erased_at FROM artifact WHERE storage_key=:key"),
+                    {"key": result.finalization_ref.artifact_key},
+                )
+            ).scalar_one()
+            assert erased is not None
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM artifact WHERE storage_key=ANY(:keys) "
+                        "AND privacy_erased"
+                    ),
+                    {"keys": parameters},
+                )
+            ).scalar_one() == len(set(parameters))
+            from clue_storage import ArtifactNotFound
+
+            with pytest.raises(ArtifactNotFound):
+                await runtime.artifacts.read(result.finalization_ref)
 
     run_async(case())
 

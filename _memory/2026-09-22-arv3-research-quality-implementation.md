@@ -168,3 +168,21 @@
 - Remaining before paid boundary: privacy/output bindings, standalone-person/read/count edge cases,
   complete combined acceptance (migration/storage/load/browser/frozen evidence/telemetry). Paid live
   comparison and actual model quality remain unproven and must not run without resuming authorization.
+
+- Q8 integration edge checkpoint: standalone person research owns a durable generation and scoped
+  contact-page refresh; web gap nominations reuse the same provisional committee, identity, cap
+  and person-job handoff as AI Ark. Immutable resource revision 5 adds only that scoped fallback.
+- All research agent output, context/task/model artifacts, workspace output snapshots and tool
+  parameter snapshots now inherit evidence/context privacy lineage and retention references.
+  Fixed a nested-connection deadlock in the artifact wrapper by reusing the locked transaction.
+  Actual root/child runtime tests prove source erasure also invalidates finalization and tool inputs.
+- Verification: 103 page/nomination/runtime/generation/shared-workspace cases passed, followed by
+  10 final edge cases including actual local MinIO S3 and filesystem missing-blob/outage/revocation
+  proof. Storage contract run passed 53 cases; its two new failure assertions initially expected
+  low-level exceptions rather than the existing fail-closed integrity envelope, now corrected.
+  Frontend token build/lint/production build pass (two existing design-editor lint warnings).
+  Root dependency contracts: all 28 pass. Full typing exposed and fixed a new role-set/tuple issue;
+  preexisting design_leg_wiring typing and three unrelated formatting/import files remain recorded.
+  Shared up/down/up migrations passed on a created-and-dropped throwaway DB; single head verified.
+- Offline load/browser/frozen-source acceptance is still running/prepared, not accepted yet.
+  No live provider calls, shared data changes, activation or push. Paid testing remains paused.

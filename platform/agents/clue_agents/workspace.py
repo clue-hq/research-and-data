@@ -1596,6 +1596,7 @@ class AgentWorkspaceFactory:
         execution_id: ExecutionId,
         policy: WorkspacePolicy,
         mounts: MountRequest = _NO_MOUNTS,
+        artifact_sink: AgentArtifactSink | None = None,
     ) -> AgentWorkspaceLease:
         """Open the thread's persistent workspace, creating whatever part of it is absent.
 
@@ -1645,7 +1646,7 @@ class AgentWorkspaceFactory:
                 execution_fd=thread_fd,
                 identity=identity,
                 policy=policy,
-                artifact_sink=self._artifact_sink,
+                artifact_sink=artifact_sink or self._artifact_sink,
                 mounts=mount_table,
             )
         except BaseException:
@@ -1680,6 +1681,7 @@ class AgentWorkspaceFactory:
         execution_id: ExecutionId,
         policy: WorkspacePolicy,
         mounts: MountRequest = _NO_MOUNTS,
+        artifact_sink: AgentArtifactSink | None = None,
     ) -> AgentWorkspaceLease:
         """Take this turn's lease over the thread workspace.
 
@@ -1703,12 +1705,15 @@ class AgentWorkspaceFactory:
                 execution_id=execution_id,
                 policy=policy,
                 mounts=mounts,
+                artifact_sink=artifact_sink,
             )
         if active.execution_id != execution_id:
             raise WorkspaceConflict("another execution holds this thread's live workspace lease")
         if active.mounts != mounts:
             raise WorkspaceConflict("the live workspace lease was opened with other mounts")
         backend = active.backend
+        if artifact_sink is not None and backend._artifact_sink is not artifact_sink:
+            raise WorkspaceConflict("the live workspace lease uses another artifact authority")
         backend.require_policy(policy)
         return self._lease(
             identity=WorkspaceIdentity(

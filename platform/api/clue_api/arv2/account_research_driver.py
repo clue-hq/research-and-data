@@ -1030,6 +1030,12 @@ class Arv2AccountResearchWorkHandler:
                 persona_markdown=persona,
             )
             scope = replace(scope, catalog_version="v4", input_refs=quality_input_refs)
+            if not quality_input_refs.get("parent_job_id"):
+                await ensure_generation(
+                    conn,
+                    OperationScope(run.workspace_id, run.run_id, job.job_id, job.account_entity_id),
+                    context_id=run.context_id,
+                )
         else:
             account = await get_account(conn, EntityId(job.account_entity_id))
             if account is None or account.workspace_id != run.workspace_id:
@@ -1481,7 +1487,9 @@ class Arv2AccountResearchWorkHandler:
                 credits=meter.credits,
                 media_seconds=meter.media_seconds,
             )
-            if composition.job.subject_type == "account":
+            if composition.job.subject_type == "account" or not (
+                composition.job.input_refs or {}
+            ).get("parent_job_id"):
                 assert composition.run.context_id is not None
                 generation = await ensure_generation(
                     conn,
