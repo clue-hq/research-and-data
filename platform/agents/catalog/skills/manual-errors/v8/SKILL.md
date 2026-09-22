@@ -113,4 +113,3 @@ Refused governed calls are counted for the whole turn, not per tool: 3 come back
 turn with nothing shown to the human. Calls refused in the same round each count.
 `finalize_turn` has its own separate budget of 2 repairs.
 Those numbers and the rest of the turn's limits are `.deepagent/skills/manual-limits/v8/SKILL.md`.
-

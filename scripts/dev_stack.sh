@@ -1,10 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# THE dev stack runbook. One command per verb: ./scripts/dev_stack.sh up|down|restart-api|restart-workers|status
+# THE dev stack runbook. Commands: up|down|restart-api|restart-workers|restart-ingestion|status
 #
 # Written 2026-08-29 after a stack rebuild from memory burned an evening on
 # three separate port/origin mismatches. This file is the single source of
-# truth for how the five processes run — if a port or flag changes, change it
+# truth for how the stack runs — if a port or flag changes, change it
 # HERE, never only in a shell command.
 #
 # THE PORT MAP (do not improvise):
@@ -20,8 +20,10 @@
 #                                  the frontend proxies to (CLUE_API_BASE_URL).
 #   8030  platform API (2nd)     — historical twin of 8020; kept because some
 #                                  session flows were exercised against it.
-#   ----  fleet worker(s)        — drive design runs and every fleet job kind;
-#                                  no port.
+#   ----  primary fleet workers — chat, design turns and research; no port.
+#   ----  ingestion controller  — starts one coordinator and 4 x 10 image slots
+#                                  on demand; execution children stop when idle.
+#                                  See docs/runbooks/ingestion-pool.md.
 #
 # DEV LOGIN (Clerk dev instance, test mode):
 #   email     aryan+clerk_test_design@example.com
@@ -161,6 +163,31 @@ start_workers() {  # $WORKERS processes × $WORKER_CONCURRENCY slots, launched t
   done
 }
 
+# Idle controller; capture and annotation run only in its on-demand children.
+start_ingestion_pool() {
+  ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" PYTHONUNBUFFERED=1 \
+      "$ROOT/.venv/bin/python" -m lumen_api.ingestion_pool \
+      > "${LOG}_ingestion_pool.log" 2>&1 & )
+}
+
+stop_ingestion_pool() {
+  pkill -f "$ROOT/.venv/bin/python -m lumen_api.ingestion_pool" 2>/dev/null || true
+}
+
+restart_ingestion_pool() {
+  load_env
+  stop_ingestion_pool
+  for _ in $(seq 1 70); do
+    pgrep -f "$ROOT/.venv/bin/python -m lumen_api.ingestion_pool" >/dev/null || break
+    sleep 0.5
+  done
+  if pgrep -f "$ROOT/.venv/bin/python -m lumen_api.ingestion_pool" >/dev/null; then
+    echo 'Ingestion pool is still draining; wait before restarting it.' >&2
+    return 2
+  fi
+  start_ingestion_pool
+}
+
 # Restart ONLY the fleet workers, respawned with the SAME count and per-worker
 # concurrency the lane wrapper sets. Check nothing is mid-job first: a killed
 # worker's job is orphaned until its lease expires.
@@ -189,7 +216,7 @@ up() {
   ( cd "$ROOT/subsystems/clue-design" && \
     env "${PLATFORM_ENV[@]}" \
         LUMEN_EMBEDDED_FLEET_WORKER=1 \
-        LUMEN_CORE_HELPER="$ROOT/subsystems/clue-design/target/release/lumen-api-helper" \
+        LUMEN_CORE_HELPER="${LUMEN_CORE_HELPER:-$ROOT/subsystems/clue-design/target/release/lumen-api-helper}" \
         LUMEN_API_CORS_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3000" \
         PYTHONPATH=.:apps/api:apps/agent_runtime \
         "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port "$DESIGN_PORT" \
@@ -201,6 +228,8 @@ up() {
   # transaction-scoped advisory lock (ledger A2), so concurrent boots queue on
   # it instead of racing to `field_definition_pkey`.
   start_workers
+
+  start_ingestion_pool
 
   # Class fix 2026-08-31: hard-killed/overlapping dev-server starts corrupt the
   # .next route graph (single routes 404 while siblings work — twice live on
@@ -219,6 +248,7 @@ up() {
 }
 
 down() {
+  stop_ingestion_pool
   pkill -f "$ROOT/.venv/bin/python -m uvicorn lumen_api.main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m uvicorn clue_api.projections_main:app" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
@@ -235,6 +265,8 @@ status() {
       echo "  $name ($port): DOWN"
     fi
   done
+  pool_running="$(pgrep -f "$ROOT/.venv/bin/python -m lumen_api.ingestion_pool" | wc -l | tr -d ' ' || true)"
+  echo "  ingestion-pool: ${pool_running:-0} process(es), including idle controller"
   running="$(pgrep -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" | wc -l | tr -d ' ')"   # macOS pgrep has no -c
   if [ "${running:-0}" -gt 0 ]; then
     echo "  fleet-worker: UP ($running process(es), $WORKER_CONCURRENCY slot(s) each)"
@@ -263,6 +295,7 @@ case "${1:-status}" in
   down) down ;;
   restart-api) restart_api ;;
   restart-workers) restart_workers ;;
+  restart-ingestion) restart_ingestion_pool ;;
   status) status ;;
-  *) echo "usage: $0 up|down|status"; exit 2 ;;
+  *) echo "usage: $0 up|down|restart-api|restart-workers|restart-ingestion|status"; exit 2 ;;
 esac

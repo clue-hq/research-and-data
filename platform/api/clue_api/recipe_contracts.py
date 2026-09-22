@@ -116,10 +116,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # declares the same ``project`` pin as its siblings, the spine row the execution is bound to
     # and the project whose ``attachments/`` the container can see.
     "run_python@1",
-    # web_search@1 (recipe0-stage0@31): one deep-lite open-web search, used last, answering text
-    # that is never a claim. Granted for the first time at `head-of-abm@v61` and admitted to the
-    # interaction slot in the same revision. A SPEND like the launches, AT_LEAST_ONCE on replay,
-    # and it declares the same ``project`` pin as its siblings.
+    "configure_project_targeting@1",
+    # web_search@1 (recipe0-stage0@32): one deep-lite open-web search, used last, answering text
+    # that is never a claim. Granted at `head-of-abm@v62`; a SPEND, AT_LEAST_ONCE on replay, with
+    # the same ``project`` pin as its siblings.
     "web_search@1",
 )
 

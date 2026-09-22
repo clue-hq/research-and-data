@@ -1,5 +1,21 @@
 # ARV2 product-catalog contract — research shape, artifact, gate, and the multi-product ruling
 
+**Amendment, Aryan 2026-09-21 — automatic approval:** Brand kits and ICP/product
+targeting no longer require approve/reject actions. For current project turns,
+`configure_project_targeting@1` replaces the product-selection and ICP-confirmation
+gates described below. It selects only active catalog product ids belonging to
+the project's brand, preserves an existing override for the same ICP, and records
+the exact ICP artifact and versioned product set. Explicit product ids take
+precedence; otherwise the first application uses ICP products, an existing set,
+or all active brand products, in that order. The user can revise the set in chat.
+
+P1–P4's multi-product set, versioning and one-ICP-per-project invariants remain.
+Automatic selections store `confirmation_turn_id` instead of `gate_id`, with an
+exclusive-source database constraint. Historical human receipts are immutable;
+no synthetic gate answer is created. The current profile grants the automatic
+tool and withholds both old gate tools. The original gate-specific requirements
+below are retained as historical contracts and are superseded by this amendment.
+
 **Status:** RATIFIED by Aryan 2026-09-07 (rulings P1–P4 below). Shashank's column in the master
 plan §12 is open. Version 1.0.
 

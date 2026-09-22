@@ -64,4 +64,3 @@ Once the finalize budget is spent the runtime appends: "Nothing was committed an
 
 Everything a path means is `.deepagent/skills/manual-workspace/v8/SKILL.md`; the errors these bounds produce are
 `.deepagent/skills/manual-errors/v8/SKILL.md`.
-

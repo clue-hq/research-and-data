@@ -1,5 +1,6 @@
 "use client";
 
+import { AssetUploadDialog } from "./asset-upload-dialog";
 import { ApplicationShell } from "@/components/shell/application-shell";
 import { useBrandContextController } from "../hooks/use-brand-context-controller";
 import { useBrandKitActions } from "../hooks/use-brand-kit-actions";
@@ -42,7 +43,7 @@ export function BrandContextScreen({
         <BrandContextSidebar controller={controller} workspace={workspace} />
         <main className={styles.main}>
           {controller.section === "assets"
-            ? <AssetsHeader brandKitActions={brandKitActions} controller={controller} />
+            ? <AssetsHeader controller={controller} />
             : <BrandContextHeader brandKitActions={brandKitActions} controller={controller} />}
           <div className={`${styles.panelScroll} clue-view-enter`} key={controller.section}>
             {controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} workspace={workspace} /> : null}
@@ -52,6 +53,7 @@ export function BrandContextScreen({
           </div>
         </main>
       </div>
+      <AssetUploadDialog controller={controller} />
       <AssetDetailDialog controller={controller} />
       <NewTypefaceDialog controller={controller} />
       <NewStyleDialog controller={controller} />

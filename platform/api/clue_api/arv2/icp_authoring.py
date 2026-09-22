@@ -102,6 +102,8 @@ _PROJECT_INPUT_PREFIX = "project/"
 #: from the request and the rows this module resolved.
 _PLATFORM_OWNED_KEYS: tuple[str, ...] = (
     "confirmed_by",
+    "confirmation_mode",
+    "confirmation_turn_ref",
     "confirmed_at",
     "confirmed_for_project_id",
     "product_selection_version",

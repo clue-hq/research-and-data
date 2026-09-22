@@ -213,4 +213,3 @@ not written for it.
 What a claim's tier, verification status, use class and display gate mean is
 `.deepagent/skills/manual-claims/v8/SKILL.md`. The read that serves them, and everything it can refuse with, is
 `.deepagent/skills/manual-tools/v8/SKILL.md`.
-

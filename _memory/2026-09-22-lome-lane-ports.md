@@ -59,3 +59,7 @@ fails every turn on a missing blob (damascus/jerusalem notes) — hence the rsyn
   san-salvador stack's workers are dead; that live DB needs the same one-row repair (or a fresh
   seed) before its stack does any agent work.
 - `restart-workers` exits 0 here (no hang seen this time).
+
+- 2026-09-22 (later): stack DOWN for the research-streaming merge. After it, `clue_lome` sits at
+  `5cac3234cfb3` and the tree head is the join `7c4fe6965720` — run `alembic upgrade head` against
+  the lane DSN before `up`.

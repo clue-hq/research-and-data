@@ -31,9 +31,9 @@ section in chat; written spec awaiting the founder's read before the implementat
 ## Plan (written 2026-09-22, after the founder approved the spec)
 `docs/superpowers/plans/2026-09-22-web-search-tool.md` — eight tasks: (1) `excludeDomains` +
 `outputSchema` on the client's `/search` body and `output_text` on the result; (2) the tool module
-`clue_api/web_search_tool.py`, registered UNGRANTED (counts 141→142 / 161→162); (3) recipe0-stage0@31;
-(4) `head-of-abm@v61` = prompt v14 (the "Look things up in this order" paragraph) + the pin +
-`manual-*@v8` (`make manual`; 11 hand-written chapters re-minted by version line + paths only) +
+`clue_api/web_search_tool.py`, registered UNGRANTED (counts 141→142 / 161→162); (3) recipe0-stage0@32;
+(4) `head-of-abm@v62` = prompt v15 (the "Look things up in this order" paragraph) + the pin +
+`manual-*@v9` (`make manual`; 11 hand-written chapters re-minted by version line + paths only) +
 `tool_notes.yaml` entry + frontend label `Search the web` + composer pin; (5) `design@v3`;
 (6) `DesignPlatformReads.web_search` + the fourth LangChain tool in `make_platform_read_tools`
 (both harnesses already call it); (7) scene tools skill "Web search" section + the two web-lane
@@ -65,9 +65,9 @@ acceptance (§4 items 1–4) is met; the two live proofs (§4.5–4.6) are found
 **The eight implementation commits, in order:**
 1. `722814d91` feat(exa): `excludeDomains` and `outputSchema` on `/search`; deep-lite answer on the result
 2. `9c561aa74` feat(toolbelt): `web_search@1` registered ungranted
-3. `515a53412` feat(recipe): `recipe0-stage0@31` admits `web_search@1`; conversation runtime pins 31
-4. `fd1906021` feat(head-of-abm): v61 grants `web_search@1` — prompt v14; recipe 31; manual v8
-5. `74ad68d93` fix(head-of-abm): v61 — web_search fields carry their meaning into the manual; prompt v14 without em dashes
+3. `515a53412` feat(recipe): `recipe0-stage0@32` admits `web_search@1`; conversation runtime pins 31
+4. `fd1906021` feat(head-of-abm): v61 grants `web_search@1` — prompt v15; recipe 32; manual v9
+5. `74ad68d93` fix(head-of-abm): v61 — web_search fields carry their meaning into the manual; prompt v15 without em dashes
 6. `a1778a950` feat(registry): `design@v3` pins `web_search@1`
 7. `fefcdb6ce` feat(design): web_search rides the platform-reads seam — fourth tool in both harnesses
 8. `cd2f9ca91` docs(design-agent): web search is the last resort — scene tools skill and web-lane prompt
@@ -78,7 +78,7 @@ ninth commit.)
 **Digests measured on the live descriptor / files:**
 - `web_search@1` input schema `61f98fac6f56398866ea7e61539ede2f836d4e23b9a2a54ea8897a0eb80084a6`
 - `web_search@1` output schema `45a58c07eb605b0f248bb7e60b9b30ec604a15202d5b1b3e0e0819f9b7f20599`
-- prompt v14 `717a4ab82b537885b2b513f4b632e71b674adad1c81fa44c7d35f46d5a423718`
+- prompt v15 `717a4ab82b537885b2b513f4b632e71b674adad1c81fa44c7d35f46d5a423718`
 - HEAD_OF_ABM manifest `6bcb427f387d4e46c890b1ec435d3c7703e6731e848c8dde1f96fc7142a8e3da`
 
 **Gate run at close (one invocation, 2026-09-22):** `tests/arv2/test_exa_client.py`,
@@ -111,11 +111,11 @@ Record both here when they run.
 - T2→T3: if `test_operation_id_requirements_are_explicit` goes red while the tool is still
   ungranted, make the Task-3 edit inside Task 2.
 - T2→T4: Task 4 flips the two `ROLE_UNAVAILABLE` asserts to `AVAILABLE` when the grant lands.
-- Task 4: `head-of-abm@v61` may be amended by a follow-up commit — it was minted on this branch
+- Task 4: `head-of-abm@v62` may be amended by a follow-up commit — it was minted on this branch
   and never pushed, so catalog immutability (a shared version) is not violated.
 - Task 4: `description=` on the tool's pydantic fields is required, so the generated manual tables
   carry each field's meaning instead of `—`.
-- Task 4: prompt v14's new paragraph carries no em dashes (the prompt's own output rule).
+- Task 4: prompt v15's new paragraph carries no em dashes (the prompt's own output rule).
 - Task 6: DB-marked tests run against the throwaway `clue_lome_sdd`@55040, never the lane DB.
 
 **Minors deferred (none blocking):**
@@ -148,3 +148,24 @@ the first live call also settles whether Exa accepts `contents.highlights: {}` (
   the execution layer asserts the tool's `project` pin only on head-of-abm's path, and this seam
   runs outside an execution (new DB test `test_a_leg_without_a_project_cannot_search`).
 - The scene skill's "Web search" paragraph has no em dash.
+
+## Merge onto `origin/research-streaming` (2026-09-22, at their `9835b11f2`)
+`0bdac1757` on the base (automatic project targeting) had minted the SAME numbers we had —
+`head-of-abm@v61`, prompt `v14`, `manual-*@v8`, `recipe0-stage0@31` — for a different change.
+Resolution: their side taken verbatim for every collided catalog/recipe/code/test file, then our
+layer RE-MINTED on top: `head-of-abm@v62` (= their v61 + `web_search@1` pin, prompt `v15` = their
+v14 + our "Look things up in this order" paragraph, `manual-*@v9`), `design@v3` unchanged (their
+design profile is still v2 and identical), `recipe0-stage0@32` = their v31 + `web_search@1`,
+`CONVERSATION_RECIPE_VERSION = 32`. Digests re-measured (tool schema digests unchanged; prompt
+`3406c4d7…`; HEAD_OF_ABM manifest `611426b2…`). Doc conflicts (`_memory/README.md`, the
+display-prewrite spec) unioned.
+**Base defects found and handled here:** (1) two Alembic heads on the base (`2b702a116c15`,
+`46f04ac18b28`) — joined by `7c4fe6965720`; (2) seven base tests left stale by `0bdac1757`
+(toolbelt name set/counts 144/166, authority count 144 + the two ungranted gates, catalog list
+missing `icp-authoring@v3`/`stage0-interview@v35`, the four trial-surface tests) — fixed;
+(3) `tests/execution/test_recipes.py` — two DB tests red on the base (their seed list moved v29 to
+the historical list, so `versions == range(1..max)` and the `@19` promotion cannot pass) — NOT
+fixed, base-owned; (4) the base pins `CONVERSATION_RECIPE_VERSION = 30` while granting
+`configure_project_targeting@1` that only v31 admits — moot after our 32.
+Gate on the merged tree: 225 passed across 18 files (`clue_lome_sdd`), `make manual-check`
+current, one Alembic head. Lane DB `clue_lome` must run `alembic upgrade head` before the next `up`.

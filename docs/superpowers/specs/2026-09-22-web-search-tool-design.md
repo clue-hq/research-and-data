@@ -94,7 +94,7 @@ there is no artifact-store refusal; the ledger row is the record. **No per-turn 
 
 **Head-of-ABM.** The tool is built once in `toolbelt_wiring` beside the sandbox and evidence
 tools, from the same settings and secrets, so every process that composes the toolbelt has it.
-`head-of-abm@v61` pins `web_search@1`; the registry grants it to `HEAD_OF_ABM`; the profile
+`head-of-abm@v62` pins `web_search@1`; the registry grants it to `HEAD_OF_ABM`; the profile
 comment names the reason (general use, last resort). The registry refuses a grant no profile
 pins, so the bump and the grant land together.
 
@@ -133,7 +133,7 @@ Plain language, clear rather than condensed (standing rule). Three places.
 > returns is text for you to read and use now. It is not a claim, it is not verified, and it must
 > not be presented as research the platform did.
 
-**Head-of-ABM** — prompt v14 and manual v8, one new version each, no other behaviour change:
+**Head-of-ABM** — prompt v15 and manual v9, one new version each, no other behaviour change:
 
 - `SYSTEM.md` gains one paragraph after the existing one about the seller's knowledge files. In
   order: a question about a target account or a contact goes to the claims first, through the
@@ -144,7 +144,7 @@ Plain language, clear rather than condensed (standing rule). Three places.
 - `manual-tools` gains a `web_search@1` entry in the house shape: effect class `spend`, spends
   yes, opens no gate, replay identity the ledger row, the inputs table above, the outputs table,
   the two refusals with their next move, "Taught by" the new prompt paragraph. The chapter's
-  title line moves to `head-of-abm@v61`. The manual index and its siblings move with it as the
+  title line moves to `head-of-abm@v62`. The manual index and its siblings move with it as the
   manual builder requires.
 
 **Design, both lanes.** The scene tools skill gains a "Web search" paragraph under "Platform
@@ -184,7 +184,7 @@ The web lane's prompt (`prompts.py`, at both platform-reads sentences) gets the 
 2. **DONE 2026-09-22.** The tool: both refusals fire before any spend; a canned Exa response
    renders to the agreed text and typed output; one ledger row per call carrying the provider's
    metered cost; the journal shows only the safe display fields.
-3. **DONE 2026-09-22.** Grants: `head-of-abm@v61` and `design@v3` pin `web_search@1`, the
+3. **DONE 2026-09-22.** Grants: `head-of-abm@v62` and `design@v3` pin `web_search@1`, the
    registry grants both roles, and the existing catalog / registry / manual-drift gates
    (`tests/agents/test_catalog.py`, `tests/agents/test_manual_drift.py`,
    `tests/api/test_agent_registry_wiring.py`) stay green — they refuse a grant no profile pins

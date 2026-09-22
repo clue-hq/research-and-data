@@ -242,7 +242,7 @@ tools:
     version: "1"
     input_schema_sha256: fefe65c65874eee0c5832b5a63a764966cc53259b30c45c0613f35e44b59b578
     output_schema_sha256: dc6936fd434e33fd37430cf46b2fd24885a6c8526330184f31b7ac6a84ca0f3e
-  # 2026-09-22 — the open-web search, on head-of-abm's own contract (`head-of-abm@v61`
+  # 2026-09-22 — the open-web search, on head-of-abm's own contract (`head-of-abm@v62`
   # pins the same two digests). Used LAST: after the account's claims and the seller's
   # knowledge files. Its result is answering text, never a claim.
   - name: web_search

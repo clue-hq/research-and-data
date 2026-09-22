@@ -34,8 +34,6 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `launch_arv2_person_research@1` | spend | yes | no | Complete a project step |
 | `open_design_leg@5` | write | no | no | Complete a project step |
 | `open_directive_confirmation_gate@1` | write | no | yes | Complete a project step |
-| `open_icp_confirmation_gate@2` | write | no | yes | Prepare the profile for your review |
-| `open_product_set_selection_gate@1` | write | no | yes | Complete a project step |
 | `propose_field@2` | write | no | no | Complete a project step |
 | `propose_source@1` | write | no | no | Complete a project step |
 | `read_account_research@2` | read | no | no | Review an account's research |
@@ -47,7 +45,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 | `record_interview_answer@1` | spend | yes | no | Save your answer |
 | `run_python@1` | write | no | no | Complete a project step |
 | `submit_ingestion@1` | spend | yes | no | Complete a project step |
-| `web_search@1` | spend | yes | no | Search the web |
+| `configure_project_targeting@1` | write | no | no | Complete a project step |
 
 ## draft_account_research_directive@5
 
@@ -523,105 +521,6 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 **Taught by.** Not taught by the current skill. This pair belongs to the retired research lane.
 
 **See also.** `.deepagent/skills/manual-gates-authority/v8/SKILL.md`, `.deepagent/skills/manual-humans-screens/v8/SKILL.md`.
-
-## open_icp_confirmation_gate@2
-
-**What it does.** Present one of this brand's ICP knowledge documents to the current human for confirmation. Supply the icp_key of the document you have read; the platform derives and persists the exact document, digest, permitted decisions, project and addressee. This call confirms nothing. Then end the turn awaiting input with the returned gate_ref. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#open_icp_confirmation_gate
-
-- Effect class: `write`.
-- Spends: no.
-- Opens a human gate: yes, of kind `icp_confirmation`. Put the gate id it returns into `open_gate_refs` when you finalize, or the human never sees the card.
-- Replay identity: one presenting turn plus one exact ICP knowledge document.
-- Pins the call is bound to: `project`.
-- Journal-safe input fields: `icp_key`.
-- The human sees: "Prepare the profile for your review".
-
-**Inputs**
-
-| Field | Type | Default | Bounds | What it is |
-| --- | --- | --- | --- | --- |
-| `icp_key` | `str` | required | min_length=1, max_length=200 | — |
-| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
-
-**Outputs**
-
-| Field | Type | What it is |
-| --- | --- | --- |
-| `gate_id` | `str` | — |
-| `gate_ref` | `str` | — |
-| `gate_kind` | `Literal['icp_confirmation']` | — |
-| `subject_ref` | `str` | — |
-| `subject_revision` | `int` | — |
-| `expected_subject_sha256` | `str` | — |
-| `permitted_decisions` | `tuple[IcpGateDecision, ...]` | — |
-| `addressee_user_id` | `str` | — |
-| `created` | `bool` | — |
-
-**Refusals**
-
-| Code | Next move |
-| --- | --- |
-| `gate_turn_ref_malformed` | Do not retry. The turn reference is injected by the platform, so this is a platform fault to report. |
-| `gate_turn_not_found` | Do not retry. Report that this turn cannot be resolved and let the human start a new one. |
-| `gate_addressee_missing` | Do not retry. Report that this turn records no human the gate could be addressed to. |
-| `icp_document_not_found` | Write the ICP document first with author_icp_document, then open the gate on that key in the same turn. |
-| `icp_document_not_servable` | Open the gate on a proposed or confirmed ICP document; nothing else is something to say yes to. |
-| `icp_already_confirmed_for_project` | Tell the human this project has already confirmed this exact document, and move on to what it unblocks. |
-| `icp_gate_already_presented_elsewhere` | Tell the human this document is already waiting for an answer in another thread, and point them there. |
-| `icp_gate_already_answered` | Tell the human this document already carries a human decision; author a new version if they want to change it. |
-
-**Afterwards.** A gate card is waiting for the human, carrying the ICP document itself. Put the returned gate id in open_gate_refs and end the turn awaiting_input. Their approval mints a confirmed version and pins it to this project; you cannot confirm it yourself.
-
-**Taught by.** stage0-interview v33 section 5, "Confirm the profile".
-
-**See also.** `.deepagent/skills/manual-gates-authority/v8/SKILL.md`, `.deepagent/skills/manual-documents-decisions/v8/SKILL.md`, `.deepagent/skills/manual-humans-screens/v8/SKILL.md`.
-
-## open_product_set_selection_gate@1
-
-**What it does.** Ask the current human which of this brand's products this project is about. The platform derives the candidates from the brand's own product rows and the current product catalog; you may pass the icp_key you are working from to pre-check its products. This call confirms nothing. End the turn awaiting input with the returned gate_ref. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#open_product_set_selection_gate
-
-- Effect class: `write`.
-- Spends: no.
-- Opens a human gate: yes, of kind `product_set_selection`. Put the gate id it returns into `open_gate_refs` when you finalize, or the human never sees the card.
-- Replay identity: one product-set presentation for one presenting turn and one brand catalog.
-- Pins the call is bound to: `project`.
-- Journal-safe input fields: `icp_key`.
-- The human sees: "Complete a project step".
-
-**Inputs**
-
-| Field | Type | Default | Bounds | What it is |
-| --- | --- | --- | --- | --- |
-| `icp_key` | `str or None` | `None` | min_length=1, max_length=200 | The ICP the conversation is working from, if there is one. It only decides which candidates are *pre-checked*; it never decides what may be chosen, and it confirms nothing. |
-| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
-
-**Outputs**
-
-| Field | Type | What it is |
-| --- | --- | --- |
-| `gate_id` | `str` | — |
-| `gate_ref` | `str` | — |
-| `gate_kind` | `Literal['product_set_selection']` | — |
-| `candidate_count` | `int` | — |
-| `suggested_count` | `int` | — |
-| `addressee_user_id` | `str` | — |
-| `created` | `bool` | — |
-
-**Refusals**
-
-| Code | Next move |
-| --- | --- |
-| `product_set_turn_not_found` | Do not retry. Report that this turn cannot be resolved and let the human start a new one. |
-| `product_set_addressee_missing` | Do not retry. Report that this turn records no human the gate could be addressed to. |
-| `product_set_project_unavailable` | Do not retry. Report that this turn's project cannot be resolved. |
-| `product_set_no_candidates` | Tell the human this brand has no products on record yet, and that onboarding has to add them before a set can be confirmed. |
-| `icp_key_unknown` | Name a key a current ICP document actually carries, or omit icp_key and present every product. |
-
-**Afterwards.** A gate card is waiting for the human, listing the brand's own products. Put the returned gate id in open_gate_refs and end the turn awaiting_input. Their choice becomes the project's confirmed product set, which the launches require.
-
-**Taught by.** stage0-interview v33 section 5, "Confirm the products".
-
-**See also.** `.deepagent/skills/manual-gates-authority/v8/SKILL.md`, `.deepagent/skills/manual-documents-decisions/v8/SKILL.md`, `.deepagent/skills/manual-humans-screens/v8/SKILL.md`.
 
 ## propose_field@2
 
@@ -1223,60 +1122,53 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 **See also.** `.deepagent/skills/manual-documents-decisions/v8/SKILL.md`, `.deepagent/skills/manual-workspace/v8/SKILL.md`.
 
-## web_search@1
+## configure_project_targeting@1
 
-**What it does.** Search the open web and read back what it found: a short written answer, then up to ten results with title, URL, date and highlighted passages. Use this last. What the platform has already researched is in the claim store and in the seller's knowledge files, and those come first, every time. Reach for this only when you have looked there and what you need is not there, or is vague or inconclusive, or when the human has brought you something the platform never researched, like an event, a workshop or a topic outside the seller's products. What it returns is text for you to read and use now. It is not a claim, it is not verified, and it must not be presented as research the platform did.
+**What it does.** Apply this project's ICP and product set automatically, without asking for approval. Read the ICP first and supply its icp_key. Optional product_ids override its product set; otherwise use its products, the existing project set, or the brand's active products. Returns the confirmed artifact and product-selection version for use in the same turn. No gate opens and no research launches. Continue the user's task after this succeeds. Manual: .deepagent/skills/manual-tools/v8/SKILL.md#configure_project_targeting
 
-- Effect class: `spend`.
-- Spends: yes. This call costs money against the project's providers.
+- Effect class: `write`.
+- Spends: no.
 - Opens a human gate: no.
-- Replay identity: ARV2 ledger row on provider_call_ledger keyed on the call; the tool writes no domain state.
+- Replay identity: project plus current ICP document and selected product set.
 - Pins the call is bound to: `project`.
-- Journal-safe input fields: `query`, `num_results`, `include_domains`, `exclude_domains`, `start_published_date`, `end_published_date`.
-- The human sees: "Search the web".
+- Journal-safe input fields: `icp_key`, `product_ids`.
+- The human sees: "Complete a project step".
 
 **Inputs**
 
 | Field | Type | Default | Bounds | What it is |
 | --- | --- | --- | --- | --- |
-| `query` | `str` | required | min_length=1, max_length=400 | The question or topic to search for, in plain words. Up to 400 characters. |
-| `num_results` | `int` | `10` | ge=1, le=10 | How many results to read back, 1 to 10. Ten is the default. |
-| `include_domains` | `list[str]` | (built per call) | max_length=10 | Only these sites, up to ten. Leave empty to search the whole web. |
-| `exclude_domains` | `list[str]` | (built per call) | max_length=10 | Never these sites, up to ten. Leave empty to exclude nothing. |
-| `start_published_date` | `str or None` | `None` | max_length=32 | Only pages published on or after this date, as a plain ISO date such as 2026-01-01. Leave empty for no lower bound. |
-| `end_published_date` | `str or None` | `None` | max_length=32 | Only pages published on or before this date, as a plain ISO date. Leave empty for no upper bound. |
+| `icp_key` | `str` | required | min_length=1, max_length=200 | — |
+| `product_ids` | `tuple[str, ...] or None` | `None` | min_length=1, max_length=200 | — |
+| `source_turn_ref` | `str` | required | strip_whitespace=True, min_length=1, max_length=1000 | Injected by the platform from this turn. Never author one. |
 
 **Outputs**
 
 | Field | Type | What it is |
 | --- | --- | --- |
-| `answer` | `str or None` | The short written answer the search produced, or null when it produced none. |
-| `results` | `list[WebSearchResultItem]` | Up to ten results, most relevant first. |
-| `rendered` | `str` | The whole result as one text: the answer, then one numbered block per result. This is what you read. |
-| `cost_usd` | `str` | What the search cost, as Exa metered it. |
-| `request_id` | `str or None` | Exa's id for this request, for the ledger. |
-
-*WebSearchResultItem*: One search result: what the page is called, where it is, when it was published, and the passages that matched.
-
-| Field | Type | What it is |
-| --- | --- | --- |
-| `title` | `str or None` | The page's title, when Exa reported one. |
-| `url` | `str or None` | The page's address. |
-| `published_date` | `str or None` | When the page was published, when known. |
-| `highlights` | `list[str]` | The passages from the page that matched the query. |
+| `project_id` | `str` | — |
+| `icp_key` | `str` | — |
+| `document_id` | `str` | — |
+| `icp_artifact_key` | `str` | — |
+| `icp_artifact_sha256` | `str` | — |
+| `product_ids` | `tuple[str, ...]` | — |
+| `product_selection_version` | `int` | — |
+| `approval_mode` | `Literal['automatic']` | — |
 
 **Refusals**
 
 | Code | Next move |
 | --- | --- |
-| `exa_not_configured` | Tell the human web search is not available on this deployment; do not answer the question from memory instead. |
-| `query_empty` | Write the question you want searched, in plain words, then call again. |
+| `targeting_turn_unavailable` | Use the current durable conversation turn; never invent a reference. |
+| `targeting_project_unavailable` | Explain that this project is unavailable in the current workspace. |
+| `icp_document_not_found` | Read or write the intended ICP document and use its exact icp_key. |
+| `targeting_products_unavailable` | Read the brand catalog and choose its active product ids. |
 
-**Afterwards.** Nothing changes on the platform. You hold the written answer and up to ten results with their highlighted passages, and one search has been charged to the workspace. Read it as what a search found today, not as a fact the platform verified: quote it as "a search found", never as a claim, and never write it into a project document as if research had established it. If the search did not settle the question, say so rather than searching again with the same words.
+**Afterwards.** The product set and exact ICP artifact are confirmed and pinned automatically. Continue the user's task using the returned artifact key, digest and product selection version; do not open an approval card. This call launches no research.
 
-**Taught by.** head-of-abm prompt v14, the paragraph "Look things up in this order".
+**Taught by.** stage0-interview v35 section 4, "Apply the products and ICP automatically".
 
-**See also.** `.deepagent/skills/manual-claims/v8/SKILL.md`, `.deepagent/skills/manual-accounts-research/v8/SKILL.md`.
+**See also.** `.deepagent/skills/manual-documents-decisions/v8/SKILL.md`, `.deepagent/skills/manual-gates-authority/v8/SKILL.md`.
 
 ## The framework file tools
 
@@ -1316,4 +1208,3 @@ nothing.
 
 Its refusals have their own budget, separate from the governed one (`.deepagent/skills/manual-limits/v8/SKILL.md`), and
 the exact strings are in `.deepagent/skills/manual-errors/v8/SKILL.md`.
-

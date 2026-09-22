@@ -295,7 +295,9 @@ class ResearchSection(V1Model):
     model was never called; ``empty_message`` is optional server text, else the client prints its
     own. ``restricted`` marks the only sections that may carry ``outreach_safe=False`` claims
     (``do-not-mention`` / ``context-only`` / ``watch-outs``); the frontend shows them under an
-    "Internal notes" control (ruling R2).
+    "Internal notes" control (ruling R2). ``pending`` is true only when the section will be
+    written (its recipe matched claims and its page task is offered); a section that matches
+    nothing is never pending.
     """
 
     key: str
@@ -305,6 +307,9 @@ class ResearchSection(V1Model):
     intro: tuple[ResearchSentence, ...] | None = _Absent
     restricted: bool = False
     default_open: bool = False
+    # Plan 2026-09-21: the section is missing AND a fleet task is writing it. Served with the one
+    # ``empty_message`` sentence; the client polls the page while any section is pending.
+    pending: bool = False
     empty_message: str | None = _Absent
 
 

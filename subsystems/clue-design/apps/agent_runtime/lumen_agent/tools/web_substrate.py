@@ -485,84 +485,10 @@ _PROVENANCE_NOTE_MAX_CHARS = 500
 #: so the author could then place it as an `<img>`. Only `raster_image` and
 #: `vector` are pictures; everything unmapped keeps its RAW kind, so a
 #: `document` matches `kind="document"` or no filter at all — never `image`.
-_ASSET_DISPLAY_KINDS = {
-    "raster_image": "image",
-    "vector": "image",
-    "logo": "logo",
-    "font": "font",
-}
-
-#: Query words that carry no selection signal. Without this, "a photo of the
-#: globe" ranks every asset whose text contains "a" — any-token matching turns
-#: a stop word into a match-everything wildcard. Deliberately tiny and closed:
-#: a real vocabulary belongs to a search engine, not to a manifest scan.
-_ASSET_SEARCH_STOP_WORDS = frozenset(
-    {
-        "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
-        "into", "is", "it", "of", "on", "or", "that", "the", "this", "to",
-        "with",
-    }
+from .asset_catalog import (
+    _asset_display_kind, _asset_kind_matches, _asset_search_tokens, _asset_text_hit,
+    rank_assets, context_text, materialize_asset, asset_summary,
 )
-
-
-#: Below this length a query token matches only at a word boundary. "ui" is a
-#: real word an author searches for, but as a free substring it also hits
-#: "fl(ui)d" — two characters land inside ordinary English constantly, and a
-#: false hit here becomes a ranked RESULT the director may place.
-_ASSET_SEARCH_SUBSTRING_MIN_LEN = 3
-
-
-def _asset_display_kind(record: JsonObject) -> str:
-    """The agent-facing kind for an engine asset record, or its RAW kind when it
-    has no agent-facing alias (see `_ASSET_DISPLAY_KINDS`)."""
-    record_kind = str(record.get("kind") or "").lower()
-    return _ASSET_DISPLAY_KINDS.get(record_kind, record_kind)
-
-
-def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
-    """Whether an asset record satisfies a `search_assets` `kind` filter.
-
-    Both vocabularies are accepted — the agent's (`image`/`logo`/`font`) and the
-    engine's raw `AssetRecord.kind` — because the agent has been taught the
-    former by every surface it reads and the latter is what the record says. A
-    kind with no agent-facing alias (`document`, `other`) matches only its own
-    raw name, so `kind="image"` can never return a PDF. An empty filter matches
-    everything. ONE implementation: the search loop and the named-id path must
-    never disagree about what a kind filter means."""
-    if not requested:
-        return True
-    record_kind = str(record.get("kind") or "").lower()
-    return requested in {record_kind, _asset_display_kind(record)}
-
-
-def _asset_search_tokens(query_lower: str) -> List[str]:
-    """The distinct, meaningful tokens of a search query, in first-seen order.
-
-    Asset ids survive whole (`\\W+` keeps underscores), which is what lets a
-    bare id ride inside a longer query. Stop words are dropped — unless they are
-    ALL the query has, in which case the literal words the agent typed are
-    better than nothing."""
-    raw = list(dict.fromkeys(token for token in re.split(r"\W+", query_lower) if token))
-    meaningful = [token for token in raw if token not in _ASSET_SEARCH_STOP_WORDS]
-    return meaningful or raw
-
-
-def _asset_text_hit(needle: str, haystack: str, words: frozenset) -> bool:
-    """Whether `needle` matches an asset's searchable text.
-
-    A needle of at least `_ASSET_SEARCH_SUBSTRING_MIN_LEN` characters matches as
-    a free SUBSTRING, which is what makes "payment" find "payments". A shorter
-    one must match a whole word or the start of one, so "ui" finds the word "ui"
-    but not the middle of "fluid".
-
-    ONE predicate for both the token scan and the whole-query phrase check: a
-    one- or two-character QUERY is its own phrase, so a phrase check that skipped
-    this rule would put the false hit straight back."""
-    if not needle:
-        return False
-    if len(needle) >= _ASSET_SEARCH_SUBSTRING_MIN_LEN:
-        return needle in haystack
-    return needle in words or any(word.startswith(needle) for word in words)
 
 
 def _font_mime_from_magic(data: bytes) -> str:
@@ -4083,6 +4009,7 @@ class LumenWebTools:
             # trio is told to look before deciding; a result row that names the
             # id but not the way to see it makes that one guess away.
             "view": f"asset:{asset_id}",
+            **asset_summary(entry),
         }
         # W1.3's shared helper — the SOURCE dims, the number that decides whether
         # an asset can carry a full-bleed band.
@@ -4140,7 +4067,8 @@ class LumenWebTools:
                     record = entry.get("record")
                 else:
                     record = value
-                    entry = {"record": record}
+                    metadata = (self.config.brand_kit_assets or {}).get(asset_id) or (self.config.asset_library or {}).get(asset_id) or {}
+                    entry = {**metadata, "record": record}
                 if not isinstance(record, dict) or record.get("id") != asset_id:
                     continue
                 candidates[asset_id] = (entry, origin)
@@ -4218,68 +4146,8 @@ class LumenWebTools:
         candidates = self._asset_search_candidates()
         normalized_kind = (kind or "").strip().lower()
         query_lower = query.lower()
-        tokens = _asset_search_tokens(query_lower)
-
-        # The exact-id fast path. The live failures named an id INSIDE a longer
-        # query ("asset_ing_f8… payment card"), so equality against the whole
-        # query is not enough — any token that IS an id resolves, in query order.
-        named_ids = [
-            token
-            for token in dict.fromkeys([query_lower, *tokens])
-            if token in candidates
-        ]
-        id_hits: List[JsonObject] = []
-        for asset_id in named_ids:
-            entry, origin = candidates[asset_id]
-            record = entry.get("record") or {}
-            note = None
-            if not _asset_kind_matches(record, normalized_kind):
-                note = (
-                    f"you asked for kind={normalized_kind!r}; this asset's kind is "
-                    f"{str(record.get('kind') or 'unknown')!r}. Returned because "
-                    "you named its id."
-                )
-            id_hits.append(
-                {"asset_id": asset_id, "entry": entry, "origin": origin, "note": note}
-            )
-
-        scored: List[tuple] = []
-        for asset_id, (entry, origin) in candidates.items():
-            if asset_id in named_ids:
-                continue
-            record = entry.get("record") or {}
-            if not _asset_kind_matches(record, normalized_kind):
-                continue
-            media = record.get("media") or {}
-            fields = [
-                asset_id,
-                record.get("label"),
-                media.get("filename"),
-                record.get("kind"),
-                entry.get("title"),
-                entry.get("description"),
-                entry.get("usage"),
-                *(record.get("tags") or []),
-                *(entry.get("tags") or []),
-            ]
-            haystack = " ".join(str(field) for field in fields if field).lower()
-            words = frozenset(word for word in re.split(r"\W+", haystack) if word)
-            token_hits = sum(
-                1 for token in tokens if _asset_text_hit(token, haystack, words)
-            )
-            phrase_hit = 1 if _asset_text_hit(query_lower, haystack, words) else 0
-            if not phrase_hit and token_hits == 0:
-                continue
-            dims = record_pixel_dims(record)
-            area = dims[0] * dims[1] if dims else 0
-            scored.append((-phrase_hit, -token_hits, -area, asset_id, entry, origin))
-        scored.sort(key=lambda item: item[:4])
-
+        ordered = rank_assets(candidates, query_lower, normalized_kind)
         results: List[JsonObject] = []
-        ordered = [
-            (hit["asset_id"], hit["entry"], hit["origin"], True, hit["note"])
-            for hit in id_hits
-        ] + [(item[3], item[4], item[5], False, None) for item in scored]
         unregistered = 0
         for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
@@ -4931,6 +4799,7 @@ class LumenWebTools:
                 "asset library. Call search_assets and choose a returned id.",
             )
         record = copy.deepcopy(entry["record"])
+        materialize_asset(self.config, record)
         if record.get("status") != "ready":
             return self._tool_error(
                 "asset.unavailable_library_asset",
@@ -9766,6 +9635,18 @@ class LumenWebTools:
         )
 
     def _view_asset(self, target: str) -> list:
+        asset_id = target.removeprefix("asset:")
+        entry = next((manifest[asset_id] for manifest in
+                      (self.config.brand_kit_assets or {}, self.config.asset_library or {})
+                      if asset_id in manifest), {})
+        record = (self.web_doc.get("assets") or {}).get(asset_id) or entry.get("record")
+        if record:
+            materialize_asset(self.config, record)
+        content = self._view_asset_pixels(target)
+        details = context_text(entry)
+        return ([{"type": "text", "text": details}] if details else []) + content
+
+    def _view_asset_pixels(self, target: str) -> list:
         """Build the view content for an `asset:<asset_id>` target — that asset's
         raster preview as [text, image] blocks.
 

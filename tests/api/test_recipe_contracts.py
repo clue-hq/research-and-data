@@ -17,7 +17,7 @@ from clue_api.recipe_contracts import (
     build_replay_safety_audit,
     standing_recipe_addresses,
 )
-from clue_api.recipe_wiring import SYSTEM_RECIPE_FILENAMES
+from clue_api.recipe_wiring import HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES, SYSTEM_RECIPE_FILENAMES
 from clue_api.stage0_recipe import RecipeStep
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_toolbelt import ReplayPolicy, ToolRegistry
@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 31
+    assert CONVERSATION_RECIPE_VERSION == 32
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -646,11 +646,8 @@ def test_the_code_sandbox_mints_recipe_v29_without_rewriting_v28() -> None:
     # for a turn pinned to it.
     added = {"run_python@1"}
 
-    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
-    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
-        "recipe0-stage0-v28.json",
-        "recipe0-stage0-v29.json",
-    )
+    assert "recipe0-stage0-v29.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v29.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v28["graph"]["tool_allowlist"])
     assert added <= set(v29["graph"]["tool_allowlist"])
     slot = next(node for node in v29["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -705,9 +702,9 @@ def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
     added = {"open_design_leg@5"}
     removed = {"open_design_leg@4"}
 
-    v29_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v29.json")
-    assert SYSTEM_RECIPE_FILENAMES[v29_index : v29_index + 2] == (
-        "recipe0-stage0-v29.json",
+    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
+    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
+        "recipe0-stage0-v28.json",
         "recipe0-stage0-v30.json",
     )
     assert added.isdisjoint(v29["graph"]["tool_allowlist"])
@@ -768,57 +765,57 @@ def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
     assert slot["dynamic_pin_kinds"] == v29_slot["dynamic_pin_kinds"]
 
 
-def test_web_search_mints_recipe_v31_without_rewriting_v30() -> None:
+def test_web_search_mints_recipe_v32_without_rewriting_v31() -> None:
     root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
-    v30 = json.loads((root / "recipe0-stage0-v30.json").read_text())
     v31 = json.loads((root / "recipe0-stage0-v31.json").read_text())
+    v32 = json.loads((root / "recipe0-stage0-v32.json").read_text())
     # One address JOINS and none leaves: `web_search@1`, granted for the first time at
-    # `head-of-abm@v61`. The tool has one version, so v31 is v30 plus exactly this address, and
-    # v30 stays the exact replay input for a turn pinned to it.
+    # `head-of-abm@v62`. The tool has one version, so v32 is v31 plus exactly this address, and
+    # v31 stays the exact replay input for a turn pinned to it.
     added = {"web_search@1"}
 
-    v30_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v30.json")
-    assert SYSTEM_RECIPE_FILENAMES[v30_index : v30_index + 2] == (
-        "recipe0-stage0-v30.json",
+    v31_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v31.json")
+    assert SYSTEM_RECIPE_FILENAMES[v31_index : v31_index + 2] == (
         "recipe0-stage0-v31.json",
+        "recipe0-stage0-v32.json",
     )
-    assert added.isdisjoint(v30["graph"]["tool_allowlist"])
-    assert added <= set(v31["graph"]["tool_allowlist"])
-    slot = next(node for node in v31["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added.isdisjoint(v31["graph"]["tool_allowlist"])
+    assert added <= set(v32["graph"]["tool_allowlist"])
+    slot = next(node for node in v32["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
     assert added <= set(slot["dynamic_tool_allowlist"])
     slot_requirements = {
         (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
     }
     node_compatibility = {
         (item["key"], item["version"])
-        for item in v31["compatibility"]["nodes"]["stage0_interactions"]
+        for item in v32["compatibility"]["nodes"]["stage0_interactions"]
         if item["kind"] == "tool"
     }
     joined = {tuple(address.split("@")) for address in added}
     assert joined <= slot_requirements
     assert joined <= node_compatibility
     assert [item for item in slot_requirements if item[0] == "web_search"] == [("web_search", "1")]
-    v30_slot = next(
-        node for node in v30["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    v31_slot = next(
+        node for node in v31["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
     )
-    assert set(v30["graph"]["tool_allowlist"]) | added == set(v31["graph"]["tool_allowlist"])
-    assert set(v30_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
-    v30_requirements = {
+    assert set(v31["graph"]["tool_allowlist"]) | added == set(v32["graph"]["tool_allowlist"])
+    assert set(v31_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
+    v31_requirements = {
         (item["key"], item["version"])
-        for item in v30_slot["requirements"]
+        for item in v31_slot["requirements"]
         if item["kind"] == "tool"
     }
-    v30_compatibility = {
+    v31_compatibility = {
         (item["key"], item["version"])
-        for item in v30["compatibility"]["nodes"]["stage0_interactions"]
+        for item in v31["compatibility"]["nodes"]["stage0_interactions"]
         if item["kind"] == "tool"
     }
-    assert v30_requirements | joined == slot_requirements
-    assert v30_compatibility | joined == node_compatibility
+    assert v31_requirements | joined == slot_requirements
+    assert v31_compatibility | joined == node_compatibility
     assert added <= set(RECIPE_0_TOOL_ADDRESSES)
-    assert v30["version"] == 30
     assert v31["version"] == 31
-    assert slot["dynamic_pin_kinds"] == v30_slot["dynamic_pin_kinds"]
+    assert v32["version"] == 32
+    assert slot["dynamic_pin_kinds"] == v31_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

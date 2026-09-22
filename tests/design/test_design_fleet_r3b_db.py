@@ -373,10 +373,10 @@ def test_the_design_handler_declares_the_ad_assets_lane_only_when_its_flag_is_on
     from lumen_api.fleet_handler import build_design_job_handler
     from py_lumen_config import settings
 
-    handler = build_design_job_handler(checkpointer_factory=None)
+    handler = build_design_job_handler(checkpointer_factory=None, ingestion_only=True)
 
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", False, raising=False)
-    off = handler.task_capabilities
+    off = tuple(cap for cap in handler.task_capabilities if cap.field == "ingestion_kind")
     assert len(off) == 1
     assert off[0].field == "ingestion_kind"
     assert "ad_assets" not in off[0].supported
@@ -386,7 +386,7 @@ def test_the_design_handler_declares_the_ad_assets_lane_only_when_its_flag_is_on
     )
 
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
-    on = handler.task_capabilities
+    on = tuple(cap for cap in handler.task_capabilities if cap.field == "ingestion_kind")
     assert on[0].supported == frozenset(kind.value for kind in DesignIngestionKind)
 
 
@@ -418,7 +418,7 @@ def test_a_preamble_failure_fails_the_job_row_instead_of_leaving_it_queued() -> 
                 envelope_kind_override="lane_this_build_never_heard_of",
             )
 
-            handler = build_design_job_handler(checkpointer_factory=None)
+            handler = build_design_job_handler(checkpointer_factory=None, ingestion_only=True)
             # The RED case: before the fix this call RAISED (the parse is the first thing
             # ``handle`` does), the fleet's generic ``except`` marked the task failed, and the
             # job below stayed ``queued`` with a NULL error forever.
@@ -460,7 +460,7 @@ def test_a_preamble_failure_is_refused_when_a_newer_generation_owns_the_job() ->
                 )
             assert claimed is not None
 
-            handler = build_design_job_handler(checkpointer_factory=None)
+            handler = build_design_job_handler(checkpointer_factory=None, ingestion_only=True)
             result = await handler.handle(
                 _context(work_id, generation=1, payload={"not": "an envelope"})
             )
@@ -482,7 +482,7 @@ def test_a_preamble_failure_on_an_unknown_work_id_invents_nothing() -> None:
 
     async def scenario() -> None:
         async with db_lifespan():
-            handler = build_design_job_handler(checkpointer_factory=None)
+            handler = build_design_job_handler(checkpointer_factory=None, ingestion_only=True)
             result = await handler.handle(_context(uuid4(), payload={"not": "an envelope"}))
             assert result.outcome == "preamble_error"
             assert result.references["reconciliation"] == "unknown_work"

@@ -22,7 +22,9 @@
         "kind": "gate",
         "node_key": "stage0_interactions",
         "ordinal": 1,
-        "dependencies": ["stage0_open"],
+        "dependencies": [
+          "stage0_open"
+        ],
         "authority": "human",
         "resume_condition": "input_available",
         "dynamic_tool_allowlist": [
@@ -53,8 +55,6 @@
           "inspect_client_claim@2",
           "list_product_knowledge@1",
           "inspect_product_claim@1",
-          "open_product_set_selection_gate@1",
-          "open_icp_confirmation_gate@2",
           "launch_arv2_account_research@1",
           "launch_arv2_discovery@1",
           "launch_arv2_person_research@1",
@@ -65,7 +65,7 @@
           "read_artifact@1",
           "read_discovery_run@2",
           "run_python@1",
-          "web_search@1"
+          "configure_project_targeting@1"
         ],
         "dynamic_pin_kinds": [
           "artifact_input",
@@ -92,59 +92,236 @@
         ],
         "max_children": 125,
         "requirements": [
-          {"kind": "tool", "key": "submit_onboarding_input", "version": "1"},
-          {"kind": "tool", "key": "start_recon", "version": "1"},
-          {"kind": "tool", "key": "record_interview_answer", "version": "1"},
-          {"kind": "tool", "key": "confirm_project_product", "version": "1"},
-          {"kind": "tool", "key": "evaluate_stage0_readiness", "version": "2"},
-          {"kind": "tool", "key": "synthesize_icps", "version": "3"},
-          {"kind": "tool", "key": "confirm_icp", "version": "1"},
-          {"kind": "tool", "key": "override_stage0_readiness", "version": "1"},
-          {"kind": "tool", "key": "open_discovery_configuration_gate", "version": "1"},
-          {"kind": "tool", "key": "start_confirmed_project_run", "version": "3"},
-          {"kind": "tool", "key": "propose_field", "version": "2"},
-          {"kind": "tool", "key": "propose_source", "version": "1"},
-          {"kind": "tool", "key": "submit_ingestion", "version": "1"},
-          {"kind": "tool", "key": "inspect_statement_history", "version": "1"},
-          {"kind": "tool", "key": "inspect_readiness_history", "version": "1"},
-          {"kind": "tool", "key": "draft_account_research_directive", "version": "5"},
-          {"kind": "tool", "key": "open_design_leg", "version": "5"},
-          {"kind": "tool", "key": "open_directive_confirmation_gate", "version": "1"},
-          {"kind": "tool", "key": "open_product_selection_gate", "version": "1"},
-          {"kind": "tool", "key": "get_research_view", "version": "1"},
-          {"kind": "tool", "key": "launch_account_research", "version": "1"},
-          {"kind": "tool", "key": "launch_selected_account_research", "version": "1"},
-          {"kind": "tool", "key": "read_account_research_run", "version": "1"},
-          {"kind": "stage0_policy", "key": "default", "version": "1"},
-          {"kind": "stage0_skill", "key": "stage0-interview", "version": "1"},
-          {"kind": "readiness_policy", "key": "default", "version": "1"},
-          {"kind": "proposal_policy", "key": "default", "version": "1"},
-          {"kind": "ingestion_policy", "key": "default", "version": "1"},
-          {"kind": "memory_switch", "key": "workspace", "version": "live", "required": false},
-          {"kind": "tool", "key": "list_client_knowledge", "version": "2"},
-          {"kind": "tool", "key": "inspect_client_claim", "version": "2"},
-          {"kind": "tool", "key": "list_product_knowledge", "version": "1"},
-          {"kind": "tool", "key": "inspect_product_claim", "version": "1"},
-          {"kind": "tool", "key": "open_product_set_selection_gate", "version": "1"},
-          {"kind": "tool", "key": "open_icp_confirmation_gate", "version": "2"},
-          {"kind": "tool", "key": "launch_arv2_account_research", "version": "1"},
-          {"kind": "tool", "key": "launch_arv2_discovery", "version": "1"},
-          {"kind": "tool", "key": "launch_arv2_person_research", "version": "1"},
-          {"kind": "tool", "key": "read_arv2_account_research_run", "version": "1"},
-          {"kind": "tool", "key": "read_project_accounts", "version": "1"},
-          {"kind": "tool", "key": "read_account_research", "version": "2"},
-          {"kind": "tool", "key": "read_claims", "version": "1"},
-          {"kind": "tool", "key": "read_artifact", "version": "1"},
-          {"kind": "tool", "key": "read_discovery_run", "version": "2"},
-          {"kind": "tool", "key": "run_python", "version": "1"},
-          {"kind": "tool", "key": "web_search", "version": "1"}
+          {
+            "kind": "tool",
+            "key": "submit_onboarding_input",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "start_recon",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "record_interview_answer",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "confirm_project_product",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "evaluate_stage0_readiness",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "synthesize_icps",
+            "version": "3"
+          },
+          {
+            "kind": "tool",
+            "key": "confirm_icp",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "override_stage0_readiness",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "open_discovery_configuration_gate",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "start_confirmed_project_run",
+            "version": "3"
+          },
+          {
+            "kind": "tool",
+            "key": "propose_field",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "propose_source",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "submit_ingestion",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "inspect_statement_history",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "inspect_readiness_history",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "draft_account_research_directive",
+            "version": "5"
+          },
+          {
+            "kind": "tool",
+            "key": "open_design_leg",
+            "version": "5"
+          },
+          {
+            "kind": "tool",
+            "key": "open_directive_confirmation_gate",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "open_product_selection_gate",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "get_research_view",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "launch_account_research",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "launch_selected_account_research",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_account_research_run",
+            "version": "1"
+          },
+          {
+            "kind": "stage0_policy",
+            "key": "default",
+            "version": "1"
+          },
+          {
+            "kind": "stage0_skill",
+            "key": "stage0-interview",
+            "version": "1"
+          },
+          {
+            "kind": "readiness_policy",
+            "key": "default",
+            "version": "1"
+          },
+          {
+            "kind": "proposal_policy",
+            "key": "default",
+            "version": "1"
+          },
+          {
+            "kind": "ingestion_policy",
+            "key": "default",
+            "version": "1"
+          },
+          {
+            "kind": "memory_switch",
+            "key": "workspace",
+            "version": "live",
+            "required": false
+          },
+          {
+            "kind": "tool",
+            "key": "list_client_knowledge",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "inspect_client_claim",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "list_product_knowledge",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "inspect_product_claim",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "launch_arv2_account_research",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "launch_arv2_discovery",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "launch_arv2_person_research",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_arv2_account_research_run",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_project_accounts",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_account_research",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "read_claims",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_artifact",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "read_discovery_run",
+            "version": "2"
+          },
+          {
+            "kind": "tool",
+            "key": "run_python",
+            "version": "1"
+          },
+          {
+            "kind": "tool",
+            "key": "configure_project_targeting",
+            "version": "1"
+          }
         ]
       },
       {
         "kind": "barrier",
         "node_key": "stage0_complete",
         "ordinal": 2,
-        "dependencies": ["stage0_interactions"],
+        "dependencies": [
+          "stage0_interactions"
+        ],
         "requirements": []
       }
     ],
@@ -176,8 +353,6 @@
       "inspect_client_claim@2",
       "list_product_knowledge@1",
       "inspect_product_claim@1",
-      "open_product_set_selection_gate@1",
-      "open_icp_confirmation_gate@2",
       "launch_arv2_account_research@1",
       "launch_arv2_discovery@1",
       "launch_arv2_person_research@1",
@@ -188,9 +363,11 @@
       "read_artifact@1",
       "read_discovery_run@2",
       "run_python@1",
-      "web_search@1"
+      "configure_project_targeting@1"
     ],
-    "authority_allowlist": ["human"],
+    "authority_allowlist": [
+      "human"
+    ],
     "activity_allowlist": [],
     "migration_state": "executable"
   },
@@ -198,52 +375,227 @@
     "execution": [],
     "nodes": {
       "stage0_interactions": [
-        {"kind": "tool", "key": "submit_onboarding_input", "version": "1"},
-        {"kind": "tool", "key": "start_recon", "version": "1"},
-        {"kind": "tool", "key": "record_interview_answer", "version": "1"},
-        {"kind": "tool", "key": "confirm_project_product", "version": "1"},
-        {"kind": "tool", "key": "evaluate_stage0_readiness", "version": "2"},
-        {"kind": "tool", "key": "synthesize_icps", "version": "3"},
-        {"kind": "tool", "key": "confirm_icp", "version": "1"},
-        {"kind": "tool", "key": "override_stage0_readiness", "version": "1"},
-        {"kind": "tool", "key": "open_discovery_configuration_gate", "version": "1"},
-        {"kind": "tool", "key": "start_confirmed_project_run", "version": "3"},
-        {"kind": "tool", "key": "propose_field", "version": "2"},
-        {"kind": "tool", "key": "propose_source", "version": "1"},
-        {"kind": "tool", "key": "submit_ingestion", "version": "1"},
-        {"kind": "tool", "key": "inspect_statement_history", "version": "1"},
-        {"kind": "tool", "key": "inspect_readiness_history", "version": "1"},
-        {"kind": "tool", "key": "draft_account_research_directive", "version": "5"},
-        {"kind": "tool", "key": "open_design_leg", "version": "5"},
-        {"kind": "tool", "key": "open_directive_confirmation_gate", "version": "1"},
-        {"kind": "tool", "key": "open_product_selection_gate", "version": "1"},
-        {"kind": "tool", "key": "get_research_view", "version": "1"},
-        {"kind": "tool", "key": "launch_account_research", "version": "1"},
-        {"kind": "tool", "key": "launch_selected_account_research", "version": "1"},
-        {"kind": "tool", "key": "read_account_research_run", "version": "1"},
-        {"kind": "stage0_policy", "key": "default", "version": "1"},
-        {"kind": "stage0_skill", "key": "stage0-interview", "version": "1"},
-        {"kind": "readiness_policy", "key": "default", "version": "1"},
-        {"kind": "proposal_policy", "key": "default", "version": "1"},
-        {"kind": "ingestion_policy", "key": "default", "version": "1"},
-        {"kind": "memory_switch", "key": "workspace", "version": "live", "required": false},
-        {"kind": "tool", "key": "list_client_knowledge", "version": "2"},
-        {"kind": "tool", "key": "inspect_client_claim", "version": "2"},
-        {"kind": "tool", "key": "list_product_knowledge", "version": "1"},
-        {"kind": "tool", "key": "inspect_product_claim", "version": "1"},
-        {"kind": "tool", "key": "open_product_set_selection_gate", "version": "1"},
-        {"kind": "tool", "key": "open_icp_confirmation_gate", "version": "2"},
-        {"kind": "tool", "key": "launch_arv2_account_research", "version": "1"},
-        {"kind": "tool", "key": "launch_arv2_discovery", "version": "1"},
-        {"kind": "tool", "key": "launch_arv2_person_research", "version": "1"},
-        {"kind": "tool", "key": "read_arv2_account_research_run", "version": "1"},
-        {"kind": "tool", "key": "read_project_accounts", "version": "1"},
-        {"kind": "tool", "key": "read_account_research", "version": "2"},
-        {"kind": "tool", "key": "read_claims", "version": "1"},
-        {"kind": "tool", "key": "read_artifact", "version": "1"},
-        {"kind": "tool", "key": "read_discovery_run", "version": "2"},
-        {"kind": "tool", "key": "run_python", "version": "1"},
-        {"kind": "tool", "key": "web_search", "version": "1"}
+        {
+          "kind": "tool",
+          "key": "submit_onboarding_input",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "start_recon",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "record_interview_answer",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "confirm_project_product",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "evaluate_stage0_readiness",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "synthesize_icps",
+          "version": "3"
+        },
+        {
+          "kind": "tool",
+          "key": "confirm_icp",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "override_stage0_readiness",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "open_discovery_configuration_gate",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "start_confirmed_project_run",
+          "version": "3"
+        },
+        {
+          "kind": "tool",
+          "key": "propose_field",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "propose_source",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "submit_ingestion",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "inspect_statement_history",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "inspect_readiness_history",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "draft_account_research_directive",
+          "version": "5"
+        },
+        {
+          "kind": "tool",
+          "key": "open_design_leg",
+          "version": "5"
+        },
+        {
+          "kind": "tool",
+          "key": "open_directive_confirmation_gate",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "open_product_selection_gate",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "get_research_view",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "launch_account_research",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "launch_selected_account_research",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_account_research_run",
+          "version": "1"
+        },
+        {
+          "kind": "stage0_policy",
+          "key": "default",
+          "version": "1"
+        },
+        {
+          "kind": "stage0_skill",
+          "key": "stage0-interview",
+          "version": "1"
+        },
+        {
+          "kind": "readiness_policy",
+          "key": "default",
+          "version": "1"
+        },
+        {
+          "kind": "proposal_policy",
+          "key": "default",
+          "version": "1"
+        },
+        {
+          "kind": "ingestion_policy",
+          "key": "default",
+          "version": "1"
+        },
+        {
+          "kind": "memory_switch",
+          "key": "workspace",
+          "version": "live",
+          "required": false
+        },
+        {
+          "kind": "tool",
+          "key": "list_client_knowledge",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "inspect_client_claim",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "list_product_knowledge",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "inspect_product_claim",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "launch_arv2_account_research",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "launch_arv2_discovery",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "launch_arv2_person_research",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_arv2_account_research_run",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_project_accounts",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_account_research",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "read_claims",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_artifact",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "read_discovery_run",
+          "version": "2"
+        },
+        {
+          "kind": "tool",
+          "key": "run_python",
+          "version": "1"
+        },
+        {
+          "kind": "tool",
+          "key": "configure_project_targeting",
+          "version": "1"
+        }
       ]
     }
   },
@@ -254,4 +606,3 @@
   "source_execution_id": null,
   "created_by": "system"
 }
-

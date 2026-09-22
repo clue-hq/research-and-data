@@ -22,13 +22,33 @@ Keep notes concise and operational. Do not store secrets, API keys, credentials,
 
 ## Repository Role
 
+- `2026-09-22-asset-inspector-review.md` — branded asset inspector, automatic saving,
+  responsive/failure verification and pilot comparison with an open generation-quality defect.
+
 This repository is the data and research subsystem for the larger AI-native ABM orchestration platform. Its job is to turn client ICPs and client knowledge into canonical account/contact entities, typed claims with provenance, explainable fit/intent scores, and persona-keyed buying-committee research that downstream content and design systems can trust.
 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
 
 ## Topic notes
-- `2026-09-22-web-search-tool-design.md` — `web_search@1` **LANDED 2026-09-22** (branch `feat/add-general-purpose-web-search-exa`, eight commits `722814d91`..`cd2f9ca91` plus this record): one deep-lite open-web search granted to `head-of-abm@v61` (prompt v14, recipe0-stage0@31, manual v8) and `design@v3` (the fourth tool on the platform-reads seam, both harnesses), used LAST by prompt, text never a claim, ledger row workspace-stamped. Design session rulings, verified seams, spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` (implemented; offline acceptance §4.1–4.4 green) and the eight-task plan `docs/superpowers/plans/2026-09-22-web-search-tool.md`; **the two live proofs (§4.5–4.6) are owed, founder-triggered.**
+- `2026-09-22-web-search-tool-design.md` — `web_search@1` **LANDED 2026-09-22**, re-minted as head-of-abm@v62 / prompt v15 / manual v9 / recipe 32 on the research-streaming merge (two base heads joined by `7c4fe6965720`; seven stale base tests fixed); (branch `feat/add-general-purpose-web-search-exa`, eight commits `722814d91`..`cd2f9ca91` plus this record): one deep-lite open-web search granted to `head-of-abm@v62` (prompt v15, recipe0-stage0@32, manual v9) and `design@v3` (the fourth tool on the platform-reads seam, both harnesses), used LAST by prompt, text never a claim, ledger row workspace-stamped. Design session rulings, verified seams, spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` (implemented; offline acceptance §4.1–4.4 green) and the eight-task plan `docs/superpowers/plans/2026-09-22-web-search-tool.md`; **the two live proofs (§4.5–4.6) are owed, founder-triggered.**
 - `2026-09-22-lome-lane-ports.md` — the lome lane (branch `research-streaming-v3`) on its own all-4 ports 3024/8014/8024/8034 via the untracked `scripts/dev_stack_lome.sh`; DB = `clue_lome`@55040, a verified `pg_dump|psql` clone of `clue_san-salvador` (founder ruling, second pass); `.artifacts/`, helper binary and `npm ci` owed before `up`.
+- `2026-09-22-on-demand-ingestion-pool.md` — dedicated ingestion coordinator and
+  on-demand 4 x 10 image workers; strict routing, durable tasks and idle shutdown.
+- `2026-09-22-hide-asset-source-interpretation-rows.md` — temporarily removes Observed
+  use, Logo relationship and Messaging & tone from the inspector; stored metadata retained.
+- `2026-09-22-asset-vision-replay-preparation.md` — four approved live calls completed;
+  all recognized the logos, background interpretation varied, original failure not reproduced.
+- `2026-09-22-asset-description-mapping-audit.md` — identity/fingerprint checks and
+  concurrent replay pass, but multiple captions are visually wrong; validation,
+  transparent-preview, provider-evidence and library-polling gaps remain open.
+- `2026-09-22-asset-details-height.md` — asset Details column fills the modal height;
+  removed a conflicting viewport-height cap and verified internal scrolling live.
+- `2026-09-22-onboarding-role-select.md` — onboarding Role field reuses the branded
+  shared select; browser-checked without disturbing the user's live ingestion.
+- `2026-09-21-brand-context-controls.md` — shared branded asset selectors, aligned
+  toolbar, simplified header, and automatic brand-kit plus ICP/product approval.
+- `2026-09-21-san-diego-stack-startup.md` — isolated live San Diego stack on
+  3033/8013/8023/8033; four fleet workers, restored blobs, and authority/recipe boot fixes.
 - `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
   sandbox and project-management authority tests; isolated database migration smoke.
 - `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names
@@ -604,3 +624,4 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-09-17-custom-domain-publishing-research.md` — custom-domain publishing for web pages: what the tree actually serves today (interim `/w/{ws}/p/{slug}`, hardcoded `share.cluehq.ai` chrome, tenant-subdomain v1 unbuilt, absolute asset URLs baked at publish), how Notion/Mutiny/Ploy do it, Railway 20-domains-per-service cap, Cloudflare-for-SaaS recommendation, which dummy Pages fields to keep/drop; section-20 rules + Option C RATIFIED; design approved; spec at `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md`. No code.
 - `2026-09-18-design-session-continuity.md` — the design agent's durable session (one workspace and one thread per design session, continue/resume, session sync through the blob store, erasure), then the 2026-09-19 exit judge v2 (free reasoning + three engine actions, artifact and tags shown), and the **seller + target-account context** shipped the same day on `design-agent-account-context-transfer`: the design role is granted `read_project_accounts@1` / `read_account_research@2` / `read_claims@1`, they reach the runtime as tools on LEG turns only, a governed refusal arrives as `{"error": "refused", "reasons": [...]}`, the seller's pinned knowledge documents are written read-only into `workspace/seller/` with an `index.md`, and the account-adaptation / scene-brief-copy / tools skills teach all of it. **Skill text pending founder review; the three live acceptance proofs (spec §6) are owed.**
 - `2026-09-21-display-prewrite-planning.md` — how display prose is generated today (lazy on read, Luna per section, `display_block`), the 09-12 prewrite design found unimplemented, the 09-21 placeholder ruling (`Synthesis in progress…`, `pending`, 5 s poll), and the 8-task plan `docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`. Execution not started.
+- `2026-09-21-display-prewrite-execution.md` — execution record for `display/prewrite-and-shared-blocks`: display prose is now written by the fleet (`arv2_display_page` kind + handler, the account overview offered at settle, the contact pages of an account on its first open), a read became a scheduler (`pending` + `Synthesis in progress, please wait a few seconds.` + a 5 s `router.refresh()` poll), and the insights page's `context-only` / `contact-insights` are the owners' stored blocks. Eight tasks, two migrations (`fd8795c4fd5a`, `2b702a116c15`); rulings, gates and the five owed live proofs recorded there.

@@ -29,34 +29,50 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.blocks import (
-    LiveBlock,
+    cited_claim_ids,
     compose_display_block,
     live_blocks,
+    shared_blocks,
     stale_sections,
 )
+from clue_api.arv2.display.fleet_handler import display_page_payload
 from clue_api.arv2.display.gather import (
     PERSONA_KEY,
     TITLE_KEY,
     SubjectKind,
     SubjectRef,
     committee_members,
+    gather_section_inputs,
     resolve_subject,
 )
 from clue_api.arv2.display.page import (
     RunnerFactory,
     default_runner_factory,
     ensure_page,
+    people_of,
 )
 from clue_api.arv2.display.personas import persona_display, persona_label
-from clue_api.arv2.display.recipes import Page, SectionRecipe, read_recipes
+from clue_api.arv2.display.recipes import (
+    PAGE_SUBJECT_KIND,
+    Page,
+    SectionRecipe,
+    read_recipes,
+)
 from clue_api.arv2.errors import Arv2Error, ProviderHalted, ProviderTransportError
+from clue_api.arv2.fleet_task import (
+    ARV2_DISPLAY_DEDUP_PREFIX,
+    ARV2_DISPLAY_TASK_PRIORITY,
+    arv2_display_work_id,
+)
 from clue_api.arv2.provider_ledger import ArtifactSink
 from clue_api.frontend_read.contract_v1 import AccountContact, BuyingCommitteeMember
 from clue_api.frontend_read.v1_shared import arv2_display_allowed, email_facts
@@ -66,6 +82,7 @@ from clue_config import Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_core.provider_failures import ProviderFailure, classify_http
 from clue_db import ConnFactory
+from clue_fleet import FleetTaskKind, WorkQueue
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
 from clue_research.compliance import WorkspacePolicy
@@ -80,6 +97,7 @@ __all__ = [
     "ROLE_KEY",
     "UNKNOWN_TITLE",
     "WORK_EMAIL_KEY",
+    "PENDING_MESSAGE",
     "DisplayPages",
     "PageRead",
     "buying_committee",
@@ -91,6 +109,37 @@ __all__ = [
 ]
 
 log = get_logger("clue_api.frontend_read.display")
+
+#: The one sentence a section carries while the fleet is writing it (founder ruling 2026-09-21).
+PENDING_MESSAGE = "Synthesis in progress, please wait a few seconds."
+
+#: How long one web process waits before re-offering an account's contact pages on open. The table
+#: behind it is in-process, like the regeneration table: a second web process offers its own round,
+#: which the fleet's work id folds into the same task.
+_CONTACT_OFFER_COOLDOWN_S = 60.0
+
+#: The newest settled person job per committee member — the job a member's page is written under,
+#: so its sections' spend is stamped against the research that produced their claims.
+_SETTLED_MEMBER_JOBS = text(
+    """
+    SELECT DISTINCT ON (subject_entity_id) subject_entity_id, job_id
+    FROM arv2_research_job
+    WHERE workspace_id = :workspace_id
+      AND subject_type = 'person'
+      AND subject_entity_id = ANY(CAST(:member_ids AS uuid[]))
+      AND status IN ('completed', 'needs_review')
+    ORDER BY subject_entity_id, finished_at DESC NULLS LAST
+    """
+)
+
+#: Which of those members already have a contact page written — the ones an open must not re-offer.
+_MEMBERS_WITH_A_PAGE = text(
+    """
+    SELECT DISTINCT subject_id FROM display_block
+    WHERE workspace_id = :workspace_id AND subject_kind = 'contact' AND page = 'contact'
+      AND subject_id = ANY(CAST(:member_ids AS uuid[])) AND superseded_at IS NULL
+    """
+)
 
 #: The person's own committee facts, read in one statement. ``core.work_email`` is here rather than
 #: in a second read because the email chip and the title live on the same card.
@@ -134,6 +183,11 @@ class PageRead:
     one explanation wherever the outage surfaces. It is ``None`` whenever the page is empty for any
     other reason (nothing researched yet, a recipe that matched nothing): an empty section is a
     correct answer, and only an outage gets an excuse.
+
+    ``pending`` names the empty sections a fleet task is on its way to write — only ever non-empty
+    on a scheduling seam (:attr:`DisplayPages.schedules`), and only for sections whose recipe
+    actually matched claims. A section that matches nothing is never pending: the placeholder
+    sentence is a promise, and an empty section nobody will fill must not make one.
     """
 
     display_block: dict[str, Any]
@@ -142,6 +196,7 @@ class PageRead:
     stale: tuple[str, ...]
     degraded_reason: str | None
     unavailable_message: str | None = None
+    pending: tuple[str, ...] = ()
 
 
 #: The failures a read absorbs. ``Arv2Error`` covers the lane's own typed failures (a halted or
@@ -190,6 +245,14 @@ class DisplayPages:
     One instance, not one per request, because the in-flight regeneration table has to outlive the
     request that scheduled the work — that table is what makes "one rewrite per page, however many
     people are looking at it" true.
+
+    **With a ``queue``, this seam is a scheduler, not a writer** (plan 2026-09-21). It serves the
+    blocks that are stored, works out which of the missing sections a write would actually fill,
+    offers *one* fleet task for the page, and marks exactly those sections ``pending`` with
+    :data:`PENDING_MESSAGE`; opening an account additionally offers the contact pages of its
+    settled committee members. Nothing is written on the request, so no browser waits on a model
+    and no page is paid for twice. **Without one** it is the D3 inline writer described above: it
+    writes the missing sections during the request and repairs stale ones on a background task.
     """
 
     def __init__(
@@ -200,9 +263,13 @@ class DisplayPages:
         conn_factory: ConnFactory,
         runner_factory: RunnerFactory | None = None,
         artifacts: ArtifactSink | None = None,
+        queue: WorkQueue | None = None,
     ) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
+        self._queue = queue
+        #: ``(workspace, account) -> monotonic clock of the last contact-page round offered``.
+        self._contact_offers: dict[tuple[str, str], float] = {}
         self._runner_factory = (
             runner_factory
             if runner_factory is not None
@@ -236,6 +303,11 @@ class DisplayPages:
         what is stored instead, the same fail-closed-before-spend posture a missing key has.
         """
         return self._runner_factory is not None and self._artifacts is not None
+
+    @property
+    def schedules(self) -> bool:
+        """Whether a read hands page writes to the fleet instead of writing inline."""
+        return self._queue is not None and self._settings.arv2_display_generate_on_read
 
     # -- the page ------------------------------------------------------------------------------
 
@@ -275,7 +347,22 @@ class DisplayPages:
         generated: tuple[str, ...] = ()
         degraded_reason: str | None = None
         degrading_failure: ProviderFailure | None = None
-        if generate and self.generates:
+        pending: tuple[str, ...] = ()
+        if generate and self.schedules:
+            pending = await self._offer_missing_and_stale(
+                conn,
+                workspace_id=workspace_id,
+                subject_kind=subject_kind,
+                subject_id=subject_id,
+                page=page,
+                recipes=recipes,
+                expansion=expansion,
+            )
+            if subject_kind == "account":
+                await self._offer_members_on_open(
+                    conn, workspace_id=workspace_id, account_id=subject_id
+                )
+        elif generate and self.generates:
             assert self._runner_factory is not None and self._artifacts is not None
             try:
                 result = await ensure_page(
@@ -323,14 +410,34 @@ class DisplayPages:
             blocks=blocks,
         )
         stale_keys = tuple(entry.section_key for entry in stale)
-        if stale_keys and generate:
+        # Only the inline path repairs staleness in-process: a scheduling seam already offered the
+        # page task above, and a second, in-process rewrite would pay for the same sections twice.
+        if stale_keys and generate and not self.schedules:
             self.schedule_regeneration(
                 workspace_id=workspace_id,
                 subject_kind=subject_kind,
                 subject_id=subject_id,
                 page=page,
             )
-        display_block = compose_display_block(page, recipes, blocks)
+        shared = await shared_blocks(
+            conn,
+            workspace_id=workspace_id,
+            page=page,
+            recipes=recipes,
+            subject_id=subject_id,
+            # ``_expansion`` already resolved the committee, in committee order, as
+            # everything after the subject itself — re-reading it here would be a second
+            # query that could disagree with the one the staleness scan used.
+            member_ids=list(expansion[1:]) if subject_kind == "account" else [],
+        )
+        display_block = compose_display_block(page, recipes, blocks, shared=shared)
+        # A section a fleet task is about to write says so, and says the one sentence. ``pending``
+        # is stamped on EVERY section (``False`` where nothing is coming) so the wire shape does
+        # not change with the seam's configuration — the contract's default is the same ``False``.
+        for section in display_block["sections"]:
+            section["pending"] = section["key"] in pending
+            if section["pending"]:
+                section["emptyMessage"] = PENDING_MESSAGE
         # Why the empty sections are empty, when the answer is a provider and not the research.
         # The classified halt speaks first (it is THIS read's own failure); otherwise an incident
         # that is open right now explains a page a previous, already-degraded read left behind.
@@ -349,12 +456,254 @@ class DisplayPages:
                     section["emptyMessage"] = unavailable
         return PageRead(
             display_block=display_block,
-            cited_claim_ids=_cited(recipes, blocks),
+            cited_claim_ids=cited_claim_ids(recipes, blocks, shared),
             generated=generated,
             stale=stale_keys,
             degraded_reason=degraded_reason,
             unavailable_message=unavailable,
+            pending=pending,
         )
+
+    # -- scheduling: the fleet writes the page, this read only offers it -----------------------
+
+    async def _offer_missing_and_stale(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        subject_kind: SubjectKind,
+        subject_id: str,
+        page: Page,
+        recipes: Sequence[SectionRecipe],
+        expansion: Sequence[str],
+    ) -> tuple[str, ...]:
+        """Offer this page's task when anything on it needs writing; return the keys that will be.
+
+        A missing section is *pending* only when the gather step (no model call) says its recipe
+        matched claims: the placeholder sentence is a promise, and a section that matches nothing
+        keeps the ordinary empty state. A stale section is served as stored and re-offered; it is
+        never pending, because it is not empty.
+
+        A recipe with ``shared_from`` owns no block on this page, so it is neither missing nor
+        pending here and this page's task would not write it. What it needs instead is its
+        *owner's* page: :meth:`_offer_owner_pages` re-offers that page when the owner's block has
+        gone stale, on the owner's own subject.
+        """
+        recipes_owned = [recipe for recipe in recipes if recipe.shared_from is None]
+        blocks = await live_blocks(
+            conn,
+            workspace_id=workspace_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            page=page,
+        )
+        stale = await stale_sections(
+            conn,
+            workspace_id=workspace_id,
+            subject_ids=expansion,
+            recipes=recipes_owned,
+            blocks=blocks,
+        )
+        await self._offer_owner_pages(
+            conn,
+            workspace_id=workspace_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            page=page,
+            recipes=recipes,
+            expansion=expansion,
+        )
+        missing = [recipe for recipe in recipes_owned if recipe.section_key not in blocks]
+        would_write: tuple[str, ...] = ()
+        if missing:
+            subject = await resolve_subject(
+                conn, workspace_id=workspace_id, kind=subject_kind, subject_id=subject_id
+            )
+            members = (
+                await committee_members(
+                    conn, workspace_id=workspace_id, account_id=subject.account_id
+                )
+                if subject.kind == "account"
+                else []
+            )
+            people, _ = people_of(subject, members)
+            inputs = await gather_section_inputs(
+                conn,
+                workspace_id=workspace_id,
+                subject=subject,
+                recipes=missing,
+                people=people,
+                settings=self._settings,
+            )
+            would_write = tuple(item.recipe.section_key for item in inputs if not item.empty)
+        if not would_write and not stale:
+            return ()
+        offered = await self._offer_page(
+            workspace_id=workspace_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            page=page,
+        )
+        return would_write if offered else ()
+
+    async def _offer_owner_pages(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        subject_kind: SubjectKind,
+        subject_id: str,
+        page: Page,
+        recipes: Sequence[SectionRecipe],
+        expansion: Sequence[str],
+    ) -> None:
+        """Re-offer the OWNER page of every shared section whose owner block has gone stale.
+
+        A sharer is never pending and never repaired here: the words belong to another page, so
+        the honest repair is to offer *that* page, on *that* subject. An owner on the sharer's own
+        subject (insights ``context-only`` ← the overview's ``watch-outs``) is one offer; an owner
+        per committee member (``contact-insights`` ← each member's ``why-this-person``) is one
+        offer per stale member. An owner nobody has written yet is not offered from here — the
+        owner's own screen, and the on-open contact sweep, are what write it the first time.
+        """
+        members = list(expansion[1:]) if subject_kind == "account" else []
+        for recipe in recipes:
+            if recipe.shared_from is None:
+                continue
+            owner_page, owner_key = recipe.shared_from
+            owner_kind = PAGE_SUBJECT_KIND[owner_page]
+            owners = (
+                [(subject_kind, subject_id, expansion)]
+                if owner_kind == PAGE_SUBJECT_KIND[page]
+                else [(owner_kind, member, [member, subject_id]) for member in members]
+            )
+            for owner_subject_kind, owner_subject_id, owner_expansion in owners:
+                owner_blocks = await live_blocks(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_kind=owner_subject_kind,
+                    subject_id=owner_subject_id,
+                    page=owner_page,
+                )
+                if owner_key not in owner_blocks:
+                    continue
+                owner_recipes = [
+                    other
+                    for other in await read_recipes(conn, owner_page, workspace_id=workspace_id)
+                    if other.section_key == owner_key
+                ]
+                owner_stale = await stale_sections(
+                    conn,
+                    workspace_id=workspace_id,
+                    subject_ids=list(owner_expansion),
+                    recipes=owner_recipes,
+                    blocks=owner_blocks,
+                )
+                if owner_stale:
+                    await self._offer_page(
+                        workspace_id=workspace_id,
+                        subject_kind=owner_subject_kind,
+                        subject_id=owner_subject_id,
+                        page=owner_page,
+                    )
+
+    async def _offer_page(
+        self,
+        *,
+        workspace_id: str,
+        subject_kind: SubjectKind,
+        subject_id: str,
+        page: Page,
+        job_id: uuid.UUID | None = None,
+    ) -> bool:
+        """One page task on the fleet; ``True`` when the offer landed.
+
+        Landed means new, re-opened, or already queued — every one of those means the page will be
+        written. ``False`` only when the queue itself failed, which is logged and never raised into
+        a read: a reader still gets their page, and the sections are then served honestly empty
+        rather than promising a write that was never offered.
+        """
+        assert self._queue is not None
+        try:
+            await self._queue.enqueue(
+                kind=FleetTaskKind.ARV2_DISPLAY_PAGE,
+                work_id=arv2_display_work_id(subject_kind, subject_id, page),
+                dedup_key=f"{ARV2_DISPLAY_DEDUP_PREFIX}{subject_kind}:{subject_id}:{page}",
+                priority=ARV2_DISPLAY_TASK_PRIORITY,
+                payload=display_page_payload(
+                    workspace_id=workspace_id,
+                    subject_kind=subject_kind,
+                    subject_id=subject_id,
+                    page=page,
+                    job_id=job_id,
+                ),
+                reopen_terminal=True,
+            )
+        except Exception as exc:  # noqa: BLE001 — a queue outage must not fail a read
+            log.warning(
+                "frontend_read.display.offer_failed",
+                workspace_id=workspace_id,
+                subject_kind=subject_kind,
+                subject_id=subject_id,
+                page=page,
+                error=str(exc),
+            )
+            return False
+        return True
+
+    async def _offer_members_on_open(
+        self, conn: AsyncConnection, *, workspace_id: str, account_id: str
+    ) -> None:
+        """The account's contact pages, at most once a minute per account per web process."""
+        key = (workspace_id, account_id)
+        last = self._contact_offers.get(key)
+        now = monotonic()
+        if last is not None and now - last < _CONTACT_OFFER_COOLDOWN_S:
+            return
+        self._contact_offers[key] = now
+        await self.offer_contact_pages(conn, workspace_id=workspace_id, account_id=account_id)
+
+    async def offer_contact_pages(
+        self, conn: AsyncConnection, *, workspace_id: str, account_id: str
+    ) -> int:
+        """Spec 2026-09-12 §2 "on open": offer the contact page of every committee member with a
+        settled person job and no live page. Idempotent on the fleet by work id; returns how many
+        offers landed. A seam with no queue offers nothing."""
+        if not self.schedules:
+            return 0
+        members = await committee_members(conn, workspace_id=workspace_id, account_id=account_id)
+        if not members:
+            return 0
+        member_ids = [uuid.UUID(member.id) for member in members]
+        settled = {
+            str(row["subject_entity_id"]): row["job_id"]
+            for row in (
+                await conn.execute(
+                    _SETTLED_MEMBER_JOBS, {"workspace_id": workspace_id, "member_ids": member_ids}
+                )
+            ).mappings()
+        }
+        written = {
+            str(row["subject_id"])
+            for row in (
+                await conn.execute(
+                    _MEMBERS_WITH_A_PAGE, {"workspace_id": workspace_id, "member_ids": member_ids}
+                )
+            ).mappings()
+        }
+        offered = 0
+        for member in members:
+            if member.id not in settled or member.id in written:
+                continue
+            if await self._offer_page(
+                workspace_id=workspace_id,
+                subject_kind="contact",
+                subject_id=member.id,
+                page="contact",
+                job_id=settled[member.id],
+            ):
+                offered += 1
+        return offered
 
     # -- background regeneration ---------------------------------------------------------------
 
@@ -470,18 +819,6 @@ async def _expansion(
         return [subject.id, subject.account_id]
     members = await committee_members(conn, workspace_id=workspace_id, account_id=subject_id)
     return [subject_id, *(member.id for member in members)]
-
-
-def _cited(recipes: Sequence[SectionRecipe], blocks: Mapping[str, LiveBlock]) -> tuple[str, ...]:
-    """Every claim the composed page cites, in recipe order, deduped."""
-    return tuple(
-        dict.fromkeys(
-            claim_id
-            for recipe in recipes
-            if recipe.section_key in blocks
-            for claim_id in blocks[recipe.section_key].cited_claim_ids
-        )
-    )
 
 
 # -- the committee -------------------------------------------------------------------------------

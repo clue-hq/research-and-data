@@ -224,6 +224,7 @@ The frontend never re-derives any of these (master plan §6).
 | `fitDisposition` | on "Why they fit" items: `support` when the fit claim is satisfied, `caveat` when it is the honest negative |
 | `intro[]` | narrative sections ("What they do", "Why they fit") carry their paragraphs as `intro`; items carry the evidence rows |
 | `ResearchSection.empty` / `emptyMessage` | `empty` when the recipe matched nothing and the display model was not called; `emptyMessage` is optional server text, else the client prints "No {section} information found for {name}." Since 2026-09-16 it may instead read `"Not generated: <provider> refused (<reason>). Retries automatically."` (or `"… failing (<reason>). …"`) while a provider incident is open — see the note under the Section shape |
+| `ResearchSection.pending` | `true` while a fleet task is writing the section (plan 2026-09-21): the section is `empty`, its `emptyMessage` is the served sentence `Synthesis in progress, please wait a few seconds.`, and the client re-reads the page every 5 s while any section is pending. Never `true` for a section whose recipe matched nothing. |
 | restricted sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreachSafe=false` claims; the frontend shows them under an "Internal notes" control and the overview page omits `watch-outs` |
 | `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
 | `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text parsed out of an `h1` |
@@ -279,7 +280,7 @@ The Next.js `/api/source-favicon` route and the accounts layout shell stay front
 
 ```
 DisplayBlock { page ∈ insights|overview|contact, sections[] }
-  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage? }
+  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage?, pending=false }
   Item     { id, h2, body[], sendLine|null, contactRefs[], inlineLead?, fitDisposition? ∈ support|caveat,
              subject?, priority ∈ 1|2|3, newSinceLastVisit=false }
   Sentence { text, claimIds[], segments[]? { text, claimIds[] } }
@@ -302,6 +303,11 @@ backend's words (`clue_api.provider_incidents.provider_display` / `reason_words`
 renders `emptyMessage` verbatim and never parses a provider or reason out of it. Sections that this
 read *did* generate are untouched, and a page with nothing wrong keeps the client's
 "No {section} information found for {name}." default.
+
+**Shared sections (2026-09-21).** `context-only` on the insights page is the overview's
+`watch-outs` block; `contact-insights` is the committee's `why-this-person` blocks in committee
+order. Same items, same claim ids, the insights page's own `h1`/`defaultOpen`. They are never
+`pending` on the insights page — their owner page carries that.
 
 `BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
 linkedinUrl|null, whyTheyMatter }` — `persona` is served display text, e.g. `Economic buyer`, as it

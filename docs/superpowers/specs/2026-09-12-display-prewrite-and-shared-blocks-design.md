@@ -21,6 +21,19 @@ never be written (its recipe matches no claim) is NOT pending: it keeps the clie
 "No {section} information found for {name}." default, so the sentence is never a promise the
 page cannot keep. **Status 2026-09-21:** implementation plan
 `docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`.
+page cannot keep.
+**Status 2026-09-22 — IMPLEMENTED** on branch `display/prewrite-and-shared-blocks` (plan
+`docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`, ledger
+`.superpowers/sdd/2026-09-21-display-prewrite-and-shared-blocks/progress.md`, execution record
+`_memory/2026-09-21-display-prewrite-execution.md`): the `arv2_display_page` fleet kind and handler,
+the settle-time overview offer, contact pages offered on the first open of their account, the read
+as scheduler (`pending` + the sentence + the 5 s poll) and shared blocks all shipped, in eight
+tasks, with two migrations (`fd8795c4fd5a`, `2b702a116c15`). The five live proofs listed in the
+execution record are owed (founder-triggered; they spend money).
+**Ruling (founder, 2026-09-22):** the account **insights** page is written at settle too, offered by the
+account job right after the overview (its four owned sections; the two shared sections still compose
+from the overview's and the contact pages' blocks at read time). Implemented the same day on the
+branch (`_SETTLE_PAGES` in `account_research_driver.py`).
 
 ## 1. Today
 
@@ -102,5 +115,5 @@ owner (pure + DB). Insights page: the sharing set leaves exactly four generated 
 
 ## 6. Out of scope
 
-Rewriting the insights recipes' prose; writing the insights page at settle; any change to what
+Rewriting the insights recipes' prose; ~~writing the insights page at settle~~ (ruled IN, 2026-09-22); any change to what
 research writes; any placeholder visual beyond a blank section.

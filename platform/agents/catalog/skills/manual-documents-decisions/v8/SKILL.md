@@ -34,9 +34,9 @@ servable because some project may still be pinned to exactly those bytes.
 
 ## The ICP document
 
-An ICP is a document the human agreed to pin as one, at the gate. Nothing is checked when you write
+An ICP is a document automatically confirmed and pinned by `configure_project_targeting`. Nothing is checked when you write
 it, so write it well: `icp_key` in the front matter, lowercase kebab case, because that key is how
-the gate finds the document you mean; `product_ids` taken from the catalog rather than invented;
+the targeting tool finds the document you mean; `product_ids` taken from the catalog rather than invented;
 `hard_gates` as a list of `{key, rule, test}`; `exclusions`, `persona_map` and `qualifier_fields`
 for the surfaces that read them. A field one of those surfaces needs and cannot find is reported
 then, by that surface, naming what is missing.
@@ -44,9 +44,9 @@ then, by that surface, naming what is missing.
 Where the product ids actually are, and why the catalog document does not carry them, is
 `.deepagent/skills/manual-workspace/v8/SKILL.md`.
 
-**Only the gate mints `confirmed`.** A document you write is born `ready`; the human's yes at the
-confirmation gate mints the confirmed version, pins it to this project, and is the only thing that
-makes a document this project's ICP. A draft cannot confirm itself.
+**Targeting mints `confirmed`.** A file write creates a `ready` document. Call
+`configure_project_targeting` to apply the ICP and product set automatically; it records the
+initiating turn and pins the exact bytes. It does not manufacture a human approval receipt.
 
 ## The persona document
 
@@ -85,12 +85,11 @@ without one the first heading is used. The platform stamps six facts over whatev
 else exactly as you typed it. Nothing is validated at write time.
 
 **Roles are pins, not paths.** Whether a document is *the* plan, *the* ICP or *the* personas is
-something the human agreed to, in one question you ask them:
+recorded explicitly: plans and personas keep their existing pin procedure; ICPs apply automatically:
 
 - the plan: ask "pin this as the plan?", and on yes write `role: plan` in its front matter;
 - the personas: ask "pin these as the personas?", and on yes write `role: persona` and `icp_key`;
-- an ICP: ask "pin this as the ICP?", and on yes open the ICP confirmation gate on that key. The
-  gate is the pin; there is nothing else to ask and nothing else to stamp.
+- an ICP: call `configure_project_targeting` on its key and continue. Do not ask for approval.
 
 The status file and the project's screens read those roles. The old paths (`project/plan.md`,
 `audience/icp-<key>.md`, `audience/persona-<key>.md`) are still the usual places, and the plan

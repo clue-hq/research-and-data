@@ -138,6 +138,32 @@ def test_view_asset_resolves_a_workspace_library_asset(tmp_path, monkeypatch):
     assert "asset_unavailable" not in trace
 
 
+def test_older_asset_is_searchable_and_context_is_shared_with_web_mode(tmp_path, monkeypatch):
+    from test_web_search_assets import _tools as web_tools
+
+    tools, record, _ = _library_tools(tmp_path, monkeypatch)
+    entry = tools.config.asset_library[record["id"]]
+    context = {"revision": 7, "description": "Pinned context", "source_occurrences": []}
+    entry.update(creative_type="product_screenshot", usage_roles=["card_image"],
+                 revision=7, sources=["linkedin_ad"], asset_context=context)
+    # An older relevant asset lies past both former scene and first-page caps.
+    library = {f"recent_{i}": {"record": {"id": f"recent_{i}", "status": "ready", "kind": "raster_image"}}
+               for i in range(501)}
+    library[record["id"]] = entry
+    materialized = []
+    tools.config = replace(tools.config, asset_library=library, asset_materializer=materialized.append)
+    web = web_tools(tmp_path / "web", asset_library=library, asset_materializer=materialized.append)
+    scene_results = json.loads(tools.search_assets("product_screenshot"))["results"]
+    assert scene_results[0]["asset_id"] == record["id"] and scene_results[0]["revision"] == 7
+    assert record["id"] in web.search_assets("product_screenshot")
+    assert materialized == []  # Discovery never fetches bytes.
+    scene_view = harness_mod.make_view_tool(tools).invoke({"name": "view",
+        "args": {"target": f"asset:{record['id']}"}, "id": "context", "type": "tool_call"})
+    assert "Pinned context" in str(scene_view.content)
+    assert "Pinned context" in str(web._view_asset(f"asset:{record['id']}"))
+    assert materialized == [record["id"], record["id"]]
+
+
 def test_view_unknown_asset_lists_library_ids_too(tmp_path, monkeypatch):
     """The honest-miss surface has to name what IS available, or the agent cannot
     discover the library at all (the Apollo run guessed ids from its brief)."""

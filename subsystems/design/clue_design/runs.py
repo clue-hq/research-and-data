@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import bindparam, text
@@ -843,3 +843,38 @@ async def touch_run(conn: AsyncConnection, *, workspace_id: str, run_id: str) ->
         ),
         {"r": run_id, "w": workspace_id},
     )
+
+
+async def asset_context_snapshot(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str
+) -> JsonObject | None:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT asset_context_snapshot FROM design_agent_run"
+                " WHERE workspace_id = :w AND run_id = :r"
+            ),
+            {"w": workspace_id, "r": run_id},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    return cast(JsonObject | None, load_json_opt(row.asset_context_snapshot))
+
+
+async def pin_asset_context_snapshot(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str, snapshot: JsonObject
+) -> JsonObject:
+    row = (
+        await conn.execute(
+            text("""
+        UPDATE design_agent_run SET
+          asset_context_snapshot = COALESCE(asset_context_snapshot, CAST(:snapshot AS jsonb))
+        WHERE workspace_id = :w AND run_id = :r RETURNING asset_context_snapshot
+    """),
+            {"w": workspace_id, "r": run_id, "snapshot": dump_json(snapshot)},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    return cast(JsonObject, load_json(row.asset_context_snapshot))

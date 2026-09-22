@@ -24,6 +24,15 @@ Then open **http://localhost:3020** and sign in:
 
 ## Running the same stack from another worktree (added 2026-09-11)
 
+**San Diego (2026-09-21):** run `bash scripts/dev_stack_san_diego.sh up|down|status`
+(`restart-api` and `restart-workers` are supported too). The launcher validates the local
+environment and refuses `up` if any application port or San Diego worker is already running.
+Frontend: `http://localhost:3033`; design API: `8013`; platform APIs: `8023` and `8033`.
+The isolated database is `clue_san_diego` on `55170`, Redis is on `65170`, durable storage
+is this checkout's `.artifacts/`, and logs are `/tmp/san-diego_*.log`. The configured fleet
+has four processes with three slots each. The common launcher honors `LUMEN_CORE_HELPER`
+from `.env`, falling back to the release binary when unset.
+
 `scripts/dev_stack.sh` reads five `DEV_STACK_*` knobs, each defaulting to exactly what the
 istanbul checkout always did, so a lane can run the identical five processes on the identical
 ports against **its own** database without copying the script:
@@ -90,6 +99,24 @@ Quick proof the sandbox works on a host, without the app:
 ```bash
 docker run --rm -i --network none clue-agent-sandbox:latest python -c "import fitz, openpyxl, docx, pptx, pandas, pytesseract; print('sandbox ok')"
 ```
+
+## Display pages are written by the fleet (added 2026-09-21)
+
+Account/contact display prose (the overview, insights and contact pages under `/accounts`) is no
+longer synthesised inside the browser request. The **fleet workers** write it, as an
+`arv2_display_page` task; a read only serves what is stored, marks the rest "Synthesis in progress,
+please wait a few seconds." and offers the task. So a worker on this lane needs
+`CLUE_ARV2_DISPLAY_GENERATE_ON_READ=true` **and** a real `CLUE_OPENROUTER_API_KEY` in `.env` — with
+either missing, nothing crashes but pages stop being written and every section keeps saying
+"Synthesis in progress" forever. Workers read `.env` at start, so a change needs `restart-workers`.
+
+**Migrate the lane DB before booting this branch.** Two migrations land here (`fd8795c4fd5a` — the
+`arv2_display_page` task kind; `2b702a116c15` — the shared-block columns, which also retires the
+insights page's own `context-only` / `contact-insights` blocks). Run `alembic upgrade head`
+*first*, then `up` / `restart-workers`: a worker booted against an un-migrated DB **crashes at
+boot** — `clue_api.composition.load_research_packs` seeds the display recipes and hits an asyncpg
+`UndefinedColumnError` on `display_section_recipe.shared_from_page`, `up` reports the workers DOWN,
+and the traceback is in `/tmp/<lane>_fleet_worker.log`. The failure is loud, not silent.
 
 ## The port map (memorize the first one)
 

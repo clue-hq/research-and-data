@@ -75,8 +75,10 @@ _WITHHELD = {
     # ARV2 Track R, R4: the discovery launch joins them for the same sentence — it queues a real
     # discovery run against external providers.
     "launch_arv2_discovery",
-    "open_product_set_selection_gate",
-    "open_icp_confirmation_gate",
+    # Automatic project targeting (head-of-abm@v61): the two gates are UNGRANTED now, which is the
+    # stronger statement, and `configure_project_targeting` — a durable write of the project's ICP
+    # pin and product set — is withheld on the trial for the same sentence the gates were.
+    "configure_project_targeting",
     # The ICP-authoring pair and the plan write used to head this group. They are gone from it
     # because `head-of-abm@v55` no longer grants any of them (see `_ROLE_DROPPED`), which is the
     # stronger statement — the same move the old-lane launches made at v44.
@@ -195,7 +197,7 @@ def test_the_capability_map_names_the_surface_and_its_withheld_tools_honestly(
         # leg-open), genad promoted it again to @3 (ad document birth), genad2 to @4 (zero-page
         # scene birth) and multi-artifact legs to @5 (an `artifacts` list in place of the one
         # `title`); the trial withholds it at whatever version the belt carries.
-        _promoted = {"open_design_leg": "5", "open_icp_confirmation_gate": "2"}
+        _promoted = {"open_design_leg": "5"}
         address = f"{name}@{_promoted.get(name, '1')}"
         disclosure = by_address[address]
         assert disclosure.status is AgentCapabilityStatus.PROFILE_UNAVAILABLE
@@ -341,20 +343,20 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     base = registry.resolve(AgentRole.HEAD_OF_ABM)
 
     trial_disclosures = [item.resource.address for item in trial.skill_disclosures()]
-    assert "skill:stage0-interview@v34" not in trial_disclosures
+    assert "skill:stage0-interview@v35" not in trial_disclosures
     assert trial_disclosures == [
-        "skill:icp-authoring@v2",
+        "skill:icp-authoring@v3",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
     ]
     # The withholding is what removed it — not a catalog break, not a missing resource. The
     # unnarrowed role still discloses the same skill from the same profile.
     base_disclosures = {item.resource.address for item in base.skill_disclosures()}
-    assert "skill:stage0-interview@v34" in base_disclosures
+    assert "skill:stage0-interview@v35" in base_disclosures
     assert trial.profile_ref == base.profile_ref
 
     stage0 = next(
@@ -363,8 +365,9 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
     required = {address.partition("@")[0] for address in stage0.required_tool_addresses}
     assert required & _WITHHELD == {
         "launch_arv2_account_research",
-        "open_product_set_selection_gate",
-        "open_icp_confirmation_gate",
+        # Automatic project targeting (v61): the skill requires the targeting write in place of
+        # the two gates, and the trial withholds it for the same sentence.
+        "configure_project_targeting",
         # Founder ruling 3 (2026-09-10): the person launch is granted to the role and taught by
         # stage0-interview v22 §8; the trial withholds it with its account sibling.
         "launch_arv2_person_research",
@@ -385,7 +388,7 @@ def test_the_stage0_skill_no_longer_survives_the_narrowed_surface(
         "read_discovery_run",
     }
 
-    body = base.open_skill("skill:stage0-interview@v34")
+    body = base.open_skill("skill:stage0-interview@v35")
     assert "Ask one question at a time" in body
     # The trial's framing lives on the surface policy, never in the shared skill.
     assert "manual-conversation-only" not in body

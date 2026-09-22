@@ -28,6 +28,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.display.blocks import compose_display_block, live_blocks
 from clue_api.arv2.display.gather import ClientContext, SectionInput, SubjectRef
 from clue_api.arv2.display.page import (
     PageResult,
@@ -35,7 +36,7 @@ from clue_api.arv2.display.page import (
     default_runner_factory,
     ensure_page,
 )
-from clue_api.arv2.display.recipes import recipes_for
+from clue_api.arv2.display.recipes import read_recipes, recipes_for
 from clue_api.arv2.display.render import DisplayClaim
 from clue_api.arv2.display.runner import LunaSectionRunner
 from clue_api.arv2.errors import Arv2Error
@@ -71,6 +72,15 @@ CALL_COST = 0.0044
 
 CONTACT_SECTIONS = tuple(recipe.section_key for recipe in recipes_for("contact"))
 INSIGHTS_SECTIONS = tuple(recipe.section_key for recipe in recipes_for("insights"))
+
+#: The two insights sections that own no block: they render another page's stored body.
+SHARED_INSIGHTS_SECTIONS = tuple(
+    recipe.section_key for recipe in recipes_for("insights") if recipe.shared_from is not None
+)
+#: The four insights sections the page itself writes.
+OWNED_INSIGHTS_SECTIONS = tuple(
+    recipe.section_key for recipe in recipes_for("insights") if recipe.shared_from is None
+)
 
 #: The two insights sections the seeded workspace holds no claim for.
 EMPTY_INSIGHTS_SECTIONS = ("tools-they-already-use", "how-they-sell")
@@ -189,6 +199,52 @@ async def _contact_page(
         runner_factory=_factory(transport),
         **kwargs,
     )
+
+
+async def _account_page(
+    conn: AsyncConnection,
+    seeded: Seeded,
+    transport: RoutingTransport,
+    page: str,
+    **kwargs: Any,
+) -> PageResult:
+    kwargs.setdefault("artifacts", FakeArtifacts())
+    kwargs.setdefault("spend_conn_factory", conn_session_factory(conn))
+    return await ensure_page(
+        conn,
+        workspace_id=seeded.workspace_id,
+        subject_kind="account",
+        subject_id=str(seeded.account),
+        page=page,
+        settings=SETTINGS,
+        runner_factory=_factory(transport),
+        **kwargs,
+    )
+
+
+async def _overview_page(
+    conn: AsyncConnection, seeded: Seeded, transport: RoutingTransport, **kwargs: Any
+) -> PageResult:
+    return await _account_page(conn, seeded, transport, "overview", **kwargs)
+
+
+async def _insights_page(
+    conn: AsyncConnection, seeded: Seeded, transport: RoutingTransport, **kwargs: Any
+) -> PageResult:
+    return await _account_page(conn, seeded, transport, "insights", **kwargs)
+
+
+async def _stored_overview(conn: AsyncConnection, seeded: Seeded) -> dict[str, Any]:
+    """The account's overview page as it is stored — the owner side of the shared section."""
+    recipes = await read_recipes(conn, "overview", workspace_id=seeded.workspace_id)
+    blocks = await live_blocks(
+        conn,
+        workspace_id=seeded.workspace_id,
+        subject_kind="account",
+        subject_id=str(seeded.account),
+        page="overview",
+    )
+    return compose_display_block("overview", recipes, blocks)
 
 
 async def _events(conn: AsyncConnection, workspace_id: str) -> list[Mapping[str, Any]]:
@@ -404,8 +460,10 @@ def test_an_account_page_skips_the_sections_the_research_never_filled() -> None:
             )
 
             assert result.skipped_empty == EMPTY_INSIGHTS_SECTIONS
+            # Only the four owned recipes are written at all — the two shared ones render their
+            # owners' blocks, and no owner page has been written in this test.
             assert result.generated == tuple(
-                key for key in INSIGHTS_SECTIONS if key not in EMPTY_INSIGHTS_SECTIONS
+                key for key in OWNED_INSIGHTS_SECTIONS if key not in EMPTY_INSIGHTS_SECTIONS
             )
             assert sorted(transport.sections) == sorted(result.generated)
 
@@ -413,7 +471,7 @@ def test_an_account_page_skips_the_sections_the_research_never_filled() -> None:
             block = result.display_block
             assert [section["key"] for section in block["sections"]] == list(INSIGHTS_SECTIONS)
             empty = {section["key"] for section in block["sections"] if section["empty"]}
-            assert empty == set(EMPTY_INSIGHTS_SECTIONS)
+            assert empty == set(EMPTY_INSIGHTS_SECTIONS) | set(SHARED_INSIGHTS_SECTIONS)
 
             events = await _events(conn, seeded.workspace_id)
             assert len(events) == 1
@@ -676,5 +734,40 @@ def test_a_fully_stored_read_opens_no_spend_connection_at_all() -> None:
             assert again.regenerated == ()
             assert again.cost_usd == Decimal(0)
             assert opened == []
+
+    run_async(_run())
+
+
+# -- shared blocks ------------------------------------------------------------------------------
+
+
+def test_the_insights_page_writes_four_sections_and_shares_the_other_two() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
+            transport = RoutingTransport()
+            # Owners first: Nick's contact page and the account overview.
+            await _contact_page(conn, seeded, transport)
+            await _overview_page(conn, seeded, transport)
+            written_before = len(transport.sections)
+
+            result = await _insights_page(conn, seeded, transport)
+
+            # Only the four OWNED recipes are candidates. Two of them match no claim in this
+            # fixture (no tech-stack, no resonance rows), so they are skipped rather than
+            # written — the set the page *considered* is still exactly the four.
+            assert sorted(result.generated + result.skipped_empty) == sorted(
+                ["buying-signals", "money-and-momentum", "tools-they-already-use", "how-they-sell"]
+            )
+            assert result.generated == ("buying-signals", "money-and-momentum")
+            assert "context-only" not in transport.sections[written_before:]
+            assert "contact-insights" not in transport.sections[written_before:]
+            block = result.display_block
+            context = next(s for s in block["sections"] if s["key"] == "context-only")
+            watch = _cited_in(await _stored_overview(conn, seeded), "watch-outs")
+            assert _cited_in(block, "context-only") == watch and not context["empty"]
+            insights = next(s for s in block["sections"] if s["key"] == "contact-insights")
+            assert not insights["empty"]
+            assert _cited_in(block, "contact-insights") <= set(result.cited_claim_ids)
 
     run_async(_run())

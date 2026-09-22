@@ -82,6 +82,9 @@ export const ResearchSectionSchema = z.object({
   intro: z.array(ResearchSentenceSchema).optional(),
   restricted: z.boolean().default(false),
   defaultOpen: z.boolean().default(false),
+  // Plan 2026-09-21: true while the fleet is writing this section; the client polls while any
+  // section on the page is pending and renders `emptyMessage` verbatim meanwhile.
+  pending: z.boolean().default(false),
   emptyMessage: z.string().optional(),
 });
 

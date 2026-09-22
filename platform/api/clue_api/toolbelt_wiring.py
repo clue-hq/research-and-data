@@ -91,7 +91,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.design_leg_tools import build_design_leg_tools
-from clue_api.design_tools import build_design_tools
+from clue_api.design_tools import build_design_tools, is_default_design_tool
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
@@ -128,6 +128,7 @@ from clue_api.project_document_tools import (
     build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
+from clue_api.project_targeting_tools import ConfigureProjectTargetingTool
 from clue_api.project_tools import (
     CreateProjectTool,
     RenameProjectTool,
@@ -2996,6 +2997,9 @@ def build_toolbelt(
         storage=storage,
     ):
         registry.register(tool, make_default=True)
+    registry.register(
+        ConfigureProjectTargetingTool(conn_factory=conn_factory, storage=storage), make_default=True
+    )
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected
@@ -3134,7 +3138,7 @@ def build_toolbelt(
     # web_search@1 (spec 2026-09-22). Registers in EVERY composition like its neighbour above —
     # the C6 authority audit needs one registry shape — and a missing Exa key is refused in
     # `preconditions`, never by absence. Registered UNGRANTED here: the grants are the reviewed
-    # `head-of-abm@v61` and `design@v3` bumps, never a dict edit.
+    # `head-of-abm@v62` and `design@v3` bumps, never a dict edit.
     for tool in build_web_search_tools(secrets=secrets):
         registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
@@ -3156,7 +3160,7 @@ def build_toolbelt(
         enabled=resolved_settings.design_runtime_enabled,
         storage=storage,
     ):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=is_default_design_tool(tool))
     # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
     # Registered unconditionally for the same audit reason, and gated on the SAME runtime
     # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg

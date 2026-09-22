@@ -57,6 +57,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
+from clue_fleet import WorkQueue
 from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
 from clue_storage import StorageBackend
@@ -218,6 +219,7 @@ def build_frontend_read_router(
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
     memory_write_factory: MemoryWriteFactory | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
@@ -235,6 +237,9 @@ def build_frontend_read_router(
     shared — two instances would schedule two rewrites of the same page. Without a key (or with
     generation switched off) the seam is a pure projection, so a router built without ``secrets``
     behaves exactly as it did before this argument existed.
+
+    ``work_queue`` reaches exactly one place, the display seam: with it a read schedules page
+    writes on the fleet; without it the seam writes inline (tests, a queue-less deployment).
     """
 
     router = APIRouter(
@@ -281,6 +286,7 @@ def build_frontend_read_router(
             if evidence_storage is None
             else DurableAgentArtifactStore(storage=evidence_storage, conn_factory=conn_factory)
         ),
+        queue=work_queue,
     )
     register_settings_routes(router, conn_factory=conn_factory, settings=settings, secrets=secrets)
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
@@ -396,6 +402,7 @@ def install_frontend_read_surface(
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
     memory_write_factory: MemoryWriteFactory | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -416,6 +423,7 @@ def install_frontend_read_surface(
                 secrets=secrets,
                 project_library=project_library,
                 memory_write_factory=memory_write_factory,
+                work_queue=work_queue,
             )
         )
 

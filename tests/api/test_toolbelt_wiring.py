@@ -216,6 +216,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # gate hits. (`@1` resolved the execution-bound Stage-0 scope first; it stays registered,
     # non-default, for replay.)
     "open_icp_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
+    # turn the body names is its first fail-closed boundary.
+    "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -363,6 +366,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
     "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_enrich_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
@@ -613,6 +617,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_icp_confirmation_gate": {
+            "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "configure_project_targeting": {
             "icp_key": "matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
@@ -936,6 +944,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "work_id": _UUID(),
             "request": {"company_domain": "matrix.example"},
             "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
+        },
+        "design_enrich_assets": {
+            "job_id": "ingest_matrix_enrich",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_enrich"},
         },
         "design_record_ad_creatives": {
             "creatives": [
@@ -1443,9 +1457,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
-    # web_search@1 (2026-09-22), ungranted (141 -> 142 / 161 -> 162).
-    # Together these additions yield 142 names and 162 versioned addresses.
-    assert len(registry.names()) == 142
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1485,9 +1501,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
-    # web_search@1 (2026-09-22), ungranted (141 -> 142 / 161 -> 162).
-    # Together these additions yield 142 names and 162 versioned addresses.
-    assert len(registry) == 162
+    # Together these additions yield 141 names and 161 versioned addresses.
+    assert len(registry) == 166
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1528,9 +1543,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
-    # web_search@1 (2026-09-22), ungranted (141 -> 142 / 161 -> 162).
-    # Together these additions yield 142 names and 162 versioned addresses.
-    assert len(registry.names()) == 142
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1557,9 +1574,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
-    # web_search@1 (2026-09-22), ungranted (141 -> 142 / 161 -> 162).
-    # Together these additions yield 142 names and 162 versioned addresses.
-    assert len(registry) == 162
+    # Together these additions yield 141 names and 161 versioned addresses.
+    assert len(registry) == 166
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

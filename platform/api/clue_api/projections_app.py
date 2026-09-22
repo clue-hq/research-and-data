@@ -90,6 +90,7 @@ from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
+from clue_fleet import DbWorkQueue
 from clue_execution.run_events import list_run_events
 from clue_obs import bound_context
 from clue_obs.otel import TracingRuntime, bind_and_annotate
@@ -953,6 +954,10 @@ def create_projections_app(
         secrets=runtime_secrets,
         project_library=project_library,
         memory_write_factory=memory_write_factory,
+        # The display seam schedules page writes on the fleet instead of writing them on the
+        # request — the same default work queue the onboarding enqueuer and the persona request
+        # service already use in this process.
+        work_queue=DbWorkQueue(),
     )
     if auth_service is not None:
         from clue_auth.providers.clerk_api import ClerkApi

@@ -1,10 +1,9 @@
 """The design fleet work handler (design-integration Part II, slice D5 Rounds B + C).
 
-ONE handler executes every design job — an agent turn (scene or web) OR a brand-kit ingestion —
-whether it was claimed by the detached platform fleet worker (``clue_api.fleet_main``, behind
-``CLUE_DESIGN_RUNTIME_ENABLED``) or by the embedded worker the design API runs on its own event
-loop for development. There is exactly one execution path; the two deployments differ only in who
-calls ``LeasedWorkWorker.run()``.
+The same handler implementation serves two disjoint execution roles. Primary and embedded
+workers claim only agent turns (scene or web); the dedicated ingestion coordinator is built
+with ``ingestion_only=True`` and claims only brand-kit ingestions. Required claim-time
+capabilities enforce this boundary in SQL. Per-image analysis has its own handler and pool.
 
 Round C added the ingestion branch (it was parked with a loud log in Round B) and IN-HANDLER
 CONTAINMENT: an exception escaping the executor terminalizes the design row ``failed`` under the
@@ -176,6 +175,7 @@ class DesignJobWorkHandler:
         checkpointer_factory: Any = None,
         spend_drain: Any = None,
         turn_callbacks_factory: Any = None,
+        ingestion_only: bool = False,
     ) -> None:
         # Callables, not values: the embedded worker's host reads ``app.state`` at execution
         # time, so a test that swaps ``app.state.agent_turn_runner`` between turns is honoured.
@@ -190,23 +190,23 @@ class DesignJobWorkHandler:
         # model calls onto another's observation. Called once per turn envelope; ingestion
         # takes none (it is a pipeline, not a graph).
         self._turn_callbacks_factory = turn_callbacks_factory
+        self._ingestion_only = ingestion_only
 
     @property
     def task_capabilities(self) -> "tuple[TaskCapability, ...]":
-        """What this process can run within ``design_job`` (``clue_fleet.CapabilityGated``).
+        """Primary workers serve turns; ingestion coordinators serve only ingestion.
 
-        ONE constraint, on the ingestion discriminant. Turn payloads carry no
-        ``ingestion_kind``, so the constraint does not apply to them and every worker that
-        registers this handler still claims every turn — which is right: a turn's runnability
-        does not vary by build the way an ingestion lane's does.
-
-        This is the R3-B fix's load-bearing half. Before it, a two-day-old detached worker with
-        ``LUMEN_BRAND_AD_ASSETS`` unset claimed an ``ad_assets`` ingestion, failed it in half a
-        second, and — because two workers race for every design task — decided at random whether
-        lane onboarding worked at all. Now the capable worker is the only one the row is even
-        visible to.
+        The required kind constraint is evaluated inside the SQL claim, so neither
+        pool consumes the other's slots. Ingestion feature capabilities still apply.
         """
         return (
+            TaskCapability(
+                field="kind",
+                required=True,
+                supported=frozenset(
+                    {"ingestion"} if self._ingestion_only else {"agent_turn", "web_turn"}
+                ),
+            ),
             TaskCapability(field=_INGESTION_KIND_FIELD, supported=runnable_ingestion_kinds()),
         )
 
@@ -225,6 +225,8 @@ class DesignJobWorkHandler:
         So the preamble is contained too, and by work id rather than by envelope: the work id is
         the one identifier that survives an envelope that will not parse.
         """
+        if "kind" in context.payload and not self.task_capabilities[0].permits(context.payload):
+            raise DesignTurnJobError("design task is outside this worker's execution pool")
         try:
             return await self._handle(context)
         except Exception as error:
@@ -707,6 +709,7 @@ def build_design_job_handler(
     spend_drain: Any = None,
     turn_callbacks_factory: Any = None,
     platform_reads_factory: Any = None,
+    ingestion_only: bool = False,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
@@ -738,6 +741,7 @@ def build_design_job_handler(
         checkpointer_factory=checkpointer_factory,
         spend_drain=spend_drain,
         turn_callbacks_factory=turn_callbacks_factory,
+        ingestion_only=ingestion_only,
     )
 
 

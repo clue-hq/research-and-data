@@ -180,11 +180,11 @@ def test_ingest_website_happy_path_persists_kit_and_report(
     assert report["dark_colorway"] == "synthesized"
 
 
-def test_reingest_existing_website_kit_publishes_a_new_draft_version(
+def test_reingest_existing_website_kit_publishes_a_new_approved_version(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Slice 4: a client-supplied existing kit id means NEXT version, not a doomed
-    create-at-version-1 collision. The human gate resets on the newly extracted draft."""
+    create-at-version-1 collision. Both extractions are approved without a browser mutation."""
 
     async def fake_capture(url, *, reporter, force_render=False, page_urls=None):
         return FakeCaptureOutcome()
@@ -203,11 +203,10 @@ def test_reingest_existing_website_kit_publishes_a_new_draft_version(
     brand_kit_id = first_job["brand_kit_id"]
     assert first_job["brand_kit_version"] == 1
 
-    approved = client.post(
-        f"/brand-kits/{brand_kit_id}/approval",
-        json={"approval_status": "approved"},
-    )
-    assert approved.status_code == 200, approved.text
+    first_record = _read_brand_kit_row(client, brand_kit_id)
+    assert first_record["approval_status"] == "approved"
+    assert first_record["brand_kit"]["approval_status"] == "approved"
+    assert first_record["brand_summary"]["approval_status"] == "approved"
 
     second = client.post(
         "/brand-kits/ingest/website",
@@ -225,7 +224,7 @@ def test_reingest_existing_website_kit_publishes_a_new_draft_version(
     latest = client.get(f"/brand-kits/{brand_kit_id}")
     assert latest.status_code == 200, latest.text
     assert latest.json()["brand_kit"]["version"] == 2
-    assert latest.json()["brand_kit"]["approval_status"] == "draft"
+    assert latest.json()["brand_kit"]["approval_status"] == "approved"
     versions = [
         row["version"]
         for row in HybridRepository().list_brand_kits(all_versions=True)
@@ -478,6 +477,6 @@ def test_live_e2e_ingests_real_site(client: TestClient) -> None:
     assert status == "succeeded", job
     kit = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
     assert kit["brand_kit"]["source"] == "website"
-    assert kit["brand_kit"]["approval_status"] == "draft"
+    assert kit["brand_kit"]["approval_status"] == "approved"
     colors = kit["brand_kit_json"]["tokens"]["colors"]
     assert "surface.brand" in colors and "text.primary" in colors

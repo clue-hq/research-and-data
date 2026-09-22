@@ -88,6 +88,9 @@ class ParsedAsset:
     height: int | None = None
     kind_hint: str | None = None
     locator: str = ""
+    alt: str | None = None
+    surrounding_text: str | None = None
+    placement: str | None = None
 
 
 @dataclass
@@ -1597,7 +1600,7 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
         data = snapshot.download_bytes(sha)
         return len(data) if data else 0
 
-    for node in tree.css("img"):
+    for image_index, node in enumerate(tree.css("img")):
         # THE SHARED LADDER. `static._collect_assets` enqueued exactly these URLs, so the
         # first rung with bytes is the best rendition that actually arrived; if the widened
         # request was refused we simply walk down to the bare `src` and are no worse off
@@ -1631,6 +1634,17 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
         locator = "dom :: img" if url == ladder[-1] else "dom :: img :: hi-res rendition"
         if _is_dark_scheme(snapshot, url):
             locator += " :: prefers-color-scheme: dark"
+        surrounding = None
+        parent = node.parent
+        for _ in range(4):
+            if parent is None:
+                break
+            heading = parent.css_first("h1,h2,h3,h4,figcaption")
+            if heading is not None:
+                surrounding = parent.text(separator=" ", strip=True)[:2000]
+                break
+            parent = parent.parent
+        locator += f" :: img-index {image_index}"
         candidates.append(
             (
                 area,
@@ -1643,6 +1657,9 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
                     width=width,
                     height=height,
                     locator=locator,
+                    alt=node.attributes.get("alt"),
+                    surrounding_text=surrounding,
+                    placement="img element",
                 ),
             )
         )
@@ -1650,7 +1667,9 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
     # CSS background-image art (gradients, hero panels) — same shared chooser the collector
     # used, so the bytes are already in the snapshot. No DOM size hints exist for these, so
     # they rank by file size alone.
-    seen = {asset.source_url for _, _, asset in candidates} | logo_urls
+    # A URL used in an <img> and as a CSS background has two source occurrences.
+    # Custody/analysis deduplicate the asset later; do not erase placement evidence here.
+    seen = set()
     for url in background_image_urls(tree, snapshot.stylesheets, base_url):
         if url in seen:
             continue
@@ -1668,6 +1687,7 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
                     kind="image",
                     kind_hint="illustration",
                     locator="dom :: css background-image",
+                    placement="CSS background-image",
                 ),
             )
         )

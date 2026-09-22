@@ -109,7 +109,7 @@ def _asset_manifest_ids(tools: LumenDesignTools) -> list[str]:
         sorted(kit)
         + sorted(set(library) - set(kit))
         + sorted(set(scene_assets) - manifest_ids)
-    )
+    )[:24]
 
 
 def _reference_entries(tools: LumenDesignTools) -> list[tuple[int, str, dict]]:
@@ -509,7 +509,25 @@ def _selected_frame_content(
     return content
 
 
-def _view_content(
+def _view_content(tools, target: str, frame_index=None) -> list:
+    from .asset_catalog import context_text, materialize_asset
+    entry = {}
+    if target.startswith("asset:"):
+        asset_id = target.removeprefix("asset:")
+        entry = (tools.config.brand_kit_assets or {}).get(asset_id) or (tools.config.asset_library or {}).get(asset_id) or {}
+        record = entry.get("record") or (tools.scene.get("assets") or {}).get(asset_id)
+        if record:
+            materialize_asset(tools.config, record)
+    elif target.startswith("reference:"):
+        ref = target.removeprefix("reference:")
+        entry = next((e for i, aid, e in _reference_entries(tools)
+                      if str(i) == ref or aid == ref), {})
+    content = _view_pixels(tools, target, frame_index=frame_index)
+    details = context_text(entry)
+    return ([_text_block(details)] if details else []) + content
+
+
+def _view_pixels(
     tools: LumenDesignTools, target: str, frame_index: int | None = None,
 ) -> list[dict]:
     """Build the ToolMessage content (a LIST of blocks) for `view(target)`.

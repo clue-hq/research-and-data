@@ -367,4 +367,13 @@ __all__ = [
     "record_collected_model_call",
     "reset_unscoped_for_tests",
     "spend_scope",
+    "drain_safely",
 ]
+
+
+def drain_safely(scope: SpendScope) -> None:
+    """Persist receipts without changing an already-completed work result on a drain error."""
+    try:
+        drain_sync(scope)
+    except Exception:
+        log.exception("spend.drain_failed")
