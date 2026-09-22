@@ -24,6 +24,11 @@ from clue_api.arv2.quality_evidence import (
     record_disposition,
     validate_support,
 )
+from clue_api.arv2.quality_relationships import (
+    EMPLOYMENT,
+    CommitteeAssessment,
+    validate_relationship,
+)
 from clue_core import (
     ClaimId,
     EntityType,
@@ -216,9 +221,26 @@ async def submit_proposal(
         or catalog_pin.version != field.definition_version
         or catalog_pin.value_type != field.field_def.value_type
         or catalog_pin.validation != field.field_def.validation
+        or catalog_pin.value_schema != field.value_schema
         or catalog_pin.description != field.description
     ):
         error = "field_definition_changed"
+    relationship = None
+    try:
+        relationship = await validate_relationship(
+            conn,
+            workspace_id=scope.workspace_id,
+            account_id=scope.account_id,
+            contact_id=scope.person_subject_id,
+            context_id=context_id,
+            field_key=proposal.field_key,
+            value=proposal.value,
+            support_claim_ids={
+                cid for s in proposal.support if isinstance(s, ClaimSupport) for cid in s.claim_ids
+            },
+        )
+    except ValueError:
+        error = "relationship_assessment_invalid"
     try:
         for support in proposal.support:
             if isinstance(support, ClaimSupport):
@@ -236,7 +258,15 @@ async def submit_proposal(
                 if len(claims) != len(set(support.claim_ids)):
                     raise EvidenceUnavailable("supporting claim is no longer applicable")
                 for claim in claims.values():
-                    if claim.entity_id not in (subject, scope.account_id) or not claim.artifact_key:
+                    committee_support = (
+                        isinstance(relationship, CommitteeAssessment)
+                        and claim.entity_id == relationship.contact_id
+                        and claim.id in relationship.employment_claim_ids
+                        and claim.field_key == EMPLOYMENT
+                    )
+                    if (
+                        claim.entity_id not in (subject, scope.account_id) and not committee_support
+                    ) or not claim.artifact_key:
                         raise EvidenceUnavailable(
                             "supporting claim is outside subject or lacks original evidence"
                         )
@@ -333,7 +363,12 @@ async def submit_proposal(
         except ValueSchemaError:
             error = "value_schema_invalid"
     if not error:
-        provider = bool(refs) and all(r.kind == "provider_record" for r in refs)
+        provider = (
+            actor_ref == "deterministic-provider-mapping:v1"
+            and bool(refs)
+            and all(r.kind == "provider_record" for r in refs)
+            and proposal.claim_kind == "observation"
+        )
         method = ExtractionMethod.API if provider else ExtractionMethod.LLM_SYNTHESIS
         first = refs[0] if refs else None
         quotes = [s.quote for s in proposal.support if isinstance(s, TextSupport)]
@@ -370,7 +405,11 @@ async def submit_proposal(
             use_class=proposal.use_class,
             outreach_safe=proposal.outreach_safe
             and assessment == "supported"
-            and proposal.field_key not in ALWAYS_UNSAFE_FIELDS,
+            and proposal.field_key not in ALWAYS_UNSAFE_FIELDS
+            and (
+                not isinstance(relationship, CommitteeAssessment)
+                or relationship.state == "supported"
+            ),
             markers=markers,
         )
         if scope.subject_kind == "person":

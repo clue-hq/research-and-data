@@ -581,6 +581,7 @@ async def load_person_seed(runtime: ToolRuntime) -> dict[str, Any] | None:
             name=person.full_name or "",
             linkedin_url=person.linkedin_url,
             artifact_key=op.artifact_key or "",
+            require_account_match=runtime.scope.catalog_version != "v4",
         )
         if bound != runtime.scope.contact_id:
             raise RefusalError(

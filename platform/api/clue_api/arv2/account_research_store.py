@@ -789,6 +789,7 @@ def _run(row: RowMapping) -> RunRow:
         requested_by_user_id=row["requested_by_user_id"],
         request_sha256=row["request_sha256"],
         persona_pin=decode_jsonb(row.get("persona_pin")),
+        context_id=row.get("context_id"),
         status=row["status"],
         created_at=row["created_at"],
         finished_at=row["finished_at"],

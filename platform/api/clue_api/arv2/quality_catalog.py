@@ -1,0 +1,45 @@
+"""The v4 launch pin names the actual governed resources, not legacy prompt lookalikes."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+from clue_api.arv2.account_research_catalog import CatalogResource, ResourceBundle
+
+ROOT = Path(__file__).parents[3] / "agents" / "catalog" / "research-quality"
+
+
+def load_quality_resources(agent: str) -> ResourceBundle:
+    raw = (ROOT / "launch-v4.json").read_text()
+    manifest = json.loads(raw)
+    resources = manifest["resources"]
+    result = []
+    for path, expected in sorted(resources.items()):
+        body = (ROOT / path).read_text()
+        actual = hashlib.sha256(body.encode()).hexdigest()
+        if actual != expected:
+            raise ValueError(f"quality resource differs from its launch pin: {path}")
+        result.append(
+            CatalogResource(
+                kind="skill", ref=f"research-quality:{path}", version="v4", sha256=actual, body=body
+            )
+        )
+    return ResourceBundle(
+        profile=CatalogResource(
+            kind="profile",
+            ref=f"agent-profile:{agent}:v4",
+            version="v4",
+            sha256=hashlib.sha256(raw.encode()).hexdigest(),
+            body=raw,
+        ),
+        prompt=CatalogResource(
+            kind="prompt",
+            ref="research-quality:ownership:v4",
+            version="v4",
+            sha256=hashlib.sha256(b"governed-research-quality-v4").hexdigest(),
+            body="governed-research-quality-v4",
+        ),
+        skills=tuple(result),
+    )

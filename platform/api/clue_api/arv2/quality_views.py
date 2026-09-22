@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
+from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.quality_workspace import EvidenceWorkspace
 from clue_db import ConnFactory
 from clue_research.claimstore.quality import eligible_sql
@@ -99,6 +100,51 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        if path == "/committee.json":
+            members = await read_committee(
+                conn,
+                workspace_id=scope.workspace_id,
+                account_id=scope.account_id,
+                context_id=authority.context_id,
+            )
+            return {
+                "members": [m.model_dump(mode="json") for m in members],
+                "supported_count": sum(m.state == "supported" for m in members),
+            }
+        if path == "/generation.json":
+            row = (
+                (
+                    await conn.execute(
+                        text("""SELECT g.generation_id,g.state,g.input_revision,
+                    g.reconciled_revision
+                FROM arv2_account_research_generation g WHERE g.workspace_id=:ws AND g.run_id=:run
+                  AND g.account_id=:account AND g.context_id=:context"""),
+                        {
+                            "ws": scope.workspace_id,
+                            "run": scope.run_id,
+                            "account": scope.account_id,
+                            "context": authority.context_id,
+                        },
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                return {"state": "independent_person_research"}
+            children = (
+                (
+                    await conn.execute(
+                        text("""SELECT c.job_id,c.contact_id,j.status,c.receipt_key
+                FROM arv2_generation_child c JOIN arv2_research_job j ON j.job_id=c.job_id
+                WHERE c.workspace_id=:ws AND c.generation_id=:id ORDER BY c.job_id LIMIT 100"""),
+                        {"ws": scope.workspace_id, "id": row["generation_id"]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return {**dict(row), "person_jobs": [dict(r) for r in children]}
         match = _CAPABILITIES.fullmatch(path)
         if match and authority.role == "account_research":
             return _passage(
@@ -155,6 +201,8 @@ class ResearchViewMount(EvidenceWorkspace):
             }
             result["catalog_path"] = "/research/catalog/0.json"
             result["claims_path"] = "/research/claims/0.json"
+            result["committee_path"] = "/research/committee.json"
+            result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index/0.json"
             if authority.role == "account_research":
                 result["capabilities_path"] = "/research/capabilities/0.json"
@@ -186,15 +234,22 @@ class ResearchViewMount(EvidenceWorkspace):
             (
                 await conn.execute(
                     text(f"""
-          SELECT c.id,c.field_key,c.value_json,c.source_url,c.evidence_span,c.write_markers,
+          SELECT c.id,c.entity_id,c.entity_type,c.field_key,c.value_json,
+                 c.source_url,c.evidence_span,c.write_markers,
                  c.superseded_by,c.outreach_safe,c.use_class,c.identity_binding,
                  q.conclusion,q.revision,q.assessment_id,q.rationale_key,
                  {eligible_sql("c")} AS applicable
           FROM claim c LEFT JOIN claim_quality_current q ON q.claim_id=c.id
           LEFT JOIN artifact a ON a.storage_key=c.artifact_key AND a.workspace_id=c.workspace_id
-          WHERE c.workspace_id=:ws AND c.entity_id=:subject
+          WHERE c.workspace_id=:ws AND (c.entity_id=:subject OR c.entity_id=:account OR (
+              :is_account AND EXISTS (SELECT 1 FROM arv2_generation_child child
+              JOIN arv2_account_research_generation g ON g.generation_id=child.generation_id
+              WHERE child.workspace_id=:ws AND child.contact_id=c.entity_id
+                AND g.initial_job_id=:job AND g.context_id=CAST(:context AS uuid))
+            ))
             AND (CAST(:claim_id AS uuid) IS NULL OR c.id=CAST(:claim_id AS uuid))
-            AND (c.write_markers->>'context_id' IS NULL OR c.write_markers->>'context_id'=:context)
+            AND (c.write_markers->>'context_id' IS NULL
+                 OR c.write_markers->>'context_id'=CAST(:context AS text))
             AND (c.artifact_key IS NULL OR (a.erased_at IS NULL AND NOT a.privacy_erased
                  AND (a.expires_at IS NULL OR a.expires_at>now())))
             AND NOT EXISTS(SELECT 1 FROM claim_quality_support s JOIN artifact sa
@@ -205,6 +260,9 @@ class ResearchViewMount(EvidenceWorkspace):
                     {
                         "ws": scope.workspace_id,
                         "subject": scope.person_subject_id or scope.account_id,
+                        "account": scope.account_id,
+                        "job": scope.job_id,
+                        "is_account": scope.person_subject_id is None,
                         "context": str(authority.context_id),
                         "offset": start,
                         "claim_id": claim_match[1] if claim_match else None,

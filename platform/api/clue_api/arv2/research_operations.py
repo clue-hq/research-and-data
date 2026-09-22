@@ -314,13 +314,27 @@ async def stop_contact_jobs(
 async def job_available(
     conn: AsyncConnection, scope: OperationScope, kind: str | None = None
 ) -> bool:
-    refs = (
+    row = (
         await conn.execute(
-            text("SELECT input_refs FROM arv2_research_job WHERE job_id=:job AND workspace_id=:ws"),
-            {"job": scope.job_id, "ws": scope.workspace_id},
+            text("""SELECT j.input_refs,j.status FROM arv2_research_job j
+            WHERE j.job_id=:job AND j.workspace_id=:ws AND j.run_id=:run
+              AND j.account_entity_id=:account
+              AND NOT EXISTS (
+                SELECT 1 FROM arv2_account_research_generation g
+                WHERE g.workspace_id=j.workspace_id AND g.run_id=j.run_id
+                  AND g.account_id=j.account_entity_id
+                  AND g.state IN ('suspended','privacy_stopped'))"""),
+            {
+                "job": scope.job_id,
+                "ws": scope.workspace_id,
+                "run": scope.run_id,
+                "account": scope.account_id,
+            },
         )
-    ).scalar_one_or_none()
-    refs = decode_jsonb(refs) or {}
+    ).one_or_none()
+    if row is None or row.status == "suspended":
+        return False
+    refs = decode_jsonb(row.input_refs) or {}
     field = {"contact_email": "core.work_email", "contact_phone": "core.direct_phone"}.get(
         kind or ""
     )

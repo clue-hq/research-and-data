@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.icp_confirmation import current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_obs import get_logger
 from clue_research.claimstore.registry import list_research_fields
 from clue_spine import get_project, list_products, list_project_product_sets
@@ -60,6 +61,7 @@ class CatalogFieldPin(BaseModel):
     version: int
     value_type: str
     validation: dict[str, JsonValue] | None
+    value_schema: dict[str, JsonValue] | None = None
     description: str
 
 
@@ -397,6 +399,7 @@ async def build_context(
                         "version": row.definition_version,
                         "value_type": row.field_def.value_type,
                         "validation": row.field_def.validation,
+                        "value_schema": row.value_schema,
                         "description": row.description,
                     }
                 )
@@ -414,6 +417,33 @@ async def build_context(
         seller_documents=tuple(seller_documents),
         gaps=tuple(gaps),
         field_catalog=tuple(catalog),
+    )
+
+
+def context_catalog(context: ResearchContext, *, person: bool = False) -> FieldCatalog:
+    """Convert the frozen menu to the existing deterministic mapper's catalog shape."""
+    sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
+    for row in context.field_catalog:
+        if row.entity != ("contacts" if person else "accounts"):
+            continue
+        key = row.field_key
+        section = (
+            "facet"
+            if key.startswith("contact.facet.")
+            else "contact"
+            if key.startswith("contact.")
+            else "account"
+        )
+        hint = (row.validation or {}).get("use_class_hint")
+        sections[section].append(
+            FieldSpec(
+                key, row.description, row.value_schema, str(hint) if hint is not None else None
+            )
+        )
+    return FieldCatalog(
+        account=tuple(sections["account"]),
+        contact=tuple(sections["contact"]),
+        facet=tuple(sections["facet"]),
     )
 
 

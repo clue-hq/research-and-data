@@ -1,0 +1,166 @@
+"""An AI Ark candidate keeps its original through governed nomination and person handoff."""
+
+import json
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from uuid import uuid4
+
+import pytest
+from deepagents.backends.protocol import BackendProtocol
+from sqlalchemy import text
+
+from clue_api.arv2.account_research_store import read_job
+from clue_api.arv2.committee_discovery import load_person_seed
+from clue_api.arv2.quality_committee_tool import NominateCommitteeInput, NominateCommitteeTool
+from clue_api.arv2.quality_execution import Allowance, bind_execution
+from clue_api.arv2.quality_mapping import QualityProviderWriter
+from clue_api.arv2.quality_provider_tools import AcquireResearchInput, AcquireResearchTool
+from clue_api.arv2.quality_relationships import OrganizationScope, read_committee
+from clue_api.arv2.quality_views import research_backend
+from clue_api.arv2.transport import ScriptedTransport
+from clue_core import ExecutionId, OperationId
+from clue_storage.fs import FsStorage
+from clue_toolbelt import ToolContext
+from tests.arv2.test_committee_discovery_v2 import person
+from tests.arv2.test_committee_discovery_v2_db import response, runtime
+from tests.arv2.test_quality_claims_db import setup
+from tests.arv2.test_quality_execution_db import execution
+from tests.arv2.test_quality_tools_db import read_document
+from tests.claimstore.conftest import (  # noqa: F401
+    migrated_db,
+    require_claimstore_db,
+    rollback_conn,
+    run_async,
+)
+
+pytestmark = pytest.mark.usefixtures("require_claimstore_db")
+
+
+def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4")
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(30, 60, 4),
+            )
+            # Discovery continues after an exhausted Exa retry, with the gap retained.
+            from clue_api.arv2.research_operations import begin
+
+            deep, _ = await begin(conn, op, "account_deep", {"offline": True})
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_operation SET state='failed',"
+                    "error_code='retry_exhausted' WHERE operation_id=:id"
+                ),
+                {"id": deep.operation_id},
+            )
+            wire = ScriptedTransport(
+                [
+                    response(
+                        {
+                            "content": [
+                                {
+                                    "id": "company-1",
+                                    "link": {"domain": scope.account_domain},
+                                    "summary": {"name": scope.account_name},
+                                }
+                            ]
+                        }
+                    ),
+                    response({"content": [person(domain=scope.account_domain)], "last": True}),
+                ]
+            )
+            rt = runtime(conn, scope, storage, wire)
+            rt._writer = QualityProviderWriter(scope, storage, parent, rt.catalog, purge=True)
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            acquire = AcquireResearchTool(rt)
+            result = await acquire.invoke(
+                AcquireResearchInput(
+                    operation="discover_people",
+                    arguments={
+                        "role_key": "growth",
+                        "rationale": "Owns marketing",
+                        "titles": ["VP Marketing"],
+                    },
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+            backend = research_backend(BackendProtocol(), connections, storage, scope, parent)
+            saved = json.loads(await read_document(backend, result.references["result_path"]))
+            candidate = saved["people"][0]["candidate_ref"]
+            nominate = NominateCommitteeTool(scope, storage, purge_unevidenced=True)
+            args = NominateCommitteeInput(
+                candidate_ref=candidate,
+                persona_key="champion",
+                role="champion",
+                organization_scope=OrganizationScope(
+                    relationship="exact_company",
+                    geography="global",
+                    location_relevance="not_required",
+                    rationale="Global marketing remit requires verification",
+                ),
+                rationale="Potential marketing owner; verify affiliation and buying remit",
+            )
+            context = replace(ctx, operation_id=OperationId(uuid4()))
+            receipt = await nominate.invoke(args, context)
+            replay = await nominate.invoke(args, context)
+            assert replay.references["replayed"]
+            assert receipt.references["person_job_id"] == replay.references["person_job_id"]
+            job = await read_job(conn, job_id=receipt.references["person_job_id"])
+            assert job.input_refs["candidate_ref"] == candidate
+            assert job.input_refs["subject_scope"] == "account"
+            members = await read_committee(
+                conn, workspace_id=scope.workspace_id, account_id=scope.account_id, context_id=cid
+            )
+            assert len(members) == 1 and not members[0].outreach_eligible
+            assert members[0].state == "candidate"
+            person_scope = replace(
+                scope,
+                job_id=job.job_id,
+                subject_kind="person",
+                contact_id=job.subject_entity_id,
+                person_name="Dana Test",
+                input_refs=job.input_refs,
+            )
+            person_op = replace(op, job_id=job.job_id)
+            person_execution = await execution(conn, person_op, scope.project_id)
+            await bind_execution(
+                conn,
+                person_op,
+                execution_id=person_execution,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(30, 60, 4),
+            )
+            person_rt = runtime(conn, person_scope, storage, wire)
+            person_rt._writer = QualityProviderWriter(
+                person_scope, storage, person_execution, rt.catalog, purge=True
+            )
+            seed = await load_person_seed(person_rt)
+            assert seed["candidate_ref"] == candidate
+            assert len(wire.requests) == 2  # no extra named-person purchase
+            assert (
+                await conn.execute(text("SELECT count(*) FROM arv2_generation_child"))
+            ).scalar_one() == 1
+
+    run_async(case())

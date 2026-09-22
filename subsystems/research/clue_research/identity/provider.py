@@ -100,6 +100,7 @@ async def resolve_provider_contact(
     name: str,
     linkedin_url: str | None,
     artifact_key: str,
+    require_account_match: bool = True,
 ) -> tuple[EntityId, bool]:
     """Resolve anchors consistently; never move employment or merge two people by name alone."""
     account = await get_account(conn, account_id)
@@ -156,7 +157,7 @@ async def resolve_provider_contact(
         if (
             held is None
             or held.workspace_id != workspace_id
-            or str(held.account_entity_id) != str(account_id)
+            or (require_account_match and str(held.account_entity_id) != str(account_id))
         ):
             raise ProviderIdentityConflict("employment_conflict")
         if held.merged_into is not None:

@@ -344,6 +344,8 @@ class Settings(BaseSettings):
     # Historical jobs still resolve their pinned catalog, including legacy v1 rows.
     arv2_research_catalog_version: Literal["v1", "v2", "v3"] = "v2"
     arv2_account_research_enabled: bool = True
+    # Durable quality continuation/outbox recovery; no effect when no quality generation exists.
+    arv2_quality_reconcile_interval_s: float = Field(default=10.0, gt=0)
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5

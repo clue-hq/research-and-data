@@ -38,7 +38,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from langchain_core.tools import StructuredTool
 from pydantic import SecretStr
@@ -95,13 +95,14 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
+from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
 from clue_config import GatewayConfig, Secrets, Settings
 from clue_core import Claim, EntityId
 from clue_core.provider_failures import failure_code
 from clue_db import ConnFactory, transaction
-from clue_fleet import FleetTaskKind, WorkQueue
+from clue_fleet import FleetTaskKind, WorkId, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for
@@ -435,12 +436,14 @@ class Arv2AccountResearchWorkHandler:
         model_id: str,
         writer: LenientClaimWriter,
         person_model_id: str = "",
+        quality_runner: QualityJobRunner | None = None,
         queue: WorkQueue | None = None,
         store: Any = default_store,
         catalog_root: Path | None = None,
         person_catalog_root: Path | None = None,
         clock: Callable[[], datetime] = _utcnow,
     ) -> None:
+        self._quality_runner = quality_runner
         self._settings = settings
         self._conn_factory = conn_factory
         self._artifacts = artifacts
@@ -480,6 +483,8 @@ class Arv2AccountResearchWorkHandler:
 
     async def handle(self, context: WorkContext) -> WorkResult:
         """Drive one job. Never raises: every ending is a :class:`WorkResult`."""
+        if context.payload.get("continuation") == "quality_reconciliation":
+            return await self._quality_continuation(context)
         scope = self._scope(context.payload)
         if scope is None:
             # Nothing names a job, so there is no row to flag. The task fails loudly and a human
@@ -522,6 +527,194 @@ class Arv2AccountResearchWorkHandler:
             outcome=ending,
             references={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
         )
+
+    async def _quality_continuation(self, work: WorkContext) -> WorkResult:
+        from clue_api.arv2.quality_generation import read_generation, reconcile_generation
+
+        try:
+            generation_id = UUID(str(work.payload["generation_id"]))
+            workspace_id = str(work.payload["workspace_id"])
+            revision = int(str(work.payload["input_revision"]))
+            if UUID(str(work.work_id)) != generation_id:
+                raise ValueError("continuation lease does not name its generation")
+        except (KeyError, ValueError, TypeError):
+            return WorkResult(
+                outcome="failed", references={"error": "invalid_quality_continuation"}
+            )
+        if work.stop_requested.is_set() or work.lease_lost.is_set():
+            return WorkResult(
+                outcome="stopped", references={"generation_id": str(generation_id)}, requeue=True
+            )
+        async with self._connection() as conn:
+            generation = await read_generation(
+                conn, workspace_id=workspace_id, generation_id=generation_id
+            )
+            if generation.state in {"suspended", "privacy_stopped"}:
+                return WorkResult(
+                    outcome="stopped", references={"generation_id": str(generation_id)}
+                )
+            if generation.reconciled_revision >= revision or generation.input_revision != revision:
+                return WorkResult(
+                    outcome="completed",
+                    references={"generation_id": str(generation_id), "superseded": True},
+                )
+            job = await self._store.read_job(conn, job_id=generation.initial_job_id)
+            run = await self._store.read_run(conn, run_id=generation.run_id)
+            if job is None or run is None or job.status not in {"completed", "needs_review"}:
+                return WorkResult(
+                    outcome="failed", references={"error": "initial_research_not_settled"}
+                )
+            if (job.input_refs or {}).get("privacy_stopped"):
+                return WorkResult(
+                    outcome="stopped", references={"generation_id": str(generation_id)}
+                )
+            composition = await self._compose_quality(conn, job, run)
+        if self._quality_runner is None or run.context_id is None:
+            return WorkResult(outcome="failed", references={"error": "quality_runtime_unavailable"})
+        try:
+            async with self._jobs:
+                result = await self._quality_runner(
+                    scope=composition.scope,
+                    context_id=run.context_id,
+                    runtime=self._tool_runtime(composition),
+                    model_id=composition.model_id,
+                    unit_key=f"reconcile:{generation_id}:{revision}",
+                    objective=f"Reconcile account generation {generation_id}, "
+                    f"input revision {revision}. "
+                    "Read /research/generation.json and /research/committee.json "
+                    "plus person claims. "
+                    "Correct outdated employment/committee judgments, retain partial failures, "
+                    "and refresh "
+                    "the evidence-backed narrative. Reuse originals; "
+                    "do not repeat initial paid research. "
+                    "Finalize the typed account report with remaining gaps.",
+                )
+            async with self._connection() as conn:
+                accepted = await reconcile_generation(
+                    conn,
+                    workspace_id=workspace_id,
+                    generation_id=generation_id,
+                    expected_revision=revision,
+                    needs_review=result.status != "completed",
+                )
+            return WorkResult(
+                outcome="completed",
+                references={
+                    "generation_id": str(generation_id),
+                    "input_revision": revision,
+                    "applied": accepted,
+                    "execution_id": str(result.execution_id),
+                    "finalization_key": result.finalization_key,
+                },
+            )
+        except asyncio.CancelledError:
+            # Fleet redelivery resumes the continuation; initial terminal history is untouched.
+            raise
+        except Exception as error:
+            log.exception(
+                "arv2.quality.reconciliation_failed",
+                generation_id=str(generation_id),
+                revision=revision,
+            )
+            async with self._connection() as conn:
+                await reconcile_generation(
+                    conn,
+                    workspace_id=workspace_id,
+                    generation_id=generation_id,
+                    expected_revision=revision,
+                    needs_review=True,
+                )
+            return WorkResult(
+                outcome="failed",
+                references={"generation_id": str(generation_id), "error": type(error).__name__},
+            )
+
+    async def sweep_quality(self) -> int:
+        """Recover result signals and lost offers; all external effects follow DB commit."""
+        from clue_api.arv2.account_research_launch import QueuedJob
+        from clue_api.arv2.quality_generation import (
+            pending_continuations,
+            record_child_result,
+            signal_subject_change,
+        )
+        from clue_research.claimstore.quality import deliver_invalidations
+
+        if self._queue is None or self._quality_runner is None:
+            return 0
+        async with self._connection() as conn:
+            workspaces = (
+                (
+                    await conn.execute(
+                        text("""SELECT workspace_id FROM (
+                SELECT e.workspace_id,e.created_at FROM claim_quality_event e
+                WHERE e.delivered_at IS NULL AND EXISTS (
+                    SELECT 1 FROM arv2_account_research_generation g
+                    WHERE g.workspace_id=e.workspace_id)
+                ORDER BY e.created_at,e.event_id LIMIT 500) pending GROUP BY workspace_id""")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for ws in workspaces:
+                await deliver_invalidations(conn, workspace_id=ws, apply=signal_subject_change)
+            missing = (
+                await conn.execute(
+                    text("""SELECT c.workspace_id,c.job_id FROM arv2_generation_child c
+                JOIN arv2_research_job j ON j.job_id=c.job_id AND j.workspace_id=c.workspace_id
+                WHERE c.terminal_status IS NULL AND j.status IN ('completed','needs_review')
+                ORDER BY j.finished_at,c.job_id LIMIT 200""")
+                )
+            ).all()
+            for row in missing:
+                await record_child_result(conn, workspace_id=row.workspace_id, job_id=row.job_id)
+            pending = await pending_continuations(conn)
+            children = (
+                await conn.execute(
+                    text("""SELECT c.workspace_id,c.job_id,j.run_id,r.project_run_id
+                FROM arv2_generation_child c JOIN arv2_research_job j ON j.job_id=c.job_id
+                JOIN arv2_account_research_generation g ON g.generation_id=c.generation_id
+                JOIN arv2_research_run r ON r.run_id=j.run_id
+                WHERE j.status='not_started' AND g.initial_settled_at IS NOT NULL
+                  AND g.state NOT IN ('suspended','privacy_stopped')
+                  AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
+                ORDER BY j.created_at,c.job_id LIMIT 200""")
+                )
+            ).all()
+        offered = 0
+        for child in children:
+            offered += await enqueue_launched_jobs(
+                self._queue,
+                Arv2LaunchReceipt(
+                    run_id=child.run_id,
+                    job_ids=(child.job_id,),
+                    replayed=True,
+                    project_run_id=child.project_run_id,
+                    to_enqueue=(
+                        QueuedJob(
+                            job_id=child.job_id,
+                            run_id=child.run_id,
+                            workspace_id=child.workspace_id,
+                        ),
+                    ),
+                ),
+            )
+        for g in pending:
+            offered += int(
+                await self._queue.enqueue(
+                    kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
+                    work_id=WorkId(g.generation_id),
+                    dedup_key=f"arv2:quality-reconcile:{g.generation_id}:{g.input_revision}",
+                    priority=ARV2_ACCOUNT_TASK_PRIORITY,
+                    payload={
+                        "continuation": "quality_reconciliation",
+                        "generation_id": str(g.generation_id),
+                        "workspace_id": g.workspace_id,
+                        "input_revision": g.input_revision,
+                    },
+                )
+            )
+        return offered
 
     @staticmethod
     def _scope(payload: Mapping[str, Any]) -> _Scope | None:
@@ -668,20 +861,19 @@ class Arv2AccountResearchWorkHandler:
             # ``deep_research`` is a job whose row was already won.
             await self._store.set_job_stage(conn, job_id=job.job_id, stage="deep_research")
 
-        media_budget = MediaBudget(self._settings.arv2_media_seconds_ceiling)
-        runtime = ToolRuntime(
-            scope=composition.scope,
-            settings=self._settings,
-            clients=_clients_for_job(self._clients, media_budget),
-            conn_factory=self._connection,
-            pacing_conn_factory=self._conn_factory,
-            artifacts=self._artifacts,
-            storage=self._storage,
-            writer=self._writer,
-            catalog=composition.catalog,
-            media_budget=media_budget,
-            now=self._clock,
-        )
+        runtime = self._tool_runtime(composition)
+        if has_capability(composition.scope.catalog_version, "research_quality"):
+            if self._quality_runner is None or composition.run.context_id is None:
+                raise RuntimeError("quality research runtime/context is not composed")
+            async with self._jobs:
+                result = await self._quality_runner(
+                    scope=composition.scope,
+                    context_id=composition.run.context_id,
+                    runtime=runtime,
+                    objective=composition.task_instruction,
+                    model_id=composition.model_id,
+                )
+            return await self._settle_quality(composition, result)
         if has_capability(composition.scope.catalog_version, "committee_discovery"):
             if job.subject_type == "account" and job.selection_claim_ids is not None:
                 runtime.finalization = {
@@ -746,6 +938,22 @@ class Arv2AccountResearchWorkHandler:
             )
         return await self._settle(composition, runtime, outcome)
 
+    def _tool_runtime(self, composition: _Composition) -> ToolRuntime:
+        media_budget = MediaBudget(self._settings.arv2_media_seconds_ceiling)
+        return ToolRuntime(
+            scope=composition.scope,
+            settings=self._settings,
+            clients=_clients_for_job(self._clients, media_budget),
+            conn_factory=self._connection,
+            pacing_conn_factory=self._conn_factory,
+            artifacts=self._artifacts,
+            storage=self._storage,
+            writer=self._writer,
+            catalog=composition.catalog,
+            media_budget=media_budget,
+            now=self._clock,
+        )
+
     async def _compose(self, conn: AsyncConnection, job: JobRow) -> _Composition:
         """Everything the agent runs on, read under the pins — dispatched on the job's subject.
 
@@ -753,9 +961,105 @@ class Arv2AccountResearchWorkHandler:
         map) and differ in what they are about: an account job composes the account, a person job
         composes one confirmed committee member of it.
         """
+        run = await self._store.read_run(conn, run_id=job.run_id)
+        if run and has_capability(
+            catalog_version(job.profile_ref or run.profile_ref), "research_quality"
+        ):
+            return await self._compose_quality(conn, job, run)
         if job.subject_type == "person":
             return await self._compose_person(conn, job)
         return await self._compose_account(conn, job)
+
+    async def _compose_quality(
+        self, conn: AsyncConnection, job: JobRow, run: RunRow
+    ) -> _Composition:
+        from clue_api.arv2.quality_context import context_catalog, read_context, read_document
+        from clue_api.arv2.quality_generation import ensure_generation
+        from clue_api.arv2.research_operations import OperationScope
+
+        if run.context_id is None:
+            raise RuntimeError("quality job requires the exact pinned project context")
+        context = await read_context(
+            conn,
+            self._storage,
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            context_id=run.context_id,
+        )
+        if (
+            context.icp.artifact_key != run.icp_artifact_key
+            or context.icp.sha256 != run.icp_artifact_sha256
+        ):
+            raise RuntimeError("quality context differs from the authorized ICP")
+        icp, gates = await self._pinned_icp(conn, run)
+        persona = "\n\n".join(
+            [
+                await read_document(conn, self._storage, workspace_id=run.workspace_id, pin=pin)
+                for pin in context.personas
+            ]
+        )
+        person = job.subject_type == "person"
+        bundle = (load_person_resources if person else load_account_resources)(version="v4")
+        if bundle_pin(bundle) != (job.profile_sha256 if person else run.profile_sha256):
+            raise _ProfilePinMismatch("governed research resources differ from the launch pin")
+        if person:
+            scope = await person_scope_for(
+                conn,
+                job=job,
+                run=run,
+                today=self._clock().date(),
+                icp_markdown=icp,
+                icp_gate_keys=gates,
+                persona_markdown=persona,
+            )
+            scope = replace(scope, catalog_version="v4", input_refs=job.input_refs)
+        else:
+            account = await get_account(conn, EntityId(job.account_entity_id))
+            if account is None or account.workspace_id != run.workspace_id:
+                raise RuntimeError("quality account identity unavailable")
+            scope = JobScope(
+                workspace_id=run.workspace_id,
+                project_id=run.project_id,
+                project_run_id=run.project_run_id,
+                run_id=run.run_id,
+                job_id=job.job_id,
+                account_id=EntityId(job.account_entity_id),
+                account_name=account.canonical_name,
+                account_domain=account.primary_domain or "",
+                icp_markdown=icp,
+                persona_markdown=persona,
+                already_established="",
+                effort=run.effort,
+                committee_cap=run.committee_cap,
+                today=self._clock().date(),
+                icp_gate_keys=gates,
+                catalog_version="v4",
+                input_refs=job.input_refs,
+            )
+            await ensure_generation(
+                conn,
+                OperationScope(run.workspace_id, run.run_id, job.job_id, job.account_entity_id),
+                context_id=run.context_id,
+            )
+        return _Composition(
+            job=job,
+            run=run,
+            bundle=bundle,
+            scope=scope,
+            catalog=context_catalog(context, person=person),
+            system_prompt="",
+            tools_builder=build_person_tools if person else build_account_tools,
+            model_id=self._person_model_id if person else self._model_id,
+            model_role=_PERSON_MODEL_ROLE if person else _MODEL_ROLE,
+            task_instruction=(
+                "Research this person and assess their current affiliation and buying remit. "
+                if person
+                else "Research this account, nominate the appropriate buying committee "
+                "and assess coverage. "
+            )
+            + "Use the exact pinned context and original evidence. "
+            + run.directive_text,
+        )
 
     async def _compose_account(self, conn: AsyncConnection, job: JobRow) -> _Composition:
         """Everything the account agent runs on, read under the launch's pins."""
@@ -1109,6 +1413,123 @@ class Arv2AccountResearchWorkHandler:
             claims=len(claims),
             cost_usd=str(spend.cost_usd),
             committee_jobs=len(committee.jobs),
+        )
+        return status
+
+    async def _settle_quality(self, composition: _Composition, result: QualityJobOutcome) -> str:
+        from clue_api.arv2.account_research_launch import QueuedJob
+        from clue_api.arv2.quality_generation import ensure_generation, record_child_result, signal
+        from clue_api.arv2.quality_meter import usage
+        from clue_api.arv2.research_operations import OperationScope
+
+        status = "completed" if result.status == "completed" and result.report else "needs_review"
+        committee = CommitteeStepResult((), (), ())
+        async with self._connection() as conn:
+            meter = await usage(
+                conn, workspace_id=composition.run.workspace_id, job_id=composition.job.job_id
+            )
+            finalization = {
+                "schema_version": "quality-job-v1",
+                "context_id": str(composition.run.context_id),
+                "execution_id": str(result.execution_id),
+                "finalization_key": result.finalization_key,
+                "profile_ref": composition.job.profile_ref or composition.run.profile_ref,
+                "manifest_sha256": composition.bundle.manifest_sha256(),
+                "summary": result.report.summary if result.report else "Research requires review.",
+                "gaps": list(result.report.gaps)
+                if result.report
+                else [result.failure_code or "unit_incomplete"],
+                "report": result.report.model_dump(mode="json", exclude={"summary", "gaps"})
+                if result.report
+                else None,
+                "spend": meter.receipt(),
+                "quality_state": "provisional",
+            }
+            await self._store.finish_job(
+                conn,
+                job_id=composition.job.job_id,
+                status=status,
+                finalization=finalization,
+                failure_code=result.failure_code or "quality_unit_incomplete",
+                model_rounds=meter.model_calls,
+                tool_calls=meter.tool_calls,
+                cost_usd=meter.known_usd,
+                credits=meter.credits,
+                media_seconds=meter.media_seconds,
+            )
+            if composition.job.subject_type == "account":
+                assert composition.run.context_id is not None
+                generation = await ensure_generation(
+                    conn,
+                    OperationScope(
+                        composition.run.workspace_id,
+                        composition.run.run_id,
+                        composition.job.job_id,
+                        composition.job.account_entity_id,
+                    ),
+                    context_id=composition.run.context_id,
+                )
+                children = (
+                    (
+                        await conn.execute(
+                            text("""SELECT c.job_id FROM arv2_generation_child c
+                    JOIN arv2_research_job j ON j.job_id=c.job_id AND j.workspace_id=c.workspace_id
+                    WHERE c.generation_id=:id AND j.status='not_started'
+                      AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'"""),
+                            {"id": generation.generation_id},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                committee = CommitteeStepResult(
+                    (),
+                    tuple(
+                        QueuedJob(
+                            job_id=jid,
+                            run_id=composition.run.run_id,
+                            workspace_id=composition.run.workspace_id,
+                        )
+                        for jid in children
+                    ),
+                    (),
+                )
+                await signal(
+                    conn,
+                    workspace_id=composition.run.workspace_id,
+                    generation_id=generation.generation_id,
+                    event_id=uuid5(NAMESPACE_URL, f"quality-initial:{composition.job.job_id}"),
+                    reason="initial_settled",
+                )
+            else:
+                await record_child_result(
+                    conn,
+                    workspace_id=composition.run.workspace_id,
+                    job_id=composition.job.job_id,
+                    receipt_key=result.finalization_key,
+                )
+            await self._store.refresh_run_status(conn, run_id=composition.run.run_id)
+            outcome = AgentOutcome(
+                reason="finalized" if status == "completed" else "model_error",
+                model_rounds=meter.model_calls,
+                tool_calls=meter.tool_calls,
+                error=result.failure_code,
+            )
+            await self._record_activity(
+                conn,
+                composition,
+                outcome=outcome,
+                claims=len(result.report.claim_ids) if result.report else 0,
+            )
+        await self._offer_committee(composition, committee)
+        log.info(
+            "arv2.quality.job_settled",
+            job_id=str(composition.job.job_id),
+            execution_id=str(result.execution_id),
+            context_id=str(composition.run.context_id),
+            status=status,
+            known_cost_usd=str(meter.known_usd),
+            unpriced_calls=meter.unpriced_model_calls + meter.unpriced_provider_calls,
         )
         return status
 
@@ -1555,6 +1976,7 @@ def build_arv2_account_research_handler(
     artifacts: ArtifactSink,
     model_provider: AgentModelProvider,
     queue: WorkQueue | None = None,
+    quality_runner: QualityJobRunner | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> Arv2AccountResearchWorkHandler | None:
     """Compose the lane on this worker, or refuse loudly and compose nothing.
@@ -1617,6 +2039,7 @@ def build_arv2_account_research_handler(
         # Its own env line, and NOT a required credential: a worker with no person model still
         # drains person jobs, on the account lane's model, and the handler logs the fallback.
         person_model_id=os.environ.get(ARV2_PERSON_MODEL_ENV, "").strip(),
+        quality_runner=quality_runner,
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
         # The worker's own queue, so a committee resolved on this worker is offered through exactly
         # the machinery that will drain it. Composing without one still writes the person job rows

@@ -31,6 +31,7 @@ class Allowance:
     model_calls: int
     tool_calls: int
     delegations: int
+    runtime_ms: int = 1800000
 
 
 async def bind_execution(
@@ -43,7 +44,12 @@ async def bind_execution(
     limits: Allowance,
     parent_execution_id: UUID | None = None,
 ) -> None:
-    if limits.model_calls < 1 or limits.tool_calls < 1 or limits.delegations < 0:
+    if (
+        limits.model_calls < 1
+        or limits.tool_calls < 1
+        or limits.delegations < 0
+        or limits.runtime_ms < 1
+    ):
         raise ValueError("research allowance limits are invalid")
     row = (
         (
@@ -79,8 +85,8 @@ async def bind_execution(
     await conn.execute(
         text("""
       INSERT INTO arv2_quality_allowance(job_id,workspace_id,run_id,account_id,
-        max_model_calls,max_tool_calls,max_delegations)
-      VALUES (:job,:ws,:run,:account,:model,:tool,:delegation) ON CONFLICT DO NOTHING
+        max_model_calls,max_tool_calls,max_delegations,max_runtime_ms)
+      VALUES (:job,:ws,:run,:account,:model,:tool,:delegation,:runtime) ON CONFLICT DO NOTHING
     """),
         {
             "job": scope.job_id,
@@ -90,18 +96,25 @@ async def bind_execution(
             "model": limits.model_calls,
             "tool": limits.tool_calls,
             "delegation": limits.delegations,
+            "runtime": limits.runtime_ms,
         },
     )
     saved = (
         await conn.execute(
             text("""
-      SELECT max_model_calls,max_tool_calls,max_delegations FROM arv2_quality_allowance
+      SELECT max_model_calls,max_tool_calls,max_delegations,max_runtime_ms
+      FROM arv2_quality_allowance
       WHERE job_id=:job AND workspace_id=:ws FOR UPDATE
     """),
             {"job": scope.job_id, "ws": scope.workspace_id},
         )
     ).one()
-    if tuple(saved) != (limits.model_calls, limits.tool_calls, limits.delegations):
+    if tuple(saved) != (
+        limits.model_calls,
+        limits.tool_calls,
+        limits.delegations,
+        limits.runtime_ms,
+    ):
         raise ValueError("research recovery cannot reset the shared allowance")
     await conn.execute(
         text("""
@@ -141,6 +154,7 @@ async def reserve(
 ) -> None:
     if not await job_available(conn, scope, "quality_execution"):
         raise ValueError("research authority was withdrawn")
+    await runtime_remaining(conn, scope)
     column = {"model": "model_calls", "tool": "tool_calls", "delegation": "delegations"}[kind]
     # Lock one shared job row before checking replay or consuming an allowance. Parent/child
     # concurrency and process restart cannot overspend the logical execution bounds.
@@ -256,3 +270,68 @@ class SharedResearchAllowance(AgentMiddleware[Any, Any, Any]):
                     ),
                 )
         return await handler(request)
+
+
+async def runtime_remaining(
+    conn: AsyncConnection, scope: OperationScope, *, owner: UUID | None = None
+) -> float:
+    row = (
+        await conn.execute(
+            text("""SELECT runtime_owner_token,
+        (max_runtime_ms-runtime_used_ms)/1000.0 - CASE WHEN runtime_started_at IS NULL THEN 0
+          ELSE EXTRACT(epoch FROM clock_timestamp()-runtime_started_at) END AS remaining
+        FROM arv2_quality_allowance WHERE job_id=:job AND workspace_id=:ws"""),
+            {"job": scope.job_id, "ws": scope.workspace_id},
+        )
+    ).one_or_none()
+    if row is None or (owner is not None and row.runtime_owner_token != owner):
+        raise ResearchAllowanceExhausted("research runtime authority is unavailable")
+    if row.remaining <= 0:
+        raise ResearchAllowanceExhausted("shared research runtime allowance exhausted")
+    return float(row.remaining)
+
+
+async def begin_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: UUID) -> float:
+    await conn.execute(
+        text(
+            "SELECT job_id FROM arv2_quality_allowance "
+            "WHERE job_id=:job AND workspace_id=:ws FOR UPDATE"
+        ),
+        {"job": scope.job_id, "ws": scope.workspace_id},
+    )
+    # An unfinished attempt's elapsed time stays charged after a crash. A fresh worker never
+    # resets it, and only the existing fleet lease owner may enter this composition.
+    await conn.execute(
+        text("""UPDATE arv2_quality_allowance SET
+        runtime_used_ms=LEAST(max_runtime_ms,runtime_used_ms+
+            CASE WHEN runtime_started_at IS NULL THEN 0
+            ELSE GREATEST(0,CEIL(EXTRACT(epoch FROM
+                clock_timestamp()-runtime_started_at)*1000)::bigint) END),
+        runtime_started_at=clock_timestamp(),runtime_owner_token=:owner
+        WHERE job_id=:job AND workspace_id=:ws"""),
+        {"job": scope.job_id, "ws": scope.workspace_id, "owner": owner},
+    )
+    remaining = await runtime_remaining(conn, scope, owner=owner)
+    log.info("arv2.quality.runtime_started", job_id=str(scope.job_id), remaining_s=remaining)
+    return remaining
+
+
+async def finish_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: UUID) -> None:
+    result = await conn.execute(
+        text("""UPDATE arv2_quality_allowance SET
+        runtime_used_ms=LEAST(max_runtime_ms,runtime_used_ms+
+            GREATEST(0,CEIL(EXTRACT(epoch FROM
+                clock_timestamp()-runtime_started_at)*1000)::bigint)),
+        runtime_started_at=NULL,runtime_owner_token=NULL
+        WHERE job_id=:job AND workspace_id=:ws AND runtime_owner_token=:owner
+        RETURNING runtime_used_ms,max_runtime_ms"""),
+        {"job": scope.job_id, "ws": scope.workspace_id, "owner": owner},
+    )
+    row = result.one_or_none()
+    if row:
+        log.info(
+            "arv2.quality.runtime_settled",
+            job_id=str(scope.job_id),
+            used_ms=row.runtime_used_ms,
+            limit_ms=row.max_runtime_ms,
+        )

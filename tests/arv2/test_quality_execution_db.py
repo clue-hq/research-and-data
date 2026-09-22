@@ -149,3 +149,71 @@ def test_dispatch_failure_still_consumes_model_allowance(tmp_path):
             assert calls == ["request"]
 
     run_async(case())
+
+
+def test_elapsed_runtime_recovery_owner_and_stop_are_shared(tmp_path):
+    from dataclasses import replace
+
+    from clue_api.arv2.quality_execution import begin_runtime, finish_runtime, runtime_remaining
+    from clue_api.arv2.quality_generation import ensure_generation
+    from clue_api.arv2.research_operations import job_available
+
+    async def case():
+        async with rollback_conn() as conn:
+            op, scope, cid = await setup(conn, FsStorage(tmp_path))
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(10, 20, 2, 10000),
+            )
+            first, recovery = uuid4(), uuid4()
+            assert 9 < await begin_runtime(conn, op, owner=first) <= 10
+            # Move the persisted start time, avoiding a real sleep in a final-behavior test.
+            await conn.execute(
+                text(
+                    "UPDATE arv2_quality_allowance SET "
+                    "runtime_started_at=clock_timestamp()-interval '3 seconds' WHERE job_id=:job"
+                ),
+                {"job": op.job_id},
+            )
+            assert 6 < await begin_runtime(conn, op, owner=recovery) <= 7
+            await finish_runtime(conn, op, owner=first)  # stale worker cannot release new authority
+            assert 6 < await runtime_remaining(conn, op, owner=recovery) <= 7
+            with pytest.raises(ResearchAllowanceExhausted, match="authority"):
+                await runtime_remaining(conn, op, owner=first)
+            await finish_runtime(conn, op, owner=recovery)
+            assert 6 < await begin_runtime(conn, op, owner=uuid4()) <= 7
+            assert not await job_available(conn, replace(op, account_id=uuid4()))
+            assert not await job_available(conn, replace(op, run_id=uuid4()))
+            generation = await ensure_generation(conn, op, context_id=cid)
+            await conn.execute(
+                text(
+                    "UPDATE arv2_account_research_generation SET state='suspended' "
+                    "WHERE generation_id=:id"
+                ),
+                {"id": generation.generation_id},
+            )
+            with pytest.raises(ValueError, match="withdrawn"):
+                await reserve(conn, op, execution_id=parent, kind="tool", activity_id=uuid4())
+            await conn.execute(
+                text(
+                    "UPDATE arv2_account_research_generation SET state='researching' "
+                    "WHERE generation_id=:id"
+                ),
+                {"id": generation.generation_id},
+            )
+            await conn.execute(
+                text(
+                    "UPDATE arv2_quality_allowance SET "
+                    "runtime_started_at=clock_timestamp()-interval '11 seconds' WHERE job_id=:job"
+                ),
+                {"job": op.job_id},
+            )
+            with pytest.raises(ResearchAllowanceExhausted, match="exhausted"):
+                await reserve(conn, op, execution_id=parent, kind="model", activity_id=uuid4())
+
+    run_async(case())

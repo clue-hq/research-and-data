@@ -132,6 +132,12 @@ def _resource(
 
 def _load_resources(agent: Arv2Agent, version: str, root: Path | None) -> ResourceBundle:
     """Read one agent's five files and pin each one by digest."""
+    if has_capability(version, "research_quality"):
+        if root is not None:
+            raise ValueError("quality resources use their governed pinned catalog")
+        from clue_api.arv2.quality_catalog import load_quality_resources
+
+        return load_quality_resources(agent)
     base = root or arv2_catalog_root(agent, version)
 
     def one(kind: Literal["profile", "prompt", "skill"], ref: str, name: str) -> CatalogResource:

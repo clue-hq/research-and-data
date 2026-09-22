@@ -104,3 +104,25 @@
   Focused typing and lint pass. No live paid calls. The source/mapping/profile composition is still
   not launch/driver integrated; shared accumulated runtime, full privacy/result binding, Q5/Q6/Q7
   and combined migration/load/browser acceptance remain outstanding. Do not describe v4 as active.
+
+- Next checkpoint, still offline only: quality launches now pin the run context, catalogue and
+  immutable governed resource bundle; fleet composition injects the real parent/specialist runtime.
+  Typed root outputs are validated before finalization. A launch/read defect dropped context_id
+  from RunRow; corrected and covered through launch, cold worker and continuation.
+- Employment/remit assessments, provisional nomination and generation coordination are implemented.
+  Exact AI Ark originals survive nomination and person seeding without another named lookup.
+  Account-scoped person jobs reuse canonical identity (opt-in unique index), and conflicting current
+  employment immediately prevents an established committee seat. Continuations preserve terminal
+  initial-job history, coalesce durable revisions and use the existing fleet queue. A recovery sweep
+  delivers claim invalidations and late child results. These do not yet publish contextual pages.
+- Runtime counters and elapsed time persist across parent/child/retry/continuation; pauses/privacy
+  stops and mismatched scope refuse authority. Unknown model/provider prices are explicitly counted.
+  A specialist with a committed finalization skips another model call on cold recovery. New revision
+  heads 369f195d9976, d21f35762d71, 4005ff9c331c were applied only to the isolated test database.
+- Five launch/nomination/runtime final-behavior cases pass; generation and local/remote/global remit
+  cases pass. Combined foundation tests exposed a UUID/text SQL parameter conflict in current claim
+  views; corrected, with the three affected real-runtime/tool cases passing on rerun. Focused ruff
+  and mypy (23 production files) pass. Full migration and broad shared-runtime gates still owed.
+- Remaining work includes Q6 contextual narrative/display/frontend, Q7 transcript/hiring qualification,
+  artifact privacy closure, full offline/load/browser/frozen-source acceptance. Live defaults remain v2;
+  v4 is only a development composition, not activated. No paid calls or shared data repairs.

@@ -20,6 +20,7 @@ from clue_agents import (
     AgentModelProvider,
     AgentProfileRegistry,
     AgentResourceMaterializer,
+    AgentTurnOutcome,
     AgentTurnRequest,
     AgentWorkspaceLease,
     ContextLayer,
@@ -367,6 +368,13 @@ class FreshWakeSpecialistRunner:
                 if self._bindings is not None
                 else SpecialistRuntimeBindings()
             )
+            if bindings.before_work is not None:
+                await bindings.before_work()
+            prior = await self._turns.load_committed_outcome(
+                turn_id=child_request.turn_id, workspace_id=workspace_id
+            )
+            if prior is not None:
+                return await self._result(request, child_execution_id, prior)
             context = await self._contexts.assemble(
                 request=child_request,
                 profile=resolved_profile.profile,
@@ -464,36 +472,44 @@ class FreshWakeSpecialistRunner:
                 tools=governed_tools,
                 backend=bindings.backend,
             )
-            if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
-                raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
-            envelope = AgentFinalizeEnvelope.model_validate_json(
-                await self._artifacts.read(outcome.finalization_ref)
-            )
-            if envelope.execution_id != child_execution_id:
-                raise ValueError("child finalization belongs to another execution")
-            spend = await self._spend.spend_millicents(
-                execution_id=child_execution_id,
-                workspace_id=workspace_id,
-            )
-            if spend < 0 or (budget_mode == "enforced" and spend > budget_limit):
-                raise ValueError("child reported spend outside its durable budget envelope")
-            result_status: Literal["completed", "awaiting_input", "blocked"]
-            if outcome.status is AgentExecutionStatus.COMPLETED:
-                result_status = "completed"
-            elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
-                result_status = "awaiting_input"
-            else:
-                result_status = "blocked"
-            return DelegationResult(
-                delegation_id=request.delegation_id,
-                parent_execution_id=request.parent_execution_id,
-                child_execution_id=child_execution_id,
-                status=result_status,
-                output_refs=envelope.output_refs,
-                domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
-                finalization_ref=outcome.finalization_ref,
-                spend_millicents=spend,
-                completed_at=envelope.finalized_at,
-            )
+            return await self._result(request, child_execution_id, outcome)
         finally:
             lease.release()
+
+    async def _result(
+        self, request: DelegationRequest, child_execution_id: ExecutionId, outcome: AgentTurnOutcome
+    ) -> DelegationResult:
+        workspace_id = request.task_artifact_ref.workspace_id
+        budget_body = await self._artifacts.read(request.child_budget_envelope_ref)
+        budget_limit, budget_mode = _budget_limit(budget_body), _budget_mode(budget_body)
+        if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
+            raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
+        envelope = AgentFinalizeEnvelope.model_validate_json(
+            await self._artifacts.read(outcome.finalization_ref)
+        )
+        if envelope.execution_id != child_execution_id:
+            raise ValueError("child finalization belongs to another execution")
+        spend = await self._spend.spend_millicents(
+            execution_id=child_execution_id,
+            workspace_id=workspace_id,
+        )
+        if spend < 0 or (budget_mode == "enforced" and spend > budget_limit):
+            raise ValueError("child reported spend outside its durable budget envelope")
+        result_status: Literal["completed", "awaiting_input", "blocked"]
+        if outcome.status is AgentExecutionStatus.COMPLETED:
+            result_status = "completed"
+        elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
+            result_status = "awaiting_input"
+        else:
+            result_status = "blocked"
+        return DelegationResult(
+            delegation_id=request.delegation_id,
+            parent_execution_id=request.parent_execution_id,
+            child_execution_id=child_execution_id,
+            status=result_status,
+            output_refs=envelope.output_refs,
+            domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
+            finalization_ref=outcome.finalization_ref,
+            spend_millicents=spend,
+            completed_at=envelope.finalized_at,
+        )

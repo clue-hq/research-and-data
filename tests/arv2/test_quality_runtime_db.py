@@ -1,6 +1,7 @@
 """Real C5 parent/child research, database and workspace; scripted models never spend."""
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import pytest
@@ -39,9 +40,10 @@ def call(name, args, index):
 
 
 class Models:
-    def __init__(self, source):
+    def __init__(self, source, scope, context_id):
         self.builds = []
         self.source = source
+        self.scope, self.context_id = scope, context_id
 
     def build(self, **kwargs):
         role = kwargs["role"]
@@ -61,6 +63,24 @@ class Models:
                     "delegate",
                 ),
                 call("read_file", {"file_path": "/research/claims/0.json"}, "parent-read"),
+                call(
+                    "write_file",
+                    {
+                        "file_path": "outputs/research.json",
+                        "content": json.dumps(
+                            {
+                                "schema_version": "research-unit-v1",
+                                "job_id": str(self.scope.job_id),
+                                "context_id": str(self.context_id),
+                                "summary": "Supported staff count recorded.",
+                                "gaps": [
+                                    "This scripted fixture only processes the saved staff record."
+                                ],
+                            }
+                        ),
+                    },
+                    "root-report",
+                ),
                 call(
                     "finalize_turn",
                     {"status": "completed", "user_message": "Claim processing completed."},
@@ -148,7 +168,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
                 ).prepare(),
                 artifact_sink=DurableAgentArtifactStore(storage=storage, conn_factory=connections),
             )
-            models = Models(source)
+            models = Models(source, scope, context_id)
             runtime = ResearchUnitRuntime(
                 scope=scope,
                 context_id=context_id,
@@ -208,7 +228,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
                 )
             ).all()
             assert [(r.role, r.n) for r in calls] == [
-                ("account_research", 3),
+                ("account_research", 4),
                 ("research_claims", 4),
             ]
             second = await runtime.run(

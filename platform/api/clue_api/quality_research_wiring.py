@@ -16,7 +16,7 @@ from dataclasses import replace
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any, cast
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import JsonValue
 from sqlalchemy import text
@@ -24,6 +24,7 @@ from sqlalchemy import text
 from clue_agents import (
     AgentConstitution,
     AgentExecutionStatus,
+    AgentFinalizeEnvelope,
     AgentModelProvider,
     AgentPlanPolicy,
     AgentProfileRegistry,
@@ -40,6 +41,7 @@ from clue_agents import (
     DeepAgentTurnRuntime,
     DelegationRequest,
     DelegationResult,
+    FinalizeStatus,
     LayerBudget,
     ResolvedAgentProfile,
     ToolPin,
@@ -64,15 +66,20 @@ from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactS
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
+from clue_api.arv2.quality_committee_tool import NominateCommitteeTool
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
     SharedResearchAllowance,
+    begin_runtime,
     bind_execution,
+    finish_runtime,
     reserve,
+    runtime_remaining,
 )
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_provider_tools import AcquireResearchTool
+from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
     CorrectResearchClaimTool,
     ProcessingDispositionTool,
@@ -168,6 +175,7 @@ def quality_tools(
         CorrectResearchClaimTool,
         SearchEvidenceTool,
         ProcessingDispositionTool,
+        NominateCommitteeTool,
     ):
         registry.register(cls(scope, storage, purge_unevidenced=purge), make_default=True)
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
@@ -178,7 +186,7 @@ def quality_profiles(tools: ToolRegistry, root: Path = CATALOG_ROOT) -> AgentPro
     authority = {
         descriptor.address: (
             frozenset({AgentRole.ACCOUNT_RESEARCH})
-            if descriptor.name == "acquire_research_evidence"
+            if descriptor.name in {"acquire_research_evidence", "nominate_committee_candidate"}
             else ROLES
             if descriptor.name in {"submit_research_claim", "search_evidence"}
             else frozenset({AgentRole.ACCOUNT_RESEARCH, AgentRole.RESEARCH_CLAIMS})
@@ -205,6 +213,7 @@ def quality_profiles(tools: ToolRegistry, root: Path = CATALOG_ROOT) -> AgentPro
         tool_inventory=inventory,
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
+        selected_profile_versions=dict.fromkeys(ROLES, "v2"),
     )
 
 
@@ -348,9 +357,19 @@ class ResearchUnitRuntime:
         workspaces: AgentWorkspaceFactory,
         tools: ToolRegistry,
         limits: Allowance,
+        unit_key: str | None = None,
         checkpointer_factory: CheckpointerFactory = postgres_agent_checkpointer,
     ):
         self.scope, self.context_id = scope, context_id
+        self.runtime_owner: UUID | None = None
+        self.execution_id = ExecutionId(
+            uuid5(
+                NAMESPACE_URL,
+                f"research-quality:{scope.job_id}:{unit_key}"
+                if unit_key
+                else f"research-quality:{scope.job_id}",
+            )
+        )
         self.settings, self.storage, self.connections = settings, storage, connections
         self.models, self.workspaces, self.tools, self.limits = models, workspaces, tools, limits
         self.operation_scope = OperationScope(
@@ -363,7 +382,7 @@ class ResearchUnitRuntime:
             acquisition.runtime._writer = QualityProviderWriter(
                 scope,
                 storage,
-                uuid5(NAMESPACE_URL, f"research-quality:{scope.job_id}"),
+                self.execution_id,
                 acquisition.runtime.catalog,
                 purge=settings.unevidenced_row_purge_enabled,
             )
@@ -408,7 +427,7 @@ class ResearchUnitRuntime:
 
     async def install(self) -> None:
         definition = RecipeDefinition.model_validate_json(
-            (CATALOG_ROOT / "recipe.json").read_bytes()
+            (CATALOG_ROOT / "recipe-v2.json").read_bytes()
         )
         await seed_system_recipes(
             repository=DbRecipeRepository(conn_factory=self.connections),
@@ -424,7 +443,7 @@ class ResearchUnitRuntime:
         task_ref: ArtifactRef | None = None,
     ) -> None:
         recipe = await self.recipes.get_by_identity(
-            scope_type=RecipeScopeType.SYSTEM, workspace_id=None, recipe_key=RECIPE, version=1
+            scope_type=RecipeScopeType.SYSTEM, workspace_id=None, recipe_key=RECIPE, version=2
         )
         if recipe is None:
             raise RuntimeError("research quality recipe is not installed")
@@ -531,6 +550,8 @@ class ResearchUnitRuntime:
         async def before_work() -> None:
             async with self.connections() as conn:
                 await resolve_authority(conn, self.scope, execution)
+                if self.runtime_owner is not None:
+                    await runtime_remaining(conn, self.operation_scope, owner=self.runtime_owner)
 
         return SpecialistRuntimeBindings(
             backend=research_backend(
@@ -580,7 +601,7 @@ class ResearchUnitRuntime:
 
     async def run(self, *, objective: str, model_id: str | None = None) -> AgentTurnOutcome:
         await self.install()
-        execution = ExecutionId(uuid5(NAMESPACE_URL, f"research-quality:{self.scope.job_id}"))
+        execution = self.execution_id
         await self.prepare(execution)
         resolved = self.profiles.resolve(AgentRole.ACCOUNT_RESEARCH)
         if model_id:
@@ -592,7 +613,7 @@ class ResearchUnitRuntime:
                     }
                 ),
             )
-        thread = f"research-quality-{self.scope.job_id}"
+        thread = f"research-quality-{execution}"
         lease = self.workspaces.acquire(
             workspace_id=self.scope.workspace_id,
             project_id=self.scope.project_id,
@@ -671,6 +692,10 @@ class ResearchUnitRuntime:
                 if prior.status is AgentExecutionStatus.COMPLETED:
                     await self.complete(execution)
                 return prior
+            owner = uuid4()
+            async with self.connections() as conn:
+                remaining_runtime = await begin_runtime(conn, self.operation_scope, owner=owner)
+            self.runtime_owner = owner
             assembled = await self.contexts.assemble(
                 request=request, profile=resolved.profile, history=()
             )
@@ -719,6 +744,15 @@ class ResearchUnitRuntime:
                     conn_factory=self.connections,
                 )
             )
+
+            async def completion_guard(model_input: Any) -> None:
+                if model_input.status is FinalizeStatus.COMPLETED:
+                    report = ResearchUnitReport.model_validate_json(
+                        await lease.backend.read_text("outputs/research.json")
+                    )
+                    async with self.connections() as conn:
+                        await validate_report(conn, self.scope, self.context_id, report)
+
             governed = GovernedAgentToolFactory(
                 request=request,
                 resolved_profile=resolved,
@@ -727,12 +761,15 @@ class ResearchUnitRuntime:
                 lease=lease,
                 artifacts=self.artifacts,
                 before_work=bindings.before_work,
+                required_output_path="outputs/research.json",
+                completion_guard=completion_guard,
             ).build()
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
                     models=self.models,
                     execution=adapter,
                     max_runtime_s=min(
+                        remaining_runtime,
                         resolved.profile.turn_timeout_s,
                         float(self.settings.arv2_account_max_runtime_s),
                     ),
@@ -762,4 +799,102 @@ class ResearchUnitRuntime:
             )
             return outcome
         finally:
+            if self.runtime_owner is not None:
+
+                async def settle_runtime() -> None:
+                    async with self.connections() as conn:
+                        await finish_runtime(
+                            conn, self.operation_scope, owner=cast(UUID, self.runtime_owner)
+                        )
+
+                await asyncio.shield(settle_runtime())
+                self.runtime_owner = None
             lease.release()
+
+    async def report(self, outcome: AgentTurnOutcome) -> ResearchUnitReport | None:
+        if outcome.finalization_ref is None:
+            return None
+        envelope = AgentFinalizeEnvelope.model_validate_json(
+            await self.artifacts.read(outcome.finalization_ref)
+        )
+        reports = []
+        for ref in envelope.output_refs:
+            try:
+                raw = json.loads(await self.artifacts.read(ref))
+            except (ValueError, UnicodeError):
+                continue
+            if isinstance(raw, dict) and raw.get("schema_version") == "research-unit-v1":
+                reports.append(ResearchUnitReport.model_validate(raw))
+        if len(reports) != 1:
+            if outcome.status is AgentExecutionStatus.COMPLETED:
+                raise ValueError("completed research requires exactly one typed unit report")
+            return None
+        async with self.connections() as conn:
+            await validate_report(conn, self.scope, self.context_id, reports[0])
+        return reports[0]
+
+
+def build_quality_job_runner(
+    *,
+    settings: Settings,
+    storage: StorageBackend,
+    connections: ConnFactory,
+    models: AgentModelProvider,
+    workspaces: AgentWorkspaceFactory | None = None,
+) -> QualityJobRunner:
+    """Lazy fleet composition: legacy workers need no quality workspace until a pinned job."""
+    from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+    from clue_api.arv2.quality_results import QualityJobOutcome
+
+    async def run(
+        *,
+        scope: JobScope,
+        context_id: UUID,
+        runtime: ToolRuntime,
+        objective: str,
+        model_id: str,
+        unit_key: str | None = None,
+    ) -> QualityJobOutcome:
+        active_workspaces = workspaces or build_agent_workspace_factory(
+            storage=storage, settings=settings
+        )
+        try:
+            owner = ResearchUnitRuntime(
+                scope=scope,
+                context_id=context_id,
+                settings=settings,
+                storage=storage,
+                connections=connections,
+                models=models,
+                workspaces=active_workspaces,
+                tools=quality_tools(
+                    scope,
+                    storage,
+                    purge=settings.unevidenced_row_purge_enabled,
+                    acquisition_runtime=runtime,
+                ),
+                limits=Allowance(
+                    settings.arv2_account_max_model_rounds,
+                    settings.arv2_account_max_model_rounds
+                    * settings.arv2_account_max_tool_calls_per_round,
+                    settings.arv2_account_max_model_rounds,
+                    settings.arv2_account_max_runtime_s * 1000,
+                ),
+                unit_key=unit_key,
+            )
+            result = await owner.run(objective=objective, model_id=model_id)
+            report = await owner.report(result)
+            return QualityJobOutcome(
+                execution_id=result.execution_id,
+                status=result.status.value,
+                finalization_key=result.finalization_ref.artifact_key
+                if result.finalization_ref
+                else None,
+                report=report,
+                failure_code=result.failure_code,
+            )
+        finally:
+            if workspaces is None:
+                active_workspaces.close()
+
+    return run

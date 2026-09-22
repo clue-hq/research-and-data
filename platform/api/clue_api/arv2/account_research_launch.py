@@ -145,6 +145,10 @@ def arv2_job_id(run_id: UUID, subject_id: UUID) -> UUID:
     return uuid5(_JOB_NS, f"{run_id}:{subject_id}")
 
 
+def quality_person_job_id(run_id: UUID, account_id: UUID, contact_id: UUID) -> UUID:
+    return uuid5(_RUN_NS, f"quality-person:{run_id}:{account_id}:{contact_id}")
+
+
 #: The run row's effort dial. Kept as a closed literal (and CHECK-ed in the migration) so a typo
 #: cannot silently become a research posture nobody defined.
 Arv2Effort = Literal["full", "reduced", "cheap-pass"]
@@ -301,6 +305,16 @@ async def launch_arv2_account_research(
 
     request_sha = _request_sha256(request, profile_sha256=profile_sha256)
     run_id = uuid5(_RUN_NS, request_sha)
+    context_id = await _quality_context_for_run(
+        conn,
+        storage,
+        settings=settings,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        run_id=run_id,
+        product_selection_version=request.product_selection_version,
+        icp_artifact_key=request.icp_artifact_key,
+    )
     inserted = await create_run(
         conn,
         RunRow(
@@ -321,6 +335,7 @@ async def launch_arv2_account_research(
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            context_id=context_id,
             persona_pin=(
                 await pin_persona(
                     conn,
@@ -332,7 +347,8 @@ async def launch_arv2_account_research(
                     icp_version=icp.icp_version,
                 )
             )
-            if has_capability(settings.arv2_research_catalog_version, "committee_discovery")
+            if context_id is None
+            and has_capability(settings.arv2_research_catalog_version, "committee_discovery")
             else None,
             created_at=now(),
         ),
@@ -392,6 +408,60 @@ async def launch_arv2_account_research(
             for job_id in job_ids
         ),
     )
+
+
+async def _quality_context_for_run(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    settings: Settings,
+    workspace_id: str,
+    project_id: str,
+    run_id: UUID,
+    product_selection_version: int,
+    icp_artifact_key: str,
+) -> UUID | None:
+    if not has_capability(settings.arv2_research_catalog_version, "research_quality"):
+        return None
+    from clue_api.arv2.quality_context import build_context, persist_context, read_context
+
+    # Serialize the first pin with run creation. Retried launches never recalculate persona,
+    # catalog or seller context against whatever is newest at retry time.
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+        {"key": f"research-launch-context:{workspace_id}:{run_id}"},
+    )
+    existing = await read_run(conn, run_id=run_id)
+    if existing is not None:
+        if (existing.workspace_id, existing.project_id) != (
+            workspace_id,
+            project_id,
+        ) or existing.context_id is None:
+            raise Arv2LaunchRefused(
+                "context_pin_missing", "Existing research has no matching context pin"
+            )
+        context = await read_context(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            context_id=existing.context_id,
+        )
+        if context.icp.artifact_key != icp_artifact_key:
+            raise Arv2LaunchRefused(
+                "context_pin_mismatch", "Existing context names a different ICP"
+            )
+        return existing.context_id
+    context = await build_context(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        product_selection_version=product_selection_version,
+    )
+    if context.icp.artifact_key != icp_artifact_key:
+        raise Arv2LaunchRefused("context_pin_mismatch", "Project ICP changed during launch")
+    return await persist_context(conn, storage, context)
 
 
 async def enqueue_launched_jobs(queue: WorkQueue, receipt: Arv2LaunchReceipt) -> int:
@@ -759,6 +829,16 @@ async def launch_arv2_person_research(
         product_selection_version=product_set.selection_version,
     )
     run_id = uuid5(_RUN_NS, request_sha)
+    context_id = await _quality_context_for_run(
+        conn,
+        storage,
+        settings=settings,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        run_id=run_id,
+        product_selection_version=product_set.selection_version,
+        icp_artifact_key=artifact_key,
+    )
     inserted = await create_run(
         conn,
         RunRow(
@@ -779,6 +859,7 @@ async def launch_arv2_person_research(
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            context_id=context_id,
             persona_pin=(
                 await pin_persona(
                     conn,
@@ -790,7 +871,8 @@ async def launch_arv2_person_research(
                     icp_version=icp.icp_version,
                 )
             )
-            if has_capability(settings.arv2_research_catalog_version, "committee_discovery")
+            if context_id is None
+            and has_capability(settings.arv2_research_catalog_version, "committee_discovery")
             else None,
             created_at=now(),
         ),
@@ -817,7 +899,11 @@ async def launch_arv2_person_research(
             account_entity_id=place.account_id,
             added_via="manual",
         )
-        job_id = arv2_job_id(run_id, contact_id)
+        job_id = (
+            quality_person_job_id(run_id, place.account_id, contact_id)
+            if context_id
+            else arv2_job_id(run_id, contact_id)
+        )
         job_ids.append(job_id)
         await create_job(
             conn,
@@ -831,8 +917,23 @@ async def launch_arv2_person_research(
             profile_ref=f"agent-profile:arv2-person:{settings.arv2_research_catalog_version}",
             subject_entity_id=contact_id,
             profile_sha256=profile_sha256,
+            input_refs={"subject_scope": "account", "requested_persona": request.persona.value}
+            if context_id
+            else None,
         )
-        if await seat_person_on_committee(
+        if context_id is not None:
+            await conn.execute(
+                text("""
+              UPDATE arv2_research_job SET input_refs=input_refs || CAST(:refs AS jsonb)
+              WHERE job_id=:job AND workspace_id=:ws
+            """),
+                {
+                    "job": job_id,
+                    "ws": request.workspace_id,
+                    "refs": json.dumps({"requested_persona": request.persona.value}),
+                },
+            )
+        elif await seat_person_on_committee(
             conn,
             scope=JobScope(
                 workspace_id=request.workspace_id,

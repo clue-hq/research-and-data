@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.research_operations import OperationScope
+from clue_api.arv2.research_operations import OperationScope, job_available
 from clue_obs import get_logger
 from clue_storage import (
     ArtifactIntegrityError,
@@ -86,6 +86,8 @@ def _params(scope: OperationScope) -> dict[str, object]:
 
 
 async def _subject(conn: AsyncConnection, scope: OperationScope) -> UUID:
+    if not await job_available(conn, scope):
+        raise EvidenceUnavailable("research authority unavailable")
     row = (
         (
             await conn.execute(
