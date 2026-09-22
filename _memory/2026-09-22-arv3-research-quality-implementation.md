@@ -72,3 +72,13 @@
   corrected after inventorying tests. Focused mypy/ruff pass for the committed runtime substrate.
 - Q4 research tool/mount composition is being developed next. No v4 profile/default, full pipeline,
   committee reconciliation, narrative refresh, load/browser/live acceptance is complete yet.
+
+- 2026-09-23 checkpoint: typed claim submission/correction, source search and processing
+  dispositions now resolve execution-owned context and evidence grants. Read-only virtual mounts
+  expose complete originals in bounded continuations, exact context documents, catalog and claim
+  assessments. Revocation is checked on each read; narrative readers cannot read invalid fact
+  values. Two tool/mount DB scenarios plus two shared allowance scenarios pass; focused lint and
+  typing pass. Runtime/profile composition and provider mapping remain next, not completed.
+- Founder renewed implementation authorization and explicitly requires a pause before live paid
+  testing. Continue the full ordered plan and offline proof; retain current live defaults and do
+  not start paid calls. No application data or historical records have been changed.
