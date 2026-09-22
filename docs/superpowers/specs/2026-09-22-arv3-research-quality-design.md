@@ -1,6 +1,7 @@
 # ARV3 research quality, evidence access and specialist ownership
 
-**Status:** detailed proposal for founder review; specification only, not implemented or activated.
+**Status:** factual-visibility policy adopted by founder 2026-09-22; remaining design/plan under
+review. Specification only, not implemented or activated.
 **Date / inspected checkout:** 2026-09-22, `codex/ai-ark-committee-discovery-spec`, `2dd07c55f`.
 **Implementation sequence:** [companion plan](../plans/2026-09-22-arv3-research-quality.md).
 
@@ -31,13 +32,15 @@ Person research remains detached fleet work; it uses the same claim-specialist c
 - This request authorizes the detailed spec. It does not activate new policies, migrate data,
   start another paid research run, or authorize application implementation by itself.
 
-### 1.2 Explicit proposed changes to existing policy
+### 1.2 Policy decisions and proposed contract changes
 
-The [ARV2 master plan](../../specs/ARV2-MASTER-PLAN.md) deliberately makes quality checks annotations
-that never block storage or a page. The following **proposed policy delta requires adoption with
-this spec**, and must not be smuggled into a framework migration:
+The [ARV2 master plan](../../specs/ARV2-MASTER-PLAN.md) currently implements quality checks as
+annotations that never block storage or a page. On 2026-09-22 the founder explicitly adopted
+the factual-visibility change in item 1: retain invalid observations for audit, exclude them from
+ordinary factual summaries, and keep unresolved findings visible. This resolves that policy decision;
+it does not authorize application implementation or approve every remaining contract detail below.
 
-1. Preserve authorized, policy-permitted observations and failed drafts for inspection, but distinguish
+1. **Adopted policy.** Preserve authorized, policy-permitted observations and failed drafts for inspection, but distinguish
    them from applicable factual claims. Invalid claims do not enter ordinary factual summaries;
    unresolved findings remain visible as uncertainty. A page can still render valid partial research.
 2. Effective corrections change current reads and invalidate dependent narratives/pages.
@@ -52,8 +55,8 @@ or zero-yield veto is introduced. Preserve current provider failure, spend accou
 runtime and media limits; any change to those limits needs its own explicit decision. Quality
 judgment is not a request to persist hidden chain of thought: record concise decisions and evidence.
 
-Until approval and implementation, the current master-plan behavior remains the implemented truth.
-On implementation, record a narrow, profile-scoped amendment in that plan; preserve historical pins.
+The master plan records this adoption as an activation-pending amendment. Existing profiles retain
+their current behavior until implementation and explicit activation; preserve historical pins.
 
 ## 2. Evidence and verified starting state
 
@@ -357,7 +360,7 @@ it does not automatically establish an independently verified external fact.
 Extend the existing assessment/annotation seam with append-only, versioned assessments. Keep these
 states distinct from claim lifecycle (`live/superseded`), privacy/use class and job execution status:
 
-| Assessment | Ordinary use under the proposed policy |
+| Assessment | Specified behavior under the adopted visibility policy; implementation pending |
 | --- | --- |
 | `supported` | May support factual presentation subject to freshness, scope and existing use rules. |
 | `qualified` | May be presented with mandatory qualifications; inference is labelled, not converted to fact. |
@@ -739,8 +742,9 @@ overfitting; historical accounts alone do not prove general quality.
 
 ## 16. Rollout, compatibility and review points
 
-1. Review/adopt §1.2 policy changes and §10.2 frontend contract delta before dependent implementation.
-   Approval of the general architecture alone must not be labelled approval of every new visibility rule.
+1. The §1.2 item 1 factual-visibility policy is adopted; do not ask for its approval again.
+   Review remaining implementation/contract details and §10.2's frontend contract delta before
+   dependent implementation. Policy adoption is not approval of every UI or schema choice.
 2. Add storage/context/correction contracts and validate them independently of runtime migration.
 3. Activate new immutable profiles only for isolated replay/canary generations after component gates.
    Old job pins remain old; no silent upgrade of running jobs or blanket default change.
@@ -755,8 +759,8 @@ All new runtime settings need `.env.example` parity and the consolidated model c
 this specification itself changes no settings. Preserve the user's upstream-sync instruction before
 application implementation, after checking the worktree for concurrent changes.
 
-Review decisions are concrete: adopt the proposed factual-visibility policy; adopt project/context
-identity and provisional membership/gap presentation; approve the implementation plan. Exact model
+The factual-visibility policy is adopted. Remaining review decisions concern project/context
+identity and provisional membership/gap presentation, and implementation-plan approval. Exact model
 selection and production concurrency tuning can follow measured baselines without changing the
 ownership and evidence contracts. No platform deployment, data migration or live acceptance is
 claimed by publication of this document.

@@ -10,8 +10,9 @@
   typed evidence proposals, atomic correction/withdrawal, membership assessments, durable reconciliation,
   governed specialists, media/hiring qualifications, telemetry and 24 final-behavior acceptance cases.
 - Existing ARV2 annotation-only quality policy is explicitly identified. Keeping invalid observations
-  for audit while excluding them from ordinary factual summaries is a proposed adoption decision,
-  not an implemented or silently approved policy change. Frontend contract deltas also remain reviewable.
+  for audit while excluding them from ordinary factual summaries was initially proposed and is now
+  explicitly adopted by the founder (2026-09-22), with unresolved findings remaining visible.
+  Implementation/activation and remaining frontend/schema details are separate; do not re-ask this policy.
 - Read current project-context/automatic-targeting rulings: preserve automatic pin authority; do not
   reintroduce mandatory confirmation cards. Exact persona source-ICP identity is preferred to matching
   unrelated front-matter/document-row version integers.
@@ -23,3 +24,7 @@
   inventory; one patch context did not match and was reapplied with exact context. No runtime effects.
 - Preserve unrelated edit to the cumulative-quality-review document and existing side-audit attachments.
   This specification does not mean implementation, new quality-policy activation or live acceptance.
+
+- Adoption follow-up: updated spec, implementation plan and the master plan's activation-pending
+  amendment to record the founder's explicit policy approval. No code/data/runtime changes. Document
+  link and whitespace checks passed; unrelated edits and attachments remained untouched.

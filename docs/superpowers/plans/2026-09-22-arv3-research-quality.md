@@ -1,7 +1,8 @@
 # ARV3 research quality — ordered implementation and acceptance plan
 
-**Status:** proposed; implementation not started. No application code, configuration or data changes
-are authorized by this document alone.
+**Status:** factual-visibility policy adopted by founder 2026-09-22; implementation plan remains
+proposed and implementation has not started. Policy adoption alone does not authorize application,
+configuration or data changes.
 **Design:** [research quality, evidence access and specialist ownership](../specs/2026-09-22-arv3-research-quality-design.md).
 **Inspected base:** `2dd07c55f`, `codex/ai-ark-committee-discovery-spec`, 2026-09-22.
 
@@ -9,8 +10,10 @@ are authorized by this document alone.
 
 - Preserve v3 source/media capabilities and v2 AI Ark committee discovery. Change ownership and
   data contracts incrementally; do not create a parallel research pipeline.
-- Record explicit approval of design §1.2's quality-policy change and §10.2's presentation contract.
-  Existing annotation-only policy remains in force until the new policy is adopted and activated.
+- Design §1.2 item 1's factual-visibility policy is adopted: invalid observations remain auditable,
+  are excluded from ordinary factual summaries, and unresolved findings stay visible. Do not request
+  that approval again. Remaining contract details, including §10.2 presentation, remain for review.
+  Existing annotation-only runtime behavior continues until implementation and explicit activation.
 - User asked to synchronize latest origin before implementation. At that point inspect branch,
   upstream and concurrent/uncommitted work, fetch, and integrate the intended remote base without
   overwriting local work. Record the resulting base and reassess this file's code pointers.
@@ -32,8 +35,9 @@ are authorized by this document alone.
    artifacts. Prepare redacted regression fixtures; do not commit contact channels/raw private data.
 3. Inventory active account/person/display profiles and entry points. Record the single owner of
    each new-profile operation and legacy behavior. Do not silently bump a live default.
-4. Record adoption of the assessment/current-read policy, membership interpretation and explicit
-   project-context presentation. Update the master-plan amendment only when approved.
+4. Carry the recorded factual-visibility adoption into the assessment/current-read implementation.
+   Resolve remaining membership/project-context presentation details. The master-plan amendment
+   already records policy approval; update implementation/activation status only when it happens.
 5. Prepare canonical accounts/projects contract amendments for founder review: contextual reads,
    provisional membership, visible non-sensitive gaps and refresh semantics. Avoid component work
    until payload and presentation decisions are resolved.

@@ -1,5 +1,15 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
+> **Factual visibility, 2026-09-22 — founder-adopted policy; implementation and activation pending.**
+> For the next research-quality profile, retain authorized, policy-permitted invalid observations
+> for audit while excluding them from ordinary factual summaries. Unresolved findings remain visible
+> as uncertainty; valid partial research can still render. This narrowly revises §2's annotation-only
+> presentation rule when that profile is implemented and activated. It does not require dropping
+> observations, relax privacy/use restrictions, introduce monetary vetoes, or alter current/historical
+> profile behavior today. The founder approved this policy, not application implementation or every
+> remaining frontend/schema choice. See the [quality spec §1.2](../superpowers/specs/2026-09-22-arv3-research-quality-design.md#12-policy-decisions-and-proposed-contract-changes)
+> and [implementation plan](../superpowers/plans/2026-09-22-arv3-research-quality.md).
+
 > **Committee discovery, 2026-09-22 — implemented; v2 default by founder instruction.** The v2 account
 > agent researches the company, reasons about buying responsibilities from its ICP and pinned
 > persona, then discovers unknown people through company-scoped AI Ark SMART title search.
