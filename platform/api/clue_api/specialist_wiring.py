@@ -121,6 +121,8 @@ class SpecialistRuntimeBindings:
     backend: object | None = None
     middleware: tuple[AgentMiddleware[Any, Any, Any], ...] = ()
     before_work: Callable[[], Awaitable[None]] | None = None
+    # Trusted run allowance, never a model-supplied delegation option. None retains the profile.
+    max_model_rounds: int | None = None
 
 
 SpecialistBindingFactory = Callable[
@@ -457,7 +459,11 @@ class FreshWakeSpecialistRunner:
                     models=self._models,
                     execution=execution,
                     max_runtime_s=resolved_profile.profile.turn_timeout_s,
-                    max_rounds=resolved_profile.profile.max_model_rounds,
+                    max_rounds=(
+                        bindings.max_model_rounds
+                        if bindings.max_model_rounds is not None
+                        else resolved_profile.profile.max_model_rounds
+                    ),
                     middleware=bindings.middleware,
                 ),
                 turns=self._turns,

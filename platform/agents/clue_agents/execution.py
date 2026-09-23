@@ -56,6 +56,9 @@ RECEIPT_REFERENCE_VALUES_MAX_BYTES = 16_384
 #: still leaves the receipt's envelope room and a spilled read is the honestly-oversized one.
 SPILL_THRESHOLD_BYTES = 12 * 1024
 
+# A trusted composition root may authorize a larger per-run budget than a profile default.
+MAX_RUNTIME_MODEL_ROUNDS = 200
+
 #: How much of a spilled result's prose the stub is allowed to keep.  Enough for the model to
 #: recognise what it asked for; far too little to be mistaken for the result itself.
 _SPILL_SUMMARY_MAX_CHARS = 300
@@ -79,7 +82,7 @@ class AgentPlanPolicy(_Value):
     max_dependency_depth: int = Field(ge=1, le=64)
     max_fanout: int = Field(ge=1, le=32)
     max_parallelism: int = Field(ge=1, le=32)
-    max_rounds: int = Field(ge=1, le=128)
+    max_rounds: int = Field(ge=1, le=MAX_RUNTIME_MODEL_ROUNDS)
     max_delegations: int = Field(ge=0, le=32)
     max_delegation_depth: int = Field(ge=0, le=4)
     budget_limit_millicents: int = Field(ge=0)

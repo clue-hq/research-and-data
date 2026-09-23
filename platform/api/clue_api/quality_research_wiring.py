@@ -598,6 +598,7 @@ class ResearchUnitRuntime:
                 ),
             ),
             before_work=before_work,
+            max_model_rounds=self.limits.model_calls,
         )
 
     async def spend_millicents(self, *, execution_id: ExecutionId, workspace_id: str) -> int:
@@ -799,7 +800,7 @@ class ResearchUnitRuntime:
                         resolved.profile.turn_timeout_s,
                         float(self.settings.arv2_account_max_runtime_s),
                     ),
-                    max_rounds=min(resolved.profile.max_model_rounds, self.limits.model_calls),
+                    max_rounds=self.limits.model_calls,
                     middleware=bindings.middleware,
                 ),
                 turns=self.turns,

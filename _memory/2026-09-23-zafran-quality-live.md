@@ -58,3 +58,16 @@
 - At 01:50 UTC account allowance was nearly exhausted by failed delegation/read/schema retries;
   no pages published. Five person jobs reached claim-specialist work. Do not describe this as a
   successful end-to-end result or quietly increase/reset the existing allowance to hide failures.
+
+- Founder explicitly authorized resetting the active attempt and increasing turn limits to 200,
+  then continuing this same run. This supersedes the earlier no-reset boundary for this attempt.
+  Ten workers checkpointed/stopped cleanly. The isolated DB now holds an operator audit event
+  (seq 1883), with every old counter and new limit; fresh 200 shared model calls per job, 10,000
+  tools, 200 delegations and renewed 30-minute runtime. Old activity/spend/finalization rows and
+  initial failed account job remain intact. Manual-refresh generation revision 92 starts a new
+  continuation; person jobs retain checkpoints and evidence. Private receipt: allowance-reset-200.json.
+- Runtime support: raised the bounded execution-policy/runtime ceiling from 128 to 200; quality
+  parent and trusted specialist bindings use the persisted shared job allowance. Other agent
+  profiles/defaults are unchanged; no model-facing override. Isolated harness alone requests 200.
+  Five execution tests and five specialist/shared-allowance tests pass, plus changed-file Ruff.
+  Worker fleet resumed as ten processes x3 with effective 200-round startup telemetry.

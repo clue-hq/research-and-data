@@ -48,6 +48,18 @@ def _policy(**updates: int) -> AgentPlanPolicy:
     return AgentPlanPolicy(**values)
 
 
+def test_authorized_200_round_allowance_has_a_finite_runtime_ceiling() -> None:
+    from clue_agents.runtime import DeepAgentTurnRuntime
+
+    assert _policy(max_rounds=200).max_rounds == 200
+    runtime = DeepAgentTurnRuntime(models=None, execution=None, max_rounds=200)  # type: ignore[arg-type]
+    assert runtime._recursion_limit == 404
+    with pytest.raises(ValueError):
+        _policy(max_rounds=201)
+    with pytest.raises(ValueError, match="round ceiling"):
+        DeepAgentTurnRuntime(models=None, execution=None, max_rounds=201)  # type: ignore[arg-type]
+
+
 def test_operation_and_authority_identities_are_stable_and_authority_sensitive() -> None:
     runtime_profile = profile()
     trusted = constitution()

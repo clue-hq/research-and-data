@@ -16,6 +16,7 @@ from langchain_core.tools import BaseTool
 
 from clue_agents.contracts import AgentTurnRequest
 from clue_agents.execution import (
+    MAX_RUNTIME_MODEL_ROUNDS,
     AgentExecutionStatus,
     AgentTurnOutcome,
     GovernedOperationReceipt,
@@ -291,8 +292,10 @@ class DeepAgentTurnRuntime:
     ) -> None:
         if max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
-        if not 1 <= max_rounds <= 128:
-            raise ValueError("agent round ceiling must be between 1 and 128")
+        if not 1 <= max_rounds <= MAX_RUNTIME_MODEL_ROUNDS:
+            raise ValueError(
+                f"agent round ceiling must be between 1 and {MAX_RUNTIME_MODEL_ROUNDS}"
+            )
         self._models = models
         self._middleware = tuple(middleware)
         self._execution = execution
