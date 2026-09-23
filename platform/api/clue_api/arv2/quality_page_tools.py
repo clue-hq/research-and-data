@@ -68,7 +68,7 @@ class PublishPageOutput(ToolOutput):
 
 class PublishResearchPageTool(_ResearchWriteTool):
     name = "publish_research_page"
-    input_model = PublishPageInput
+    input_model: ClassVar[type[ToolInput]] = PublishPageInput
     output_model: ClassVar[type[ToolOutput]] = PublishPageOutput
     model_description = (
         "Publish a complete contextual page using the digest from read_research_page_inputs. "
@@ -78,7 +78,9 @@ class PublishResearchPageTool(_ResearchWriteTool):
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        args = PublishPageInput.model_validate(inputs)
+        args = cast(
+            PublishPageInput | PublishResearchInput, self.input_model.model_validate(inputs)
+        )
         authority = await self.authority(ctx)
         if authority.role != "research_narrative":
             raise ValueError("page publication belongs to the narrative specialist")
@@ -112,3 +114,23 @@ class PublishResearchPageTool(_ResearchWriteTool):
         return ToolResult(
             tool=self.name, version=self.version, references=result.model_dump(mode="json")
         )
+
+
+class ResearchPageDraft(PageDraft):
+    expected_dependency_sha256: str = ""
+
+
+class PublishResearchInput(ToolInput):
+    draft: ResearchPageDraft
+
+
+class PublishAdvisoryResearchPageTool(PublishResearchPageTool):
+    version = "2"
+    input_model = PublishResearchInput
+    model_description = (
+        "Publish the research page, including uncertain, conflicting and source-reported findings. "
+        "Use claim citations where available and plain-language qualifications where helpful. "
+        "No employment verification, quality threshold or outreach eligibility is required. "
+        "Seller-specific reasoning belongs directly in the narrative. All recorded findings are "
+        "also displayed below the synthesis. Dependency digests are optional."
+    )

@@ -36,12 +36,15 @@ from tests.claimstore.conftest import (  # noqa: F401
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
-def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path):
+@pytest.mark.parametrize("revision", [5, 6])
+def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path, revision):
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
             op, scope, cid = await setup(conn, storage)
-            scope = replace(scope, catalog_version="v4")
+            scope = replace(
+                scope, catalog_version="v4", input_refs={"quality_recipe_version": revision}
+            )
             parent = await execution(conn, op, scope.project_id)
             await bind_execution(
                 conn,
@@ -122,6 +125,19 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path)
                 rationale="Potential marketing owner; verify affiliation and buying remit",
             )
             context = replace(ctx, operation_id=OperationId(uuid4()))
+            if revision == 6:
+                from clue_api.arv2.quality_committee_tool import (
+                    NominateSourceCommitteeTool,
+                    NominateSourceInput,
+                )
+
+                nominate = NominateSourceCommitteeTool(scope, storage, purge_unevidenced=True)
+                args = NominateSourceInput(
+                    candidate_ref=candidate,
+                    persona_key="champion",
+                    role="champion",
+                    rationale="Source-reported marketing owner",
+                )
             receipt = await nominate.invoke(args, context)
             replay = await nominate.invoke(args, context)
             assert replay.references["replayed"]
@@ -132,8 +148,11 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path)
             members = await read_committee(
                 conn, workspace_id=scope.workspace_id, account_id=scope.account_id, context_id=cid
             )
-            assert len(members) == 1 and not members[0].outreach_eligible
-            assert members[0].state == "candidate"
+            assert len(members) == 1 and members[0].outreach_eligible == (revision == 6)
+            assert members[0].state == ("supported" if revision == 6 else "candidate")
+            if revision == 6:
+                assert not members[0].employment_claim_ids
+                assert "current_affiliation_not_established" not in members[0].gaps
             person_scope = replace(
                 scope,
                 job_id=job.job_id,
@@ -159,6 +178,69 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path)
             seed = await load_person_seed(person_rt)
             assert seed["candidate_ref"] == candidate
             assert len(wire.requests) == 2  # no extra named-person purchase
+            if revision == 6:
+                from clue_api.arv2.quality_findings import (
+                    RecordFindingInput,
+                    RecordResearchFindingTool,
+                )
+                from clue_api.arv2.quality_page_tools import ResearchPageDraft
+                from clue_api.arv2.quality_pages import (
+                    CitedItem,
+                    CitedSentence,
+                    PageSectionDraft,
+                    publish_page,
+                    read_page,
+                )
+
+                finding = await RecordResearchFindingTool(
+                    person_scope, storage, purge_unevidenced=True
+                ).invoke(
+                    RecordFindingInput(
+                        operation_key="person-notes",
+                        topic="Background",
+                        finding="Source reports a remote role; location uncertain. "
+                        "Phone: +1 202 555 0100.",
+                        notes="Source-reported; no independent employment check.",
+                    ),
+                    replace(
+                        ctx,
+                        execution_id=ExecutionId(person_execution),
+                        operation_id=OperationId(uuid4()),
+                    ),
+                )
+                assert finding.references["claim_id"]
+                await publish_page(
+                    conn,
+                    storage,
+                    person_scope,
+                    context_id=cid,
+                    execution_id=person_execution,
+                    model="offline",
+                    draft=ResearchPageDraft(
+                        page="contact",
+                        sections=(
+                            PageSectionDraft(
+                                key="openers",
+                                items=(
+                                    CitedItem(
+                                        h2="Relevant introduction",
+                                        contactIds=(job.subject_entity_id,),
+                                        body=(
+                                            CitedSentence(text="Potential marketing relevance."),
+                                        ),
+                                        sendLine=CitedSentence(
+                                        text="Your marketing work may be relevant "
+                                        "to this product."
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+                page = await read_page(conn, person_scope, context_id=cid, page="contact")
+                assert "+1 202 555 0100" in json.dumps(page["display_block"])
+                assert "Your marketing work" in json.dumps(page["display_block"])
             assert (
                 await conn.execute(text("SELECT count(*) FROM arv2_generation_child"))
             ).scalar_one() == 1

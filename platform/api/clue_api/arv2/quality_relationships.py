@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -21,6 +21,7 @@ from clue_research.claimstore.quality import eligible_sql
 
 EMPLOYMENT = "contact.employment_assessment"
 COMMITTEE = "account.committee_assessment"
+SELECTION = "account.committee_selection"
 
 
 class OrganizationScope(BaseModel):
@@ -224,19 +225,19 @@ async def read_committee(
         (
             await conn.execute(
                 text(
-                    """SELECT c.id,c.value_json,c.outreach_safe,
+                    """SELECT c.id,c.value_json,c.outreach_safe,c.write_markers,
         q.conclusion, ("""
                     + eligible_sql("c")
                     + """) AS applicable
         FROM claim c JOIN claim_quality_current q ON q.claim_id=c.id
-        WHERE c.workspace_id=:ws AND c.entity_id=:account AND c.field_key=:field
+        WHERE c.workspace_id=:ws AND c.entity_id=:account AND c.field_key=ANY(:fields)
           AND c.superseded_by IS NULL AND q.context_id=:context
         ORDER BY c.collected_at DESC,c.id DESC"""
                 ),
                 {
                     "ws": workspace_id,
                     "account": account_id,
-                    "field": COMMITTEE,
+                    "fields": [COMMITTEE, SELECTION],
                     "context": context_id,
                 },
             )
@@ -247,11 +248,28 @@ async def read_committee(
     result: list[CommitteeMember] = []
     seen: set[tuple[UUID, str]] = set()
     for row in rows:
+        assessment = None
+        source_member = None
         try:
-            assessment = CommitteeAssessment.model_validate(row["value_json"])
-        except ValidationError:
+            if (row["write_markers"] or {}).get("quality_advisory"):
+                value = row["value_json"]
+                source_member = CommitteeMember(
+                    contact_id=UUID(value["contact_id"]),
+                    assessment_claim_id=row["id"],
+                    persona_key=value.get("persona_key", "general"),
+                    proposed_role=value.get("role", "other"),
+                    state="supported",
+                    employment_claim_ids=(),
+                    outreach_eligible=True,
+                    gaps=tuple((row["write_markers"] or {}).get("qualifications", [])),
+                )
+                contact_id, persona_key = source_member.contact_id, source_member.persona_key
+            else:
+                assessment = CommitteeAssessment.model_validate(row["value_json"])
+                contact_id, persona_key = assessment.contact_id, assessment.persona_key
+        except (ValueError, KeyError, TypeError):
             continue
-        identity = (assessment.contact_id, assessment.persona_key)
+        identity = (contact_id, persona_key)
         if identity in seen:
             continue
         seen.add(identity)
@@ -263,11 +281,15 @@ async def read_committee(
                     "FROM provider_identity p WHERE p.workspace_id=:ws AND "
                     "p.contact_id=contact_entity.id AND p.erased_at IS NOT NULL)"
                 ),
-                {"id": assessment.contact_id, "ws": workspace_id},
+                {"id": contact_id, "ws": workspace_id},
             )
         ).scalar_one_or_none()
         if exists is None:
             continue
+        if source_member is not None:
+            result.append(source_member)
+            continue
+        assert assessment is not None
         state = assessment.state
         gaps: list[str] = []
         if not row["applicable"] or row["conclusion"] != "supported":

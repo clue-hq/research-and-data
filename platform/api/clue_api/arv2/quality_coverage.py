@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.quality_policy import advisory_research
 
 
 async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> dict[str, object]:
@@ -87,7 +88,7 @@ async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> 
             inputs = await page_inputs(conn, scope, context_id=context_id, page=pointer.page)
         except ValueError:
             continue
-        if inputs.sha256 == pointer.dependency_sha256:
+        if advisory_research(scope) or inputs.sha256 == pointer.dependency_sha256:
             pages.add(pointer.page)
     required = {"contact"} if scope.person_subject_id else {"overview", "insights"}
     unprocessed = [
@@ -119,7 +120,7 @@ async def coverage(conn: AsyncConnection, scope: JobScope, context_id: UUID) -> 
         "claim_quality": [dict(r) for r in claims],
         "published_pages": sorted(pages),
         "missing_pages": missing,
-        "needs_review": bool(unprocessed or missing),
+        "needs_review": bool(missing or (unprocessed and not advisory_research(scope))),
         "limitations": [
             "Processed units do not prove exhaustive source coverage.",
             "Discovered media candidates are not consumed transcripts.",

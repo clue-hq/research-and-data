@@ -22,9 +22,11 @@ from clue_api.arv2.quality_evidence import (
     TextSupport,
     authorize_grant,
     record_disposition,
+    resolve_source,
     validate_support,
 )
 from clue_api.arv2.quality_media import TranscriptSupport, validate_transcript
+from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.quality_relationships import (
     EMPLOYMENT,
     CommitteeAssessment,
@@ -128,6 +130,17 @@ class TranscriptProposal(_ProposalBase[TranscriptSupport]):
     pass
 
 
+class SourceSupport(BaseModel):
+    """A source reference, without requiring the model to prove offsets or field semantics."""
+
+    kind: Literal["source"] = "source"
+    source_id: UUID
+
+
+class FindingProposal(_ProposalBase[SourceSupport]):
+    support: tuple[SourceSupport, ...] = ()
+
+
 class SellerDocumentSupport(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["seller_document"] = "seller_document"
@@ -158,13 +171,14 @@ async def submit_proposal(
     storage: StorageBackend,
     scope: JobScope,
     grant: EvidenceGrant,
-    proposal: ClaimProposal | NarrativeProposal | TranscriptProposal,
+    proposal: ClaimProposal | NarrativeProposal | TranscriptProposal | FindingProposal,
     *,
     context_id: UUID,
     actor_ref: str,
     purge_unevidenced: bool = True,
 ) -> ProposalReceipt:
     subject = scope.person_subject_id or scope.account_id
+    advisory = advisory_research(scope)
     if (
         grant.scope.workspace_id,
         grant.scope.run_id,
@@ -227,11 +241,17 @@ async def submit_proposal(
         entity="contacts" if scope.subject_kind == "person" else "accounts",
     )
     allowed_keys = {item.field_def.field_key for item in menu}
-    if proposal.field_key not in allowed_keys and (
-        field is not None or not proposal.field_key.startswith(prefix)
+    if (
+        not advisory
+        and proposal.field_key not in allowed_keys
+        and (field is not None or not proposal.field_key.startswith(prefix))
     ):
         error = "field_subject_mismatch"
-    if field is not None and proposal.field_version not in (None, field.definition_version):
+    if (
+        not advisory
+        and field is not None
+        and proposal.field_version not in (None, field.definition_version)
+    ):
         error = "field_definition_changed"
     context = await read_context(
         conn,
@@ -249,13 +269,17 @@ async def submit_proposal(
         ),
         None,
     )
-    if catalog_pin is not None and (
-        field is None
-        or catalog_pin.version != field.definition_version
-        or catalog_pin.value_type != field.field_def.value_type
-        or catalog_pin.validation != field.field_def.validation
-        or catalog_pin.value_schema != field.value_schema
-        or catalog_pin.description != field.description
+    if (
+        not advisory
+        and catalog_pin is not None
+        and (
+            field is None
+            or catalog_pin.version != field.definition_version
+            or catalog_pin.value_type != field.field_def.value_type
+            or catalog_pin.validation != field.field_def.validation
+            or catalog_pin.value_schema != field.value_schema
+            or catalog_pin.description != field.description
+        )
     ):
         error = "field_definition_changed"
     if proposal.field_key == "account.value_narrative" and (
@@ -283,23 +307,39 @@ async def submit_proposal(
             error = "narrative_context_mismatch"
     relationship = None
     try:
-        relationship = await validate_relationship(
-            conn,
-            workspace_id=scope.workspace_id,
-            account_id=scope.account_id,
-            contact_id=scope.person_subject_id,
-            context_id=context_id,
-            field_key=proposal.field_key,
-            value=proposal.value,
-            support_claim_ids={
-                cid for s in proposal.support if isinstance(s, ClaimSupport) for cid in s.claim_ids
-            },
+        relationship = (
+            None
+            if advisory
+            else await validate_relationship(
+                conn,
+                workspace_id=scope.workspace_id,
+                account_id=scope.account_id,
+                contact_id=scope.person_subject_id,
+                context_id=context_id,
+                field_key=proposal.field_key,
+                value=proposal.value,
+                support_claim_ids={
+                    cid
+                    for s in proposal.support
+                    if isinstance(s, ClaimSupport)
+                    for cid in s.claim_ids
+                },
+            )
         )
     except ValueError:
         error = "relationship_assessment_invalid"
     try:
         for support in proposal.support:
-            if isinstance(support, ClaimSupport):
+            if isinstance(support, SourceSupport):
+                if not advisory:
+                    raise EvidenceUnavailable("source findings require research revision six")
+                ref = await resolve_source(conn, grant, support.source_id)
+                await read_verified_artifact(
+                    conn, storage, workspace_id=scope.workspace_id, storage_key=ref.artifact_key
+                )
+                refs.append(ref)
+                support_keys.update(k for k in (ref.artifact_key, ref.original_key) if k)
+            elif isinstance(support, ClaimSupport):
                 if proposal.claim_kind != "inference":
                     raise EvidenceUnavailable(
                         "claim references require an explicitly labelled inference"
@@ -481,7 +521,10 @@ async def submit_proposal(
                 product_id=None,
             )
         except ValueSchemaError:
-            error = "value_schema_invalid"
+            if not advisory:
+                error = "value_schema_invalid"
+            else:
+                qualifications.append("Stored as reported; catalog value shape was not enforced.")
     if not error:
         provider = (
             actor_ref == "deterministic-provider-mapping:v1"
@@ -501,6 +544,7 @@ async def submit_proposal(
             "qualifications": [str(q) for q in qualifications],
             "proposal_ref": str(oid),
             "context_id": str(context_id),
+            "quality_advisory": advisory,
         }
         if media_markers:
             markers["media"] = media_markers[0]
@@ -537,7 +581,7 @@ async def submit_proposal(
             ),
             markers=markers,
         )
-        if scope.subject_kind == "person":
+        if scope.subject_kind == "person" and not advisory:
             from clue_api.arv2.person_compliance import apply_person_floor
 
             kept, _ = apply_person_floor([draft], purge_unevidenced=purge_unevidenced)
@@ -581,7 +625,7 @@ async def submit_proposal(
                 conclusion=assessment,
                 rationale_key=key,
                 actor_ref=actor_ref,
-                support_artifacts=tuple(sorted(support_keys)),
+                support_artifacts=tuple(sorted(support_keys or ({key} if advisory else set()))),
                 context_id=context_id,
             )
             if isinstance(proposal, NarrativeProposal):

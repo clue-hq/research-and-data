@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
+from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_view
 from clue_db import ConnFactory
@@ -209,6 +210,13 @@ class ResearchViewMount(EvidenceWorkspace):
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index/0.json"
+            if advisory_research(scope):
+                result["review_policy"] = {
+                    "verification": "deferred",
+                    "relationships": "source_reported",
+                    "presentation": "all_findings_including_uncertain_and_disputed",
+                    "quality_labels": "advisory_not_publication_requirements",
+                }
             if authority.role == "account_research":
                 result["capabilities_path"] = "/research/capabilities/0.json"
             return result
@@ -282,8 +290,17 @@ class ResearchViewMount(EvidenceWorkspace):
             value = dict(row)
             value["status"] = value.pop("conclusion") or "legacy_unassessed"
             value["revision"] = value["revision"] or 0
-            if authority.role == "research_narrative" and (
-                not value["applicable"] or value["superseded_by"] or value["status"] != "supported"
+            if advisory_research(scope):
+                value["presentation_allowed"] = True
+                value["review_policy"] = "advisory"
+            if (
+                not advisory_research(scope)
+                and authority.role == "research_narrative"
+                and (
+                    not value["applicable"]
+                    or value["superseded_by"]
+                    or value["status"] != "supported"
+                )
             ):
                 # The narrative gets the gap/status, not prose it could accidentally assert.
                 for k in ("value_json", "evidence_span", "write_markers"):

@@ -66,7 +66,12 @@ from clue_api.agent_turn_wiring import DbAgentTurnJournal
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
-from clue_api.arv2.quality_committee_tool import NominateCommitteeTool, NominateWebCommitteeTool
+from clue_api.arv2.quality_committee_tool import (
+    NominateCommitteeTool,
+    NominateSourceCommitteeTool,
+    NominateSourceWebCommitteeTool,
+    NominateWebCommitteeTool,
+)
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
@@ -77,10 +82,15 @@ from clue_api.arv2.quality_execution import (
     reserve,
     runtime_remaining,
 )
+from clue_api.arv2.quality_findings import RecordResearchFindingTool
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
-from clue_api.arv2.quality_page_tools import PublishResearchPageTool, ReadPageInputsTool
+from clue_api.arv2.quality_page_tools import (
+    PublishAdvisoryResearchPageTool,
+    PublishResearchPageTool,
+    ReadPageInputsTool,
+)
 from clue_api.arv2.quality_provider_tools import AcquireResearchTool
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
@@ -184,8 +194,13 @@ def quality_tools(
         SubmitValueNarrativeTool,
         ReadPageInputsTool,
         PublishResearchPageTool,
+        RecordResearchFindingTool,
+        NominateSourceCommitteeTool,
+        NominateSourceWebCommitteeTool,
+        PublishAdvisoryResearchPageTool,
     ):
-        registry.register(cls(scope, storage, purge_unevidenced=purge), make_default=True)
+        tool = cls(scope, storage, purge_unevidenced=purge)
+        registry.register(tool, make_default=tool.version == "1")
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
     return registry
 
@@ -206,7 +221,12 @@ def quality_profiles(
             if descriptor.name in {"submit_value_narrative", "publish_research_page"}
             else ROLES
             if descriptor.name
-            in {"submit_research_claim", "search_evidence", "read_research_page_inputs"}
+            in {
+                "submit_research_claim",
+                "record_research_finding",
+                "search_evidence",
+                "read_research_page_inputs",
+            }
             else frozenset({AgentRole.ACCOUNT_RESEARCH, AgentRole.RESEARCH_CLAIMS})
         )
         for descriptor in tools.all_descriptors()

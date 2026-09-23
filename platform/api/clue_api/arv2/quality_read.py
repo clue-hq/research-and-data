@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -36,7 +37,8 @@ async def select_quality_context(
         (
             await conn.execute(
                 text("""SELECT DISTINCT ON (r.project_id,j.account_entity_id)
-        r.*, j.job_id,j.account_entity_id,a.canonical_name,a.primary_domain,
+        r.*, j.job_id,j.account_entity_id,j.profile_sha256 AS job_profile_sha256,
+        a.canonical_name,a.primary_domain,
         g.generation_id,g.state AS quality_state,p.name AS project_name
         FROM arv2_research_run r JOIN arv2_research_job j ON j.run_id=r.run_id
         JOIN project p ON p.project_id=r.project_id AND p.workspace_id=r.workspace_id
@@ -97,6 +99,18 @@ async def select_quality_context(
             },
         )
     r = selected[0]
+    from clue_api.arv2.quality_catalog import load_quality_resources
+
+    bundle = (
+        load_quality_resources(
+            "arv2-person" if subject_kind == "contact" else "arv2-account",
+            expected_pin=(r["job_profile_sha256"] or r["profile_sha256"])
+            if subject_kind == "contact"
+            else r["profile_sha256"],
+        )
+        if r["profile_ref"].endswith(":v4")
+        else None
+    )
     scope = JobScope(
         workspace_id=workspace_id,
         project_id=r["project_id"],
@@ -115,6 +129,11 @@ async def select_quality_context(
         subject_kind="person" if subject_kind == "contact" else "account",
         contact_id=EntityId(subject_id) if subject_kind == "contact" else None,
         catalog_version="v4",
+        input_refs={
+            "quality_recipe_version": json.loads(bundle.profile.body)["recipe_version"]
+            if bundle
+            else 5
+        },
     )
     members = await read_committee(
         conn, workspace_id=workspace_id, account_id=scope.account_id, context_id=r["context_id"]

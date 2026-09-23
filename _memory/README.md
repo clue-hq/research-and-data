@@ -31,6 +31,8 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-23-arv3-advisory-research.md` — founder defers relationship/schema/display verification; source-based selection, plain findings and unrestricted research presentation for new quality revision six.
+
 - `2026-09-22-arv3-research-quality-implementation.md` — authorized quality development in
   progress; exact context foundations, isolated test DB and remaining implementation/acceptance.
 - `2026-09-22-arv3-research-quality-spec.md` — detailed review proposal and ordered plan for exact

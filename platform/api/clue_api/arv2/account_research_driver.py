@@ -582,7 +582,7 @@ class Arv2AccountResearchWorkHandler:
                     f"input revision {revision}. "
                     "Read /research/generation.json and /research/committee.json "
                     "plus person claims. "
-                    "Correct outdated employment/committee judgments, retain partial failures, "
+                    "Incorporate new findings and explain uncertainties, retain partial failures, "
                     "and refresh "
                     "the evidence-backed narrative. Reuse originals; "
                     "do not repeat initial paid research. "
@@ -1079,12 +1079,18 @@ class Arv2AccountResearchWorkHandler:
             model_id=self._person_model_id if person else self._model_id,
             model_role=_PERSON_MODEL_ROLE if person else _MODEL_ROLE,
             task_instruction=(
-                "Research this person and assess their current affiliation and buying remit. "
+                "Research this person using source-reported affiliation and your judgment. "
                 if person
                 else "Research this account, nominate the appropriate buying committee "
                 "and assess coverage. "
             )
             + "Use the exact pinned context and original evidence. "
+            + (
+                "Relationship verification is deferred; do not require employment or location "
+                "proofs. Present all findings, including uncertainty. "
+                if quality_input_refs["quality_recipe_version"] >= 6
+                else ""
+            )
             + run.directive_text,
         )
 

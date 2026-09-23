@@ -3,6 +3,7 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -133,14 +134,30 @@ class Models:
             ]
         else:
             raise AssertionError(f"unexpected model role {role}")
+        if (
+            role == "research_claims"
+            and (self.scope.input_refs or {}).get("quality_recipe_version") == 6
+        ):
+            script[1] = call(
+                "record_research_finding",
+                {
+                    "operation_key": "staff",
+                    "topic": "Staff count",
+                    "finding": "64 employees",
+                    "source_ids": [str(self.source.source_id)],
+                },
+                "submit",
+            )
         return ScriptedAgentChatModel(responses=script)
 
 
-def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
+@pytest.mark.parametrize("revision", [5, 6])
+def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path, revision):
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
             op, scope, context_id = await setup(conn, storage)
+            scope = replace(scope, input_refs={"quality_recipe_version": revision})
             source = await save(
                 conn, storage, op, {"employees": 64}, kind="provider_record", url=None
             )
@@ -244,8 +261,13 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path):
                     await conn.execute(
                         text("""SELECT n.parameter_artifact_key FROM execution_node n
                     JOIN arv2_quality_execution q ON q.execution_id=n.execution_id
-                    WHERE q.job_id=:job AND n.tool_name='submit_research_claim'"""),
-                        {"job": scope.job_id},
+                    WHERE q.job_id=:job AND n.tool_name=:tool"""),
+                        {
+                            "job": scope.job_id,
+                            "tool": "record_research_finding"
+                            if revision == 6
+                            else "submit_research_claim",
+                        },
                     )
                 )
                 .scalars()

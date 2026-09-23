@@ -1,5 +1,8 @@
 # ARV3 research quality — ordered implementation and acceptance plan
 
+> **September 23 founder supersession:** New quality runs use [advisory research revision six](2026-09-23-arv3-advisory-research.md). Relationship verification and presentation withholding are deferred; findings remain visible with uncertainty. Earlier strict requirements below describe the historical implementation.
+
+
 **Status, 2026-09-23:** Q1–Q7 implementation completed and checkpointed locally. Q8 offline
 verification, including the 100-account/200-person load, migration, storage, browser-component and
 telemetry proofs, is recorded in the [acceptance report](2026-09-23-arv3-quality-acceptance.md), with

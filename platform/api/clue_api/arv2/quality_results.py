@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
-from clue_api.arv2.quality_relationships import COMMITTEE
+from clue_api.arv2.quality_relationships import COMMITTEE, SELECTION
 
 
 class ResearchUnitReport(BaseModel):
@@ -52,7 +52,9 @@ async def validate_report(
         else []
     )
     if {row.id for row in rows} != ids or any(
-        row.field_key != COMMITTEE for row in rows if row.id in report.committee_assessment_ids
+        row.field_key not in (COMMITTEE, SELECTION)
+        for row in rows
+        if row.id in report.committee_assessment_ids
     ):
         raise ValueError("output claim references are unavailable or outside this task context")
     if report.pending_person_job_ids:

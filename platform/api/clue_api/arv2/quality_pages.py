@@ -18,6 +18,7 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.display.blocks import LiveBlock, compose_display_block
 from clue_api.arv2.display.recipes import Page, read_recipes
 from clue_api.arv2.quality_page_inputs import PageInputs, page_inputs
+from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.research_operations import fingerprint
 from clue_obs import get_logger
 from clue_research.claimstore.quality import eligible_sql, inspectable_sql
@@ -85,7 +86,10 @@ async def _validate_sections(
     recipes = await read_recipes(conn, draft.page, workspace_id=scope.workspace_id)
     keys = {r.section_key for r in recipes}
     given = [s.key for s in draft.sections]
-    if len(set(given)) != len(given) or not set(given) <= keys or (complete and set(given) != keys):
+    advisory = advisory_research(scope)
+    if not advisory and (
+        len(set(given)) != len(given) or not set(given) <= keys or (complete and set(given) != keys)
+    ):
         raise ValueError(
             "a page draft must cover every recipe section once, including explicit gaps"
         )
@@ -102,13 +106,14 @@ async def _validate_sections(
         {eligible_sql("c")} AS applicable, {inspectable_sql("c")} AS inspectable FROM claim c
         JOIN claim_quality_current q ON q.claim_id=c.id
         WHERE c.workspace_id=:ws AND c.id=ANY(:ids) AND c.entity_id=ANY(:subjects)
-          AND c.superseded_by IS NULL
+          AND (:advisory OR c.superseded_by IS NULL)
           AND (q.context_id IS NULL OR q.context_id=:context)"""),
                 {
                     "ws": scope.workspace_id,
                     "ids": sorted(ids),
                     "subjects": list(inputs.subjects),
                     "context": inputs.generation.context_id,
+                    "advisory": advisory,
                 },
             )
         )
@@ -118,7 +123,7 @@ async def _validate_sections(
         else []
     )
     claims = {r["id"]: dict(r) for r in rows}
-    if claims.keys() != ids:
+    if not advisory and claims.keys() != ids:
         raise ValueError("page cites an unavailable claim or another project/subject")
     members = {m.contact_id: m for m in inputs.members}
     people_ids = {id for s in draft.sections for i in s.items for id in i.contact_ids}
@@ -138,6 +143,8 @@ async def _validate_sections(
         else []
     )
     people_map = {r["id"]: dict(r) for r in people}
+    if advisory:
+        return claims, {id: p for id, p in people_map.items() if id in inputs.subjects}
     if people_map.keys() != people_ids or any(
         id not in members or members[id].state == "excluded" for id in people_ids
     ):
@@ -244,6 +251,7 @@ def _body(
         body["contactRefs"] = [
             {"accountId": str(account_id), "contactId": str(id), "name": people[id]["full_name"]}
             for id in item.contact_ids
+            if id in people
         ]
         if item.send_line:
             body["sendLine"] = {
@@ -271,7 +279,7 @@ async def publish_page(
     draft: PageDraft,
 ) -> tuple[UUID, ...]:
     inputs = await page_inputs(conn, scope, context_id=context_id, page=draft.page, lock=True)
-    if inputs.sha256 != draft.expected_dependency_sha256:
+    if not advisory_research(scope) and inputs.sha256 != draft.expected_dependency_sha256:
         raise ValueError(
             "stale_page_inputs: reread page inputs and correct the draft before publishing"
         )
@@ -445,7 +453,11 @@ async def read_page(
             draft = PageDraft(
                 page=page, expected_dependency_sha256=inputs.sha256, sections=(section,)
             )
-            await _validate_sections(conn, scope, inputs, draft, complete=False)
+            claims, _ = await _validate_sections(conn, scope, inputs, draft, complete=False)
+            if advisory_research(scope):
+                from clue_api.arv2.quality_presentation import annotate_sentences
+
+                annotate_sentences(body, claims)
         except (KeyError, ValueError):
             stale.append(row["section_key"])
             title = section_titles.get(row["section_key"], "Research")
@@ -487,12 +499,38 @@ async def read_page(
         "gaps": list(dict.fromkeys(gaps)),
         "contexts": [],
     }
+    finding_ids: tuple[str, ...] = ()
+    if advisory_research(scope):
+        from clue_api.arv2.quality_presentation import finding_section
+
+        for section in block["sections"]:
+            section["restricted"] = False
+            if section["key"] == "watch-outs":
+                section["key"] = "research-notes"
+                section["h1"] = "Research notes"
+        known_keys = {r.section_key for r in recipes}
+        for key, stored in live.items():
+            if key not in known_keys:
+                block["sections"].append(
+                    {
+                        "key": key,
+                        "h1": key.replace("-", " ").title(),
+                        "intro": stored.body_json.get("intro", []),
+                        "items": stored.body_json.get("items", []),
+                        "empty": False,
+                        "restricted": False,
+                        "pending": False,
+                        "gaps": stored.body_json.get("gaps", []),
+                    }
+                )
+        findings, finding_ids = await finding_section(conn, scope, inputs)
+        block["sections"].append(findings)
     block["researchQuality"] = quality
     return {
         "display_block": block,
         "research_quality": quality,
         "cited_claim_ids": tuple(
-            dict.fromkeys(id for b in live.values() for id in b.cited_claim_ids)
+            dict.fromkeys([*(id for b in live.values() for id in b.cited_claim_ids), *finding_ids])
         ),
         "stale": tuple(stale),
         "pending": tuple(sorted(missing)),

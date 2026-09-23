@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_catalog import bundle_pin
@@ -22,7 +22,13 @@ from clue_api.arv2.quality_evidence import (
     validate_support,
 )
 from clue_api.arv2.quality_generation import ensure_generation, register_child
-from clue_api.arv2.quality_relationships import COMMITTEE, CommitteeAssessment, OrganizationScope
+from clue_api.arv2.quality_policy import advisory_research
+from clue_api.arv2.quality_relationships import (
+    COMMITTEE,
+    SELECTION,
+    CommitteeAssessment,
+    OrganizationScope,
+)
 from clue_api.arv2.quality_tools import _ResearchWriteTool
 from clue_core import EntityId
 from clue_obs import get_logger
@@ -72,10 +78,10 @@ class NominateCommitteeTool(_ResearchWriteTool):
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        args = (
-            NominateWebCommitteeInput.model_validate(inputs)
-            if self.name == "nominate_web_committee_candidate"
-            else NominateCommitteeInput.model_validate(inputs)
+        args = cast(
+            "NominateCommitteeInput | NominateWebCommitteeInput "
+            "| NominateSourceInput | NominateSourceWebInput",
+            self.input_model.model_validate(inputs),
         )
         authority = await self.authority(ctx)
         if authority.role != "account_research" or self.scope.person_subject_id:
@@ -102,11 +108,18 @@ class NominateCommitteeTool(_ResearchWriteTool):
             ).scalar_one()
             if count >= self.scope.committee_cap:
                 raise ValueError("committee candidate cap reached; reconcile existing candidates")
-            proposal = ClaimProposal(
-                operation_key=f"nominate:{ctx.operation_id}",
-                field_key=COMMITTEE,
-                claim_kind="inference",
-                value=CommitteeAssessment(
+            advisory = advisory_research(self.scope)
+            selection: dict[str, JsonValue]
+            if advisory:
+                selection = {
+                    "contact_id": str(contact),
+                    "persona_key": args.persona_key,
+                    "role": args.role,
+                    "rationale": args.rationale,
+                }
+            else:
+                assert isinstance(args, (NominateCommitteeInput, NominateWebCommitteeInput))
+                selection = CommitteeAssessment(
                     account_id=self.scope.account_id,
                     contact_id=contact,
                     context_id=authority.context_id,
@@ -116,18 +129,27 @@ class NominateCommitteeTool(_ResearchWriteTool):
                     remit="hypothesis",
                     organization_scope=args.organization_scope,
                     rationale=args.rationale,
-                ).model_dump(mode="json"),
+                ).model_dump(mode="json")
+            proposal = ClaimProposal(
+                operation_key=f"nominate:{ctx.operation_id}",
+                field_key=SELECTION if advisory else COMMITTEE,
+                claim_kind="inference",
+                value=selection,
                 support=tuple(supports),
-                outreach_safe=False,
+                outreach_safe=advisory,
                 assessment=SemanticAssessment(
                     entity="supported",
                     field_meaning="supported",
                     entailment="supported",
                     relationship_direction="supported",
                     temporal_scope="supported",
-                    explanation="A provisional buying-role hypothesis "
-                    "based on the exact saved discovery evidence. "
-                    "Employment and buying responsibility require person research. "
+                    explanation=(
+                        "Source-reported affiliation and agent-selected buying role. "
+                        if advisory
+                        else "A provisional buying-role hypothesis "
+                        "based on the exact saved discovery evidence. "
+                        "Employment and buying responsibility require person research. "
+                    )
                     + args.rationale[:5700],
                 ),
             )
@@ -151,6 +173,9 @@ class NominateCommitteeTool(_ResearchWriteTool):
             )
             refs.update(
                 subject_scope="account",
+                quality_recipe_version=int(
+                    (self.scope.input_refs or {}).get("quality_recipe_version", 5)
+                ),
                 committee_assessment_id=str(receipt.claim_id),
                 generation_id=str(generation.generation_id),
             )
@@ -194,23 +219,44 @@ class NominateCommitteeTool(_ResearchWriteTool):
         )
 
     async def candidate(
-        self, conn: Any, authority: Any, args: NominateCommitteeInput | NominateWebCommitteeInput
+        self,
+        conn: Any,
+        authority: Any,
+        args: NominateCommitteeInput
+        | NominateWebCommitteeInput
+        | NominateSourceInput
+        | NominateSourceWebInput,
     ) -> tuple[EntityId, list[JsonSupport | TextSupport], dict[str, Any]]:
-        if isinstance(args, NominateWebCommitteeInput):
+        if isinstance(args, (NominateWebCommitteeInput, NominateSourceWebInput)):
             from clue_api.arv2.account_research_store import read_run
             from clue_api.arv2.committee_step import _resolve_contact
 
-            ref = await validate_support(conn, self.storage, authority.grant, args.source)
-            if (
+            if isinstance(args, NominateSourceWebInput):
+                ref = await resolve_source(conn, authority.grant, args.source_id)
+                _, raw = await read_verified_artifact(
+                    conn,
+                    self.storage,
+                    workspace_id=self.scope.workspace_id,
+                    storage_key=ref.artifact_key,
+                )
+                passage = raw.decode()[:8000]
+                web_support = TextSupport(
+                    source_id=ref.source_id, start=0, end=len(passage), quote=passage
+                )
+            else:
+                web_support = args.source
+                ref = await validate_support(conn, self.storage, authority.grant, web_support)
+            if not advisory_research(self.scope) and (
                 ref.kind != "web_snapshot"
-                or args.name.casefold() not in args.source.quote.casefold()
+                or args.name.casefold() not in web_support.quote.casefold()
             ):
                 raise ValueError(
                     "web nomination needs the candidate's name in an exact saved page passage"
                 )
             if (
-                args.linkedin_url
-                and args.linkedin_url not in args.source.quote
+                not advisory_research(self.scope)
+                and args.linkedin_url
+                and args.linkedin_url not in web_support.quote
                 and args.linkedin_url != ref.source_url
             ):
                 raise ValueError(
@@ -228,7 +274,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
             )
             return (
                 contact,
-                [args.source],
+                [web_support],
                 {
                     "parent_job_id": str(self.scope.job_id),
                     "discovered_via": "web_gap",
@@ -298,4 +344,40 @@ class NominateWebCommitteeTool(NominateCommitteeTool):
         "The passage must name the candidate and any LinkedIn identity provided. Explain the "
         "specific gap, potential role and adaptive location/remit. Uses canonical identity, "
         "candidate assessment, person job and cap as AI Ark nominations; never confirms employment."
+    )
+
+
+class NominateSourceInput(ToolInput):
+    candidate_ref: str
+    persona_key: str = "general"
+    role: str = "other"
+    rationale: str
+
+
+class NominateSourceWebInput(ToolInput):
+    name: str
+    linkedin_url: str | None = None
+    source_id: UUID
+    persona_key: str = "general"
+    role: str = "other"
+    rationale: str
+
+
+class NominateSourceCommitteeTool(NominateCommitteeTool):
+    version = "2"
+    input_model = NominateSourceInput
+    model_description = (
+        "Select a person from a saved AI Ark company search and start their person research. "
+        "Trust the source-reported affiliation and use your judgment for the buying role. "
+        "No employment, location, organization or remit proof is required."
+    )
+
+
+class NominateSourceWebCommitteeTool(NominateCommitteeTool):
+    name = "nominate_web_committee_candidate"
+    version = "2"
+    input_model = NominateSourceWebInput
+    model_description = (
+        "Select a person from a saved web source and start person research. "
+        "Use source-reported affiliation and your judgment; relationship verification is deferred."
     )
