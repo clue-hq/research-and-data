@@ -20,7 +20,7 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_relationships import read_committee
-from clue_api.arv2.quality_workspace import EvidenceWorkspace
+from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_view
 from clue_db import ConnFactory
 from clue_research.claimstore.quality import eligible_sql
 from clue_storage import StorageBackend, StorageError, read_verified_artifact
@@ -31,13 +31,6 @@ _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
 _OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _TRANSCRIPT = re.compile(r"/transcripts/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
-
-
-def _render(value: object, limit: int) -> ReadResult:
-    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    if len(rendered.splitlines()) > limit:
-        return ReadResult(error="Read this bounded view with limit=2000; no data was returned.")
-    return ReadResult(file_data={"content": rendered, "encoding": "utf-8"})
 
 
 def _passage(body: str, start: int, path: str) -> dict[str, object]:
@@ -80,14 +73,14 @@ class ResearchViewMount(EvidenceWorkspace):
         self._capabilities = capabilities
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        if offset != 0 or limit < 1:
-            return ReadResult(error="Use the explicit continuation path, offset=0 and limit=2000.")
+        if offset < 0 or limit < 1:
+            return ReadResult(error="Read offset must be nonnegative and limit must be positive.")
         try:
             async with self._connections() as conn:
                 authority = await resolve_authority(conn, self._scope, self._execution_id)
                 if not self._evidence:
                     value = await self._view(conn, authority, file_path)
-                    return _render(value, limit)
+                    return render_view(value, offset=offset, limit=limit)
             # EvidenceWorkspace opens its own short transaction and rechecks the same grant.
             return await EvidenceWorkspace(self._connections, self._storage, authority.grant).aread(
                 "/evidence" + file_path, offset=offset, limit=limit

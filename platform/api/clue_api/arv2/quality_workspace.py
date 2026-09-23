@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 from uuid import UUID
 
 from deepagents.backends.protocol import (
@@ -23,6 +24,7 @@ from deepagents.backends.protocol import (
     ReadResult,
     WriteResult,
 )
+from deepagents.backends.utils import slice_read_response
 
 from clue_api.arv2.quality_evidence import (
     EvidenceGrant,
@@ -39,6 +41,19 @@ _SOURCE = re.compile(r"/evidence/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _INDEX = re.compile(r"/evidence/index/(0|[1-9][0-9]*)\.json\Z")
 
 
+def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
+    """Apply the framework's line window inside one bounded, authorized JSON view.
+
+    The path's character cursor selects the source passage; read_file's offset/limit select
+    lines of that view. These are distinct pagination layers, just like any ordinary JSON file.
+    """
+    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
+    if isinstance(sliced, ReadResult):
+        return sliced
+    return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
+
+
 class EvidenceWorkspace(BackendProtocol):
     """Mount at /evidence on an isolated governed workspace; provides no shell or host paths."""
 
@@ -48,8 +63,8 @@ class EvidenceWorkspace(BackendProtocol):
         self._grant = grant
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        if offset != 0 or limit < 1:
-            return ReadResult(error="Use the returned next_path; offsets live in evidence paths.")
+        if offset < 0 or limit < 1:
+            return ReadResult(error="Read offset must be nonnegative and limit must be positive.")
         source = _SOURCE.fullmatch(file_path)
         index = _INDEX.fullmatch(file_path)
         try:
@@ -78,10 +93,7 @@ class EvidenceWorkspace(BackendProtocol):
                 else:
                     # Do not hand arbitrary input paths to an underlying filesystem/backend.
                     return ReadResult(error="Unknown evidence path; read /evidence/index/0.json.")
-            rendered = json.dumps(result, ensure_ascii=False, indent=2)
-            if len(rendered.splitlines()) > limit:
-                return ReadResult(error="Read this bounded view with limit=2000; no data returned.")
-            return ReadResult(file_data={"content": rendered, "encoding": "utf-8"})
+            return render_view(result, offset=offset, limit=limit)
         except (EvidenceUnavailable, StorageError, ValueError):
             return ReadResult(
                 error="Evidence unavailable; request a current grant from the parent."

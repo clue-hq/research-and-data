@@ -2,9 +2,11 @@
 
 import json
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from deepagents.middleware.filesystem import FilesystemMiddleware
 
 from clue_api.arv2.quality_evidence import grant_manifest, revoke_grant
 from clue_api.arv2.quality_workspace import EvidenceWorkspace
@@ -46,12 +48,38 @@ def test_original_continuation_and_revocation_on_every_virtual_read(tmp_path):
                 rebuilt += "".join(s["text"] for s in body["text_segments"])
                 path = body["next_path"]
             assert rebuilt == original
+            path = f"/evidence/{source.source_id}/0.json"
+            full = (await backend.aread(path)).file_data["content"]
+            rebuilt_view = ""
+            for offset in range(0, len(full.splitlines()), 20):
+                page = await backend.aread(path, offset=offset, limit=20)
+                assert not page.error
+                rebuilt_view += page.file_data["content"]
+            assert rebuilt_view == full
+            # Exercise the actual framework tool with its recommended small line windows.
+            tool = FilesystemMiddleware(backend=backend)._create_read_file_tool()
+            first = await tool.coroutine(
+                file_path=path, runtime=SimpleNamespace(tool_call_id="read-1"), offset=0, limit=20
+            )
+            following = await tool.coroutine(
+                file_path=path, runtime=SimpleNamespace(tool_call_id="read-2"), offset=20, limit=20
+            )
+            assert first.status == following.status == "success"
+            assert "text_segments" in first.content
+            assert "A long paragraph" in following.content
             assert (await backend.aread(f"/evidence/{foreign.source_id}/0.json")).error
             for path in ("/etc/passwd", "/evidence/../secret", "/evidence/%2e%2e/key"):
                 assert (await backend.aread(path)).error
                 assert (await backend.awrite(path, "replacement")).error
                 assert (await backend.aedit(path, "x", "y")).error
             await revoke_grant(conn, grant)
+            denied = await tool.coroutine(
+                file_path=path,
+                runtime=SimpleNamespace(tool_call_id="read-revoked"),
+                offset=20,
+                limit=20,
+            )
+            assert denied.status == "error"
             assert (await backend.aread(f"/evidence/{source.source_id}/0.json")).error
             assert (await backend.als("/evidence")).error
 

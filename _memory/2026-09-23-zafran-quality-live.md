@@ -49,3 +49,12 @@
   circular imports; loading the package before substituting the isolated module fixed the probe.
 - Preserve second-attempt originals/checkpoints and resume it after worker restart, rather than
   making a third fresh acquisition run. No reset of terminal job status or consumed allowances.
+
+- Live native filesystem reads exposed a second contract mismatch: standard read_file line
+  windows were refused by the JSON view backends. They now use Deep Agents' native line slicing
+  inside each already-bounded source view; character-cursor paths remain unchanged. Every line
+  read rechecks grants. Six workspace/tool/provider tests pass, including the actual framework
+  read tool and mid-pagination revocation. This prevents repeated no-data reads at limit=100.
+- At 01:50 UTC account allowance was nearly exhausted by failed delegation/read/schema retries;
+  no pages published. Five person jobs reached claim-specialist work. Do not describe this as a
+  successful end-to-end result or quietly increase/reset the existing allowance to hide failures.
