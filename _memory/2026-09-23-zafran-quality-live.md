@@ -71,3 +71,22 @@
   profiles/defaults are unchanged; no model-facing override. Isolated harness alone requests 200.
   Five execution tests and five specialist/shared-allowance tests pass, plus changed-file Ruff.
   Worker fleet resumed as ten processes x3 with effective 200-round startup telemetry.
+
+- Closing state: corrected continuation settled needs_review at 02:28 UTC; generation revision
+  137 reconciled. Four contact pages published; account overview/insights and Nick page missing.
+  129 raw claims (104 supported, 19 qualified, five unresolved, one invalid), one withdrawal;
+  zero accepted employment/value-narrative claims. Relationship schema feedback, overbroad
+  candidate-page withholding, account/person narrative ownership and durable finalization remain
+  live defects. Account recovery did not establish complete Exa-report extraction. Q24 not accepted.
+- The 200 allowance is proven effective (some jobs exceeded 100 calls after reset); separate
+  30-minute runtime also terminated unfinished work. Do not erase terminal history or silently
+  launch another retry. All ten workers exited zero and the monitor stopped; DB/container retained.
+- Final exports, exact Exa report, rendered page output, claim appendix, comparison, 42 MB database
+  backup and tool audit are under the private retry experiment root. All 6,800 artifacts pass
+  integrity checks. All 1,031 model receipts join to Langfuse observations after incremental export;
+  ancillary span completeness is not asserted. Current recorded model USD 62.401836 + provider
+  USD 0.272668; 35.1 AI Ark credits separate, one provider outcome unpriced. Original failed DB
+  remains separately preserved. No paid retry, default promotion, push or historical repair.
+- Audit helper corrections: source observed_at is not proposal submission time; use created_at
+  for new writes. Fixed a private handoff-audit variable typo and reran successfully. Render/audit
+  uses all raw claim rows for citations/appendix so qualified/unresolved history is not lost.

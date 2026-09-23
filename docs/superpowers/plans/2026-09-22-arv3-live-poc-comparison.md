@@ -1,5 +1,10 @@
 # V3 live research versus the saved PoC
 
+September 23 follow-up: a fresh Zafran run of the subsequent research-quality implementation is
+tracked in [the quality-flow live record](2026-09-23-zafran-quality-live.md). Its first attempt
+failed, runtime fixes were verified, and a corrected fresh attempt is in progress. The historical
+v3 results below remain unchanged and do not certify the new implementation.
+
 **Status: live run finished; quality acceptance not granted.** Two account jobs and eleven person jobs completed through the real v3 agents. The measured run lasted 14:15:37–14:55:55 UTC on September 22, 2026 (40m 19s including person queues); both isolated workers exited cleanly afterward. These are live-provider results, not fixtures. Four Probook person enrichment outcomes were compromised by a corrected test-harness identity error. A separate four-person recovery run also completed, with emails and phones returned for all four; its results are reported separately. Both recovery workers stopped cleanly at 15:14:54 UTC. No full A01–A20 acceptance or deployment approval is claimed.
 
 The run establishes that SMART committee discovery, both contact channels, native YouTube/audio acquisition, embedding, hybrid retrieval and transcript reuse execute live. It also exposes serious output-quality issues: subject facts entering shared field descriptions, prose corrections not repairing stored/current claims, and very little usable transcript-grounded output. Completion status alone is insufficient for acceptance.

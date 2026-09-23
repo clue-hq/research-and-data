@@ -3,9 +3,14 @@
 **Status, 2026-09-23:** Q1–Q7 implementation completed and checkpointed locally. Q8 offline
 verification, including the 100-account/200-person load, migration, storage, browser-component and
 telemetry proofs, is recorded in the [acceptance report](2026-09-23-arv3-quality-acceptance.md), with
-test failures and measurement limitations retained. Q23 paid comparison, Q24 fresh live/application
-acceptance and default-profile promotion remain pending. **Paused before paid calls at the founder's
-request.** Public launch default remains v2; the new quality composition is internally v4.
+test failures and measurement limitations retained. The founder authorized a fresh paid Zafran run
+on September 23, followed by five additional workers at concurrency three. The paid attempts have settled;
+the corrected continuation used ten workers at concurrency three and the founder-authorized
+200-turn reset. It ended needs_review with four contact pages, missing account pages, relationship
+validation and finalization failures. Q24 quality acceptance is not granted. Q23 matched comparison
+and default-profile promotion remain pending. See the
+[live record](2026-09-23-zafran-quality-live.md). Public launch default remains v2;
+the new quality composition is internally v4.
 
 Implementation was authorized on 2026-09-22, including the proposed context, membership and
 presentation contracts. Before implementation, latest origin was fetched; feature upstream and
