@@ -353,6 +353,9 @@ class ToolRuntime:
     ) -> None:
         self.storage = storage
         self.scope = scope
+        # The quality runtime supplies the immutable seller/ICP/assignment brief. Legacy
+        # profiles keep their current prompt path; the agent still authors charter and probes.
+        self.research_brief: str = ""
         self.person_seed: dict[str, Any] | None = None
         self.channel_states: dict[str, str] = {}
         self.settings = settings
@@ -1901,10 +1904,18 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
     query_parts = [args.charter]
     if args.probes:
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
-    query_parts.append(
-        "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
-        + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
-    )
+    if runtime.research_brief:
+        query_parts.append(
+            "RESEARCH CONTEXT FROM THE PINNED PROJECT BRIEF\n"
+            "This is supplied planning context, not newly retrieved target evidence. "
+            "The charter above specifies the investigation for this call.\n\n"
+            + runtime.research_brief
+        )
+    else:
+        query_parts.append(
+            "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
+            + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
+        )
     query = "\n\n".join(query_parts)
 
     def hop(caller: ProviderCaller) -> Any:

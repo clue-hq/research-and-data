@@ -51,8 +51,44 @@ restricted to fallback use. Existing profile reuse and work-email enrichment rem
 Runtime policy supersedes older pinned catalog guidance and accompanies specialist delegation.
 This is an instruction-level research boundary plus narrower automatic mappings, not a new
 claim-write or display gate. Agent adherence and raw research quality still require founder
-review. Runtime-brief expansion, research charters, claim classification and presentation changes
-belong to subsequent steps.
+review. Research charters, claim classification and presentation changes belong to subsequent steps.
+
+## Research opening brief (2026-09-23, roadmap step 3)
+
+New governed quality-lane jobs (catalog v4, existing recipe revisions 5/6) compile an opening
+brief in code. `quality_brief.py` reads the immutable research context: seller name, selected
+products, exact brand/project ICP and compatible persona documents, seller source documents,
+the launch's Head-of-ABM directive, project description, target identity and actual run limits.
+No additional LLM writes or summarises the brief. Missing context remains an explicit gap.
+
+The opening card includes structured research instructions and verbatim document excerpts.
+All structured research values are retained; display-recipe keys and administrative metadata
+are omitted from this orientation. Long document prose has an explicitly marked 6,000-character
+preview with a reference to the complete pinned original. The first ten prior claims and source
+records are included with dates, uncertainty, source links and counts; long claim values have a
+marked preview. `/research/history/claims/0.json` and `/research/history/sources/0.json` paginate
+the remaining records and expose complete findings/originals under workspace/project/account
+authority. These previews bound opening context, not research or presentation coverage.
+Original-history reads cover indexed `arv2_evidence_source` records. This change does not backfill
+older provider-ledger-only blobs into that index; prior claims still carry their stored provenance.
+
+The parent and its specialists inherit the same recorded card. A retry reuses its original
+card and brief manifest; it does not recompile against changing project state. Prior findings
+are labelled as historical context, including unresolved and superseded observations, and can
+come from a different context revision in the same project. Copied originals enter the existing
+retention/derivation graph, and subsequent reads recheck scope and erasure.
+
+The agent continues to author Exa's charter, probes and exclusions. The governed acquisition
+runtime appends the same seller/ICP/persona/assignment context to that query, without internal
+storage references or execution mechanics. The agent can read full originals and include further
+relevant passages in its charter. Provider ledgers preserve the exact request as before. The
+`arv2.research_brief_ready` event records IDs, digest, replay status and counts, never document text.
+
+This does not change catalog routing defaults, the full system prompt, research charters,
+claim-writing policies or page synthesis. Existing turns without a brief retain their old card.
+Offline tests cover context selection, provider handoff, specialist inheritance, replay,
+prior-source pagination and erasure. Raw research quality still needs a separately launched
+live comparison after prompt/charter review.
 
 ## Step 0 — the shared foundation (this task)
 

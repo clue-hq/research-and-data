@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from deepagents.backends.protocol import BackendProtocol, FileInfo, LsResult, ReadResult
@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
+from clue_api.arv2.quality_history import history_page, retain_history
 from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_view
@@ -32,6 +33,7 @@ _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
 _OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _TRANSCRIPT = re.compile(r"/transcripts/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
+_HISTORY = re.compile(r"/history/(claims|sources)/(?:([0-9a-f-]{36})/)?(0|[1-9][0-9]*)\.json\Z")
 
 
 def _passage(body: str, start: int, path: str) -> dict[str, object]:
@@ -95,6 +97,36 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        history = _HISTORY.fullmatch(path)
+        if history:
+            history_kind: Literal["claims", "sources"] = (
+                "claims" if history[1] == "claims" else "sources"
+            )
+            page = await history_page(
+                conn,
+                scope,
+                kind=history_kind,
+                offset=0 if history[2] else int(history[3]),
+                item_id=UUID(history[2]) if history[2] else None,
+            )
+            await retain_history(conn, scope, page["items"])
+            if not history[2]:
+                return page
+            if not page["items"]:
+                raise ValueError("prior research unavailable in this project and subject")
+            item = page["items"][0]
+            body = json.dumps(item, ensure_ascii=False, default=str, indent=2)
+            if history_kind == "sources":
+                record, raw = await read_verified_artifact(
+                    conn,
+                    self._storage,
+                    workspace_id=scope.workspace_id,
+                    storage_key=item["artifact_key"],
+                )
+                if record.content_sha256 != item["artifact_sha256"]:
+                    raise ValueError("prior original differs from its source record")
+                body = raw.decode("utf-8")
+            return _passage(body, int(history[3]), f"history/{history_kind}/{history[2]}")
         transcript = _TRANSCRIPT.fullmatch(path)
         if transcript:
             from clue_api.arv2.quality_media import read_transcript
@@ -210,6 +242,8 @@ class ResearchViewMount(EvidenceWorkspace):
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index/0.json"
+            result["prior_claims_path"] = "/research/history/claims/0.json"
+            result["prior_sources_path"] = "/research/history/sources/0.json"
             if advisory_research(scope):
                 result["review_policy"] = {
                     "verification": "deferred",

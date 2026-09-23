@@ -1429,6 +1429,23 @@ def test_research_deep_marks_thin_reports() -> None:
     assert report["thin"] is True and report["report"] == "too short"
 
 
+def test_research_deep_carries_the_compiled_context_beside_the_agent_charter() -> None:
+    runtime, clients, _, _ = _runtime()
+    runtime.research_brief = (
+        "Seller: Insight Health\nSelected product: MagicDocs\n"
+        "Assignment: investigate fax intake.\nPersona: practice operations.\n"
+        "Prior findings: unresolved EHR; revisit rather than assume."
+    )
+    _call(runtime, "research_deep", charter=CHARTER, probes=["What slows referrals?"])
+    sent = clients.exa_client.deep_calls[0]
+    assert sent["query"].startswith(CHARTER)
+    assert runtime.research_brief in sent["query"]
+    assert "What slows referrals?" in sent["query"]
+    assert "not newly retrieved target evidence" in sent["query"]
+    assert "(nothing yet)" not in sent["query"]
+    assert "Probook" in sent["system_prompt"]
+
+
 def test_research_deep_refuses_only_when_the_report_is_empty() -> None:
     runtime, clients, _, _ = _runtime()
     clients.exa_client.deep_report = ""
@@ -2468,12 +2485,6 @@ def _lock_record() -> AiArkPerson:
     return _ark_person(linkedin_url="https://www.linkedin.com/in/nicholastfisher")
 
 
-def _lock_record_with(*, headline: str) -> AiArkPerson:
-    return _ark_person(
-        linkedin_url="https://www.linkedin.com/in/nicholastfisher", headline=headline
-    )
-
-
 def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_verdict() -> None:
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (_lock_record(),)
@@ -2491,7 +2502,6 @@ def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_ve
     written = {draft.field_key for draft in writer.drafts}
     assert written == {
         "contact.current_title",
-        "contact.headline",
         "contact.current_location",
         "core.work_email",
     }
@@ -2547,7 +2557,7 @@ def test_lookup_person_refuses_a_job_that_carries_no_confirmed_linkedin_url() ->
 
 def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() -> None:
     """The record's fields are written before the export is bought, so a transport failure on the
-    second call costs only the email — not the title, headline and location this call already had.
+    second call costs only the email — not the title and location this call already had.
     """
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (_lock_record(),)
@@ -2560,7 +2570,6 @@ def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() ->
     assert failed["code"] == "tool_error:ProviderTransportError"
     assert {draft.field_key for draft in writer.drafts} == {
         "contact.current_title",
-        "contact.headline",
         "contact.current_location",
     }, "the record's own claims survive the failed second hop"
 
@@ -2570,17 +2579,17 @@ def test_lookup_person_reports_what_the_compliance_floor_did_to_this_calls_draft
     it" are different facts, and only the compliance rows tell them apart."""
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (
-        _lock_record_with(headline="Demand gen — write to nick.fisher@gmail.com"),
+        replace(_lock_record(), title="Demand gen — write to nick.fisher@gmail.com"),
     )
 
     found = _call(
         runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
     )
 
-    assert [row["field_key"] for row in found["compliance"]] == ["contact.headline"]
+    assert [row["field_key"] for row in found["compliance"]] == ["contact.current_title"]
     assert found["compliance"][0]["rule"] == "personal_contact_detail"
-    assert "contact.headline" not in {draft.field_key for draft in writer.drafts}
-    assert "contact.headline" not in {row["field_key"] for row in found["written"]}
+    assert "contact.current_title" not in {draft.field_key for draft in writer.drafts}
+    assert "contact.current_title" not in {row["field_key"] for row in found["written"]}
 
 
 def test_lookup_person_reports_no_compliance_rows_when_the_floor_did_nothing() -> None:
@@ -2662,7 +2671,6 @@ def test_lookup_person_proceeds_when_the_record_cannot_state_the_employer_and_ma
     assert clients.ai_ark_client.export_calls != [], "the email is still bought"
     assert {draft.field_key for draft in writer.drafts} == {
         "contact.current_title",
-        "contact.headline",
         "contact.current_location",
         "core.work_email",
     }
@@ -2698,7 +2706,6 @@ def test_lookup_person_reports_an_empty_email_export_as_a_result_never_a_refusal
     assert "core.work_email" not in {draft.field_key for draft in writer.drafts}
     assert {draft.field_key for draft in writer.drafts} == {
         "contact.current_title",
-        "contact.headline",
         "contact.current_location",
     }
 
@@ -2706,17 +2713,16 @@ def test_lookup_person_reports_an_empty_email_export_as_a_result_never_a_refusal
 def test_lookup_person_reports_a_write_failure_and_still_lands_the_rest() -> None:
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (_lock_record(),)
-    writer.raise_on = {"contact.headline"}
+    writer.raise_on = {"contact.current_title"}
 
     found = _call(
         runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
     )
 
     assert found["write_failures"] == [
-        {"field_key": "contact.headline", "error": "cannot write contact.headline"}
+        {"field_key": "contact.current_title", "error": "cannot write contact.current_title"}
     ]
     assert {draft.field_key for draft in writer.drafts} == {
-        "contact.current_title",
         "contact.current_location",
         "core.work_email",
     }

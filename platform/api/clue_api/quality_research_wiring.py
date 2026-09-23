@@ -13,6 +13,7 @@ import json
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import replace
+from datetime import datetime
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any, cast
@@ -70,13 +71,14 @@ from clue_api.arv2.account_research_catalog import (
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
+from clue_api.arv2.quality_brief import compile_brief, render_brief
 from clue_api.arv2.quality_committee_tool import (
     NominateCommitteeTool,
     NominateSourceCommitteeTool,
     NominateSourceWebCommitteeTool,
     NominateWebCommitteeTool,
 )
-from clue_api.arv2.quality_context import read_context
+from clue_api.arv2.quality_context import ResearchContext, read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
     SharedResearchAllowance,
@@ -420,6 +422,7 @@ class ResearchUnitRuntime:
             scope.workspace_id, scope.run_id, scope.job_id, scope.account_id
         )
         acquisition = cast(AcquireResearchTool, tools.get("acquire_research_evidence", "1"))
+        self.acquisition = acquisition.runtime
         if acquisition.runtime is not None:
             if acquisition.runtime.scope != scope:
                 raise ValueError("acquisition belongs to another research job")
@@ -649,6 +652,89 @@ class ResearchUnitRuntime:
             project_bindings=((self.scope.project_id, "research_quality"),),
         )
 
+    async def opening_card(
+        self, *, context: ResearchContext, started: datetime, turn_id: UUID
+    ) -> ArtifactRef:
+        # Replay the recorded input, including its prior-knowledge snapshot. New claims or
+        # amended project documents must not change an already-started model conversation.
+        async with self.connections() as conn:
+            row = (
+                (
+                    await conn.execute(
+                        text("""
+              SELECT r.artifact_key,r.artifact_sha256 AS sha256,a.media_type,
+                     a.size_bytes AS byte_count
+              FROM agent_artifact_ref r JOIN artifact a ON a.storage_key=r.artifact_key
+              WHERE r.workspace_id=:ws AND r.turn_id=:turn AND r.owner_kind='turn'
+                AND r.ref_role='project_card' AND r.ordinal=0
+            """),
+                        {"ws": self.scope.workspace_id, "turn": turn_id},
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            brief = (
+                None
+                if row
+                else await compile_brief(
+                    conn,
+                    self.storage,
+                    scope=self.scope,
+                    context=context,
+                    context_id=self.context_id,
+                    as_of=started,
+                    limits=self.limits,
+                    media_ceiling_s=self.acquisition.media_budget.ceiling_s
+                    if self.acquisition
+                    else None,
+                )
+            )
+        if row:
+            card = ArtifactRef(workspace_id=self.scope.workspace_id, **dict(row))
+            value = json.loads(await self.artifacts.read(card))
+            manifest = value.get("opening_brief_manifest_ref")
+            if manifest:
+                brief = json.loads(await self.artifacts.read(ArtifactRef.model_validate(manifest)))
+        else:
+            assert brief is not None
+            # Freeze the provider rendering too: a later compiler revision must not alter
+            # acquisition arguments when this conversation resumes on another worker.
+            brief["provider_context"] = render_brief(brief, provider=True)
+            manifest_ref = await self.artifact(brief, "research-opening-brief")
+            card = await self.artifact(
+                {
+                    "context_id": str(self.context_id),
+                    "context_path": "/research/context.json",
+                    "evidence_path": "/evidence/index/0.json",
+                    "subject_kind": self.scope.subject_kind,
+                    "subject_id": str(self.scope.person_subject_id or self.scope.account_id),
+                    "account_id": str(self.scope.account_id),
+                    "account_name": self.scope.account_name,
+                    "account_domain": self.scope.account_domain,
+                    "context_gaps": context.gaps,
+                    "contact_enrichment_policy": CONTACT_ENRICHMENT_POLICY,
+                    "research_provider_policy": RESEARCH_PROVIDER_POLICY,
+                    "opening_brief": render_brief(brief),
+                    "opening_brief_manifest_ref": manifest_ref.model_dump(mode="json"),
+                },
+                "research-quality-card",
+            )
+        if self.acquisition is not None and brief is not None:
+            self.acquisition.research_brief = brief["provider_context"]
+        get_logger(__name__).info(
+            "arv2.research_brief_ready",
+            workspace_id=self.scope.workspace_id,
+            run_id=str(self.scope.run_id),
+            job_id=str(self.scope.job_id),
+            context_id=str(self.context_id),
+            card_sha256=card.sha256,
+            replayed=row is not None,
+            document_count=len(brief["documents"]) if brief else 0,
+            gap_count=len(brief["gaps"]) if brief else 0,
+        )
+        return card
+
     async def run(self, *, objective: str, model_id: str | None = None) -> AgentTurnOutcome:
         await self.install()
         execution = self.execution_id
@@ -686,22 +772,8 @@ class ResearchUnitRuntime:
                         text("SELECT started_at FROM execution WHERE id=:id"), {"id": execution}
                     )
                 ).scalar_one()
-            card = await self.artifact(
-                {
-                    "context_id": str(self.context_id),
-                    "context_path": "/research/context.json",
-                    "evidence_path": "/evidence/index/0.json",
-                    "subject_kind": self.scope.subject_kind,
-                    "subject_id": str(self.scope.person_subject_id or self.scope.account_id),
-                    "account_id": str(self.scope.account_id),
-                    "account_name": self.scope.account_name,
-                    "account_domain": self.scope.account_domain,
-                    "context_gaps": context.gaps,
-                    "contact_enrichment_policy": CONTACT_ENRICHMENT_POLICY,
-                    "research_provider_policy": RESEARCH_PROVIDER_POLICY,
-                },
-                "research-quality-card",
-            )
+            turn_id = uuid5(NAMESPACE_URL, f"research-quality-turn:{execution}")
+            card = await self.opening_card(context=context, started=started, turn_id=turn_id)
             budget = await self.artifact(
                 {"mode": "record_only", "limit_millicents": 0}, "agent-budget-envelope"
             )
@@ -717,7 +789,7 @@ class ResearchUnitRuntime:
                 "agent-turn-input",
             )
             request = AgentTurnRequest(
-                turn_id=uuid5(NAMESPACE_URL, f"research-quality-turn:{execution}"),
+                turn_id=turn_id,
                 thread_id=thread,
                 constitution=AgentConstitution(
                     workspace_id=self.scope.workspace_id,
