@@ -946,6 +946,64 @@ def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake
     assert task.required_output_path == "outputs/review-verdict.md"
 
 
+def test_research_delegation_virtual_views_are_recoverable_without_file_access() -> None:
+    import json
+    from dataclasses import replace
+
+    request, resolved = _request()
+    resolved = cast(Any, resolved)
+    resolved = replace(
+        resolved,
+        profile=resolved.profile.model_copy(
+            update={
+                "delegation_roles": (AgentRole.RESEARCH_CLAIMS,),
+            }
+        ),
+    )
+    execution = _DelegationExecution()
+    artifacts = _DelegationArtifacts()
+
+    class NoFiles:
+        async def stat_entry(self, path):
+            raise AssertionError("Virtual views must not reach the physical workspace")
+
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=NoFiles())),
+        artifacts=cast(Any, artifacts),
+    )
+
+    async def case():
+        tool = factory._delegation_tool()
+        args = {
+            "role": "research_claims",
+            "goal": "Process evidence",
+            "instructions": "Read originals",
+        }
+        refused = json.loads(
+            await tool.coroutine(
+                runtime=SimpleNamespace(tool_call_id="wrong-copy"),
+                canonical_paths=["research/context.json", "evidence/index/0.json"],
+                **args,
+            )
+        )
+        assert refused["error"] == "plan_rejected"
+        assert "canonical_paths=[]" in refused["reasons"][0]
+        assert not execution.validated_plans
+        assert not artifacts.data
+        await tool.coroutine(
+            runtime=SimpleNamespace(tool_call_id="corrected-copy"), canonical_paths=[], **args
+        )
+        assert len(execution.validated_plans) == 1
+        step = execution.validated_plans[0].steps[0]
+        assert step.granted_paths == ()
+
+    run_async(case())
+
+
 def test_o3_research_delegation_carries_frozen_steering_and_directive_files_and_refs() -> None:
     request, resolved = _request()
     steering_ref = request.constitution.focus_refs[0].model_copy(

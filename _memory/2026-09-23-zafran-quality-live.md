@@ -31,3 +31,21 @@
   Some person attempts terminated on malformed acquisition arguments. Full source originals and
   model/provider receipts remain in the private experiment. A fresh isolated attempt will keep
   these failures distinct, rather than resetting terminal jobs or their consumed allowances.
+
+- Corrected fresh attempt launched from `99f51f511` at 01:27:49 UTC in isolated database
+  `clue_zafran_quality_retry_20260923`, artifacts `.artifacts/arv4-zafran-retry-20260923/`.
+  Ten worker processes x3 verified by startup events. Same deterministic request/run ID as the
+  first attempt, different DB/blob/workspace roots and trace IDs. No previous target facts copied.
+- Initial full-trace cloud export exceeded 100 MB; paginated observations recovered most events.
+  First join recovered 203/204 model observation IDs. Local raw model logs/artifacts retained;
+  check remaining observation before claiming complete cloud tracing.
+- Live status/acceptance record: `docs/superpowers/plans/2026-09-23-zafran-quality-live.md`.
+
+- Second attempt initial account unit hit `workspace_security_error`: delegation tried to copy
+  revocable `/research` views as local files. Added a bounded actionable refusal for these view
+  paths before physical file access; specialists already receive authorized views. Three focused
+  delegation regressions pass. The full runtime module also has two unchanged Stage-0 expectation
+  failures, reproduced with the pre-fix HEAD module. An initial baseline-loader attempt failed on
+  circular imports; loading the package before substituting the isolated module fixed the probe.
+- Preserve second-attempt originals/checkpoints and resume it after worker restart, rather than
+  making a third fresh acquisition run. No reset of terminal job status or consumed allowances.

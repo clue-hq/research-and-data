@@ -493,7 +493,12 @@ class DelegateSpecialistRequest(_ModelInput):
     goal: str = Field(min_length=1, max_length=2_048)
     instructions: str = Field(min_length=1, max_length=8_192)
     verbatim_context: tuple[str, ...] = Field(default=(), max_length=16)
-    canonical_paths: tuple[str, ...] = Field(default=(), max_length=32)
+    canonical_paths: tuple[str, ...] = Field(
+        default=(),
+        max_length=32,
+        description="Existing local workspace files to copy. Research specialists already have "
+        "scoped /research and /evidence views; mention those paths in instructions, not here.",
+    )
     domain_refs: tuple[ModelDomainRef, ...] = Field(default=(), max_length=64)
 
     @field_validator("canonical_paths")
@@ -1109,6 +1114,26 @@ class GovernedAgentToolFactory:
                 raise ValueError(f"role {role.value!r} is absent from delegated authority")
             workspace_id = self._request.constitution.workspace_id
             canonical_paths = list(model_input.canonical_paths)
+            if role in {AgentRole.RESEARCH_CLAIMS, AgentRole.RESEARCH_NARRATIVE} and any(
+                path.split("/", 1)[0] in {"research", "evidence"} for path in canonical_paths
+            ):
+                # These are live, revocable views, not files in the parent's private directory.
+                # The child's own authority already exposes them. Reject the copy request before
+                # touching the physical workspace, and let the parent correct its arguments.
+                reason = (
+                    "Research specialists already have scoped /research and /evidence views. "
+                    "Pass canonical_paths=[] and refer to those views in instructions. "
+                    "Only existing local workspace files can be copied."
+                )
+                digest = hashlib.sha256(str(runtime.tool_call_id).encode()).hexdigest()[:24]
+                return self._tool_failure(
+                    error="plan_rejected",
+                    address="delegate_specialist",
+                    node_key=f"delegate_{role.value}_{digest}",
+                    error_type="virtual_view_is_not_a_file",
+                    reasons=(reason,),
+                    raise_when_exhausted=ValueError(reason),
+                )
             domain_ref_inputs = list(model_input.domain_refs)
             if role is AgentRole.RESEARCH:
                 for artifact in self._request.constitution.project_context_artifacts:
