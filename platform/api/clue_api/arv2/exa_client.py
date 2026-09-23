@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -499,6 +500,7 @@ def deep_reasoning_body(
     text_max_chars: int = 10000,
     highlights_query: str | None = None,
     highlights_max_chars: int = 2000,
+    contents: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``type="deep-reasoning"`` body.
 
@@ -525,6 +527,8 @@ def deep_reasoning_body(
             "query": highlights_query,
             "maxCharacters": highlights_max_chars,
         }
+    if contents is not None:
+        body["contents"] = deepcopy(dict(contents))
     return body
 
 
@@ -790,6 +794,22 @@ def _read_report(parsed: object | None) -> str | None:
     return None
 
 
+def read_deep_report(body: Mapping[str, Any], *, text_output: bool = False) -> str | None:
+    """Read retained deep output without mistaking a JSON envelope for a text report."""
+    output_text, parsed, _ = _read_output(body)
+    report = _read_report(parsed)
+    if report is not None:
+        return report
+    if text_output and parsed is None:
+        # Missing/malformed output must not become a report containing the envelope JSON.
+        output = body.get("output")
+        if isinstance(output, str) or (
+            isinstance(output, dict) and isinstance(output.get("content"), str)
+        ):
+            return output_text
+    return None
+
+
 def is_thin_deep_response(
     *, n_results: int, cost_usd: Decimal | None, report_chars: int | None
 ) -> bool:
@@ -1020,6 +1040,7 @@ class ExaClient:
         text_max_chars: int = 10000,
         highlights_query: str | None = None,
         highlights_max_chars: int = 2000,
+        contents: Mapping[str, object] | None = None,
         label: str = "exa-deep",
         timeout_s: float = 1200.0,
     ) -> ExaDeepResult:
@@ -1040,8 +1061,11 @@ class ExaClient:
             text_max_chars=text_max_chars,
             highlights_query=highlights_query,
             highlights_max_chars=highlights_max_chars,
+            contents=contents,
         )
-        wants_report = "report" in _schema_properties(output_schema)
+        wants_report = (
+            "report" in _schema_properties(output_schema) or output_schema.get("type") == "text"
+        )
         first = self._deep_call(body, label=label, timeout_s=timeout_s)
         report_chars = len(first.report_text or "") if wants_report else None
         if not is_thin_deep_response(
@@ -1180,7 +1204,9 @@ class ExaClient:
         return ExaDeepResult(
             output_text=output_text,
             output_object=output_object,
-            report_text=_read_report(output_object),
+            report_text=read_deep_report(
+                parsed_body, text_output=body.get("outputSchema", {}).get("type") == "text"
+            ),
             grounding=grounding,
             results=_hits(parsed_body.get("results")),
             status=result.response.status,

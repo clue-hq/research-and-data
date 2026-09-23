@@ -45,6 +45,7 @@ from pydantic import (
 from sqlalchemy import text
 
 from clue_api.arv2 import research_operations as operations
+from clue_api.arv2.account_exa_brief import account_exa_arguments, uses_account_exa_brief
 from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
@@ -89,7 +90,12 @@ from clue_api.arv2.ats_client import (
 from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
 from clue_api.arv2.errors import ProviderHalted, RawParseError
-from clue_api.arv2.exa_client import ExaClient, is_thin_deep_response, report_output_schema
+from clue_api.arv2.exa_client import (
+    ExaClient,
+    deep_reasoning_body,
+    is_thin_deep_response,
+    report_output_schema,
+)
 from clue_api.arv2.gemini_media_client import (
     GeminiMediaClient,
     MediaBudget,
@@ -1047,6 +1053,21 @@ class ResearchDeepArgs(_Args):
     num_results: int = Field(20, ge=10, le=25)
 
 
+class AccountResearchDeepArgs(_Args):
+    charter: str = Field(
+        min_length=200,
+        description="Self-contained Exa assignment, including account-specific probes once.",
+    )
+    same_name_exclusions: list[str] = Field(default_factory=list)
+    additional_queries: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Complementary searches from this account's brief and known leads; usually 3–5."
+        " Use names only when known. These guide the same Exa call, not separate deep calls.",
+    )
+    num_results: int = Field(40, ge=10, le=40)
+
+
 class SourceInput(_Args):
     """One retrieved thing, with the URL it came from.
 
@@ -1894,25 +1915,46 @@ def _deep_lock(scope: JobScope, exclusions: str) -> str:
     )
 
 
-async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[str, Any]:
+async def _research_deep(
+    runtime: ToolRuntime, args: ResearchDeepArgs | AccountResearchDeepArgs
+) -> dict[str, Any]:
     scope = runtime.scope
     exclusions = ", ".join(args.same_name_exclusions) or "none named"
     system_prompt = _deep_lock(scope, exclusions) + "\n\n" + EVIDENCE_RULES
     query_parts = [args.charter]
-    if args.probes:
+    if isinstance(args, ResearchDeepArgs) and args.probes:
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
     query_parts.append(
         "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
         + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
     )
     query = "\n\n".join(query_parts)
+    provider_args: dict[str, Any] = {
+        "system_prompt": system_prompt,
+        "query": query,
+        "output_schema": report_output_schema(),
+        "num_results": args.num_results,
+    }
+    operation_input: dict[str, Any] = {
+        "system": system_prompt,
+        "query": query,
+        "num_results": args.num_results,
+    }
+    if uses_account_exa_brief(scope):
+        assert isinstance(args, AccountResearchDeepArgs)
+        provider_args = account_exa_arguments(
+            charter=args.charter,
+            additional_queries=args.additional_queries,
+            num_results=args.num_results,
+            same_name_exclusions=args.same_name_exclusions,
+        )
+        # The entire wire request identifies this operation and is retained in the provider ledger.
+        # Different additional queries/content settings must never reuse an old purchase receipt.
+        operation_input = deep_reasoning_body(**provider_args)
 
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).deep_reasoning(
-            system_prompt=system_prompt,
-            query=query,
-            output_schema=report_output_schema(),
-            num_results=args.num_results,
+            **provider_args,
             label=f"deep-{scope.account_domain}",
         )
 
@@ -1925,11 +1967,11 @@ async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[s
         operation, raw = await runtime.operate(
             "exa",
             "account_deep",
-            {"system": system_prompt, "query": query, "num_results": args.num_results},
+            operation_input,
             hop,
         )
         try:
-            return deep_result(operation, raw)
+            return deep_result(operation, raw, text_output=uses_account_exa_brief(scope))
         except RefusalError:
             async with runtime._conn_factory() as conn:
                 await conn.execute(
@@ -2731,11 +2773,19 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             runtime,
             name="research_deep",
             description=(
-                "The one paid dossier call: your charter and special probes go in the query, the "
+                "Read the account-dossier skill. Send a self-contained charter and complementary "
+                "additional_queries from the brief and known leads. Integrate probes into the "
+                "charter once. One deep call; default 40 results, source highlights "
+                "and page links. Exa investigates; you retain seller-fit judgment."
+                if uses_account_exa_brief(runtime.scope)
+                else "The one paid dossier call: your charter and special probes go in the query, "
+                "the "
                 "target lock and the evidence law in the system prompt, and what is already "
                 "established is named so the provider finds what is NOT there. Use it once."
             ),
-            model=ResearchDeepArgs,
+            model=AccountResearchDeepArgs
+            if uses_account_exa_brief(runtime.scope)
+            else ResearchDeepArgs,
             body=_research_deep,
         ),
         _tool(

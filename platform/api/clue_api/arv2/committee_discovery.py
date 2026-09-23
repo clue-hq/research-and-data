@@ -39,7 +39,7 @@ from clue_api.arv2.ai_ark_client import (
     role_search_body,
 )
 from clue_api.arv2.claim_writer import WriteReceipt
-from clue_api.arv2.exa_client import _read_output, _read_report
+from clue_api.arv2.exa_client import read_deep_report
 from clue_core import ExtractionMethod
 from clue_research.identity.provider import (
     register_provider_subjects,
@@ -522,9 +522,10 @@ async def finalize_committee(
     }
 
 
-def deep_result(op: operations.Operation, raw: Mapping[str, Any]) -> dict[str, Any]:
-    _, parsed, _ = _read_output(raw)
-    report = _read_report(parsed) or ""
+def deep_result(
+    op: operations.Operation, raw: Mapping[str, Any], *, text_output: bool = False
+) -> dict[str, Any]:
+    report = read_deep_report(raw, text_output=text_output) or ""
     if not report.strip():
         raise RefusalError(
             "deep_thin_response",

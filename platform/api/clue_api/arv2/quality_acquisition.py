@@ -6,12 +6,13 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.exa_client import _read_output, _read_report
+from clue_api.arv2.exa_client import _read_output, _read_report, read_deep_report
 from clue_api.arv2.provider_ledger import DrainReport, ledger_id_for
 from clue_api.arv2.quality_evidence import SourceRef, persist_source
 from clue_api.arv2.research_operations import OperationScope
@@ -169,31 +170,56 @@ async def _index_receipts(
         )
         if row.provider != "exa" or not isinstance(body, dict):
             continue
-        _, parsed, _ = _read_output(body)
-        report_text = _read_report(parsed)
+        report_text = read_deep_report(body, text_output=row.operation == "deep-reasoning")
         if report_text:
+            _, parsed, _ = _read_output(body)
+            # Keep historical structured-report source IDs stable on recovery.
+            locator = (
+                "output.report"
+                if _read_report(parsed) is not None
+                else ("output.content" if isinstance(body.get("output"), dict) else "output")
+            )
             sources.append(
                 await save(
                     kind="research_report",
                     body=report_text,
-                    origin_locator="output.report",
+                    origin_locator=locator,
                     metadata={"attribution": "provider_synthesis", "primary_quote": False},
                 )
             )
         results = body.get("results")
         for i, result in enumerate(results if isinstance(results, list) else []):
-            if not isinstance(result, dict) or not isinstance(result.get("text"), str):
+            if not isinstance(result, dict):
                 continue
-            sources.append(
-                await save(
-                    kind="web_snapshot",
-                    body=result["text"],
-                    origin_locator=f"results/{i}/text",
-                    source_url=result.get("url"),
-                    metadata={
-                        "published_at": result.get("publishedDate"),
-                        "title": result.get("title"),
-                    },
+            for locator, content in exa_source_texts(result):
+                sources.append(
+                    await save(
+                        kind="web_snapshot",
+                        body=content,
+                        origin_locator=f"results/{i}/{locator}",
+                        source_url=result.get("url"),
+                        metadata={
+                            "published_at": result.get("publishedDate"),
+                            "title": result.get("title"),
+                            "content_kind": "highlight"
+                            if locator.startswith("highlights/")
+                            else "text",
+                        },
+                    )
                 )
-            )
     return tuple(sources)
+
+
+def exa_source_texts(result: dict[str, Any]) -> list[tuple[str, str]]:
+    """Keep each returned excerpt addressable; a highlights-only response is not a full page."""
+    texts = []
+    if isinstance(result.get("text"), str) and result["text"].strip():
+        texts.append(("text", result["text"]))
+    highlights = result.get("highlights")
+    if isinstance(highlights, list):
+        texts.extend(
+            (f"highlights/{index}", value)
+            for index, value in enumerate(highlights)
+            if isinstance(value, str) and value.strip()
+        )
+    return texts

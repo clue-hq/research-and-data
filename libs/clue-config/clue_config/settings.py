@@ -342,7 +342,7 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
     # New launches use AI Ark committee discovery (founder ruling 2026-09-22).
     # Historical jobs still resolve their pinned catalog, including legacy v1 rows.
-    arv2_research_catalog_version: Literal["v1", "v2", "v3"] = "v2"
+    arv2_research_catalog_version: Literal["v1", "v2", "v3", "v4"] = "v2"
     arv2_account_research_enabled: bool = True
     # Durable quality continuation/outbox recovery; no effect when no quality generation exists.
     arv2_quality_reconcile_interval_s: float = Field(default=10.0, gt=0)

@@ -210,7 +210,7 @@ def quality_tools(
 
 
 def quality_profiles(
-    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 5
+    tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 5, person: bool = False
 ) -> AgentProfileRegistry:
     authority = {
         descriptor.address: (
@@ -255,7 +255,12 @@ def quality_profiles(
         tool_inventory=inventory,
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
-        selected_profile_versions=dict.fromkeys(ROLES, f"v{version}"),
+        selected_profile_versions={
+            role: "v6"
+            if version == 7 and (person or role != AgentRole.ACCOUNT_RESEARCH)
+            else f"v{version}"
+            for role in ROLES
+        },
     )
 
 
@@ -435,7 +440,9 @@ class ResearchUnitRuntime:
         self.artifacts.context_id = context_id
         self.turns = DbAgentTurnJournal(conn_factory=connections)
         self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 5))
-        self.profiles = quality_profiles(tools, version=self.resource_version)
+        self.profiles = quality_profiles(
+            tools, version=self.resource_version, person=scope.subject_kind == "person"
+        )
         self.checkpointer_factory = checkpointer_factory
         self.plans = DbAgentPlanJournal(conn_factory=connections)
         self.contexts = _Contexts(self)
