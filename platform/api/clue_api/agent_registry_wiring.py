@@ -210,7 +210,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # open-web search, used last, text out and never a claim — and prompt pin v14→v15 for the
     # paragraph that orders the lookups (claims, then the seller's files, then the web). The
     # conversation recipe moves 31 → 32; the manual re-mints at `manual-*@v9`.
-    AgentRole.HEAD_OF_ABM: "v62",
+    # v63 adds the account-research briefing skill and Stage-0 handoff guidance.
+    # Tools, prompt, models and limits are unchanged from v62.
+    AgentRole.HEAD_OF_ABM: "v63",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

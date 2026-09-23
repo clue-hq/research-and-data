@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -140,6 +141,12 @@ _ESTABLISHED_LINE_CAP = 60
 #: was 34k characters because a single AI Ark record or requisition list rode in whole; a line
 #: exists to tell the agent *that* a field is known and roughly what it says, not to be the value.
 _ESTABLISHED_VALUE_CHARS = 240
+
+
+def _account_directive(text: str, *, name: str, domain: str) -> str:
+    """Bind only the two account tokens in the Head-of-ABM's shared run brief."""
+    values = {"account_name": name, "account_domain": domain}
+    return re.sub(r"\{\{(account_name|account_domain)\}\}", lambda m: values[m[1]], text)
 
 
 def format_established(claims: Sequence[Claim]) -> str:
@@ -1091,7 +1098,9 @@ class Arv2AccountResearchWorkHandler:
                 if quality_input_refs["quality_recipe_version"] >= 6
                 else ""
             )
-            + run.directive_text,
+            + _account_directive(
+                run.directive_text, name=scope.account_name, domain=scope.account_domain
+            ),
         )
 
     async def _compose_account(self, conn: AsyncConnection, job: JobRow) -> _Composition:
@@ -1145,7 +1154,9 @@ class Arv2AccountResearchWorkHandler:
             persona_markdown=persona,
             catalog_menu=catalog_menu_text(catalog),
             already_established=established,
-            directive_text=run.directive_text,
+            directive_text=_account_directive(
+                run.directive_text, name=scope.account_name, domain=scope.account_domain
+            ),
             effort=run.effort,
             committee_cap=run.committee_cap,
             icp_gate_keys=icp_gate_keys,
@@ -1220,7 +1231,9 @@ class Arv2AccountResearchWorkHandler:
             persona_markdown=persona,
             catalog_menu=catalog_menu_text(catalog),
             already_established=scope.already_established,
-            directive_text=run.directive_text,
+            directive_text=_account_directive(
+                run.directive_text, name=scope.account_name, domain=scope.account_domain
+            ),
             media_max_items=self._settings.arv2_person_media_max_items,
             stop_policy={
                 "max_model_rounds": self._settings.arv2_account_max_model_rounds,

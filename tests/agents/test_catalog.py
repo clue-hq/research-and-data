@@ -90,6 +90,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:account-gap-research@v1",
         "skill:account-gap-research@v2",
         "skill:account-gap-research@v3",
+        "skill:account-research-briefing@v1",
         "skill:artifact-review@v1",
         "skill:audience-persona@v1",
         "skill:audience-persona@v2",
@@ -317,6 +318,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # the code-execution skill before it opens one, and the §7c read-map line for a file.
         "skill:stage0-interview@v34",
         "skill:stage0-interview@v35",
+        "skill:stage0-interview@v36",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -440,6 +442,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:head-of-abm@v61",
         # web_search@1 granted; prompt v15; manual v9 (re-minted on the research-streaming merge).
         "profile:head-of-abm@v62",
+        "profile:head-of-abm@v63",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",
         "profile:head-of-abm@v9",

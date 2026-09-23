@@ -31,6 +31,9 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-23-head-of-abm-research-briefing.md` — rejected runtime compiler reverted;
+  Head-of-ABM briefing skill, shared account placeholders and existing source references.
+
 - `2026-09-23-arv3-advisory-research.md` — founder defers relationship/schema/display verification; source-based selection, plain findings and unrestricted research presentation for new quality revision six.
 
 - `2026-09-22-arv3-research-quality-implementation.md` — authorized quality development in
