@@ -63,6 +63,7 @@ from clue_api.agent_runtime_wiring import (
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DbAgentTurnJournal
+from clue_api.arv2.account_research_catalog import CONTACT_ENRICHMENT_POLICY
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
@@ -693,6 +694,7 @@ class ResearchUnitRuntime:
                     "account_name": self.scope.account_name,
                     "account_domain": self.scope.account_domain,
                     "context_gaps": context.gaps,
+                    "contact_enrichment_policy": CONTACT_ENRICHMENT_POLICY,
                 },
                 "research-quality-card",
             )

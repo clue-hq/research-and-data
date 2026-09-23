@@ -35,6 +35,7 @@ from clue_api.arv2.committee_discovery import (
 from clue_api.arv2.committee_step import run_committee_step
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.gemini_media_client import MediaBudget
+from clue_api.arv2.quality_provider_tools import AcquireResearchTool
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 from clue_config import Settings
 from clue_core import EntityId
@@ -251,22 +252,23 @@ def test_full_handoff_profile_reuse_channels_and_replay(catalog_version):
                             },
                         }
                     ),
-                    response({"id": "p1", "data": [["+14155550101", "+442012345678"]]}),
                 ]
             )
             prt = runtime(conn, person_scope, storage, person_wire)
             await load_person_seed(prt)
             assert not person_wire.requests
             channels = await enrich_contact(prt, EnrichContactArgs())
-            assert channels["email"]["state"] == channels["phone"]["state"] == "succeeded"
-            assert len(person_wire.requests) == 2
+            assert set(channels) == {"email"}
+            assert channels["email"]["state"] == "succeeded"
+            assert len(person_wire.requests) == 1
             await enrich_contact(prt, EnrichContactArgs())
-            assert len(person_wire.requests) == 2
+            assert len(person_wire.requests) == 1
             claims = await claims_for(
                 conn, person_scope.contact_id, scope=WorkspaceScope.for_workspace(run.workspace_id)
             )
             keys = {c.field_key for c in claims}
-            assert {"core.work_email", "core.direct_phone", "contact.current_title"} <= keys
+            assert {"core.work_email", "contact.current_title"} <= keys
+            assert "core.direct_phone" not in keys
             assert all(
                 c.artifact_key
                 for c in claims
@@ -767,9 +769,7 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                                 },
                             }
                         )
-                    if request.url.endswith("/mobile-phone-finder"):
-                        return response({"id": "p1", "data": [["+14155550101"]]})
-                    raise AssertionError("seeded person performed a name search")
+                    raise AssertionError("seeded person performed an unexpected provider call")
 
             person_wire = PersonWire()
 
@@ -819,7 +819,11 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
             )
             child = await store.read_job(conn, job_id=child.job_id)
             assert child.finalization["channels"]["contact_email"] == "succeeded"
-            assert child.finalization["channels"]["contact_phone"] == "succeeded"
+            assert "contact_phone" not in child.finalization["channels"]
+            assert {req.url.rsplit("/", 1)[-1] for req in person_wire.requests} == {
+                "search",
+                "single",
+            }
             assert not any(req.url.endswith("/v1/people") for req in person_wire.requests)
             # DSAR removes the account-side copy and stops old person authority as well.
             rights = DataSubjectRightsImpl(
@@ -888,14 +892,16 @@ async def seeded_person_runtime(conn, wire, *, catalog_version="v2"):
 
 
 @pytest.mark.parametrize(
-    "email_mode,phone_id,states",
+    "email_mode,state",
     [
-        ("empty", "p1", ("empty", "succeeded")),
-        ("error", "p1", ("failed", "succeeded")),
-        ("found", "wrong-person", ("succeeded", "unresolved_identity")),
+        ("empty", "empty"),
+        ("error", "failed"),
+        ("found", "succeeded"),
+        ("wrong-person", "unresolved_identity"),
     ],
 )
-def test_channel_failure_and_wrong_person_are_independent(email_mode, phone_id, states):
+@pytest.mark.parametrize("catalog_version", ["v2", "v3", "v4"])
+def test_email_outcomes_preserve_profile_without_phone_purchase(email_mode, state, catalog_version):
     class Wire:
         def __init__(self):
             self.requests = []
@@ -909,7 +915,7 @@ def test_channel_failure_and_wrong_person_are_independent(email_mode, phone_id, 
                     return response({"message": "No email"}, 404)
                 return response(
                     {
-                        "id": "p1",
+                        "id": "wrong-person" if email_mode == "wrong-person" else "p1",
                         "email": {
                             "output": [
                                 {
@@ -921,21 +927,31 @@ def test_channel_failure_and_wrong_person_are_independent(email_mode, phone_id, 
                         },
                     }
                 )
-            return response({"id": phone_id, "data": [["+14155550101"]]})
+            raise AssertionError("email enrichment attempted another provider endpoint")
 
     async def scenario():
         async with rollback_conn(seed_pack=True) as conn:
             wire = Wire()
             rt = await seeded_person_runtime(conn, wire)
+            rt.scope = replace(rt.scope, catalog_version=catalog_version)
+            capability = next(
+                c
+                for c in AcquireResearchTool(rt).capabilities()
+                if c["operation"] == "enrich_contact"
+            )
+            channel_schema = capability["arguments_schema"]["properties"]["channels"]
+            assert channel_schema["default"] == ["email"]
+            assert channel_schema["items"]["const"] == "email"
             result = await enrich_contact(rt, EnrichContactArgs())
-            assert (result["email"]["state"], result["phone"]["state"]) == states
+            assert set(result) == {"email"}
+            assert result["email"]["state"] == state
             claims = await rt.job_claims()
             keys = {c.field_key for c in claims}
             assert "contact.current_title" in keys
-            assert ("core.work_email" in keys) == (states[0] == "succeeded")
-            assert ("core.direct_phone" in keys) == (states[1] == "succeeded")
+            assert ("core.work_email" in keys) == (state == "succeeded")
+            assert "core.direct_phone" not in keys
             await enrich_contact(rt, EnrichContactArgs())
-            assert len(wire.requests) == 2
+            assert len(wire.requests) == 1
 
     run_async(scenario())
 
@@ -984,8 +1000,8 @@ def test_completed_channel_survives_claim_failure_and_new_runtime_replay():
                 stop_external=True,
                 channel_fields=None,
             )
-            result = await enrich_contact(fresh, EnrichContactArgs(channels=["phone"]))
-            assert result["phone"]["state"] != "succeeded" and len(wire.requests) == 1
+            result = await enrich_contact(fresh, EnrichContactArgs())
+            assert result["email"]["state"] != "succeeded" and len(wire.requests) == 1
             from clue_api.arv2.account_research_claims import ai_ark_person_claims
             from clue_api.arv2.ai_ark_client import person_from_record
 
@@ -1102,9 +1118,9 @@ def test_unseeded_person_uses_bound_lookup_then_same_channels_without_second_loo
             result = await lookup_bound_person(unseeded, args)
             assert result["profile"]["id"] == "p1"
             assert result["channels"]["email"]["state"] == "empty"
-            assert result["channels"]["phone"]["state"] == "empty"
+            assert set(result["channels"]) == {"email"}
             await lookup_bound_person(unseeded, args)
-            assert len(wire.requests) == 3
+            assert len(wire.requests) == 2
             assert sum(r.url.endswith("/v1/people") for r in wire.requests) == 1
             refs = (await store.read_job(conn, job_id=seeded.scope.job_id)).input_refs
             assert "profile" not in refs and refs["candidate_ref"]
@@ -1232,11 +1248,24 @@ def test_late_channel_response_after_erasure_is_retained_only_as_unreadable_rece
                     self.requests.append(request)
                     started.set()
                     assert release.wait(5)
-                    return response({"id": "p1", "data": [["+14155550101"]]})
+                    return response(
+                        {
+                            "id": "p1",
+                            "email": {
+                                "output": [
+                                    {
+                                        "address": "dana@example.test",
+                                        "found": True,
+                                        "status": "VALID",
+                                    }
+                                ]
+                            },
+                        }
+                    )
 
             wire = Wire()
             rt = await seeded_person_runtime(conn, wire)
-            pending = asyncio.create_task(enrich_contact(rt, EnrichContactArgs(channels=["phone"])))
+            pending = asyncio.create_task(enrich_contact(rt, EnrichContactArgs()))
             try:
                 assert await asyncio.to_thread(started.wait, 5)
                 await ops.stop_contact_jobs(
@@ -1253,15 +1282,15 @@ def test_late_channel_response_after_erasure_is_retained_only_as_unreadable_rece
                 )
             finally:
                 release.set()
-            assert (await pending)["phone"]["state"] != "succeeded"
-            assert not any(c.field_key == "core.direct_phone" for c in await rt.job_claims())
+            assert (await pending)["email"]["state"] != "succeeded"
+            assert not any(c.field_key == "core.work_email" for c in await rt.job_claims())
             row = (
                 await conn.execute(
                     text(
                         "SELECT o.artifact_key,a.privacy_erased,o.ledger_id "
                         "FROM arv2_research_operation o JOIN artifact a "
                         "ON a.storage_key=o.artifact_key "
-                        "WHERE o.job_id=:job AND o.kind='contact_phone'"
+                        "WHERE o.job_id=:job AND o.kind='contact_email'"
                     ),
                     {"job": rt.scope.job_id},
                 )

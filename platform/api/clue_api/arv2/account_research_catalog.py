@@ -26,6 +26,12 @@ ARV2_ACCOUNT_PROFILE_REF = f"agent-profile:arv2-account:{ARV2_ACCOUNT_CATALOG_VE
 ARV2_PERSON_CATALOG_VERSION = "v1"
 ARV2_PERSON_PROFILE_REF = f"agent-profile:arv2-person:{ARV2_PERSON_CATALOG_VERSION}"
 
+CONTACT_ENRICHMENT_POLICY = (
+    "Current contact-enrichment policy supersedes older catalog instructions: enrich work email "
+    "only. Paid phone enrichment is unavailable; do not request it or treat its absence as a "
+    "research gap. Existing phone findings remain readable."
+)
+
 
 # Explicit versions prevent future bundles silently falling back to v1 behavior.
 CATALOG_CAPABILITIES = {
@@ -237,6 +243,7 @@ def build_system_prompt(bundle: ResourceBundle, context: AccountContext) -> str:
         "The following runtime context is engine authority: the account, the ICP, the persona map, "
         "the field catalog and what is already established. Research the account in full.\n"
         f"<account_research_context>\n{context.block()}\n</account_research_context>",
+        CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)
 
@@ -315,5 +322,6 @@ def build_person_system_prompt(bundle: ResourceBundle, context: PersonContext) -
         "account they belong to, the ICP, the persona map, the field catalog and what is already "
         "established. Research this one person in full.\n"
         f"<person_research_context>\n{context.block()}\n</person_research_context>",
+        CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)

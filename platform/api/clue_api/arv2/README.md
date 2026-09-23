@@ -14,8 +14,9 @@ profiles. Provider, web and unfilled-role selections remain distinct. No web URL
 known name is required for a provider candidate.
 
 Selected candidates pass reference-only seeds into existing person jobs. Professional profile
-facts land before enrichment; work-email-by-ID and domain/name phone lookup run independently
-alongside person depth. Phone results require matching returned provider ID or selected LinkedIn.
+facts land before enrichment; work-email-by-ID runs alongside person depth. Paid phone enrichment
+was removed by founder instruction on 2026-09-23: automatic and agent-requested enrichment accept
+email only. Runtime instructions supersede the phone guidance in historical pinned catalogs.
 Unknown dispatches are not automatically retried. Failed claim writes reuse saved responses.
 
 `research_operations.py` owns operation references, ordered selection checkpoints and job privacy
@@ -28,8 +29,8 @@ Each v2 job pins its five-file bundle; old rows keep v1 semantics. Rollback sele
 launches while retaining the additive schema and v2 readers. Apply migration `0ab01fe27c1e` before
 running the changed application. The separately initiated Probook/Zafran live canary and review
 remain outstanding; changing the default does not establish live acceptance. Existing processes
-must reload configuration to observe it. Phones are stored in `core.direct_phone`; a frontend
-phone slot is outside this change.
+must reload configuration to observe it. Existing `core.direct_phone` claims and provider receipts
+remain readable; stopping new phone purchases does not remove historical findings.
 See [acceptance](../../../../docs/superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
 
 ## Step 0 — the shared foundation (this task)

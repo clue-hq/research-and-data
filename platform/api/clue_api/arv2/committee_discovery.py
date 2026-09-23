@@ -28,7 +28,6 @@ from clue_api.arv2.account_research_claims import (
     committee_candidate_claims,
     email_export_claim,
     fit_verdict_claims,
-    phone_claim,
     provider_evidence,
 )
 from clue_api.arv2.account_research_refusals import RefusalError
@@ -37,7 +36,6 @@ from clue_api.arv2.ai_ark_client import (
     company_from_record,
     email_export_from_record,
     person_from_record,
-    phone_from_record,
     role_search_body,
 )
 from clue_api.arv2.claim_writer import WriteReceipt
@@ -75,7 +73,7 @@ class ReadPeopleResultArgs(BaseModel):
 
 class EnrichContactArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    channels: list[Literal["email", "phone"]] = Field(default=["email", "phone"])
+    channels: list[Literal["email"]] = Field(default=["email"])
 
 
 def fold(value: str | None) -> str:
@@ -626,42 +624,32 @@ def channel_identity(
 
 
 async def enrich_channel(runtime: ToolRuntime, channel: str) -> dict[str, Any]:
+    # Also protect direct/internal callers carrying an old phone request. Refuse before
+    # loading profiles, recording a provider operation or spending any credits.
+    if channel != "email":
+        raise RefusalError("invalid_arguments", "Only work-email enrichment is available.")
     seed = runtime.person_seed
     if seed is None:
         return {"state": "unresolved", "reason": "no bound provider profile"}
-    person = person_from_record(seed["profile"])
     subject = seed["provider_subject_id"]
     kind = f"contact_{channel}"
     try:
-        if channel == "email":
-            op, raw = await runtime.operate(
-                "ai_ark",
-                kind,
-                {"id": subject},
-                lambda caller: runtime.clients.ai_ark(caller).export_email(person_id=subject),
-            )
-        else:
-            domain, name = fold(runtime.scope.account_domain), person.full_name or ""
-            op, raw = await runtime.operate(
-                "ai_ark",
-                kind,
-                {"domain": domain, "name": name, "subject_id": subject},
-                lambda caller: runtime.clients.ai_ark(caller).find_phone(domain=domain, name=name),
-            )
+        op, raw = await runtime.operate(
+            "ai_ark",
+            kind,
+            {"id": subject},
+            lambda caller: runtime.clients.ai_ark(caller).export_email(person_id=subject),
+        )
         if op.state == "empty":
             state = "empty"
         elif not channel_identity(
-            raw, seed, phone=channel == "phone", account_domain=runtime.scope.account_domain
+            raw, seed, phone=False, account_domain=runtime.scope.account_domain
         ):
             state = "unresolved_identity"
-        elif channel == "email" and email_export_from_record(raw).free is True:
+        elif email_export_from_record(raw).free is True:
             state = "unresolved_private_email"
         else:
-            draft = (
-                email_export_claim(email_export_from_record(raw), runtime.scope)
-                if channel == "email"
-                else phone_claim(phone_from_record(raw), runtime.scope)
-            )
+            draft = email_export_claim(email_export_from_record(raw), runtime.scope)
             if draft:
                 reference = reference_data(op, subject, runtime.scope.job_id)
                 await runtime.write([provider_evidence(draft, reference)])
@@ -797,9 +785,9 @@ def person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             runtime,
             name="enrich_contact",
             description=(
-                "Retrieve work email and phone for the bound profile independently. "
-                "Reuses completed operations. Missing or unresolved channels do not "
-                "stop person depth."
+                "Retrieve work email for the bound profile. Reuses completed operations. "
+                "Missing or unresolved email does not stop person depth. "
+                "Paid phone enrichment is unavailable."
             ),
             model=EnrichContactArgs,
             body=enrich_contact,

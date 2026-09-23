@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import SecretStr
@@ -14,6 +17,7 @@ from clue_api.arv2.account_research_catalog import (
     load_account_resources,
     load_person_resources,
 )
+from clue_api.arv2.account_research_refusals import RefusalError
 from clue_api.arv2.ai_ark_client import (
     AiArkClient,
     AiArkResponseError,
@@ -22,7 +26,12 @@ from clue_api.arv2.ai_ark_client import (
     role_search_body,
 )
 from clue_api.arv2.calls import ProviderCaller
-from clue_api.arv2.committee_discovery import channel_identity
+from clue_api.arv2.committee_discovery import (
+    EnrichContactArgs,
+    channel_identity,
+    enrich_channel,
+    person_tools,
+)
 from clue_api.arv2.sinks import MemoryLedger, MemoryRawSink
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
 
@@ -53,6 +62,19 @@ def client_with(*responses):
         min_gap_s=0,
     )
     return client, wire, ledger, raw
+
+
+@pytest.mark.parametrize("channels", [["phone"], ["email", "phone"]])
+def test_phone_enrichment_is_unavailable_before_provider_dispatch(channels):
+    runtime = SimpleNamespace(operate=AsyncMock(), person_seed=None)
+    tool = person_tools(runtime)[0]
+    result = json.loads(asyncio.run(tool.ainvoke({"channels": channels})))
+    assert result["code"] == "invalid_arguments"
+    # Protect callers that bypass the agent tool's schema, including stale internal calls.
+    with pytest.raises(RefusalError, match="Only work-email"):
+        asyncio.run(enrich_channel(runtime, "phone"))
+    runtime.operate.assert_not_awaited()
+    assert EnrichContactArgs().channels == ["email"]
 
 
 def test_smart_exact_company_shape_and_equivalent_title_fingerprints():
