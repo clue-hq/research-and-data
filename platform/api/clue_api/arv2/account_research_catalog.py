@@ -33,6 +33,22 @@ CONTACT_ENRICHMENT_POLICY = (
 )
 
 
+RESEARCH_PROVIDER_POLICY = (
+    "Current provider policy supersedes older catalog guidance: AI Ark supplies basic typed "
+    "company/person facts and work email, not descriptive prose or qualitative research. "
+    "Keep its original responses inspectable; summaries, biographies and headlines are not "
+    "research evidence. Synthesize core.company_about from Exa research and company website "
+    "evidence, with AI Ark typed facts adding context and source references preserved; never "
+    "copy its description as the answer. If research is missing, record the gap and continue. "
+    "Use Exa primarily for "
+    "substantive account/person research; directly fetched pages, hiring evidence and media "
+    "remain research sources. Interpret fit, pain and buying roles using that research and "
+    "seller/ICP/persona context; typed enrichment alone does not establish those conclusions. "
+    "Choose either web search or AI Ark SMART for people discovery as appropriate; neither is "
+    "only a fallback. Combine references and reuse acquired profiles for work-email enrichment."
+)
+
+
 # Explicit versions prevent future bundles silently falling back to v1 behavior.
 CATALOG_CAPABILITIES = {
     "v1": frozenset(),
@@ -243,6 +259,7 @@ def build_system_prompt(bundle: ResourceBundle, context: AccountContext) -> str:
         "The following runtime context is engine authority: the account, the ICP, the persona map, "
         "the field catalog and what is already established. Research the account in full.\n"
         f"<account_research_context>\n{context.block()}\n</account_research_context>",
+        RESEARCH_PROVIDER_POLICY,
         CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)
@@ -322,6 +339,7 @@ def build_person_system_prompt(bundle: ResourceBundle, context: PersonContext) -
         "account they belong to, the ICP, the persona map, the field catalog and what is already "
         "established. Research this one person in full.\n"
         f"<person_research_context>\n{context.block()}\n</person_research_context>",
+        RESEARCH_PROVIDER_POLICY,
         CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)

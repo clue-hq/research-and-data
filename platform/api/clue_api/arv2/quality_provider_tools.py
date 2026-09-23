@@ -82,7 +82,9 @@ class AcquireResearchTool(Tool):
         operation_id_required=True,
     )
     model_description = (
-        "Acquire originals using the existing company, people, web, ATS and media providers. "
+        "Acquire originals using company, people, web, ATS and media providers. "
+        "AI Ark supplies basic typed enrichment; Exa and company pages inform substantive research "
+        "and company descriptions. Both web and AI Ark SMART can discover people. "
         "Read /research/capabilities/0.json for operation names and argument schemas. "
         "Read result bodies through the returned path; originals through /evidence/. "
         "Refusals and uncertain dispatches are gaps, not successful research. Never repeat an "

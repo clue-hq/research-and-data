@@ -400,7 +400,6 @@ _AI_ARK_WIDE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("core.account_name", ("summary", "name")),
     ("core.primary_domain", ("link", "domain")),
     ("core.legal_name", ("summary", "legal_name")),
-    ("core.company_about", ("summary", "description")),
     ("core.founded_year", ("summary", "founded_year")),
     ("core.company_type", ("summary", "type")),
     ("core.industries_all", ("industries",)),
@@ -685,7 +684,9 @@ def _ai_ark_draft(
 def ai_ark_company_claims(
     company: AiArkCompany, scope: JobScope, *, catalog: FieldCatalog
 ) -> list[ClaimDraft]:
-    """Every registered field the company record carries, cited by raw path, never by a fake URL.
+    """Basic typed company facts, cited by raw path, never by a fake URL.
+
+    Provider descriptions stay in the raw record; company_about is synthesized from research.
 
     ``https://api.ai-ark.com/v1/companies?domain=…`` is not a page a human can open, so writing it
     as ``source_url`` would manufacture provenance. The claim cites the record instead: the
@@ -792,7 +793,6 @@ def ai_ark_company_claims(
 #: and offer a second, divergent answer to a question the entity row already answers.
 _AI_ARK_PERSON_FIELDS: tuple[tuple[str, str, str], ...] = (
     ("title", "contact.current_title", "profile.title"),
-    ("headline", "contact.headline", "profile.headline"),
 )
 
 #: The two ways the provider's ``profile.title`` carries the employer on the end of the job title
@@ -930,7 +930,9 @@ def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
 
 
 def ai_ark_person_claims(person: AiArkPerson, scope: JobScope) -> list[ClaimDraft]:
-    """Every registered contact field the person record carries, cited by raw path.
+    """Basic typed contact facts, cited by raw path.
+
+    Free-form headlines and biographies stay in the raw record, not automatic claims.
 
     The same law as :func:`ai_ark_company_claims`, one entity down: ``https://api.ai-ark.com/…`` is
     not a page a human can open, so a person claim carries ``source_url=None`` plus the exact

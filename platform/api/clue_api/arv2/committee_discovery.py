@@ -757,7 +757,8 @@ def account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
                 "Discover unknown people at this exact account through SMART job titles"
                 " after account deep research. Choose role-specific titles, optional "
                 "filters, page and size. Each result is reusable without another "
-                "purchase."
+                "purchase. Choose this or web search according to the account evidence; "
+                "neither discovery method is only a fallback."
             ),
             model=DiscoverPeopleArgs,
             body=discover_people,

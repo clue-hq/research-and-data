@@ -33,6 +33,27 @@ must reload configuration to observe it. Existing `core.direct_phone` claims and
 remain readable; stopping new phone purchases does not remove historical findings.
 See [acceptance](../../../../docs/superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
 
+## Provider responsibilities (2026-09-23, roadmap step 2)
+
+AI Ark supplies basic typed company/person enrichment, SMART people searches and work email.
+The shared automatic mapper excludes company descriptions and free-form person headlines;
+original responses and historical claims remain readable. Headcount, funding, job titles,
+locations and structured employment history keep their existing provenance and estimate markers.
+
+Company descriptions should synthesize Exa research and company website evidence, with AI Ark's
+basic facts adding context. They should not copy the provider description. Exa remains the primary
+substantive research provider; directly retrieved pages, ATS records and media remain useful
+sources. Interpretations of pain, fit and buying roles use research and seller/ICP/persona context.
+Missing research is reported as a gap, not filled with AI Ark promotional prose.
+
+Both web search and AI Ark SMART are people-discovery options chosen by the agent; neither is
+restricted to fallback use. Existing profile reuse and work-email enrichment remain in place.
+Runtime policy supersedes older pinned catalog guidance and accompanies specialist delegation.
+This is an instruction-level research boundary plus narrower automatic mappings, not a new
+claim-write or display gate. Agent adherence and raw research quality still require founder
+review. Runtime-brief expansion, research charters, claim classification and presentation changes
+belong to subsequent steps.
+
 ## Step 0 — the shared foundation (this task)
 
 | Module | What it owns |

@@ -17,6 +17,7 @@ from clue_agents import (
     WorkspaceRootPolicy,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.account_research_catalog import RESEARCH_PROVIDER_POLICY
 from clue_api.arv2.quality_execution import Allowance
 from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
 from clue_config import load_settings
@@ -152,7 +153,18 @@ class Models:
 
 
 @pytest.mark.parametrize("revision", [5, 6])
-def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path, revision):
+def test_real_parent_delegates_in_slot_and_replays_committed_results(
+    tmp_path, revision, monkeypatch
+):
+    original_generate = ScriptedAgentChatModel._generate
+    seen_prompts = []
+
+    def capture(self, messages, *args, **kwargs):
+        seen_prompts.append("\n".join(str(message.content) for message in messages))
+        return original_generate(self, messages, *args, **kwargs)
+
+    monkeypatch.setattr(ScriptedAgentChatModel, "_generate", capture)
+
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
@@ -256,6 +268,8 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(tmp_path, r
                 exclude={"operation_receipts"}
             )
             assert models.builds == ["account_research", "research_claims"]
+            assert len(seen_prompts) == 8
+            assert all(RESEARCH_PROVIDER_POLICY in prompt for prompt in seen_prompts)
             parameters = (
                 (
                     await conn.execute(

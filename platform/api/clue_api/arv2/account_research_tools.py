@@ -2681,7 +2681,8 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             runtime,
             name="search_web",
             description=(
-                "A bounded gap search (at most ten results) for a named fact or a named person. "
+                "Search for facts or people by name, role or team (at most ten results). "
+                "People discovery may use web search or AI Ark SMART as appropriate. "
                 "Returns URLs and short heads; read a promising hit with fetch_page."
             ),
             model=SearchWebArgs,
@@ -2693,8 +2694,10 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             description=(
                 "Deterministic firmographics for one exact domain from the company database: "
                 "legal name, founding year, industry, headcount and band, revenue band, HQ, "
-                "LinkedIn, socials, languages, technologies and funding. Every registered field "
-                "the record carries is written as a claim in code, with the record path recorded."
+                "LinkedIn, socials, languages, technologies and funding. Basic typed facts are "
+                "mapped with their record paths. AI Ark descriptions are not mapped; "
+                "synthesize core.company_about from Exa and company pages, "
+                "using typed facts as context."
             ),
             model=LookupCompanyArgs,
             body=_lookup_company,
