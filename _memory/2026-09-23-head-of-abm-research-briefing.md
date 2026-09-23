@@ -43,3 +43,12 @@
   authorized revert succeeded through command approval. The shell has `python3`, not `python`.
 - No paid calls, fleet changes, server restarts, database mutation, push or PR. Preexisting
   cumulative-review/catalog edits and untracked audit/report material were left untouched.
+
+## Example revision
+
+- Founder explicitly requested revising the newly authored local `account-research-briefing/v1`
+  file: one fictional Acme example, removal of the second example, and a short seller-context
+  note explaining why the brief emphasizes GTM capacity, campaign workload and buying roles.
+- Updated that file and its v63 profile digest in place for this local revision; the active
+  registry manifest expectation follows the new bytes. No runtime behavior changes.
+- Both focused registry/disclosure checks and whitespace validation pass. No live calls.

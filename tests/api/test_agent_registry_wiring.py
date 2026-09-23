@@ -161,7 +161,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("4e78846b9412b8be1173334b08bd7b5c3c5a1d1d00da22bfae6377e621ca7fb6"),
+        AgentRole.HEAD_OF_ABM: ("e1c65f41987fcb74f49da7ebb137f095aaed3fa36f45c6bc6c423c27b621d3ce"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

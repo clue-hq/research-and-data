@@ -14,7 +14,7 @@ skills:
   sha256: 6595e27c9c4f64dbf3da89d6e501dfe793c7ff9c02f6c17499f19a5121a47ebc
 - name: account-research-briefing
   version: v1
-  sha256: 8cd48a534e46dfe64a324cf6941f4418d1269e17bef855747e0a32c8c8466306
+  sha256: 847891b1e4030103cfa98d94b53f4ead742104b7338d1c8f4e835538bf5510a2
 - name: icp-authoring
   version: v3
   sha256: 6303ca41b567caa53bdd15b52b89b9569da5ae7e2010584b8184b15b616a2f8d
