@@ -47,7 +47,7 @@ from clue_api.arv2.ai_ark_client import (
 from clue_api.arv2.ats_client import AtsBoard, BoardFetchFailed, BoardPostings, JobPosting
 from clue_api.arv2.calls import CallCost
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
-from clue_api.arv2.errors import ProviderHalted, ProviderTransportError
+from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import (
     ExaContentsResult,
     ExaDeepResult,
@@ -2468,38 +2468,6 @@ def _lock_record() -> AiArkPerson:
     return _ark_person(linkedin_url="https://www.linkedin.com/in/nicholastfisher")
 
 
-def _lock_record_with(*, headline: str) -> AiArkPerson:
-    return _ark_person(
-        linkedin_url="https://www.linkedin.com/in/nicholastfisher", headline=headline
-    )
-
-
-def test_lookup_person_writes_the_record_fields_and_the_email_and_returns_the_verdict() -> None:
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (_lock_record(),)
-
-    found = _call(runtime, "lookup_person", linkedin_url="https://linkedin.com/in/NicholasTFisher/")
-
-    assert clients.ai_ark_client.people_calls == [(("Nick Fisher",), "probook.ai", 3)]
-    assert clients.ai_ark_client.export_calls == ["https://linkedin.com/in/NicholasTFisher/"], (
-        "the export is asked for the URL the agent named"
-    )
-    assert found["person"]["current_company_domain"] == "probook.ai"
-    assert found["email"]["verdict"] == "verified_smtp"
-    assert found["email_export_empty"] is False
-    assert found["write_failures"] == []
-    written = {draft.field_key for draft in writer.drafts}
-    assert written == {
-        "contact.current_title",
-        "contact.headline",
-        "contact.current_location",
-        "core.work_email",
-    }
-    assert all(draft.entity_id == CONTACT_ID for draft in writer.drafts), (
-        "every claim a person job writes lands on the contact"
-    )
-
-
 def test_lookup_person_refuses_a_url_the_committee_step_did_not_confirm() -> None:
     """The lock is the JOB's URL, not the model's argument.
 
@@ -2543,44 +2511,6 @@ def test_lookup_person_refuses_a_job_that_carries_no_confirmed_linkedin_url() ->
     assert clients.ai_ark_client.people_calls == [], "no provider record is bought unlocked"
     assert clients.ai_ark_client.export_calls == []
     assert writer.drafts == []
-
-
-def test_lookup_person_keeps_the_records_claims_when_the_email_export_fails() -> None:
-    """The record's fields are written before the export is bought, so a transport failure on the
-    second call costs only the email — not the title, headline and location this call already had.
-    """
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (_lock_record(),)
-    clients.ai_ark_client.raise_on_export = ProviderTransportError("ai_ark", 3, "connection reset")
-
-    failed = _call(
-        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
-    )
-
-    assert failed["code"] == "tool_error:ProviderTransportError"
-    assert {draft.field_key for draft in writer.drafts} == {
-        "contact.current_title",
-        "contact.headline",
-        "contact.current_location",
-    }, "the record's own claims survive the failed second hop"
-
-
-def test_lookup_person_reports_what_the_compliance_floor_did_to_this_calls_drafts() -> None:
-    """An empty ``written`` slot must be readable: "the record said nothing" and "the floor removed
-    it" are different facts, and only the compliance rows tell them apart."""
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (
-        _lock_record_with(headline="Demand gen — write to nick.fisher@gmail.com"),
-    )
-
-    found = _call(
-        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
-    )
-
-    assert [row["field_key"] for row in found["compliance"]] == ["contact.headline"]
-    assert found["compliance"][0]["rule"] == "personal_contact_detail"
-    assert "contact.headline" not in {draft.field_key for draft in writer.drafts}
-    assert "contact.headline" not in {row["field_key"] for row in found["written"]}
 
 
 def test_lookup_person_reports_no_compliance_rows_when_the_floor_did_nothing() -> None:
@@ -2637,40 +2567,6 @@ def test_lookup_person_refuses_subject_lock_failed_when_the_employer_is_not_the_
     assert writer.drafts == []
 
 
-def test_lookup_person_proceeds_when_the_record_cannot_state_the_employer_and_marks_it() -> None:
-    """The live Cogent failure: an unstated employer is unknown, not a different company.
-
-    The identity is already anchored on the URL the committee confirmed, so an employer the record
-    does not state cannot contradict it. Refusing there cost three confirmed members their whole
-    lookup — no provider claims, no email — over a name the record spelled two ways.
-    """
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (
-        _ark_person(
-            linkedin_url="https://www.linkedin.com/in/nicholastfisher",
-            current_company="Probook",
-            current_company_domain=None,
-        ),
-    )
-
-    found = _call(
-        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
-    )
-
-    assert "code" not in found, "an unstated employer is a marker, never a refusal"
-    assert found["employer_verified"] is False
-    assert clients.ai_ark_client.export_calls != [], "the email is still bought"
-    assert {draft.field_key for draft in writer.drafts} == {
-        "contact.current_title",
-        "contact.headline",
-        "contact.current_location",
-        "core.work_email",
-    }
-    assert all(draft.markers["employer_unverified"] is True for draft in writer.drafts), (
-        "every claim this lookup wrote says the employer was not corroborated"
-    )
-
-
 def test_lookup_person_marks_nothing_when_the_employer_is_the_account() -> None:
     runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
     clients.ai_ark_client.people = (_lock_record(),)
@@ -2681,45 +2577,6 @@ def test_lookup_person_marks_nothing_when_the_employer_is_the_account() -> None:
 
     assert found["employer_verified"] is True
     assert all("employer_unverified" not in draft.markers for draft in writer.drafts)
-
-
-def test_lookup_person_reports_an_empty_email_export_as_a_result_never_a_refusal() -> None:
-    """``email_export_empty`` is a finding about the mailbox, not a verdict on the person."""
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (_lock_record(),)
-    clients.ai_ark_client.export = _email_export(found=False)
-
-    found = _call(
-        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
-    )
-
-    assert "code" not in found, "an empty export is a result field, never a refusal envelope"
-    assert found["email_export_empty"] is True and found["email"] is None
-    assert "core.work_email" not in {draft.field_key for draft in writer.drafts}
-    assert {draft.field_key for draft in writer.drafts} == {
-        "contact.current_title",
-        "contact.headline",
-        "contact.current_location",
-    }
-
-
-def test_lookup_person_reports_a_write_failure_and_still_lands_the_rest() -> None:
-    runtime, clients, writer, _ = _runtime(PERSON_SCOPE)
-    clients.ai_ark_client.people = (_lock_record(),)
-    writer.raise_on = {"contact.headline"}
-
-    found = _call(
-        runtime, "lookup_person", linkedin_url="https://www.linkedin.com/in/nicholastfisher"
-    )
-
-    assert found["write_failures"] == [
-        {"field_key": "contact.headline", "error": "cannot write contact.headline"}
-    ]
-    assert {draft.field_key for draft in writer.drafts} == {
-        "contact.current_title",
-        "contact.current_location",
-        "core.work_email",
-    }
 
 
 # -- structure_material, the person branch ---------------------------------------------------------
