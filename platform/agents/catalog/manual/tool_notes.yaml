@@ -85,7 +85,7 @@ launch_arv2_account_research:
     project pinned and the product set the human confirmed. A successful call means queued, never
     finished and never that anything was found. The launched-task card appears in chat on its own.
     Read the run with read_arv2_account_research_run, and the accounts with read_project_accounts.
-  skill_section: stage0-interview v33 section 7, "Launch account research".
+  skill_section: account-research-briefing v1, "Brief the account researcher" (.deepagent/skills/account-research-briefing/v1/SKILL.md); stage0-interview v37 section 7, "Launch account research".
   see_also: [siblings, gates-authority, accounts-research]
   refusals:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.

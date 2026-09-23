@@ -161,7 +161,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("e1c65f41987fcb74f49da7ebb137f095aaed3fa36f45c6bc6c423c27b621d3ce"),
+        AgentRole.HEAD_OF_ABM: ("d7f3aa47662993a1bc650a11bb6603065d8b67e7b57b8fec1280d0e4c1bf58e2"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -582,9 +582,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v63"
+    assert production.profile_ref.address == "profile:head-of-abm@v64"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v36"
+        "skill:stage0-interview@v37"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -631,7 +631,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v36")
+    body = production.open_skill("skill:stage0-interview@v37")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -691,7 +691,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v36",
+        "skill:stage0-interview@v37",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v1",
@@ -701,11 +701,17 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v10" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
+    briefing_path = ".deepagent/skills/account-research-briefing/v1/SKILL.md"
+    launch = build_toolbelt(storage=None, gateway=None).descriptor("launch_arv2_account_research")
+    assert briefing_path in body
+    assert briefing_path in head.prompt_body
+    assert briefing_path in launch.model_description
+    assert briefing_path in head.open_skill("skill:manual-tools@v10")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -818,7 +824,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v36")
+    body = head.open_skill("skill:stage0-interview@v37")
 
     assert required_guidance in body
 
@@ -872,7 +878,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v36" not in remaining
+    assert "skill:stage0-interview@v37" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -883,7 +889,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v10" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -913,7 +919,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v15/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v16/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

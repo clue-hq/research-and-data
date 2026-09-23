@@ -212,7 +212,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # conversation recipe moves 31 → 32; the manual re-mints at `manual-*@v9`.
     # v63 adds the account-research briefing skill and Stage-0 handoff guidance.
     # Tools, prompt, models and limits are unchanged from v62.
-    AgentRole.HEAD_OF_ABM: "v63",
+    # v64 adds an explicit account-briefing pointer in prompt v16 and the tool manual.
+    AgentRole.HEAD_OF_ABM: "v64",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

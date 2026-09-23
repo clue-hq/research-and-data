@@ -52,3 +52,17 @@
 - Updated that file and its v63 profile digest in place for this local revision; the active
   registry manifest expectation follows the new bytes. No runtime behavior changes.
 - Both focused registry/disclosure checks and whitespace validation pass. No live calls.
+
+## Explicit launch and system-prompt references
+
+- Added the briefing skill path and `directive_text` instruction to the model-facing
+  `launch_arv2_account_research@1` description. Its input/output schemas and behavior are unchanged.
+- New Head-of-ABM prompt v16 has an Account deep research section pointing at that same skill.
+  Active profile/composer selection moves to v64; earlier prompt/profile bytes are preserved.
+- Updated the manual source note and generated manual v10; Stage-0 v37 updates its manual
+  links. These are versioned documentation copies, not a new execution layer. The briefing
+  skill itself remains v1 with the single Acme example.
+- Focused catalog, generated-manual drift, profile, privacy and contract tests pass (two
+  database-dependent skips). Existing disclosure coverage now checks the path in Stage-0,
+  the active system prompt, actual tool descriptor and the loaded manual. Ruff, formatting
+  and whitespace checks pass. No live calls, runtime restart, database changes or push.
