@@ -28,11 +28,59 @@ from clue_storage import (
     mark_erased,
     purge_erased_artifacts,
     record_artifact,
+    retain_artifact,
     sweep_orphan_blobs,
 )
 from tests.storage.conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_storage_db")
+
+
+def test_concurrent_readers_retain_shared_evidence_without_lock_upgrade() -> None:
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            async with engine.begin() as conn:
+                record = await _record(conn, uuid.uuid4().bytes, ws)
+            key = record.storage_key
+            readers = asyncio.Barrier(3)
+
+            async def retain(index):
+                async with engine.begin() as conn:
+                    await conn.execute(text("SET LOCAL statement_timeout='5s'"))
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key=:key FOR SHARE"),
+                        {"key": key},
+                    )
+                    await readers.wait()
+                    await retain_artifact(
+                        conn,
+                        workspace_id=ws,
+                        storage_key=key,
+                        reference_kind="test_retention",
+                        reference_id=str(index),
+                    )
+
+            try:
+                await asyncio.gather(*(retain(i) for i in range(3)))
+                async with engine.begin() as conn:
+                    assert not await erase_if_unreferenced(conn, key)
+                    assert (
+                        await conn.execute(
+                            text("SELECT count(*) FROM artifact_reference WHERE storage_key=:key"),
+                            {"key": key},
+                        )
+                    ).scalar_one() == 3
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact_reference WHERE storage_key=:key"), {"key": key}
+                    )
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE storage_key=:key"), {"key": key}
+                    )
+
+    run_async(case())
 
 
 async def _record(conn: AsyncConnection, data: bytes, workspace_id: str | None = "ws_t"):

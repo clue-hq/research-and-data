@@ -11,7 +11,7 @@ import json
 from typing import ClassVar, Literal, cast, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import text
 
 from clue_api.arv2 import research_operations as operations
@@ -122,10 +122,14 @@ class AcquireResearchTool(Tool):
         if ctx.workspace_id != runtime.scope.workspace_id or ctx.execution_id is None:
             raise ValueError("acquisition needs its bound research execution")
         tool = self.operations.get(args.operation)
+        validation_error: str | None = None
         if tool is None:
-            raise ValueError("operation is unavailable for this research subject")
-        # Validate before a durable dispatch record: a malformed call spends no allowance/provider.
-        cast(type[BaseModel], tool.get_input_schema()).model_validate(args.arguments)
+            validation_error = "operation_unavailable_for_subject"
+        else:
+            try:
+                cast(type[BaseModel], tool.get_input_schema()).model_validate(args.arguments)
+            except ValidationError:
+                validation_error = "invalid_acquisition_arguments"
         async with ctx.conn_factory() as conn:
             authority = await resolve_authority(conn, runtime.scope, ctx.execution_id)
             if authority.role != "account_research":
@@ -176,8 +180,19 @@ class AcquireResearchTool(Tool):
             )
         # The existing tool normalizes provider refusals. Exceptions after dispatch remain unknown;
         # a retry will return the above refusal instead of calling the provider again.
-        raw = await tool.ainvoke(args.arguments)
-        value = json.loads(raw) if isinstance(raw, str) else raw
+        if validation_error:
+            # A correctable planning mistake is a durable, non-spending refusal, not a runtime
+            # failure. Authority checks above remain hard failures, including specialist misuse.
+            value = {
+                "state": "refused",
+                "code": validation_error,
+                "recovery": "Read /research/capabilities/0.json and retry with a supported "
+                "operation and its exact arguments schema.",
+            }
+        else:
+            assert tool is not None
+            raw = await tool.ainvoke(args.arguments)
+            value = json.loads(raw) if isinstance(raw, str) else raw
         domain_state = value.get("state") if isinstance(value, dict) else None
         unknown = domain_state in {"unknown", "dispatched", "reserved"}
         refused = isinstance(value, dict) and (
@@ -270,6 +285,7 @@ class AcquireResearchTool(Tool):
                 status="outcome_unknown" if unknown else "refused" if refused else "completed",
                 result_path=f"/research/operations/{operation.operation_id}/0.json",
                 error_code=code,
+                recovery=value.get("recovery") if isinstance(value, dict) else None,
             )
         )
 

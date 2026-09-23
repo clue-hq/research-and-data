@@ -246,15 +246,16 @@ async def retain_artifact(
 ) -> None:
     """Hold immutable bytes for a durable owner. Explicit privacy erasure always wins.
 
-    The artifact lock serializes retention with erasure; an owner cannot resurrect unavailable
-    evidence. Owners release these references when their durable records/grants are retired.
+    A shared lock excludes erasure while allowing concurrent evidence readers to retain the
+    same original. Upgrading their existing shared locks to exclusive locks would deadlock.
+    Owners release these references when their durable records/grants are retired.
     """
     row = (
         await conn.execute(
             text(
                 "SELECT storage_key FROM artifact WHERE storage_key=:key AND workspace_id=:ws "
                 "AND erased_at IS NULL AND NOT privacy_erased "
-                "AND (expires_at IS NULL OR expires_at>now()) FOR UPDATE"
+                "AND (expires_at IS NULL OR expires_at>now()) FOR SHARE"
             ),
             {"key": storage_key, "ws": workspace_id},
         )

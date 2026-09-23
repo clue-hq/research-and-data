@@ -231,4 +231,24 @@ def test_invalid_transcript_reads_are_durable_refusals_without_transport(tmp_pat
             assert second.references["replayed"]
             assert not wire.requests
 
+            # Model planning mistakes must not consume the runtime's infrastructure failure
+            # budget, and a replay must not redispatch them or acquire any paid material.
+            malformed = AcquireResearchInput(operation="research_deep", arguments={"domain": "x"})
+            refused = await tool.invoke(malformed, replace(ctx, operation_id=OperationId(uuid4())))
+            assert refused.references["status"] == "refused"
+            assert refused.references["error_code"] == "invalid_acquisition_arguments"
+            assert "/research/capabilities/0.json" in refused.references["recovery"]
+            assert (await tool.invoke(malformed, ctx)).references["replayed"]
+            del tool.operations["lookup_company"]
+            unavailable = AcquireResearchInput(
+                operation="lookup_company", arguments={"domain": "x"}
+            )
+            refused = await tool.invoke(
+                unavailable, replace(ctx, operation_id=OperationId(uuid4()))
+            )
+            assert refused.references["status"] == "refused"
+            assert refused.references["error_code"] == "operation_unavailable_for_subject"
+            assert (await tool.invoke(unavailable, ctx)).references["replayed"]
+            assert not wire.requests
+
     run_async(case())

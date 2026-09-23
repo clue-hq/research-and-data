@@ -34,6 +34,46 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def test_slots_cannot_reacquire_their_workers_active_work() -> None:
+    async def case():
+        task = _task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH)
+        following = task.model_copy(update={"task_id": uuid4(), "dedup_key": "next-revision"})
+        queue = _Queue([])
+        leases = _Leases()
+        entered, finish = asyncio.Event(), asyncio.Event()
+
+        class Handler(_Handler):
+            async def handle(self, context):
+                self.contexts.append(context)
+                entered.set()
+                await finish.wait()
+                return WorkResult(outcome="done", references={})
+
+        handler = Handler(task.kind)
+        worker = LeasedWorkWorker(
+            handlers=(handler,),
+            queue=queue,
+            leases=leases,
+            worker_id="shared-worker",
+            concurrency=3,
+            poll_interval=0.001,
+        )
+        first = asyncio.create_task(worker._run_task(task, handler, slot=0))
+        await entered.wait()
+        await worker._run_task(following, handler, slot=1)
+        assert len(handler.contexts) == 1
+        assert leases.generations[task.work_id] == 1
+        assert queue.requeued == [(following.task_id, None)]
+        finish.set()
+        await first
+        await worker._run_task(following, handler, slot=2)
+        assert len(handler.contexts) == 2
+        assert leases.generations[task.work_id] == 2
+        assert not worker._active_work
+
+    asyncio.run(asyncio.wait_for(case(), timeout=5))
+
+
 class _Queue:
     def __init__(self, rows: list[WorkTaskRow]) -> None:
         self.rows = deque(rows)
