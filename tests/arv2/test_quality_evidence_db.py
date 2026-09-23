@@ -27,7 +27,7 @@ from clue_api.arv2.quality_evidence import (
     search_source,
     validate_support,
 )
-from clue_api.arv2.research_operations import OperationScope
+from clue_api.arv2.research_operations import OperationScope, begin
 from clue_storage import ArtifactIntegrityError, artifact_key, content_address, record_artifact
 from clue_storage.fs import FsStorage
 from tests.arv2.icp_fixture import seed_icp_fixture, settings_for
@@ -313,5 +313,57 @@ def test_provider_drain_preserves_full_report_and_source_pages_with_ledger_join(
             assert original["source_url"] == "https://clinic.test/referral"
             again = await index_acquisition(conn, storage, scope, report)
             assert [r.source_id for r in refs] == [r.source_id for r in again]
+
+    run_async(case())
+
+
+def test_operation_navigation_stays_scoped_and_marks_erased_sources_unavailable(tmp_path):
+    from clue_api.arv2.quality_source_navigation import operation_source_navigation
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            scope, other = await seed(conn, storage)
+            target_op, _ = await begin(conn, scope, "account_deep", {"query": "target"})
+            other_op, _ = await begin(conn, scope, "account_deep", {"query": "other"})
+            target, unrelated = target_op.operation_id, other_op.operation_id
+            refs = []
+            for subject, operation, body in (
+                (scope, target, "Included excerpt"),
+                (scope, target, "Later erased excerpt"),
+                (scope, unrelated, "Another purchase"),
+                (other, target, "Other account"),
+            ):
+                refs.append(
+                    await persist_source(
+                        conn,
+                        storage,
+                        subject,
+                        kind="web_snapshot",
+                        body=body,
+                        original_key=None,
+                        origin_locator="results/0/highlights/0",
+                        observed_at=NOW,
+                        source_url="https://example.test/source",
+                        operation_id=operation,
+                        metadata={"content_kind": "highlight"},
+                    )
+                )
+            grant = await grant_manifest(conn, scope, consumer_id=uuid4())
+            result = await operation_source_navigation(conn, grant, target)
+            assert {x["source_id"] for x in result["sources"]} == {
+                str(r.source_id) for r in refs[:2]
+            }
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true,erased_at=now(),"
+                    "erasure_reason='privacy' "
+                    "WHERE storage_key=:key"
+                ),
+                {"key": refs[1].artifact_key},
+            )
+            result = await operation_source_navigation(conn, grant, target)
+            assert [x["source_id"] for x in result["sources"]] == [str(refs[0].source_id)]
+            assert result["unavailable_source_count"] == 1
 
     run_async(case())

@@ -257,7 +257,7 @@ def quality_profiles(
         required_roles=ROLES,
         selected_profile_versions={
             role: "v6"
-            if version == 7 and (person or role != AgentRole.ACCOUNT_RESEARCH)
+            if version >= 7 and (person or role != AgentRole.ACCOUNT_RESEARCH)
             else f"v{version}"
             for role in ROLES
         },

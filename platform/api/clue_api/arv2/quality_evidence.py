@@ -322,6 +322,7 @@ async def list_sources(
     *,
     after: int = 0,
     limit: int = 30,
+    operation_id: UUID | None = None,
 ) -> dict[str, Any]:
     revision, subject = await _grant(conn, grant)
     if after < 0 or not 1 <= limit <= 100:
@@ -333,12 +334,14 @@ async def list_sources(
                     "SELECT * FROM arv2_evidence_source WHERE workspace_id=:ws "
                     "AND run_id=:run AND account_id=:account AND revision>:after AND "
                     "revision<=:revision "
+                    "AND (CAST(:operation AS uuid) IS NULL OR operation_id=:operation) "
                     "AND (:subject=account_id OR subject_id IN (:subject,account_id)) "
                     "ORDER BY revision LIMIT :limit"
                 ),
                 dict(
                     _params(grant.scope),
                     after=after,
+                    operation=operation_id,
                     revision=revision,
                     subject=subject,
                     limit=limit + 1,

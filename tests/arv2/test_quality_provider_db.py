@@ -279,3 +279,73 @@ def test_invalid_transcript_reads_are_durable_refusals_without_transport(tmp_pat
             assert not wire.requests
 
     run_async(case())
+
+
+def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [
+                    {
+                        "url": "https://example.test/bdr",
+                        "title": "BDR",
+                        "highlights": ["The role uses a named sales tool."],
+                    }
+                ],
+            }
+            wire = ScriptedTransport([response(body)])
+            rt = runtime(conn, scope, storage, wire)
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            tool = AcquireResearchTool(rt)
+            inputs = AcquireResearchInput(
+                operation="research_deep",
+                arguments={
+                    "charter": "Investigate the company and its operating workflows. " * 8,
+                    "additional_queries": ["company leadership"],
+                    "num_results": 40,
+                },
+            )
+            result = await tool.invoke(inputs, ctx)
+            assert result.references["status"] == "completed", result
+            backend = research_backend(BackendProtocol(), connections, storage, scope, parent)
+            saved = json.loads(await read_document(backend, result.references["result_path"]))
+            sources = saved["source_navigation"]["sources"]
+            assert {r["kind"] for r in sources} == {
+                "provider_record",
+                "research_report",
+                "web_snapshot",
+            }
+            excerpt = next(r for r in sources if r["kind"] == "web_snapshot")
+            assert excerpt["url"] == "https://example.test/bdr"
+            assert excerpt["content_kind"] == "highlight"
+            assert "named sales tool" in await read_document(backend, excerpt["path"])
+            replay = await tool.invoke(inputs, ctx)
+            assert replay.references["replayed"] is True
+            assert len(wire.requests) == 1
+
+    run_async(case())

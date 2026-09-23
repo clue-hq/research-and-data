@@ -71,3 +71,37 @@
   Residual: supplementary 90-day hiring metric and some charter/probe overlap remain for review.
   No Exa/AI Ark, research launch or database write. Launch digest includes directive_text, so
   a changed brief cannot silently replay an old account-set request.
+
+## Account source-review implementation and approved replay
+
+- Added immutable dossier skill v2, account prompt/profile v8 and quality recipe/launch r8.
+  Prior pins unchanged; person and specialist profiles stay v6; launch default stays v2.
+  Instructions review dossier plus excerpts, preserve source-only details and URLs, investigate
+  contradictions with targeted page reads, reuse material and retain uncertainty without gates.
+- Account deep acquisition receipts now include navigation to the corresponding operation's
+  original response, report and excerpts. Existing evidence grant, account scope, pagination
+  and erasure checks are reused. Provider calls/charging and claim/page architecture unchanged.
+- Shared preview audit/tool restrictions extracted; new saved-response replay script uses
+  production source extraction/navigation and resolved account instructions. Local mount is
+  explicitly a preview, not an end-to-end production authorization/lifecycle test.
+- Initial external replay request rejected by automatic approval review for expanded payload;
+  founder then explicitly approved saved response, pinned context and source-review instructions
+  to configured OpenRouter account model with Langfuse. No further authorization needed for it.
+- Approved replay completed once; 174.14 seconds, 11 account-model calls, reported $0.589068.
+  Artifacts: .artifacts/account-source-review-20260924/{findings.md,REVIEW.md,manifest.json,
+  trace-linkage.json,messages.json,read-coverage.json}. Findings preserved untouched.
+- All 39 excerpt files visited; 38 complete excerpt bodies and almost all of the remaining
+  body returned. Model recovered key dossier omissions/contradictions and person public-voice
+  detail. Three targeted page requests recorded, no live fetches. Date-window correction was
+  missed explicitly; financial-record explanation remains speculative. Do not claim perfect
+  source coverage, reliable date correction or full factual validation from this one sample.
+- Replay sent no Exa/AI Ark calls and wrote no app DB/claim/page records. No fleet started.
+  Langfuse installed/flushed, local model/tool traces retained; remote trace UI not inspected.
+- Final checks: 47 focused source-navigation/Exa tests + 21 catalog tests + 9 database tests
+  passed. DBs uniquely created on isolated local Postgres then dropped; scripted providers.
+  Ruff, scoped mypy (5 modules), diff check, prior preview prepare-only smoke passed.
+- Initial new-test fixture failures: missing original_key, absent FK operation row, and short
+  uncosted fake Exa response triggering existing retry. Fixed fixtures, no production retry
+  behavior change. Mypy required explicit dynamic JSON result annotation in acquisition wrapper.
+- Unrelated briefing skill/account policy/cumulative-review edits remain untouched. No push.
+  Founder review of raw findings remains next; person-depth step not started in this slice.

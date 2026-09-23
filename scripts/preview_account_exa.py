@@ -18,10 +18,9 @@ from uuid import uuid4
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 from dotenv import dotenv_values
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
+from research_preview_support import Audit, PreviewTools, content, save
 
 from clue_agents import AgentRole
 from clue_api.agent_model_wiring import build_agent_model_provider
@@ -62,80 +61,11 @@ SESSION = "account-exa-brief-preview-" + str(uuid4())
 START = monotonic()
 
 
-def save(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, default=str) + "\n")
-
-
-def content(message):
-    if isinstance(message.content, str):
-        return message.content
-    return "\n".join(
-        p["text"] for p in message.content if isinstance(p, dict) and p.get("type") == "text"
-    )
-
-
-class Audit(BaseCallbackHandler):
-    def event(self, kind, **data):
-        with (HERE / "traces/events.jsonl").open("a") as f:
-            f.write(
-                json.dumps(
-                    {"seconds": round(monotonic() - START, 3), "kind": kind, **data}, default=str
-                )
-                + "\n"
-            )
-
-    def on_chat_model_start(self, serialized, messages, *, run_id, **kwargs):
-        save(
-            HERE / f"traces/{run_id}.input.json",
-            [[m.model_dump(mode="json") for m in batch] for batch in messages],
-        )
-        self.event("model_started", run_id=str(run_id))
-
-    def on_llm_end(self, response, *, run_id, **kwargs):
-        save(HERE / f"traces/{run_id}.output.json", response.model_dump(mode="json"))
-        self.event("model_finished", run_id=str(run_id))
-
-    def on_tool_start(self, serialized, input_str, *, run_id, **kwargs):
-        self.event(
-            "tool_started",
-            run_id=str(run_id),
-            name=(serialized or {}).get("name"),
-            arguments=input_str,
-        )
-
-    def on_tool_end(self, output, *, run_id, **kwargs):
-        self.event("tool_finished", run_id=str(run_id))
-
-
-ALLOWED = {"ls", "read_file", "glob", "grep", "capture_exa_request"}
-
-
-class PreviewTools(AgentMiddleware):
-    async def awrap_model_call(self, request, handler):
-        selected = [
-            t
-            for t in request.tools
-            if (t.get("name") if isinstance(t, dict) else t.name) in ALLOWED
-        ]
-        return await handler(request.override(tools=selected))
-
-    async def awrap_tool_call(self, request, handler):
-        if request.tool_call["name"] not in ALLOWED:
-            return ToolMessage(
-                content="Unavailable in this prompt-only preview.",
-                tool_call_id=request.tool_call["id"],
-            )
-        return await handler(request)
-
-
 async def main():
     if any(
         (HERE / name).exists() for name in ("exa-query.generated.md", "head-brief.generated.md")
     ):
-        raise RuntimeError(
-            "Generated output exists; use a new directory to preserve the sample."
-        )
+        raise RuntimeError("Generated output exists; use a new directory to preserve the sample.")
     HERE.mkdir(parents=True, exist_ok=True)
     (HERE / "traces").mkdir(exist_ok=True)
     original = json.loads((SOURCE / "05-context-manifest.json").read_text())
@@ -287,7 +217,7 @@ async def main():
     gateway = default_gateway_config()
     provider = build_agent_model_provider(config=gateway, secrets=secrets)
     lf = build_langfuse_callbacks()
-    callbacks = [Audit(), *([lf.handler] if lf else [])]
+    callbacks = [Audit(HERE, START), *([lf.handler] if lf else [])]
     head = provider.build(
         model_id=models["head_of_abm"],
         role="head_of_abm",

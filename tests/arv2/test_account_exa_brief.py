@@ -128,8 +128,8 @@ def test_source_excerpts_keep_original_positions_without_becoming_full_pages():
 def test_new_pins_resolve_without_changing_person_or_specialist_profiles(tmp_path):
     assert Settings(arv2_research_catalog_version="v4").arv2_research_catalog_version == "v4"
     bundle = load_quality_resources("arv2-account")
-    assert json.loads(bundle.profile.body)["recipe_version"] == 7
-    for version in (6, 7):
+    assert json.loads(bundle.profile.body)["recipe_version"] == 8
+    for version in (6, 7, 8):
         old = load_quality_resources("arv2-account", version=version)
         assert load_quality_resources("arv2-account", expected_pin=bundle_pin(old)) == old
     registry = quality_tools(scope(), FsStorage(tmp_path), purge=False)

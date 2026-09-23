@@ -8,7 +8,7 @@ readable even if no result receipt could be committed. Provider charges keep the
 from __future__ import annotations
 
 import json
-from typing import ClassVar, Literal, cast, get_args
+from typing import Any, ClassVar, Literal, cast, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, JsonValue, ValidationError
@@ -22,6 +22,7 @@ from clue_api.arv2.account_research_tools import (
 )
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_execution import reserve
+from clue_api.arv2.quality_source_navigation import operation_source_navigation
 from clue_storage import (
     artifact_key,
     content_address,
@@ -182,6 +183,7 @@ class AcquireResearchTool(Tool):
             )
         # The existing tool normalizes provider refusals. Exceptions after dispatch remain unknown;
         # a retry will return the above refusal instead of calling the provider again.
+        value: Any
         if validation_error:
             # A correctable planning mistake is a durable, non-spending refusal, not a runtime
             # failure. Authority checks above remain hard failures, including specialist misuse.
@@ -216,9 +218,6 @@ class AcquireResearchTool(Tool):
             if refused
             else None
         )
-        body = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
-        sha = content_address(body)
-        key = artifact_key(runtime.scope.workspace_id, sha)
         assert runtime.storage is not None
         async with ctx.conn_factory() as conn:
             from clue_api.arv2.quality_media import index_transcripts
@@ -226,7 +225,20 @@ class AcquireResearchTool(Tool):
             if args.operation in {"read_media", "search_transcripts", "open_transcript"}:
                 await index_transcripts(conn, runtime.storage, runtime.operation_scope)
             # Privacy may have been withdrawn during the hop. Keep settlement, refuse new exposure.
-            await resolve_authority(conn, runtime.scope, ctx.execution_id)
+            authority = await resolve_authority(conn, runtime.scope, ctx.execution_id)
+            if (
+                args.operation == "research_deep"
+                and runtime.scope.subject_kind == "account"
+                and int((runtime.scope.input_refs or {}).get("quality_recipe_version", 5)) >= 8
+                and isinstance(value, dict)
+                and value.get("result_ref")
+            ):
+                value["source_navigation"] = await operation_source_navigation(
+                    conn, authority.grant, UUID(str(value["result_ref"]))
+                )
+            body = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
+            sha = content_address(body)
+            key = artifact_key(runtime.scope.workspace_id, sha)
             await record_artifact(
                 conn,
                 storage_key=key,
