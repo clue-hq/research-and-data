@@ -4,7 +4,6 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -14,20 +13,15 @@ from sqlalchemy import text
 from clue_agents import (
     AgentExecutionStatus,
     AgentWorkspaceFactory,
-    ArtifactRef,
     ScriptedAgentChatModel,
     WorkspaceRootPolicy,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.account_research_catalog import RESEARCH_PROVIDER_POLICY
-from clue_api.arv2.quality_brief import render_brief
-from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import Allowance
-from clue_api.arv2.transport import ScriptedTransport
 from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
 from clue_config import load_settings
 from clue_storage.fs import FsStorage
-from tests.arv2.test_committee_discovery_v2_db import runtime as acquisition_runtime
 from tests.arv2.test_quality_claims_db import assessment, setup
 from tests.arv2.test_quality_evidence_db import save
 from tests.claimstore.conftest import (  # noqa: F401
@@ -179,10 +173,6 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
             source = await save(
                 conn, storage, op, {"employees": 64}, kind="provider_record", url=None
             )
-            await conn.execute(
-                text("UPDATE arv2_research_run SET directive_text=:directive WHERE run_id=:run"),
-                {"directive": "Prioritize the seller's documented workflows.", "run": scope.run_id},
-            )
 
             connection_lock = asyncio.Lock()
 
@@ -208,7 +198,6 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 artifact_sink=DurableAgentArtifactStore(storage=storage, conn_factory=connections),
             )
             models = Models(source, scope, context_id)
-            acquisition = acquisition_runtime(conn, scope, storage, ScriptedTransport([]))
             runtime = ResearchUnitRuntime(
                 scope=scope,
                 context_id=context_id,
@@ -217,7 +206,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 connections=connections,
                 models=models,
                 workspaces=workspaces,
-                tools=quality_tools(scope, storage, purge=True, acquisition_runtime=acquisition),
+                tools=quality_tools(scope, storage, purge=True),
                 limits=Allowance(20, 30, 4),
                 checkpointer_factory=checkpoints,
             )
@@ -271,13 +260,6 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 ("account_research", 4),
                 ("research_claims", 4),
             ]
-            # Later research and a changed assignment cannot mutate the recorded opening brief.
-            await conn.execute(
-                text(
-                    "UPDATE arv2_research_run SET directive_text='Changed later' WHERE run_id=:run"
-                ),
-                {"run": scope.run_id},
-            )
             second = await runtime.run(
                 objective="Read the complete saved report and delegate faithful claim processing."
             )
@@ -288,38 +270,6 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
             assert models.builds == ["account_research", "research_claims"]
             assert len(seen_prompts) == 8
             assert all(RESEARCH_PROVIDER_POLICY in prompt for prompt in seen_prompts)
-            assert all("Prioritize the seller's documented workflows." in p for p in seen_prompts)
-            assert all("# Seller and selected products" in p for p in seen_prompts)
-            assert all("# ICP research lens" in p for p in seen_prompts)
-            assert all("Changed later" not in p for p in seen_prompts)
-            context = await read_context(
-                conn,
-                storage,
-                workspace_id=scope.workspace_id,
-                project_id=scope.project_id,
-                context_id=context_id,
-            )
-            started = (
-                await conn.execute(
-                    text("SELECT started_at FROM execution WHERE id=:id"),
-                    {"id": runtime.execution_id},
-                )
-            ).scalar_one()
-            card = await runtime.opening_card(
-                context=context,
-                started=started,
-                turn_id=uuid5(NAMESPACE_URL, f"research-quality-turn:{runtime.execution_id}"),
-            )
-            saved_card = json.loads(await runtime.artifacts.read(card))
-            assert "Changed later" not in saved_card["opening_brief"]
-            brief = json.loads(
-                await runtime.artifacts.read(
-                    ArtifactRef.model_validate(saved_card["opening_brief_manifest_ref"])
-                )
-            )
-            assert acquisition.research_brief == render_brief(brief, provider=True)
-            assert acquisition.research_brief == brief["provider_context"]
-            assert "Prioritize the seller's documented workflows." in acquisition.research_brief
             parameters = (
                 (
                     await conn.execute(

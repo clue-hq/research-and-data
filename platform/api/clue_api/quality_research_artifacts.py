@@ -44,18 +44,15 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                 "account": scope.account_id,
                 "context": self.context_id,
                 "subject": scope.person_subject_id,
-                "project": scope.project_id,
             }
             subjects = set(
                 (
                     await conn.execute(
-                        text("""SELECT j.subject_entity_id
-                FROM arv2_research_job j JOIN arv2_research_run r
-                  ON r.run_id=j.run_id AND r.workspace_id=j.workspace_id
-                WHERE j.workspace_id=:ws AND r.project_id=:project
-                  AND j.account_entity_id=:account AND j.subject_entity_id IS NOT NULL
+                        text("""SELECT subject_entity_id
+                FROM arv2_research_job WHERE workspace_id=:ws AND run_id=:run
+                  AND account_entity_id=:account AND subject_entity_id IS NOT NULL
                   AND (CAST(:subject AS uuid) IS NULL
-                    OR j.subject_entity_id=CAST(:subject AS uuid))"""),
+                    OR subject_entity_id=CAST(:subject AS uuid))"""),
                         params,
                     )
                 ).scalars()
@@ -71,9 +68,6 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                 WHERE workspace_id=:ws AND context_id=:context
                 UNION SELECT manifest_key FROM arv2_research_context_pin
                 WHERE workspace_id=:ws AND context_id=:context
-                UNION SELECT storage_key FROM artifact_reference
-                WHERE workspace_id=:ws AND reference_kind='research_prior_source'
-                  AND reference_id=:job
                 UNION SELECT s.artifact_key FROM claim_quality_support s
                 JOIN claim_quality_current q ON q.assessment_id=s.assessment_id
                 JOIN claim c ON c.id=q.claim_id WHERE c.workspace_id=:ws AND q.context_id=:context
@@ -81,7 +75,7 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                     FROM arv2_research_job WHERE workspace_id=:ws AND run_id=:run
                     AND account_entity_id=:account)
                 ORDER BY artifact_key"""),
-                        {**params, "job": str(scope.job_id)},
+                        params,
                     )
                 )
                 .scalars()
