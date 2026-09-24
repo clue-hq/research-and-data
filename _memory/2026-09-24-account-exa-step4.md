@@ -128,3 +128,25 @@
 - Preparation verification: 18 focused instruction/request/navigation tests pass; Ruff and
   diff checks pass. New harness prepare-only succeeds; provider constructor clock requirement
   found during inspection and supplied before any live call. This is prepared, not live-accepted.
+
+## Approved Insight Health live research-stage result
+
+- Explicit founder approval received for the expanded payload and paid account research calls.
+  One run completed successfully in 424.61 seconds; no retries to polish final output.
+- Artifacts: .artifacts/insight-health-research-20260924/run-01/REVIEW.md, findings.md,
+  head-brief.generated.md, exa-query.generated.md, exa-system.actual.md, exa-dossier.raw.md,
+  SOURCES.md, TIMELINE.md, raw provider payloads and local model/tool traces. Outputs untouched.
+- Fresh seller-specific Head brief, preliminary acquisition, agent-written deep charter plus five
+  additional queries and source-driven follow-up calls all exercised. Exa launched about 75 seconds
+  into account work; 28 results returned. 21/28 deep excerpt IDs opened individually; some remaining
+  URLs separately fetched. Do not claim exhaustive source consumption.
+- Recovered dossier omissions and current/archive distinctions; historical tool attribution checked
+  against retained employment source. Remaining misses: unsupported city in first query (recovered),
+  uneven inline citations, unreadable ATS, unresolved context lineage and current-tool uncertainty.
+- 24 model calls; recorded $1.222250 model + $0.096 provider + 0.1 AI Ark credit. 68 file reads,
+  no identical read arguments. Provider result rows counted separately from estimate rows.
+- Langfuse installed/flushed; local linkage and cost traces retained. Model-name parsing warning;
+  remote UI not inspected. This is isolated research-stage testing, not production lifecycle proof.
+- No app DB writes, migrations, workers, person jobs, claim writing, page synthesis or publication.
+  No application code changes in this execution turn; prior focused harness checks remain valid.
+  Founder review pending; do not conflate successful execution with live quality acceptance.
