@@ -11,19 +11,19 @@ from clue_api.arv2.account_research_catalog import CatalogResource, ResourceBund
 ROOT = Path(__file__).parents[3] / "agents" / "catalog" / "research-quality"
 
 
-CURRENT_RECIPE_VERSION = 11
+CURRENT_RECIPE_VERSION = 12
 
 
 def load_quality_resources(
     agent: str, *, version: int = CURRENT_RECIPE_VERSION, expected_pin: str | None = None
 ) -> ResourceBundle:
     if expected_pin is not None:
-        for candidate in (11, 10, 9, 8, 7, 6, 5, 4, 3, 2):
+        for candidate in range(CURRENT_RECIPE_VERSION, 1, -1):
             bundle = load_quality_resources(agent, version=candidate)
             if bundle_pin(bundle) == expected_pin:
                 return bundle
         raise ValueError("governed research launch resource pin is unavailable")
-    if version not in (2, 3, 4, 5, 6, 7, 8, 9, 10, 11):
+    if version not in range(2, CURRENT_RECIPE_VERSION + 1):
         raise ValueError("unknown governed research resource revision")
     raw = (ROOT / ("launch-v4.json" if version == 2 else f"launch-v4-r{version}.json")).read_text()
     manifest = json.loads(raw)

@@ -63,11 +63,18 @@ async def person_setup(conn, storage):
     return replace(op, job_id=jid), scope, cid
 
 
-def test_search_deep_and_page_keep_all_fields_with_replay_and_revocable_views(tmp_path):
+@pytest.mark.parametrize("subject", ["person", "account"])
+def test_search_deep_and_page_keep_all_fields_with_replay_and_revocable_views(tmp_path, subject):
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
-            op, scope, cid = await person_setup(conn, storage)
+            if subject == "person":
+                op, scope, cid = await person_setup(conn, storage)
+            else:
+                op, scope, cid = await setup(conn, storage)
+                scope = replace(
+                    scope, catalog_version="v4", input_refs={"quality_recipe_version": 12}
+                )
             parent = await execution(conn, op, scope.project_id)
             await bind_execution(
                 conn,
@@ -141,7 +148,7 @@ def test_search_deep_and_page_keep_all_fields_with_replay_and_revocable_views(tm
                 {
                     "charter": "Research Dana with their known public background and voice. " * 10,
                     "additional_queries": ["Dana creative practice"],
-                    "highlights_query": "Own projects",
+                    **({"highlights_query": "Own projects"} if subject == "person" else {}),
                     "num_results": 40,
                 },
             )
@@ -163,9 +170,16 @@ def test_search_deep_and_page_keep_all_fields_with_replay_and_revocable_views(tm
                 "previous_capture"
             ]
             bodies = [json.loads(r.body) for r in wire.requests]
-            assert bodies[0]["contents"]["text"]["maxCharacters"] == 10000
-            assert bodies[1]["contents"]["highlights"]["query"] == "Own projects"
-            assert bodies[2]["extras"] == {"links": 10, "imageLinks": 3}
+            assert bodies[0]["type"] == "auto"
+            if subject == "person":
+                assert bodies[0]["contents"]["text"]["maxCharacters"] == 10000
+                assert bodies[1]["contents"]["highlights"]["query"] == "Own projects"
+                assert bodies[2]["extras"] == {"links": 10, "imageLinks": 3}
+            else:
+                assert bodies[0]["contents"] == {"text": {"maxCharacters": 1500}}
+                assert bodies[1]["additionalQueries"] == ["Dana creative practice"]
+                assert bodies[1]["contents"] == {"highlights": True, "extras": {"links": 1}}
+                assert bodies[2] == {"urls": [old["url"]], "text": {"maxCharacters": 20000}}
             assert (
                 await conn.execute(
                     text(
@@ -259,8 +273,9 @@ def test_media_candidates_can_be_followed_to_original_transcript_without_repurch
     run_async(case())
 
 
-def test_real_person_deepagent_materializes_full_charter_and_finalizes_with_model_journal(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("subject", ["person", "account"])
+def test_real_deepagent_materializes_full_skills_and_finalizes_with_model_journal(
+    tmp_path, monkeypatch, subject
 ):
     import asyncio
 
@@ -289,7 +304,15 @@ def test_real_person_deepagent_materializes_full_charter_and_finalizes_with_mode
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
-            _, scope, cid = await person_setup(conn, storage)
+            if subject == "person":
+                _, scope, cid = await person_setup(conn, storage)
+                skills = ("person-depth-charter/v1", "person-dossier/v1")
+            else:
+                _, scope, cid = await setup(conn, storage)
+                scope = replace(
+                    scope, catalog_version="v4", input_refs={"quality_recipe_version": 12}
+                )
+                skills = ("account-dossier/v3", "person-research-briefing/v2")
             lock = asyncio.Lock()
 
             @asynccontextmanager
@@ -310,8 +333,7 @@ def test_real_person_deepagent_materializes_full_charter_and_finalizes_with_mode
                             call(
                                 "read_file",
                                 {
-                                    "file_path": "/.deepagent/skills/"
-                                    "person-depth-charter/v1/SKILL.md",
+                                    "file_path": f"/.deepagent/skills/{skills[0]}/SKILL.md",
                                     "limit": 500,
                                 },
                                 "charter",
@@ -319,7 +341,7 @@ def test_real_person_deepagent_materializes_full_charter_and_finalizes_with_mode
                             call(
                                 "read_file",
                                 {
-                                    "file_path": "/.deepagent/skills/person-dossier/v1/SKILL.md",
+                                    "file_path": f"/.deepagent/skills/{skills[1]}/SKILL.md",
                                     "limit": 600,
                                 },
                                 "skill",
@@ -375,10 +397,18 @@ def test_real_person_deepagent_materializes_full_charter_and_finalizes_with_mode
             )
             outcome = await rt.run(objective="Read the full person instructions, then finish.")
             assert outcome.status is AgentExecutionStatus.COMPLETED
-            assert "Discover broadly before composing" in seen[-1]
-            assert "Hobbies and sports" in seen[-1]
-            assert "KNOWN SAME-NAME EXCLUSIONS" in seen[-1]
-            assert "Follow relevant media through to its content" in seen[-1]
+            if subject == "person":
+                assert "Discover broadly before composing" in seen[-1]
+                assert "Hobbies and sports" in seen[-1]
+                assert "KNOWN SAME-NAME EXCLUSIONS" in seen[-1]
+                assert "Follow relevant media through to its content" in seen[-1]
+            else:
+                assert "Discover systems through work before guessing brands" in seen[-1]
+                assert "source_review_path" in seen[-1]
+                assert "Teaching example: Clue → fictional Acme" in seen[-1]
+                assert "Interpret missing results honestly" in seen[-1]
+                assert "person-specific" in seen[-1]
+                assert "/scratch/" not in seen[-1]
             assert (
                 await conn.execute(
                     text("SELECT count(*) FROM agent_model_call WHERE execution_id=:id"),

@@ -15,6 +15,7 @@ from pydantic import BaseModel, JsonValue, ValidationError
 from sqlalchemy import text
 
 from clue_api.arv2 import research_operations as operations
+from clue_api.arv2.account_exa_brief import uses_account_discovery
 from clue_api.arv2.account_research_tools import (
     ToolRuntime,
     build_account_tools,
@@ -236,7 +237,10 @@ class AcquireResearchTool(Tool):
                         >= 8
                     )
                     or (
-                        uses_person_exa_brief(runtime.scope)
+                        (
+                            uses_person_exa_brief(runtime.scope)
+                            or uses_account_discovery(runtime.scope)
+                        )
                         and args.operation in {"search_web", "fetch_page", "research_deep"}
                     )
                 )
@@ -246,7 +250,7 @@ class AcquireResearchTool(Tool):
                 value["source_navigation"] = await operation_source_navigation(
                     conn, authority.grant, UUID(str(value["result_ref"]))
                 )
-                if uses_person_exa_brief(runtime.scope):
+                if uses_person_exa_brief(runtime.scope) or uses_account_discovery(runtime.scope):
                     value["source_review_path"] = (
                         f"/research/source-review/{value['result_ref']}/0.json"
                     )

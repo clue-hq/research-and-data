@@ -45,7 +45,11 @@ from pydantic import (
 from sqlalchemy import text
 
 from clue_api.arv2 import research_operations as operations
-from clue_api.arv2.account_exa_brief import account_exa_arguments, uses_account_exa_brief
+from clue_api.arv2.account_exa_brief import (
+    account_exa_arguments,
+    uses_account_discovery,
+    uses_account_exa_brief,
+)
 from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
@@ -1368,13 +1372,15 @@ async def _read_ats_board(runtime: ToolRuntime, args: ReadAtsBoardArgs) -> dict[
 async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, Any]:
     url = str(args.url)
 
-    if uses_person_exa_brief(runtime.scope):
+    if uses_person_exa_brief(runtime.scope) or uses_account_discovery(runtime.scope):
         from clue_api.arv2.exa_client import contents_body
 
-        kwargs = {"text_max_chars": args.max_chars, "extras": person_search_contents()["extras"]}
+        kwargs: dict[str, Any] = {"text_max_chars": args.max_chars}
+        if uses_person_exa_brief(runtime.scope):
+            kwargs["extras"] = person_search_contents()["extras"]
         operation, raw = await runtime.operate(
             "exa",
-            "person_page",
+            "person_page" if uses_person_exa_brief(runtime.scope) else "account_page",
             contents_body([url], **kwargs),
             lambda caller: runtime.clients.exa(caller).contents([url], **kwargs),
         )
@@ -1401,22 +1407,30 @@ async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, An
 
 
 async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, Any]:
-    if uses_person_exa_brief(runtime.scope):
+    if uses_person_exa_brief(runtime.scope) or uses_account_discovery(runtime.scope):
         from clue_api.arv2.exa_client import search_body
 
-        contents = person_search_contents()
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "num_results": args.num_results,
             "include_domains": args.include_domains,
             "start_published_date": args.start_published_date,
-            "text_max_chars": contents["text"]["maxCharacters"],
-            "extras": contents["extras"],
         }
+        if uses_person_exa_brief(runtime.scope):
+            contents = person_search_contents()
+            kwargs.update(
+                text_max_chars=contents["text"]["maxCharacters"], extras=contents["extras"]
+            )
         operation, raw = await runtime.operate(
             "exa",
-            "person_search",
+            "person_search" if uses_person_exa_brief(runtime.scope) else "account_search",
             search_body(args.query, **kwargs),
-            lambda caller: runtime.clients.exa(caller).search(args.query, **kwargs),
+            lambda caller: runtime.clients.exa(caller).search(
+                args.query,
+                **kwargs,
+                label="exa-search"
+                if uses_person_exa_brief(runtime.scope)
+                else f"search-{runtime.scope.account_domain}",
+            ),
         )
         return {"result_ref": str(operation.operation_id), "n_results": len(raw.get("results", []))}
 

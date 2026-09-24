@@ -21,6 +21,14 @@ def uses_account_exa_brief(scope: JobScope) -> bool:
     )
 
 
+def uses_account_discovery(scope: JobScope) -> bool:
+    """The discovery-first account instructions and full-result handoff are revision-pinned."""
+    return (
+        uses_account_exa_brief(scope)
+        and int((scope.input_refs or {}).get("quality_recipe_version", 5)) >= 12
+    )
+
+
 def account_exa_arguments(
     *,
     charter: str,

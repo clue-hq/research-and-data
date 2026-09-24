@@ -36,7 +36,7 @@ from tests.claimstore.conftest import (  # noqa: F401
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9, 11])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11, 12])
 def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path, revision):
     async def case():
         async with rollback_conn() as conn:
@@ -138,7 +138,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     role="champion",
                     rationale="Source-reported marketing owner",
                 )
-            if revision == 9:
+            if revision >= 9:
                 from clue_api.arv2.quality_committee_tool import (
                     NominateBriefedCommitteeTool,
                     NominateBriefedInput,
@@ -188,7 +188,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
             person_rt._writer = QualityProviderWriter(
                 person_scope, storage, person_execution, rt.catalog, purge=True
             )
-            if revision == 9:
+            if revision >= 9:
                 from clue_api.arv2.person_research_brief import (
                     person_task_instruction,
                     read_person_brief,
@@ -294,7 +294,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
     run_async(case())
 
 
-@pytest.mark.parametrize("revision", [5, 9])
+@pytest.mark.parametrize("revision", [5, 9, 12])
 def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path, revision):
     from clue_api.arv2.quality_committee_tool import (
         NominateWebCommitteeInput,
@@ -350,7 +350,7 @@ def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path, revision)
                     rationale="Assess responsibility at this organization.",
                 ),
             )
-            if revision == 9:
+            if revision >= 9:
                 from clue_api.arv2.quality_committee_tool import (
                     NominateBriefedWebCommitteeTool,
                     NominateBriefedWebInput,
@@ -375,9 +375,9 @@ def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path, revision)
                 conn, workspace_id=op.workspace_id, account_id=op.account_id, context_id=cid
             )
             assert len(members) == 1
-            assert members[0].state == ("supported" if revision == 9 else "candidate")
-            assert members[0].outreach_eligible == (revision == 9)
-            if revision == 9:
+            assert members[0].state == ("supported" if revision >= 9 else "candidate")
+            assert members[0].outreach_eligible == (revision >= 9)
+            if revision >= 9:
                 from clue_api.arv2.person_research_brief import read_person_brief
                 from clue_storage import ArtifactIntegrityError
 

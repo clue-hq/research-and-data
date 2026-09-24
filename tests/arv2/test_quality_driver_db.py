@@ -23,9 +23,9 @@ from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
 from clue_fleet import LeaseGeneration, WorkId
 from clue_fleet.work_worker import WorkContext
 from clue_storage.fs import FsStorage
-from tests.arv2.icp_fixture import seed_icp_fixture
+from tests.arv2.icp_fixture import seed_icp_fixture, settings_for
 from tests.arv2.test_account_research_driver_db import _Clients
-from tests.arv2.test_account_research_launch_db import _request, settings_for
+from tests.arv2.test_account_research_launch_db import _request
 from tests.arv2.test_quality_context_db import persona
 from tests.arv2.test_quality_runtime_db import call
 from tests.claimstore.conftest import (  # noqa: F401
@@ -73,10 +73,9 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                 source=fixture.icp_document_id,
                 sha=fixture.icp_artifact_sha256,
             )
-            # v4 is intentionally not yet a public Settings selector; development composition only.
-            settings = settings_for(arv2_account_research_enabled=True).model_copy(
-                update={"arv2_research_catalog_version": "v4"}
-            )
+            # Exercise the public default, rather than opting a fixture into v4.
+            settings = settings_for(arv2_account_research_enabled=True)
+            assert settings.arv2_research_catalog_version == "v4"
             request = _request(fixture, account_entity_ids=(fixture.accounts[0],))
             launch = await launch_arv2_account_research(
                 conn,
@@ -144,6 +143,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
                 calls.append(unit_key)
+                assert scope.input_refs["quality_recipe_version"] == 12
                 assert (
                     scope.persona_markdown
                     == "---\nkind: audience-persona\nicp_key: clue-abm-buyers\n"
