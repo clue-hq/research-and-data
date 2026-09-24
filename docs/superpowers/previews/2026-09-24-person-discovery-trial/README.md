@@ -101,3 +101,25 @@ Keep those comparison materials outside the agent's input root. Judge coverage a
 the founder; the historical comparison is not a controlled provider-variance experiment. Do not
 call offline isolation/retention checks a proof of research quality. Do not promote this into the
 production lane until the actual input, behavior and output have been reviewed.
+
+## Focused follow-up: fresh source fields
+
+The founder approved another trial with two changes: instructions to inspect new result fields
+on previously read URLs, and a tool-result overview exposing verbatim highlights. The exact new
+instructions are [fresh-source-review.md](fresh-source-review.md). Preparation selects this mode
+with `--fresh-source-review`; the selected mode is recorded in the immutable prepared manifest.
+
+`scripts/person_trial_source_review.py` extends the shared acquisition adapter. It compares field
+fingerprints for captures of the same exact URL within this trial; that is capture history, not
+proof of agent reading. It returns the first ten source overviews inline, with continued pages
+for the rest and full source references throughout. Original provider responses and fields remain
+unchanged. No project-specific hints or evaluation answers are added.
+
+The shared runner accepts an optional acquisition factory, defaulting to its original adapter.
+Only this opt-in trial uses the overview adapter. The seller/person brief, detailed charter, Exa
+system, provider options, media implementation and production profiles are unchanged.
+
+Prepared live attempt: `.artifacts/person-discovery-trial-20260924/nick-03`. Offline checks: 13
+tests passed. A saved-response handoff replay is retained outside the agent input root at
+`.artifacts/person-discovery-trial-20260924/review-replay-v2.json`; this proves visibility of the
+previously missed field, not that a model will investigate or faithfully report it.

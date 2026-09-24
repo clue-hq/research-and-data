@@ -446,7 +446,7 @@ def media_reader(out, caller, media, ctx):
     return read
 
 
-async def run(out: Path):
+async def run(out: Path, *, acquisition_factory: type[Acquisitions] = Acquisitions):
     manifest = json.loads((out / "manifest.json").read_text())
     for directory, key in (
         (out / "inputs", "input_hashes"),
@@ -482,7 +482,7 @@ async def run(out: Path):
         ledger=ledger,
     )
     ctx = json.loads((out / "inputs/research/context.json").read_text())
-    acquisitions = Acquisitions(
+    acquisitions = acquisition_factory(
         out, ExaClient(caller, secrets.exa_api_key), media_reader(out, public, media, ctx)
     )
 

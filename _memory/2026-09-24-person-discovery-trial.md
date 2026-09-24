@@ -47,3 +47,17 @@
   flushed, with the shared model-name callback warning still present; cloud completeness unverified.
 - No further live run or production changes made. Next discussion: fresh source-field review,
   media follow-through and inherited context wording. A single run does not establish general quality.
+
+## Focused source-review follow-up
+
+- Founder explicitly requested trying the focused fresh-field changes and rerunning. Added opt-in
+  trial instructions and `scripts/person_trial_source_review.py`: verbatim highlight overviews,
+  field capture comparisons, original source paths, ten-row paging. No benchmark hints added.
+- Shared continuation runner has only an optional acquisition-factory argument; original adapter
+  remains its default. Trial script selects the new adapter from its prepared manifest. No media,
+  production profile, seller brief, charter or Exa system changes in this experiment.
+- Prepared `nick-03` from the same original snapshot. Original context hashes, charter and Exa
+  system match `nick-02`. Saved-response visibility check stayed outside agent inputs.
+- 13 focused tests passed; initial new test fixture accidentally triggered the existing thin-
+  dossier retry, fixed by supplying a realistic-sized metered fake dossier. Scoped Ruff passed.
+  Live comparison still pending at this checkpoint.

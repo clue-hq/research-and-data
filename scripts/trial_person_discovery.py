@@ -42,6 +42,7 @@ RUNNER_PATHS = (
     "scripts/continue_person_research.py",
     "scripts/research_preview_support.py",
     "scripts/preview_person_exa.py",
+    "scripts/person_trial_source_review.py",
     "platform/api/clue_api/arv2/exa_client.py",
     "platform/api/clue_api/arv2/quality_source_navigation.py",
 )
@@ -61,7 +62,7 @@ def replace_once(text: str, old: str, new: str) -> str:
     return text.replace(old, new, 1)
 
 
-def prepare(context: Path, out: Path):
+def prepare(context: Path, out: Path, *, fresh_source_review: bool = False):
     if out.exists() and any(out.iterdir()):
         raise ValueError("Use a fresh output directory; preserve earlier trials.")
     source_manifest = json.loads((context / "manifest.json").read_text())
@@ -100,6 +101,10 @@ def prepare(context: Path, out: Path):
         shutil.copyfile(DRAFT / name, instructions / name)
     strategy = (TRIAL / "discovery-instructions.md").read_text()
     skill = replace_once((instructions / "SKILL.md").read_text(), OLD_PREPARATION, strategy)
+    if fresh_source_review:
+        review = TRIAL / "fresh-source-review.md"
+        skill += "\n\n" + review.read_text()
+        shutil.copyfile(review, instructions / review.name)
     system = replace_once(
         (instructions / "person-agent-instructions.md").read_text(), OLD_PROCESS, NEW_PROCESS
     )
@@ -157,6 +162,7 @@ page synthesis, enrichment, committee discovery, specialist delegation or fleet 
         {
             "stage": "prepared",
             "experiment": "discovery-first-person-research",
+            "source_review_mode": "fresh-fields-v1" if fresh_source_review else None,
             "context_directory": str(context.resolve()),
             "context_manifest_sha256": digest(context / "manifest.json"),
             "copied_original_inputs": copied,
@@ -194,7 +200,12 @@ async def execute(out: Path):
     for name, sha in manifest["runner_hashes"].items():
         if digest(ROOT / name) != sha:
             raise ValueError(f"Runner changed since preparation: {name}; prepare a fresh trial.")
-    await run(out)
+    if manifest.get("source_review_mode") == "fresh-fields-v1":
+        from person_trial_source_review import FreshSourceAcquisitions
+
+        await run(out, acquisition_factory=FreshSourceAcquisitions)
+    else:
+        await run(out)
 
 
 if __name__ == "__main__":
@@ -204,10 +215,15 @@ if __name__ == "__main__":
         "--context", type=Path, help="Original pre-person-research preview snapshot"
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--fresh-source-review", action="store_true")
     args = parser.parse_args()
     if args.stage == "prepare":
         if not args.context:
             parser.error("prepare requires --context")
-        prepare(args.context.resolve(), args.output.resolve())
+        prepare(
+            args.context.resolve(),
+            args.output.resolve(),
+            fresh_source_review=args.fresh_source_review,
+        )
     else:
         asyncio.run(execute(args.output.resolve()))
