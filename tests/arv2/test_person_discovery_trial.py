@@ -95,3 +95,18 @@ def test_pinned_document_mismatch_is_reported(tmp_path):
 def test_outside_snapshot_reference_rejected(tmp_path):
     with pytest.raises(ValueError, match="escapes input snapshot"):
         trial.inside(tmp_path, "../baseline/answer.json")
+
+
+def test_media_follow_through_reaches_actual_trial_prompt_without_changing_exa(tmp_path):
+    source, out = tmp_path / "source", tmp_path / "trial"
+    source_snapshot(source)
+    trial.prepare(source, out, fresh_source_review=True)
+    guidance = (trial.TRIAL / "media-follow-through.md").read_text()
+    assert guidance in (out / "person-system.actual.md").read_text()
+    assert guidance in (out / "inputs/skills/person-dossier/SKILL.md").read_text()
+    assert (out / "instructions/exa-system.md").read_bytes() == (
+        trial.DRAFT / "exa-system.md"
+    ).read_bytes()
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["source_review_mode"] == "fresh-fields-v2"
+    assert "platform/api/clue_api/arv2/media_resolution.py" in manifest["runner_hashes"]

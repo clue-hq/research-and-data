@@ -132,3 +132,20 @@ its own follow-ups. CocktailGPT appeared in the new dossier without its supporti
 the agent investigated and retained that uncertainty. Media follow-through and false conflict
 framing remain incomplete. Live retrieval and query choices varied, so this is not an identical-
 response causal A/B test. Source reports, exact prompts, provider results and traces are retained.
+
+## Focused media follow-through fixes
+
+New preparations with `--fresh-source-review` use `fresh-fields-v2` and include the exact
+[media follow-through instructions](media-follow-through.md). Original prepared trials remain
+unchanged. The adapter now exposes recording candidates, extraction origins and next actions
+inline; the shared resolver recognizes explicit player/stream metadata and excludes analytics
+frames. Real multiple-recording choices remain for the agent. Shared continuation results also
+distinguish failed transcription from an unattempted recording.
+
+The [focused verification report](../../../../.artifacts/person-media-followthrough-20260924/run-01/REPORT.md)
+records 42 distinct passing offline tests, three saved-page replays and a live direct-tool probe.
+The previously missed podcast MP3 produced a 46,997-character transcript ($0.02012750 recorded
+provider cost). Oktane instead reached the existing YouTube public-access check and could not
+continue. Modern Bar Cart retained its two choices. These direct checks do not establish that
+the agent autonomously follows the new guidance; that replay remains a separate review step.
+No active production agent profile was changed; the resolver fix is shared code used by the lane.

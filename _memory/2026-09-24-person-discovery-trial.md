@@ -83,3 +83,26 @@
 - Local traces and costs retained; Langfuse configured/flushed, known model-name parsing warning
   persists; cloud completeness unverified. Offline checks remain the 13 passing focused tests and
   scoped Ruff from preparation. No additional paid runs or unrelated changes. Founder review next.
+
+## Focused media fixes (subsequently authorized)
+
+- Founder authorized recording extraction, actionable candidate handoff and follow-through
+  instructions. Shared resolver now reads explicit Twitter/Open Graph media metadata, excludes
+  analytics/non-HTTP frames, deduplicates YouTube forms and preserves typed genuine choices with
+  extraction provenance. No source verification or transcript-completeness gate added.
+- Opt-in trial adapter returns candidates and next actions inline; continuation records failed
+  transcription distinctly, preserving existing provider raw/ledger paths and avoiding blind
+  retries of uncertain paid outcomes. New trial preparations use fresh-fields-v2 and the exact
+  media-follow-through guide. No active profile, application/fleet or unrelated edits.
+- 42 distinct focused offline tests passed. Initial Ruff long-string findings were fixed;
+  final scoped Ruff and diff checks passed. Exact old HTML replays establish extraction for
+  all three examples (downstream responses synthetic, explicitly labelled).
+- Direct live probe at `.artifacts/person-media-followthrough-20260924/run-01` recovered and
+  transcribed the podcast via configured native Gemini: 130.25s, $0.02012750, no unpriced rows.
+  Original response, transcript, raw recording, ledger, trace linkage and runner snapshots saved.
+  YouTube reached a separate existing public-access check and could not continue; the other
+  podcast retains real audio/video choices. No Exa/AI Ark/research-agent calls in this probe.
+- The probe audit documents that transcription lacks speaker labels/timestamps and has not
+  been fully checked against audio; no claim of complete coverage. Local traces retained and
+  Langfuse configured/flushed; cloud completeness unverified. A full agent behavior replay with
+  the new guidance remains untested. Earlier completed research artifacts are unchanged.

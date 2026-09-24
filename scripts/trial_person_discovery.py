@@ -45,6 +45,7 @@ RUNNER_PATHS = (
     "scripts/person_trial_source_review.py",
     "platform/api/clue_api/arv2/exa_client.py",
     "platform/api/clue_api/arv2/quality_source_navigation.py",
+    "platform/api/clue_api/arv2/media_resolution.py",
 )
 
 
@@ -102,9 +103,10 @@ def prepare(context: Path, out: Path, *, fresh_source_review: bool = False):
     strategy = (TRIAL / "discovery-instructions.md").read_text()
     skill = replace_once((instructions / "SKILL.md").read_text(), OLD_PREPARATION, strategy)
     if fresh_source_review:
-        review = TRIAL / "fresh-source-review.md"
-        skill += "\n\n" + review.read_text()
-        shutil.copyfile(review, instructions / review.name)
+        for name in ("fresh-source-review.md", "media-follow-through.md"):
+            review = TRIAL / name
+            skill += "\n\n" + review.read_text()
+            shutil.copyfile(review, instructions / review.name)
     system = replace_once(
         (instructions / "person-agent-instructions.md").read_text(), OLD_PROCESS, NEW_PROCESS
     )
@@ -162,7 +164,7 @@ page synthesis, enrichment, committee discovery, specialist delegation or fleet 
         {
             "stage": "prepared",
             "experiment": "discovery-first-person-research",
-            "source_review_mode": "fresh-fields-v1" if fresh_source_review else None,
+            "source_review_mode": "fresh-fields-v2" if fresh_source_review else None,
             "context_directory": str(context.resolve()),
             "context_manifest_sha256": digest(context / "manifest.json"),
             "copied_original_inputs": copied,
@@ -200,7 +202,7 @@ async def execute(out: Path):
     for name, sha in manifest["runner_hashes"].items():
         if digest(ROOT / name) != sha:
             raise ValueError(f"Runner changed since preparation: {name}; prepare a fresh trial.")
-    if manifest.get("source_review_mode") == "fresh-fields-v1":
+    if manifest.get("source_review_mode") in {"fresh-fields-v1", "fresh-fields-v2"}:
         from person_trial_source_review import FreshSourceAcquisitions
 
         await run(out, acquisition_factory=FreshSourceAcquisitions)

@@ -397,7 +397,11 @@ class Acquisitions:
 def media_reader(out, caller, media, ctx):
     def read(args):
         resolution = resolve(caller, args.url, hint=args.hint)
-        payload = {"resolution": asdict(resolution), "state": resolution.state}
+        payload = {
+            "resolution": asdict(resolution),
+            "state": resolution.state,
+            "transcription_attempted": False,
+        }
         payload["resolution"]["candidates"] = [
             candidate.model_dump(mode="json") for candidate in resolution.candidates
         ]
@@ -407,9 +411,28 @@ def media_reader(out, caller, media, ctx):
         context = SpeakerContext(
             person_name=ctx["person_assignment"]["name"], organisation=ctx["target"]["name"]
         )
+
+        def transcribe(call, *args, **kwargs):
+            payload["transcription_attempted"] = True
+            try:
+                return call(*args, **kwargs)
+            except Exception as exc:
+                # ProviderCaller preserves raw exchanges and metering. Do not repurchase an
+                # uncertain paid result automatically, or expose provider error text/secrets.
+                payload.update(
+                    state="transcription_failed",
+                    error_type=type(exc).__name__,
+                    outcome="unknown",
+                    gap="inspect_provider_outcome_before_retry",
+                )
+                return None
+
         if candidate.family == "youtube":
-            transcript = media.transcribe_video(
-                candidate.url, duration_s=candidate.duration_s, context=context
+            transcript = transcribe(
+                media.transcribe_video,
+                candidate.url,
+                duration_s=candidate.duration_s,
+                context=context,
             )
         elif candidate.media_url:
             # The public transport validates URL/DNS/redirects and enforces download ceilings.
@@ -432,7 +455,8 @@ def media_reader(out, caller, media, ctx):
                 display_name="person-research-recording",
             )
             uri = media.upload_recording(audio)
-            transcript = media.transcribe_uploaded(
+            transcript = transcribe(
+                media.transcribe_uploaded,
                 uri,
                 mime_type=mime,
                 duration_s=duration,
@@ -441,6 +465,10 @@ def media_reader(out, caller, media, ctx):
             )
         else:
             return {**payload, "state": "unavailable", "gap": "no_recording_or_transcript"}
+        if transcript is None:
+            return payload
+        if not transcript.text.strip():
+            return {**payload, "state": "transcription_failed", "gap": "empty_transcript"}
         return {**payload, "state": "transcribed", "transcript": asdict(transcript)}
 
     return read

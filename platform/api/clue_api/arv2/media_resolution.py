@@ -12,7 +12,7 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from html import unescape
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller
@@ -195,10 +195,16 @@ class PageLinks(HTMLParser):
         self.subjects: list[str] = []
         self.feeds: list[str] = []
         self.media: list[str] = []
+        self.media_origins: dict[str, list[str]] = {}
+        self.player_metadata: dict[str, str] = {}
         self.transcripts: list[str] = []
         self.documents: list[object] = []
         self._script: list[str] | None = None
         self._anchor: tuple[str, list[str]] | None = None
+
+    def add_media(self, url: str, origin: str) -> None:
+        self.media.append(url)
+        self.media_origins.setdefault(url, []).append(origin)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = dict(attrs)
@@ -211,7 +217,20 @@ class PageLinks(HTMLParser):
         ):
             self.feeds.append(href)
         if tag in {"iframe", "audio", "video", "source"} and src:
-            self.media.append(src)
+            self.add_media(src, f"html:{tag}:src")
+        if tag == "meta" and a.get("content"):
+            key = (a.get("property") or a.get("name") or "").lower()
+            if key in {"twitter:player", "twitter:player:stream"}:
+                self.player_metadata[key] = a["content"] or ""
+            elif key in {
+                "og:audio",
+                "og:audio:url",
+                "og:audio:secure_url",
+                "og:video",
+                "og:video:url",
+                "og:video:secure_url",
+            }:
+                self.add_media(a["content"] or "", f"html:meta:{key}")
         if tag == "track" and src and a.get("kind") in {"captions", "subtitles"}:
             self.transcripts.append(src)
         if tag == "a" and href:
@@ -250,6 +269,51 @@ def objects(value: object) -> Iterator[dict[str, Any]]:
     elif isinstance(value, list):
         for child in value:
             yield from objects(child)
+
+
+def recording_links(parser: PageLinks, page_url: str) -> dict[str, list[str]]:
+    """Explicit recording links with extraction provenance, excluding non-media frames."""
+    # A Twitter player and its declared stream describe the same card: prefer the stream.
+    key = (
+        "twitter:player:stream"
+        if parser.player_metadata.get("twitter:player:stream")
+        else "twitter:player"
+    )
+    if value := parser.player_metadata.get(key):
+        parser.add_media(value, f"html:meta:{key}")
+    links: dict[str, list[str]] = {}
+    for value in parser.media:
+        target = urljoin(page_url, value.strip())
+        parts = urlsplit(target)
+        if parts.scheme not in {"http", "https"}:
+            continue
+        if parts.hostname in {"googletagmanager.com", "www.googletagmanager.com"}:
+            continue
+        # Embed/watch forms of the same YouTube ID are one recording, not two choices.
+        with suppress(ValueError):
+            if yt := youtube_url(target):
+                target = yt[0]
+        origins = links.setdefault(target, [])
+        origins.extend(o for o in parser.media_origins[value] if o not in origins)
+    return links
+
+
+def unresolved_recording(url: str, page_url: str, origins: list[str]) -> Candidate:
+    """Type hints help selection; the actual media is still resolved on the next call."""
+    family: Literal["page", "youtube", "audio", "video"] = "page"
+    with suppress(ValueError):
+        if youtube_url(url):
+            family = "youtube"
+    path = urlsplit(url).path.lower()
+    if path.endswith((".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac")):
+        family = "audio"
+    elif path.endswith((".mp4", ".webm", ".mov")):
+        family = "video"
+    return Candidate(
+        url=url,
+        family=family,
+        identity_evidence=[f"explicit_embed:{page_url}", *origins],
+    )
 
 
 @dataclass(frozen=True)
@@ -499,7 +563,6 @@ def resolve(
         return match_episode(feed_candidates(body, url), hint, url)
     parser = PageLinks()
     parser.feed(body)
-    candidates = []
     for obj in objects(parser.documents):
         kinds = obj.get("@type", [])
         kinds = [kinds] if isinstance(kinds, str) else kinds
@@ -522,19 +585,21 @@ def resolve(
                 aliases=(url,),
             )
         if isinstance(media, str):
-            candidates.append(urljoin(url, media))
-    candidates += [urljoin(url, m) for m in parser.media]
-    media_links = list(dict.fromkeys(candidates))
+            parser.add_media(
+                media,
+                "html:json-ld:contentUrl" if obj.get("contentUrl") else "html:json-ld:embedUrl",
+            )
+    media_links = recording_links(parser, url)
     if len(media_links) > 1:
         return Resolution(
             "ambiguous",
             tuple(
-                Candidate(url=target, identity_evidence=[f"explicit_embed:{url}"])
-                for target in media_links
+                unresolved_recording(target, url, origins)
+                for target, origins in media_links.items()
             ),
             gaps=("multiple_explicit_recordings",),
         )
-    candidates += [urljoin(url, f) for f in parser.feeds]
+    candidates = [*media_links, *[urljoin(url, f) for f in parser.feeds]]
     gaps = []
     # A publisher transcript link is explicit speech evidence; never use arbitrary page text.
     for link in parser.transcripts:
@@ -581,9 +646,21 @@ def resolve(
                 tuple(
                     c.model_copy(
                         update={
+                            "identity_evidence": list(
+                                dict.fromkeys(
+                                    [
+                                        *c.identity_evidence,
+                                        *(
+                                            [f"explicit_embed:{url}", *media_links[target]]
+                                            if target in media_links
+                                            else []
+                                        ),
+                                    ]
+                                )
+                            ),
                             "recognized_subject_urls": list(
                                 dict.fromkeys([*c.recognized_subject_urls, *parser.subjects])
-                            )
+                            ),
                         }
                     )
                     for c in result.candidates

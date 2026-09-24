@@ -112,3 +112,59 @@ def test_overview_pagination_retains_every_highlight(tmp_path):
         page = json.loads((tmp_path / "inputs" / page["next_path"].lstrip("/")).read_text())
     assert len(rows) == 24
     assert [r["highlights"] for r in rows] == [r["highlights"] for r in payload["results"]]
+
+
+def test_media_candidates_are_inline_actionable_and_preserved_on_replay(tmp_path):
+    raw = {
+        "state": "ambiguous",
+        "transcription_attempted": False,
+        "resolution": {
+            "gaps": ["multiple_explicit_recordings"],
+            "candidates": [
+                {
+                    "url": "https://example.test/one.mp3",
+                    "family": "audio",
+                    "identity_evidence": ["explicit_embed:https://example.test/episode"],
+                },
+            ],
+        },
+    }
+    calls = []
+
+    def media(args):
+        calls.append(args.url)
+        return raw
+
+    acquisitions = review.FreshSourceAcquisitions(tmp_path, None, media)
+
+    async def run():
+        return [
+            json.loads(
+                await acquisitions.acquire_research_evidence(
+                    "read_media", {"url": "https://example.test/episode"}, "Interview"
+                )
+            )
+            for _ in range(2)
+        ]
+
+    first, replay = asyncio.run(run())
+    assert calls == ["https://example.test/episode"]
+    assert first["media_review"] == replay["media_review"]
+    candidate = first["media_review"]["candidates"][0]
+    assert candidate["type"] == "audio" and candidate["origin"]
+    assert candidate["status"] == "candidate_not_yet_attempted"
+    assert "operation='read_media'" in first["media_review"]["next_action"]
+    assert json.loads(next((tmp_path / "responses").glob("*.json")).read_text()) == raw
+
+
+def test_media_outcomes_distinguish_missing_unattempted_failed_and_available():
+    missing = review.media_overview({"state": "unsupported", "resolution": {"candidates": []}})
+    assert missing["transcription_attempted"] is False
+    assert "does not establish" in missing["next_action"]
+    failed = review.media_overview(
+        {"state": "transcription_failed", "transcription_attempted": True}
+    )
+    assert failed["transcription_attempted"] and not failed["transcript_available"]
+    assert "before any paid retry" in failed["next_action"]
+    available = review.media_overview({"state": "resolved", "resolution": {"transcript": "Speech"}})
+    assert available["transcript_available"] and not available["transcription_attempted"]

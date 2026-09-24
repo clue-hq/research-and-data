@@ -178,3 +178,36 @@ def test_native_media_uses_configured_client_and_retains_transcript(tmp_path, mo
     assert calls[0][1]["duration_s"] == 60
     assert result["transcript"]["text"] == "Original spoken words"
     assert result["resolution"]["candidates"][0]["url"] == candidate.url
+
+
+@pytest.mark.parametrize("failure", ["exception", "empty"])
+def test_transcription_failure_is_distinct_and_never_blindly_retried(
+    tmp_path, monkeypatch, failure
+):
+    from clue_api.arv2.gemini_media_client import Transcript
+    from clue_api.arv2.media_resolution import Resolution
+    from clue_api.arv2.media_types import Candidate
+
+    candidate = Candidate(url="https://youtu.be/abcdefghijk", family="youtube", duration_s=60)
+    monkeypatch.setattr(preview, "resolve", lambda *a, **kw: Resolution("resolved", (candidate,)))
+    calls = []
+
+    def transcribe(*args, **kwargs):
+        calls.append(args)
+        if failure == "exception":
+            raise TimeoutError("Do not expose provider error text")
+        return Transcript(model="configured-model", text="")
+
+    reader = preview.media_reader(
+        tmp_path,
+        None,
+        SimpleNamespace(transcribe_video=transcribe),
+        {
+            "person_assignment": {"name": "Dana"},
+            "target": {"name": "Acme"},
+        },
+    )
+    result = reader(preview.ReadMedia(url=candidate.url))
+    assert result["state"] == "transcription_failed" and result["transcription_attempted"]
+    assert len(calls) == 1
+    assert "Do not expose" not in json.dumps(result)

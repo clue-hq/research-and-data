@@ -11,6 +11,55 @@ from research_preview_support import save
 PAGE_SIZE = 10
 
 
+def media_overview(result):
+    """Actionable navigation, not an assertion that a candidate is playable or relevant."""
+    resolution = result.get("resolution", {})
+    state = result.get("state")
+    has_transcript = bool(
+        resolution.get("transcript") or (result.get("transcript") or {}).get("text")
+    )
+    if has_transcript:
+        next_action = "Read the complete saved transcript; distinguish speakers and source timing."
+    elif state == "ambiguous":
+        next_action = (
+            "Recording candidates are not yet attempted. Inspect their context and select a "
+            "relevant URL, then call acquire_research_evidence with operation='read_media' "
+            "and that URL. Do not repeat the unchanged landing-page request or call these "
+            "recordings inaccessible."
+        )
+    elif state == "transcription_failed":
+        next_action = (
+            "Transcription was attempted but did not produce a usable transcript. Inspect the "
+            "saved result and provider outcome before any paid retry; preserve the failure "
+            "as a gap."
+        )
+    else:
+        next_action = (
+            "No transcript was obtained by this route. Inspect the gap; a public episode/player "
+            "page, publisher feed, indexed transcript or targeted search may provide "
+            "another route. "
+            "An unrecognized recording link does not establish that the recording is unavailable."
+        )
+    return {
+        "state": state,
+        "transcript_available": has_transcript,
+        "transcription_attempted": result.get("transcription_attempted", False),
+        "gaps": [*resolution.get("gaps", []), *([result["gap"]] if result.get("gap") else [])],
+        "candidates": [
+            {
+                "url": c["url"],
+                "type": c.get("family", "page"),
+                "title": c.get("title", ""),
+                "origin": c.get("identity_evidence", []),
+                "status": "candidate_not_yet_attempted",
+            }
+            for c in resolution.get("candidates", [])
+            if not has_transcript and state == "ambiguous"
+        ],
+        "next_action": next_action,
+    }
+
+
 def field_hash(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
@@ -53,13 +102,16 @@ class FreshSourceAcquisitions(Acquisitions):
         """Acquire evidence; inspect returned source overviews and full referenced result fields."""
         original = await super().acquire_research_evidence(operation, arguments, purpose)
         response = json.loads(original)
-        if operation == "read_media" or "result_path" not in response:
+        if "result_path" not in response:
             return original
         receipt_path = self.out / "inputs" / response["result_path"].lstrip("/")
         operation_id = receipt_path.parent.name
         raw_path = self.out / "responses" / f"{operation_id}.json"
         if not raw_path.exists():
             return original
+        if operation == "read_media":
+            response["media_review"] = media_overview(json.loads(raw_path.read_text()))
+            return json.dumps(response, ensure_ascii=False)
         first_path = receipt_path.parent / "source-review" / "0.json"
         if not first_path.exists():
             receipt = json.loads(receipt_path.read_text())
