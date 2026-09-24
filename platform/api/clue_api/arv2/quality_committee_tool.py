@@ -13,6 +13,7 @@ from clue_api.arv2.account_research_catalog import bundle_pin
 from clue_api.arv2.account_research_launch import quality_person_job_id
 from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.committee_discovery import read_candidate, reference_data
+from clue_api.arv2.person_research_brief import save_person_brief
 from clue_api.arv2.quality_catalog import load_quality_resources
 from clue_api.arv2.quality_claims import ClaimProposal, SemanticAssessment, submit_proposal
 from clue_api.arv2.quality_evidence import (
@@ -179,6 +180,27 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 committee_assessment_id=str(receipt.claim_id),
                 generation_id=str(generation.generation_id),
             )
+            if isinstance(args, (NominateBriefedInput, NominateBriefedWebInput)):
+                # The parent-job lock above serializes duplicate nominations. Keep the first
+                # assignment immutable if the same person is selected again or the tool replays.
+                existing = (
+                    await conn.execute(
+                        text("SELECT input_refs FROM arv2_research_job WHERE job_id=:id"),
+                        {"id": job_id},
+                    )
+                ).one_or_none()
+                if existing is None:
+                    refs["person_research_brief"] = await save_person_brief(
+                        conn,
+                        self.storage,
+                        self.scope,
+                        context_id=authority.context_id,
+                        person_job_id=job_id,
+                        contact_id=contact,
+                        brief=args.research_brief,
+                    )
+                else:
+                    refs = dict(existing.input_refs)
             created = await create_job(
                 conn,
                 job_id=job_id,
@@ -205,6 +227,7 @@ class NominateCommitteeTool(_ResearchWriteTool):
                 assessment_claim_id=str(receipt.claim_id),
                 person_job_id=str(job_id),
                 created=created,
+                brief_sha256=(refs.get("person_research_brief") or {}).get("sha256"),
             )
         return ToolResult(
             tool=self.name,
@@ -380,4 +403,55 @@ class NominateSourceWebCommitteeTool(NominateCommitteeTool):
     model_description = (
         "Select a person from a saved web source and start person research. "
         "Use source-reported affiliation and your judgment; relationship verification is deferred."
+    )
+
+
+class NominateBriefedInput(NominateSourceInput):
+    research_brief: str = Field(
+        min_length=1,
+        description=(
+            "Your concise person-specific delegation: purpose, seller and account context, "
+            "known findings, research direction and references. Follow "
+            "person-research-briefing "
+            "skill; preserve the full person charter's scope."
+        ),
+    )
+
+
+class NominateBriefedWebInput(NominateSourceWebInput):
+    research_brief: str = Field(
+        min_length=1,
+        description=(
+            "Your concise person-specific delegation: purpose, seller and account context, "
+            "known findings, research direction and references. Follow "
+            "person-research-briefing "
+            "skill; preserve the full person charter's scope."
+        ),
+    )
+
+
+class NominateBriefedCommitteeTool(NominateCommitteeTool):
+    version = "3"
+    input_model = NominateBriefedInput
+    model_description = (
+        "Select an already discovered person from a saved AI Ark result and delegate person "
+        "research. Read person-research-briefing and write research_brief with the mission, "
+        "seller/account context, known findings, questions and original-source references. "
+        "Full pinned documents and account evidence remain accessible to the person worker. "
+        "Source-reported affiliation is sufficient; no relationship/location proof required. "
+        "Repeated nomination reuses the existing job and its original brief."
+    )
+
+
+class NominateBriefedWebCommitteeTool(NominateCommitteeTool):
+    name = "nominate_web_committee_candidate"
+    version = "3"
+    input_model = NominateBriefedWebInput
+    model_description = (
+        "Select an already discovered person from a saved web source and delegate person "
+        "research. Read person-research-briefing and write research_brief with the mission, "
+        "seller/account context, known findings, questions and original-source references. "
+        "Full pinned documents and account evidence remain accessible to the person worker. "
+        "Source-reported affiliation is sufficient; no relationship/location proof required. "
+        "Repeated nomination reuses the existing job and its original brief."
     )

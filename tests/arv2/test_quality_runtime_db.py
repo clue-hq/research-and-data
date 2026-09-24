@@ -137,7 +137,7 @@ class Models:
             raise AssertionError(f"unexpected model role {role}")
         if (
             role == "research_claims"
-            and (self.scope.input_refs or {}).get("quality_recipe_version") == 6
+            and (self.scope.input_refs or {}).get("quality_recipe_version", 5) >= 6
         ):
             script[1] = call(
                 "record_research_finding",
@@ -152,7 +152,7 @@ class Models:
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6])
+@pytest.mark.parametrize("revision", [5, 6, 9])
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
     tmp_path, revision, monkeypatch
 ):
@@ -279,7 +279,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                         {
                             "job": scope.job_id,
                             "tool": "record_research_finding"
-                            if revision == 6
+                            if revision >= 6
                             else "submit_research_claim",
                         },
                     )

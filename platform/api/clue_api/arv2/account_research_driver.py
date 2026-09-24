@@ -1075,6 +1075,13 @@ class Arv2AccountResearchWorkHandler:
                 OperationScope(run.workspace_id, run.run_id, job.job_id, job.account_entity_id),
                 context_id=run.context_id,
             )
+        from clue_api.arv2.person_research_brief import person_task_instruction, read_person_brief
+
+        person_brief = (
+            await read_person_brief(conn, self._storage, scope, context_id=run.context_id)
+            if person
+            else None
+        )
         return _Composition(
             job=job,
             run=run,
@@ -1085,21 +1092,25 @@ class Arv2AccountResearchWorkHandler:
             tools_builder=build_person_tools if person else build_account_tools,
             model_id=self._person_model_id if person else self._model_id,
             model_role=_PERSON_MODEL_ROLE if person else _MODEL_ROLE,
-            task_instruction=(
-                "Research this person using source-reported affiliation and your judgment. "
-                if person
-                else "Research this account, nominate the appropriate buying committee "
-                "and assess coverage. "
-            )
-            + "Use the exact pinned context and original evidence. "
-            + (
-                "Relationship verification is deferred; do not require employment or location "
-                "proofs. Present all findings, including uncertainty. "
-                if quality_input_refs["quality_recipe_version"] >= 6
-                else ""
-            )
-            + _account_directive(
-                run.directive_text, name=scope.account_name, domain=scope.account_domain
+            task_instruction=person_task_instruction(person_brief)
+            if person_brief
+            else (
+                (
+                    "Research this person using source-reported affiliation and your judgment. "
+                    if person
+                    else "Research this account, nominate the appropriate buying committee "
+                    "and assess coverage. "
+                )
+                + "Use the exact pinned context and original evidence. "
+                + (
+                    "Relationship verification is deferred; do not require employment or location "
+                    "proofs. Present all findings, including uncertainty. "
+                    if quality_input_refs["quality_recipe_version"] >= 6
+                    else ""
+                )
+                + _account_directive(
+                    run.directive_text, name=scope.account_name, domain=scope.account_domain
+                )
             ),
         )
 

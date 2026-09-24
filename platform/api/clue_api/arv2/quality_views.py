@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.person_research_brief import BRIEF_PATH, read_person_brief
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_policy import advisory_research
@@ -32,6 +33,7 @@ _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
 _OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _TRANSCRIPT = re.compile(r"/transcripts/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
+_PERSON_BRIEF = re.compile(r"/person-brief/(0|[1-9][0-9]*)\.json\Z")
 
 
 def _passage(body: str, start: int, path: str) -> dict[str, object]:
@@ -95,6 +97,19 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        brief_match = _PERSON_BRIEF.fullmatch(path)
+        if brief_match:
+            brief = await read_person_brief(
+                conn, self._storage, scope, context_id=authority.context_id
+            )
+            if brief is None:
+                return {
+                    "state": "no_person_specific_brief",
+                    "context_path": "/research/context.json",
+                }
+            return _passage(
+                json.dumps(brief, ensure_ascii=False), int(brief_match[1]), "person-brief"
+            )
         transcript = _TRANSCRIPT.fullmatch(path)
         if transcript:
             from clue_api.arv2.quality_media import read_transcript
@@ -210,6 +225,31 @@ class ResearchViewMount(EvidenceWorkspace):
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index/0.json"
+            if scope.person_subject_id:
+                result["selected_person"] = {
+                    "contact_id": str(scope.person_subject_id),
+                    "name": scope.person_name,
+                    "title": scope.person_title,
+                    "linkedin_url": scope.person_linkedin_url,
+                    "employment_history": scope.employment_history,
+                }
+                result["person_research_brief_path"] = BRIEF_PATH
+                result["discovery_references"] = {
+                    key: value
+                    for key, value in (scope.input_refs or {}).items()
+                    if key
+                    in {
+                        "parent_job_id",
+                        "candidate_ref",
+                        "discovered_via",
+                        "discovered_profile_source_id",
+                        "committee_assessment_id",
+                    }
+                }
+                result["account_research_references"] = {
+                    "findings": "/research/claims/0.json",
+                    "original_reports_pages_and_transcripts": "/evidence/index/0.json",
+                }
             if advisory_research(scope):
                 result["review_policy"] = {
                     "verification": "deferred",

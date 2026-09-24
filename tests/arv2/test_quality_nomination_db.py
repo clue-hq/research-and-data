@@ -25,7 +25,7 @@ from tests.arv2.test_committee_discovery_v2 import person
 from tests.arv2.test_committee_discovery_v2_db import response, runtime
 from tests.arv2.test_quality_claims_db import setup
 from tests.arv2.test_quality_execution_db import execution
-from tests.arv2.test_quality_tools_db import read_document
+from tests.arv2.test_quality_tools_db import read, read_document
 from tests.claimstore.conftest import (  # noqa: F401
     migrated_db,
     require_claimstore_db,
@@ -36,7 +36,7 @@ from tests.claimstore.conftest import (  # noqa: F401
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
-@pytest.mark.parametrize("revision", [5, 6])
+@pytest.mark.parametrize("revision", [5, 6, 9])
 def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path, revision):
     async def case():
         async with rollback_conn() as conn:
@@ -125,7 +125,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                 rationale="Potential marketing owner; verify affiliation and buying remit",
             )
             context = replace(ctx, operation_id=OperationId(uuid4()))
-            if revision == 6:
+            if revision >= 6:
                 from clue_api.arv2.quality_committee_tool import (
                     NominateSourceCommitteeTool,
                     NominateSourceInput,
@@ -138,6 +138,19 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     role="champion",
                     rationale="Source-reported marketing owner",
                 )
+            if revision == 9:
+                from clue_api.arv2.quality_committee_tool import (
+                    NominateBriefedCommitteeTool,
+                    NominateBriefedInput,
+                )
+
+                nominate = NominateBriefedCommitteeTool(scope, storage, purge_unevidenced=True)
+                args = NominateBriefedInput(
+                    **args.model_dump(),
+                    research_brief="Research Dana for the selected seller. Read the full "
+                    "person charter; explore the hiring initiative and earlier career. "
+                    "Consult /research/context.json and /evidence/index/0.json.",
+                )
             receipt = await nominate.invoke(args, context)
             replay = await nominate.invoke(args, context)
             assert replay.references["replayed"]
@@ -148,9 +161,9 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
             members = await read_committee(
                 conn, workspace_id=scope.workspace_id, account_id=scope.account_id, context_id=cid
             )
-            assert len(members) == 1 and members[0].outreach_eligible == (revision == 6)
-            assert members[0].state == ("supported" if revision == 6 else "candidate")
-            if revision == 6:
+            assert len(members) == 1 and members[0].outreach_eligible == (revision >= 6)
+            assert members[0].state == ("supported" if revision >= 6 else "candidate")
+            if revision >= 6:
                 assert not members[0].employment_claim_ids
                 assert "current_affiliation_not_established" not in members[0].gaps
             person_scope = replace(
@@ -175,10 +188,43 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
             person_rt._writer = QualityProviderWriter(
                 person_scope, storage, person_execution, rt.catalog, purge=True
             )
+            if revision == 9:
+                from clue_api.arv2.person_research_brief import (
+                    person_task_instruction,
+                    read_person_brief,
+                )
+
+                brief = await read_person_brief(conn, storage, person_scope, context_id=cid)
+                assert brief["brief"] == args.research_brief
+                assert args.research_brief in person_task_instruction(brief)
+                view = research_backend(
+                    BackendProtocol(), connections, storage, person_scope, person_execution
+                )
+                context_view = await read(view, "/research/context.json")
+                assert context_view["discovery_references"]["candidate_ref"] == candidate
+                assert context_view["selected_person"]["name"] == "Dana Test"
+                envelope = json.loads(
+                    await read_document(view, context_view["person_research_brief_path"])
+                )
+                assert envelope["brief"] == args.research_brief
+                changed = args.model_copy(update={"research_brief": "Must not overwrite the job"})
+                await nominate.invoke(changed, replace(context, operation_id=OperationId(uuid4())))
+                assert (await read_person_brief(conn, storage, person_scope, context_id=cid))[
+                    "brief"
+                ] == args.research_brief
+                # Originals and full pinned documents remain readable from the person job.
+                evidence = await read(view, "/evidence/index/0.json")
+                assert evidence["sources"]
+                for path in context_view["document_paths"].values():
+                    assert await read_document(view, path)
+                with pytest.raises(ValueError):
+                    await read_person_brief(
+                        conn, storage, replace(person_scope, account_id=uuid4()), context_id=cid
+                    )
             seed = await load_person_seed(person_rt)
             assert seed["candidate_ref"] == candidate
             assert len(wire.requests) == 2  # no extra named-person purchase
-            if revision == 6:
+            if revision >= 6:
                 from clue_api.arv2.quality_findings import (
                     RecordFindingInput,
                     RecordResearchFindingTool,
@@ -229,8 +275,8 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                                             CitedSentence(text="Potential marketing relevance."),
                                         ),
                                         sendLine=CitedSentence(
-                                        text="Your marketing work may be relevant "
-                                        "to this product."
+                                            text="Your marketing work may be relevant "
+                                            "to this product."
                                         ),
                                     ),
                                 ),
@@ -248,7 +294,8 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
     run_async(case())
 
 
-def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path):
+@pytest.mark.parametrize("revision", [5, 9])
+def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path, revision):
     from clue_api.arv2.quality_committee_tool import (
         NominateWebCommitteeInput,
         NominateWebCommitteeTool,
@@ -260,7 +307,9 @@ def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path):
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
             op, scope, cid = await setup(conn, storage)
-            scope = replace(scope, catalog_version="v4")
+            scope = replace(
+                scope, catalog_version="v4", input_refs={"quality_recipe_version": revision}
+            )
             parent = await execution(conn, op, scope.project_id)
             await bind_execution(
                 conn,
@@ -301,6 +350,23 @@ def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path):
                     rationale="Assess responsibility at this organization.",
                 ),
             )
+            if revision == 9:
+                from clue_api.arv2.quality_committee_tool import (
+                    NominateBriefedWebCommitteeTool,
+                    NominateBriefedWebInput,
+                )
+
+                tool = NominateBriefedWebCommitteeTool(scope, storage, purge_unevidenced=True)
+                args = NominateBriefedWebInput(
+                    name=args.name,
+                    linkedin_url=args.linkedin_url,
+                    source_id=source.source_id,
+                    persona_key=args.persona_key,
+                    role=args.role,
+                    rationale="Selected from the company page.",
+                    research_brief="Research Alex for this seller; inspect the supplied "
+                    "operations interview and retain the complete person charter.",
+                )
             first = await tool.invoke(args, ctx)
             second = await tool.invoke(args, ctx)
             assert first.references["person_job_id"] == second.references["person_job_id"]
@@ -308,7 +374,32 @@ def test_web_gap_uses_same_candidate_and_person_job_contract(tmp_path):
             members = await read_committee(
                 conn, workspace_id=op.workspace_id, account_id=op.account_id, context_id=cid
             )
-            assert len(members) == 1 and members[0].state == "candidate"
-            assert not members[0].outreach_eligible
+            assert len(members) == 1
+            assert members[0].state == ("supported" if revision == 9 else "candidate")
+            assert members[0].outreach_eligible == (revision == 9)
+            if revision == 9:
+                from clue_api.arv2.person_research_brief import read_person_brief
+                from clue_storage import ArtifactIntegrityError
+
+                job = await read_job(conn, job_id=first.references["person_job_id"])
+                person_scope = replace(
+                    scope,
+                    job_id=job.job_id,
+                    subject_kind="person",
+                    contact_id=job.subject_entity_id,
+                    input_refs=job.input_refs,
+                )
+                retained = await read_person_brief(conn, storage, person_scope, context_id=cid)
+                assert retained["brief"] == args.research_brief
+                # Erasing an original used by the parent also erases the derived assignment.
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET privacy_erased=true,erased_at=now() "
+                        "WHERE storage_key=:key"
+                    ),
+                    {"key": source.artifact_key},
+                )
+                with pytest.raises(ArtifactIntegrityError):
+                    await read_person_brief(conn, storage, person_scope, context_id=cid)
 
     run_async(case())

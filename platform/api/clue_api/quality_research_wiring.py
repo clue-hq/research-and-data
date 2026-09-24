@@ -71,6 +71,8 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.account_research_tools import ToolRuntime
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_committee_tool import (
+    NominateBriefedCommitteeTool,
+    NominateBriefedWebCommitteeTool,
     NominateCommitteeTool,
     NominateSourceCommitteeTool,
     NominateSourceWebCommitteeTool,
@@ -201,6 +203,8 @@ def quality_tools(
         RecordResearchFindingTool,
         NominateSourceCommitteeTool,
         NominateSourceWebCommitteeTool,
+        NominateBriefedCommitteeTool,
+        NominateBriefedWebCommitteeTool,
         PublishAdvisoryResearchPageTool,
     ):
         tool = cls(scope, storage, purge_unevidenced=purge)
@@ -256,7 +260,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: "v6"
+            role: "v9-person"
+            if version >= 9 and person and role == AgentRole.ACCOUNT_RESEARCH
+            else "v6"
             if version >= 7 and (person or role != AgentRole.ACCOUNT_RESEARCH)
             else f"v{version}"
             for role in ROLES

@@ -125,11 +125,11 @@ def test_source_excerpts_keep_original_positions_without_becoming_full_pages():
     assert exa_source_texts({"highlights": "malformed"}) == []
 
 
-def test_new_pins_resolve_without_changing_person_or_specialist_profiles(tmp_path):
+def test_new_pins_preserve_historical_profiles_and_scope_person_tools(tmp_path):
     assert Settings(arv2_research_catalog_version="v4").arv2_research_catalog_version == "v4"
     bundle = load_quality_resources("arv2-account")
-    assert json.loads(bundle.profile.body)["recipe_version"] == 8
-    for version in (6, 7, 8):
+    assert json.loads(bundle.profile.body)["recipe_version"] == 9
+    for version in (6, 7, 8, 9):
         old = load_quality_resources("arv2-account", version=version)
         assert load_quality_resources("arv2-account", expected_pin=bundle_pin(old)) == old
     registry = quality_tools(scope(), FsStorage(tmp_path), purge=False)
@@ -139,6 +139,15 @@ def test_new_pins_resolve_without_changing_person_or_specialist_profiles(tmp_pat
     assert person_profiles.resolve(AgentRole.ACCOUNT_RESEARCH).profile.version == "v6"
     for role in (AgentRole.RESEARCH_CLAIMS, AgentRole.RESEARCH_NARRATIVE):
         assert account_profiles.resolve(role).profile.version == "v6"
+    account = quality_profiles(registry, version=9).resolve(AgentRole.ACCOUNT_RESEARCH)
+    person = quality_profiles(registry, version=9, person=True).resolve(AgentRole.ACCOUNT_RESEARCH)
+    assert account.profile.version == "v9"
+    assert "read the person-research-briefing skill" in account.prompt_body
+    assert "delegation in research_brief" in account.prompt_body
+    assert person.profile.version == "v9-person"
+    assert person.prompt_body == person_profiles.resolve(AgentRole.ACCOUNT_RESEARCH).prompt_body
+    assert not any(pin.name.startswith("nominate_") for pin in person.profile.tools)
+    assert any(pin.resource.name == "person-research-briefing" for pin in account.profile.skills)
 
 
 def test_client_default_contents_are_unchanged_and_explicit_contents_are_copied():
