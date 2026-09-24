@@ -53,6 +53,9 @@ parser.add_argument(
     help="Read-only exported project status.md and decisions.md",
 )
 parser.add_argument("--prepare-only", action="store_true")
+parser.add_argument("--target-name", default="Zafran Security")
+parser.add_argument("--target-domain", default="zafran.io")
+parser.add_argument("--recipe-version", type=int, default=7)
 options = parser.parse_args()
 HERE = options.output.resolve()
 INPUT = HERE / "inputs"
@@ -100,7 +103,7 @@ async def main():
         if src.resolve() != dst.resolve():
             shutil.copyfile(src, dst)
     manifest.update(
-        target={"name": "Zafran Security", "domain": "zafran.io"},
+        target={"name": options.target_name, "domain": options.target_domain},
         run_date="2026-09-24",
         recent_window_start="2025-12-24",
         preview_only=True,
@@ -114,8 +117,8 @@ async def main():
         run_id=uuid4(),
         job_id=uuid4(),
         account_id=uuid4(),
-        account_name="Zafran Security",
-        account_domain="zafran.io",
+        account_name=options.target_name,
+        account_domain=options.target_domain,
         icp_markdown="",
         persona_markdown="",
         already_established="",
@@ -123,7 +126,7 @@ async def main():
         committee_cap=1,
         today=date(2026, 9, 24),
         catalog_version="v4",
-        input_refs={"quality_recipe_version": 7},
+        input_refs={"quality_recipe_version": options.recipe_version},
     )
     # Schema-only binding: these operations are never installed as executable preview tools.
     acquisition = AcquireResearchTool(cast(ToolRuntime, SimpleNamespace(scope=scope)))
@@ -136,7 +139,8 @@ async def main():
             break
         cursor = int(Path(view["next_path"]).stem)
     resolved = quality_profiles(
-        quality_tools(scope, FsStorage(INPUT / "storage"), purge=False), version=7
+        quality_tools(scope, FsStorage(INPUT / "storage"), purge=False),
+        version=options.recipe_version,
     ).resolve(AgentRole.ACCOUNT_RESEARCH)
     save(
         HERE / "production-resource-manifest.json",
@@ -171,7 +175,8 @@ async def main():
         "account-research-briefing skill below. Return only directive_text with "
         "{{account_name}} and {{account_domain}} placeholders. This is a prompt-only "
         "preview: no launch or research calls. Current founder assignment: investigate "
-        "Zafran for Clue, with at most one eventual person-depth subject; recent "
+        f"{options.target_name} for {original.get('seller_name', 'Clue')}, "
+        "with at most one eventual person-depth subject; recent "
         "developments use the nine calendar months ending 24 September 2026. This "
         "supersedes the retained ICP's older six-month timing priority. Keep pinned "
         "qualification criteria as the researcher's own evaluation context, separate "
@@ -180,7 +185,8 @@ async def main():
         "Project files and full selected documents follow.\n\n" + head_skill
     )
     head_user = (
-        "Prepare a fresh brief for the selected Clue project. Retained documents are "
+        f"Prepare a fresh brief for the selected {original.get('seller_name', 'Clue')} "
+        "project. Retained documents are "
         "historical inputs.\n"
     )
     for name in ("status.md", "decisions.md"):
@@ -247,8 +253,8 @@ async def main():
         raise RuntimeError("Head-of-ABM returned no brief")
     (HERE / "head-brief.generated.md").write_text(brief)
     (INPUT / "delegation-brief.md").write_text(
-        brief.replace("{{account_name}}", "Zafran Security").replace(
-            "{{account_domain}}", "zafran.io"
+        brief.replace("{{account_name}}", options.target_name).replace(
+            "{{account_domain}}", options.target_domain
         )
     )
     save(HERE / "head-response.json", result.model_dump(mode="json"))
@@ -310,8 +316,9 @@ async def main():
         name="account-exa-prompt-preview",
     )
     opening = (
-        "Prepare the main Exa query and complementary additional queries for Zafran "
-        "Security (zafran.io), as of 24 September 2026. The Head-of-ABM assignment "
+        "Prepare the main Exa query and complementary additional queries for "
+        f"{options.target_name} "
+        f"({options.target_domain}), as of 24 September 2026. The Head-of-ABM assignment "
         "is /delegation-brief.md. Complete pinned references and identity are in "
         "/research/context.json; original documents are under /documents/. The "
         "selected account-dossier skill is already supplied in full. Batch "
@@ -357,7 +364,8 @@ async def main():
             "elapsed_seconds": round(monotonic() - START, 2),
             "research_provider_calls": 0,
             "application_database_writes": 0,
-            "source_run_id": "e6f9ee90-452c-56aa-8209-7b507e608dff",
+            "source_context": str(SOURCE),
+            "quality_recipe_version": options.recipe_version,
             "input_hashes": hashes,
             "limitations": [
                 "Uses retained pinned test-project documents plus a read-only export of its "
@@ -365,7 +373,8 @@ async def main():
                 "Fresh Head-of-ABM model call applies the finalized briefing skill; isolated "
                 "from the production launch lifecycle.",
                 "Account uses real Deep Agents and the normal configured model provider, but "
-                "preview-only tools and production revision-7 instructions and account "
+                f"preview-only tools and production revision-{options.recipe_version} instructions "
+                "and account "
                 "request builder, not the production C5 execution lifecycle.",
                 "The selected dossier skill is opened in full before the model; this preview "
                 "does not test progressive skill selection. No preliminary website, job "

@@ -105,3 +105,26 @@
   behavior change. Mypy required explicit dynamic JSON result annotation in acquisition wrapper.
 - Unrelated briefing skill/account policy/cumulative-review edits remain untouched. No push.
   Founder review of raw findings remains next; person-depth step not started in this slice.
+
+## Insight Health live research-stage test preparation
+
+- Founder requested exercising Head briefing, account preliminary work, generated Exa assignment,
+  source consumption and actual follow-ups for Insight Health. Selected the prior Premier target.
+- Fresh source-project export obtained six complete digest-verified context documents, selected
+  products and current effective decisions. Source DB is older than checkout: current readers
+  fail on source_icp_document_id, privacy_erased and confirmation_turn_id. Used explicit read-only
+  legacy-compatible export; did not migrate app DB. Project status is labelled row snapshot.
+  Related project persona supplied with unresolved lineage noted, not silently repaired.
+- Parameterized preview preparation by target and recipe while preserving old defaults. Added
+  live research-stage harness using production model gateway, account instructions, Exa request
+  builder/provider clients, raw sink, ledger and Langfuse. Five operations: search/page/deep,
+  basic company enrichment and ATS reads. No claims/person jobs/fleet/application DB writes.
+- Preparation and all six input digests checked. Artifact home:
+  .artifacts/insight-health-research-20260924/ (PREPARATION.md, source-context, run-01).
+- Initial live execution was rejected by automatic approval review: user must explicitly approve
+  the seller/product/ICP/persona/project payload to OpenRouter/Langfuse and real Exa/AI Ark calls.
+  Async approval requested with exact scope. No model/provider spend occurred. Await that answer
+  before executing; do not treat old Clue-only approval as covering this expanded payload.
+- Preparation verification: 18 focused instruction/request/navigation tests pass; Ruff and
+  diff checks pass. New harness prepare-only succeeds; provider constructor clock requirement
+  found during inspection and supplied before any live call. This is prepared, not live-accepted.
