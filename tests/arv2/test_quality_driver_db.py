@@ -143,7 +143,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
                 calls.append(unit_key)
-                assert scope.input_refs["quality_recipe_version"] == 12
+                assert scope.input_refs["quality_recipe_version"] == 13
                 assert (
                     scope.persona_markdown
                     == "---\nkind: audience-persona\nicp_key: clue-abm-buyers\n"

@@ -98,6 +98,17 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        dossier = re.fullmatch(r"/account-dossier/(latest|[1-9][0-9]*)\.json", path)
+        if dossier:
+            from clue_api.arv2.quality_dossier import read_dossier
+
+            return await read_dossier(
+                conn,
+                self._storage,
+                scope,
+                context_id=authority.context_id,
+                version=None if dossier[1] == "latest" else int(dossier[1]),
+            )
         review = _SOURCE_REVIEW.fullmatch(path)
         if review:
             from clue_api.arv2.quality_source_review import source_review
@@ -233,6 +244,8 @@ class ResearchViewMount(EvidenceWorkspace):
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index/0.json"
+            if not scope.person_subject_id:
+                result["account_dossier_path"] = "/research/account-dossier/latest.json"
             if scope.person_subject_id:
                 result["selected_person"] = {
                     "contact_id": str(scope.person_subject_id),

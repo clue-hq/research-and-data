@@ -260,7 +260,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: "v12"
+            role: "v13"
+            if version >= 13 and not person and role == AgentRole.ACCOUNT_RESEARCH
+            else "v12"
             if version >= 12 and not person and role == AgentRole.ACCOUNT_RESEARCH
             else "v11-person"
             if version >= 11 and person and role == AgentRole.ACCOUNT_RESEARCH
@@ -621,6 +623,18 @@ class ResearchUnitRuntime:
                 if self.runtime_owner is not None:
                     await runtime_remaining(conn, self.operation_scope, owner=self.runtime_owner)
 
+        from clue_api.arv2.quality_dossier import AccountDossierPersistence, uses_account_dossier
+
+        dossier_middleware = (
+            (
+                AccountDossierPersistence(
+                    self.connections, self.storage, self.scope, execution, lease.backend
+                ),
+            )
+            if uses_account_dossier(self.scope)
+            and request.constitution.role == AgentRole.ACCOUNT_RESEARCH
+            else ()
+        )
         return SpecialistRuntimeBindings(
             backend=research_backend(
                 lease.backend,
@@ -633,6 +647,7 @@ class ResearchUnitRuntime:
                 ).capabilities(),
             ),
             middleware=(
+                *dossier_middleware,
                 SharedResearchAllowance(
                     self.connections,
                     self.operation_scope,

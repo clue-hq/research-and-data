@@ -149,10 +149,37 @@ class Models:
                 },
                 "submit",
             )
+        if (self.scope.input_refs or {}).get("quality_recipe_version", 5) >= 13:
+            if role == "account_research":
+                script.insert(
+                    0,
+                    call(
+                        "write_file",
+                        {
+                            "file_path": "/outputs/account-dossier.md",
+                            "content": (
+                                "# Account findings\n\n64 employees. Source: "
+                                f"/evidence/{self.source.source_id}/0.json\n"
+                            ),
+                        },
+                        "dossier",
+                    ),
+                )
+            elif role == "research_claims":
+                script.insert(
+                    0,
+                    call(
+                        "read_file",
+                        {
+                            "file_path": "/research/account-dossier/1.json",
+                        },
+                        "dossier-read",
+                    ),
+                )
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9, 11])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13])
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
     tmp_path, revision, monkeypatch
 ):
@@ -169,7 +196,9 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
             op, scope, context_id = await setup(conn, storage)
-            scope = replace(scope, input_refs={"quality_recipe_version": revision})
+            scope = replace(
+                scope, catalog_version="v4", input_refs={"quality_recipe_version": revision}
+            )
             source = await save(
                 conn, storage, op, {"employees": 64}, kind="provider_record", url=None
             )
@@ -257,8 +286,8 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 )
             ).all()
             assert [(r.role, r.n) for r in calls] == [
-                ("account_research", 4),
-                ("research_claims", 4),
+                ("account_research", 5 if revision >= 13 else 4),
+                ("research_claims", 5 if revision >= 13 else 4),
             ]
             second = await runtime.run(
                 objective="Read the complete saved report and delegate faithful claim processing."
@@ -268,7 +297,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 exclude={"operation_receipts"}
             )
             assert models.builds == ["account_research", "research_claims"]
-            assert len(seen_prompts) == 8
+            assert len(seen_prompts) == (10 if revision >= 13 else 8)
             assert all(RESEARCH_PROVIDER_POLICY in prompt for prompt in seen_prompts)
             parameters = (
                 (
