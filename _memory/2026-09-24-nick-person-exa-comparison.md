@@ -31,3 +31,17 @@
   request already includes five additional queries and highlights. No second call purchased.
 - Original dossiers remain unchanged; linked reading copy documents citation-URL differences.
   Scope remains research-stage testing, with no application writes, enrichment, fleet or publication.
+
+## Founder playground response audit
+
+- Preserved the supplied next trial in `.artifacts/person-exa-comparison-20260924/nick-playground-01/`
+  with unchanged provider JSON/dossier, full source-field reading copy and credential-free request
+  arguments. Did not execute the pasted SDK code or make a provider request.
+- Main query/system are byte-identical; settings change several variables: 40 requested / 24
+  returned, no source text, generic highlights, extra links, and accidentally JSON-encoded query
+  strings (extra literal wrapping quotes). Cannot isolate the effect of result count.
+- Comparison records the still-missed personal-depth benchmark, lost source coverage, one fixed
+  chronology error, continuing metadata confusion and a source-only follow-up lead. Structured
+  entity fields must be included in source inspection, not just highlights.
+- Recommend the existing exact 40-result request for a controlled settings comparison, then
+  targeted source follow-up as a separate experiment. No runtime/prompt changes or paid calls.
