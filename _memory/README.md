@@ -31,6 +31,9 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-24-person-exa-comparison.md` — isolated person-agent request and paid Exa trial against
+  saved PoC; exact artifacts, source-level comparison, role-attribution defect and pending review.
+
 - `2026-09-24-person-exa-charter.md` — explicit person-depth charter and Exa instruction review
   draft; source inspiration and the still-pending person provider/navigation wiring.
 
