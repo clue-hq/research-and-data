@@ -31,6 +31,9 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-24-person-exa-charter.md` — explicit person-depth charter and Exa instruction review
+  draft; source inspiration and the still-pending person provider/navigation wiring.
+
 - `2026-09-23-head-of-abm-research-briefing.md` — rejected runtime compiler reverted;
   Head-of-ABM briefing skill, shared account placeholders and existing source references.
 
