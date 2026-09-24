@@ -69,3 +69,17 @@
   is not exercised in this fresh-discovery trial. No production runtime changes.
 - Five preparation tests pass, scoped Ruff clean. Authorized live comparison about to dispatch;
   do not mutate runner or prepared inputs mid-run. Existing unrelated edits preserved.
+
+## Trial 03 completed
+
+- Process exited successfully:514.58s,29 model calls,10 auto searches,20 page reads,1 deep; deep
+  start219.739s. USD1.720538 plus0.1 company credit; no missing cost rows.85 reads, no exact
+  argument repeats. Trace locally retained; Langfuse completeness unchecked, no console warnings.
+- Improved named-person discovery and professional voice; source-linked workflow acquired and
+  expanded. Five candidate proposals. No dedicated customer-story search. All raw inputs/results,
+  query/system, activity, metrics and COMPARISON saved under isolated zafran-03 directory.
+- Still missing earlier operations vacancy; workflow-first ordinary queries not demonstrated
+  clearly. Preparation heavier; quotation precision and hypothesis wording imperfect. Prior reuse
+  only instructed, not exercised. No production, person-job/enrichment or media acceptance claim.
+- Five preparation tests and Ruff/format/diff passed; no runtime edits mid-run. Closing at review
+  checkpoint; no automatic further paid calls or production port. Unrelated changes preserved.

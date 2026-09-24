@@ -87,3 +87,17 @@ No known target names or missing vendor answers are baked into these instruction
 Fresh `zafran-03` uses identical original context and Exa settings to zafran-02. Prior target
 results remain excluded: repeat-research reuse needs a separate integrated input test. Five
 preparation tests pass, scoped Ruff clean. Live outcome pending; no production promotion.
+
+### Trial 03 outcome
+
+Completed in 514.58s, 29 model calls, ten auto searches, twenty page reads and one deep request.
+Recorded $1.720538 plus 0.1 AI Ark company credit. Focused Nick search recovered AI-first GTM,
+AI-adoption guardrails and field/agency statements; the deep result added a BDR routing workflow
+which the account agent read and preserved. Vari's ABM voice and broader company coverage remain.
+No customer-story search detour. See `zafran-03/COMPARISON.md`, unedited `findings.md`, actual
+query/system, provider compilation, activity and metrics.
+
+Workflow-first ordinary search behavior is still only partially adopted; the earlier MarOps
+vacancy was not rediscovered. Preparation took ~48s longer, though total wall time was similar.
+Prior-evidence reuse was not tested. Quotation precision, candidate-source references and role/fit
+interpretations remain review points. No production changes or additional paid runs followed.
