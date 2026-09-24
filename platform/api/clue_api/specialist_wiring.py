@@ -123,6 +123,7 @@ class SpecialistRuntimeBindings:
     before_work: Callable[[], Awaitable[None]] | None = None
     # Trusted run allowance, never a model-supplied delegation option. None retains the profile.
     max_model_rounds: int | None = None
+    disable_runtime_timeout: bool = False
 
 
 SpecialistBindingFactory = Callable[
@@ -458,7 +459,11 @@ class FreshWakeSpecialistRunner:
                 runtime=DeepAgentTurnRuntime(
                     models=self._models,
                     execution=execution,
-                    max_runtime_s=resolved_profile.profile.turn_timeout_s,
+                    max_runtime_s=(
+                        None
+                        if bindings.disable_runtime_timeout
+                        else resolved_profile.profile.turn_timeout_s
+                    ),
                     max_rounds=(
                         bindings.max_model_rounds
                         if bindings.max_model_rounds is not None

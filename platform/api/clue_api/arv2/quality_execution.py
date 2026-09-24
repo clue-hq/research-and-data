@@ -48,7 +48,7 @@ async def bind_execution(
         limits.model_calls < 1
         or limits.tool_calls < 1
         or limits.delegations < 0
-        or limits.runtime_ms < 1
+        or limits.runtime_ms < 0
     ):
         raise ValueError("research allowance limits are invalid")
     row = (
@@ -277,7 +277,7 @@ async def runtime_remaining(
 ) -> float:
     row = (
         await conn.execute(
-            text("""SELECT runtime_owner_token,
+            text("""SELECT runtime_owner_token,max_runtime_ms,
         (max_runtime_ms-runtime_used_ms)/1000.0 - CASE WHEN runtime_started_at IS NULL THEN 0
           ELSE EXTRACT(epoch FROM clock_timestamp()-runtime_started_at) END AS remaining
         FROM arv2_quality_allowance WHERE job_id=:job AND workspace_id=:ws"""),
@@ -286,6 +286,8 @@ async def runtime_remaining(
     ).one_or_none()
     if row is None or (owner is not None and row.runtime_owner_token != owner):
         raise ResearchAllowanceExhausted("research runtime authority is unavailable")
+    if row.max_runtime_ms == 0:
+        return float("inf")
     if row.remaining <= 0:
         raise ResearchAllowanceExhausted("shared research runtime allowance exhausted")
     return float(row.remaining)
@@ -303,7 +305,7 @@ async def begin_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: 
     # resets it, and only the existing fleet lease owner may enter this composition.
     await conn.execute(
         text("""UPDATE arv2_quality_allowance SET
-        runtime_used_ms=LEAST(max_runtime_ms,runtime_used_ms+
+        runtime_used_ms=LEAST(NULLIF(max_runtime_ms,0),runtime_used_ms+
             CASE WHEN runtime_started_at IS NULL THEN 0
             ELSE GREATEST(0,CEIL(EXTRACT(epoch FROM
                 clock_timestamp()-runtime_started_at)*1000)::bigint) END),
@@ -319,7 +321,7 @@ async def begin_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: 
 async def finish_runtime(conn: AsyncConnection, scope: OperationScope, *, owner: UUID) -> None:
     result = await conn.execute(
         text("""UPDATE arv2_quality_allowance SET
-        runtime_used_ms=LEAST(max_runtime_ms,runtime_used_ms+
+        runtime_used_ms=LEAST(NULLIF(max_runtime_ms,0),runtime_used_ms+
             GREATEST(0,CEIL(EXTRACT(epoch FROM
                 clock_timestamp()-runtime_started_at)*1000)::bigint)),
         runtime_started_at=NULL,runtime_owner_token=NULL

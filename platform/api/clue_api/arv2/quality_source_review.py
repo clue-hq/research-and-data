@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.quality_evidence import EvidenceGrant, list_sources, read_source
 from clue_storage import StorageBackend
 
-PAGE_SIZE = 10
-
 
 async def source_review(
     conn: AsyncConnection,
@@ -42,7 +40,7 @@ async def source_review(
     if offset < 0 or offset > len(selected):
         raise ValueError("source overview offset outside result set")
     rows = []
-    for row in selected[offset : offset + PAGE_SIZE]:
+    for row in selected[offset:]:
         parts = []
         start = 0
         while True:

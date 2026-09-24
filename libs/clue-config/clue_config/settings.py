@@ -382,7 +382,7 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
     arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
     # Wall clock per account job, seconds. Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
-    arv2_account_max_runtime_s: int = Field(default=1800, ge=60)
+    arv2_account_max_runtime_s: int = Field(default=1800, ge=0)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per

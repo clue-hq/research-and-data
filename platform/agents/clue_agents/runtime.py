@@ -286,11 +286,11 @@ class DeepAgentTurnRuntime:
         *,
         models: AgentModelProvider,
         execution: AgentExecutionAdapter,
-        max_runtime_s: float = 300.0,
+        max_runtime_s: float | None = 300.0,
         max_rounds: int = 24,
         middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
     ) -> None:
-        if max_runtime_s <= 0:
+        if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
         if not 1 <= max_rounds <= MAX_RUNTIME_MODEL_ROUNDS:
             raise ValueError(

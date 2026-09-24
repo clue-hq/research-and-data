@@ -217,3 +217,44 @@ def test_elapsed_runtime_recovery_owner_and_stop_are_shared(tmp_path):
                 await reserve(conn, op, execution_id=parent, kind="model", activity_id=uuid4())
 
     run_async(case())
+
+
+def test_supervised_zero_runtime_keeps_usage_and_owner_checks(tmp_path):
+    from math import isinf
+
+    from clue_api.arv2.quality_execution import begin_runtime, finish_runtime, runtime_remaining
+
+    async def case():
+        async with rollback_conn() as conn:
+            op, scope, cid = await setup(conn, FsStorage(tmp_path))
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(10, 20, 2, 0),
+            )
+            owner = uuid4()
+            assert isinf(await begin_runtime(conn, op, owner=owner))
+            await conn.execute(
+                text("""UPDATE arv2_quality_allowance
+                SET runtime_started_at=clock_timestamp()-interval '2 hours'
+                WHERE job_id=:job"""),
+                {"job": op.job_id},
+            )
+            assert isinf(await runtime_remaining(conn, op, owner=owner))
+            with pytest.raises(ResearchAllowanceExhausted, match="authority"):
+                await runtime_remaining(conn, op, owner=uuid4())
+            await finish_runtime(conn, op, owner=owner)
+            used = (
+                await conn.execute(
+                    text("SELECT runtime_used_ms FROM arv2_quality_allowance WHERE job_id=:job"),
+                    {"job": op.job_id},
+                )
+            ).scalar_one()
+            assert used >= 7200000
+            assert isinf(await begin_runtime(conn, op, owner=uuid4()))
+
+    run_async(case())

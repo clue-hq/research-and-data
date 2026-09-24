@@ -154,14 +154,15 @@ def test_search_deep_and_page_keep_all_fields_with_replay_and_revocable_views(tm
             )
             overview = await read(backend, deep["source_review_path"])
             assert overview["total_results"] == 12
-            assert len(overview["sources"]) == 10
+            assert len(overview["sources"]) == 12
+            assert overview["next_path"] is None
             entry = overview["sources"][0]
             assert entry["previous_capture"]
             assert entry["changed_fields"] == []  # Identical text; new fields still matter.
             assert set(entry["added_fields"]) == {"highlights", "extras", "profile"}
             assert entry["highlights"][0]["text_segments"] == fresh["highlights"]
             assert json.loads(await read_document(backend, entry["full_source_path"])) == fresh
-            tail = await read(backend, overview["next_path"])
+            tail = await read(backend, deep["source_review_path"].replace("/0.json", "/10.json"))
             assert len(tail["sources"]) == 2 and tail["next_path"] is None
             replay = await tool.invoke(request, ctx)
             assert replay.references["replayed"] and len(wire.requests) == 2

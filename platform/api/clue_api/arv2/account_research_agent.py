@@ -499,7 +499,7 @@ async def _drive_graph(
     # task that finished with an exception of its own is the graph's failure, never the cap.
     invoke: asyncio.Task[Any] = asyncio.create_task(agent.ainvoke(opening, config=config))
     try:
-        await asyncio.wait_for(invoke, timeout=max_runtime_s)
+        await asyncio.wait_for(invoke, timeout=max_runtime_s or None)
     except TimeoutError:
         failed = invoke.exception() if invoke.done() and not invoke.cancelled() else None
         if failed is not None:

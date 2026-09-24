@@ -40,7 +40,7 @@ _SOURCE_REVIEW = re.compile(r"/source-review/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.js
 def _passage(body: str, start: int, path: str) -> dict[str, object]:
     if start > len(body):
         raise ValueError("offset exceeds the document; start at 0")
-    end = min(start + 8000, len(body))
+    end = len(body)
     return {
         "start": start,
         "end": end,
@@ -77,8 +77,8 @@ class ResearchViewMount(EvidenceWorkspace):
         self._capabilities = capabilities
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        if offset < 0 or limit < 1:
-            return ReadResult(error="Read offset must be nonnegative and limit must be positive.")
+        if offset < 0:
+            return ReadResult(error="Read offset must be nonnegative.")
         try:
             async with self._connections() as conn:
                 authority = await resolve_authority(conn, self._scope, self._execution_id)
@@ -283,13 +283,11 @@ class ResearchViewMount(EvidenceWorkspace):
             )
             entity = "contacts" if scope.person_subject_id else "accounts"
             catalog_rows = [r for r in context.field_catalog if r.entity == entity]
-            values = [r.model_dump(mode="json") for r in catalog_rows[start : start + 20]]
+            values = [r.model_dump(mode="json") for r in catalog_rows[start:]]
             return {
                 "kind": "field_definitions_not_evidence",
                 "fields": values,
-                "next_path": f"/research/catalog/{start + 20}.json"
-                if start + 20 < len(catalog_rows)
-                else None,
+                "next_path": None,
             }
         rows = (
             (
@@ -316,7 +314,7 @@ class ResearchViewMount(EvidenceWorkspace):
             AND NOT EXISTS(SELECT 1 FROM claim_quality_support s JOIN artifact sa
                 ON sa.storage_key=s.artifact_key WHERE s.assessment_id=q.assessment_id
                 AND (sa.erased_at IS NOT NULL OR sa.privacy_erased OR sa.expires_at<=now()))
-          ORDER BY c.collected_at,c.id OFFSET :offset LIMIT 11
+          ORDER BY c.collected_at,c.id OFFSET :offset
         """),
                     {
                         "ws": scope.workspace_id,
@@ -334,7 +332,7 @@ class ResearchViewMount(EvidenceWorkspace):
             .all()
         )
         items = []
-        for row in rows[:10]:
+        for row in rows:
             value = dict(row)
             value["status"] = value.pop("conclusion") or "legacy_unassessed"
             value["revision"] = value["revision"] or 0
@@ -373,7 +371,7 @@ class ResearchViewMount(EvidenceWorkspace):
             raise ValueError("claim is unavailable in this research context")
         return {
             "claims": items,
-            "next_path": f"/research/claims/{start + 10}.json" if len(rows) > 10 else None,
+            "next_path": None,
         }
 
     async def als(self, path: str) -> LsResult:

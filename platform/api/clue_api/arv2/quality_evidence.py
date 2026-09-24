@@ -325,7 +325,7 @@ async def list_sources(
     operation_id: UUID | None = None,
 ) -> dict[str, Any]:
     revision, subject = await _grant(conn, grant)
-    if after < 0 or not 1 <= limit <= 100:
+    if after < 0:
         raise ValueError("invalid evidence page bounds")
     rows = (
         (
@@ -344,14 +344,14 @@ async def list_sources(
                     operation=operation_id,
                     revision=revision,
                     subject=subject,
-                    limit=limit + 1,
+                    limit=limit + 1 if limit > 0 else None,
                 ),
             )
         )
         .mappings()
         .all()
     )
-    selected = [SourceRef.model_validate(dict(r)) for r in rows[:limit]]
+    selected = [SourceRef.model_validate(dict(r)) for r in (rows[:limit] if limit > 0 else rows)]
     keys = {s.artifact_key for s in selected} | {s.original_key for s in selected if s.original_key}
     available = (
         set(
@@ -381,7 +381,7 @@ async def list_sources(
             else {"source_id": str(s.source_id), "revision": s.revision, "available": False}
             for s in selected
         ],
-        "next_after": selected[-1].revision if len(rows) > limit else None,
+        "next_after": selected[-1].revision if limit > 0 and len(rows) > limit else None,
     }
 
 
@@ -456,15 +456,15 @@ async def read_source(
     source_id: UUID,
     *,
     start: int = 0,
-    limit: int = 8000,
+    limit: int = 0,
 ) -> dict[str, Any]:
-    if start < 0 or not 1 <= limit <= 16000:
-        raise ValueError("invalid source read bounds")
+    if start < 0:
+        raise ValueError("invalid source read offset")
     ref = await resolve_source(conn, grant, source_id)
     raw = (await _body(conn, storage, ref)).decode("utf-8")
     if start > len(raw):
         raise EvidenceUnavailable("offset beyond source; restart at offset 0")
-    end = min(len(raw), start + limit)
+    end = min(len(raw), start + limit) if limit > 0 else len(raw)
     return {
         "source_id": str(source_id),
         "text": raw[start:end],

@@ -1,6 +1,6 @@
 """Disposable virtual evidence mount; canonical bytes and authorization remain in storage/DB.
 
-Paths name bounded JSON views of an original, with explicit character offsets and continuation.
+Paths name complete JSON views of an original, with optional character offsets.
 No source bytes are cached on a worker. Every framework read rechecks the same evidence grant as
 the named tools, including after a prior successful read, replay, revocation or privacy erasure.
 """
@@ -42,12 +42,14 @@ _INDEX = re.compile(r"/evidence/index/(0|[1-9][0-9]*)\.json\Z")
 
 
 def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
-    """Apply the framework's line window inside one bounded, authorized JSON view.
+    """Return the complete view by default; explicit positive line windows remain optional.
 
-    The path's character cursor selects the source passage; read_file's offset/limit select
-    lines of that view. These are distinct pagination layers, just like any ordinary JSON file.
+    Deep Agents supplies 2000 when the caller omits its line limit. Treat that framework
+    default, and nonpositive limits, as unbounded for these research views.
     """
     rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    if limit <= 0 or limit == 2000:
+        limit = max(1, len(rendered.splitlines()))
     sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
     if isinstance(sliced, ReadResult):
         return sliced
@@ -63,14 +65,14 @@ class EvidenceWorkspace(BackendProtocol):
         self._grant = grant
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
-        if offset < 0 or limit < 1:
-            return ReadResult(error="Read offset must be nonnegative and limit must be positive.")
+        if offset < 0:
+            return ReadResult(error="Read offset must be nonnegative.")
         source = _SOURCE.fullmatch(file_path)
         index = _INDEX.fullmatch(file_path)
         try:
             async with self._connections() as conn:
                 if index:
-                    result = await list_sources(conn, self._grant, after=int(index[1]), limit=30)
+                    result = await list_sources(conn, self._grant, after=int(index[1]), limit=0)
                     after = result.get("next_after")
                     result["next_path"] = f"/evidence/index/{after}.json" if after else None
                     for item in result["sources"]:

@@ -140,7 +140,7 @@ async def read_transcript(
         )
         if not 0 <= start <= len(saved["segments"]):
             raise EvidenceUnavailable("restart the transcript segment view at 0")
-        end = start + 30
+        end = len(saved["segments"])
         return {
             "source_id": str(sid),
             "version_ref": str(version),

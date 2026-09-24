@@ -27,7 +27,7 @@ def test_original_continuation_and_revocation_on_every_virtual_read(tmp_path):
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
             scope, other = await seed(conn, storage)
-            original = "A long paragraph. " * 1200
+            original = "A long paragraph. " * 2400
             source = await save(conn, storage, scope, original)
             foreign = await save(conn, storage, other, "Other account source")
             grant = await grant_manifest(conn, scope, consumer_id=uuid4())
@@ -48,6 +48,12 @@ def test_original_continuation_and_revocation_on_every_virtual_read(tmp_path):
                 rebuilt += "".join(s["text"] for s in body["text_segments"])
                 path = body["next_path"]
             assert rebuilt == original
+            assert body["next_path"] is None
+            unbounded = await backend.aread(f"/evidence/{source.source_id}/0.json", limit=0)
+            assert not unbounded.error
+            assert original == "".join(
+                s["text"] for s in json.loads(unbounded.file_data["content"])["text_segments"]
+            )
             path = f"/evidence/{source.source_id}/0.json"
             full = (await backend.aread(path)).file_data["content"]
             rebuilt_view = ""

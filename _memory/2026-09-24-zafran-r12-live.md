@@ -21,3 +21,25 @@
 - Current state: live run active, not accepted/complete. Harness traces and raw results retained
   privately. Head briefing was generated fresh with the current skill; original source documents
   are retained historical test-project inputs, not newly crawled Clue context.
+- Founder requested active monitoring of traces and agent behavior. Created thread heartbeat
+  `monitor-clue-zafran-research`, every five minutes, meaningful changes only; pause after terminal
+  assessment. Existing local status monitor runs every 45 seconds. Initial observations retained
+  in private OBSERVATIONS.md. No extra research purchases or runtime changes authorized by monitoring.
+
+- Founder requested monitoring in chat; scheduled heartbeat paused. Initial run then explicitly
+  stopped at founder request for a fresh launch with relaxed research reads and no job timeout.
+  Five workers/supervisor/monitor stopped; isolated generation and six jobs suspended, fleet failed.
+  Two attempted status annotations failed constraints/column checks and rolled back; successful
+  stop mutation only changes supported status fields. Originals and trace files preserved.
+- Removed compulsory research document/source/transcript/catalog/claim-view chunking. Full reads
+  support limit=0 (also the framework default 2000); explicit small line windows still work.
+  Framework tool-output truncation and model context limits still exist; these are not removed.
+- Added explicit research runtime setting 0 = disabled, shared allowance/migration, account/person
+  and delegated specialist timeout wiring; elapsed runtime remains recorded. Other runs retain
+  their configured default. Fresh supervised harness uses zero timeout and 200 model calls/job.
+- Focused groups passed: 29 settings/read/evidence/execution/provider checks and 15 subsequent
+  view/media/runtime checks (overlap). Scoped lint and diff check pass. Single migration head;
+  up/down/up passed on isolated empty database. Broad agents runtime tests had 12 pre-existing
+  catalog digest failures from the unrelated modified account-research-briefing@v1; untouched.
+- Fresh clean database/context prepared under .artifacts/arv4-clue-zafran-20260924-r12-restart01;
+  no target evidence/contact/claim reuse. Fresh Head model brief generated. Launch pending.
