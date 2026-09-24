@@ -128,8 +128,8 @@ def test_source_excerpts_keep_original_positions_without_becoming_full_pages():
 def test_new_pins_preserve_historical_profiles_and_scope_person_tools(tmp_path):
     assert Settings(arv2_research_catalog_version="v4").arv2_research_catalog_version == "v4"
     bundle = load_quality_resources("arv2-account")
-    assert json.loads(bundle.profile.body)["recipe_version"] == 9
-    for version in (6, 7, 8, 9):
+    assert json.loads(bundle.profile.body)["recipe_version"] == 10
+    for version in (6, 7, 8, 9, 10):
         old = load_quality_resources("arv2-account", version=version)
         assert load_quality_resources("arv2-account", expected_pin=bundle_pin(old)) == old
     registry = quality_tools(scope(), FsStorage(tmp_path), purge=False)
@@ -139,9 +139,9 @@ def test_new_pins_preserve_historical_profiles_and_scope_person_tools(tmp_path):
     assert person_profiles.resolve(AgentRole.ACCOUNT_RESEARCH).profile.version == "v6"
     for role in (AgentRole.RESEARCH_CLAIMS, AgentRole.RESEARCH_NARRATIVE):
         assert account_profiles.resolve(role).profile.version == "v6"
-    account = quality_profiles(registry, version=9).resolve(AgentRole.ACCOUNT_RESEARCH)
-    person = quality_profiles(registry, version=9, person=True).resolve(AgentRole.ACCOUNT_RESEARCH)
-    assert account.profile.version == "v9"
+    account = quality_profiles(registry, version=10).resolve(AgentRole.ACCOUNT_RESEARCH)
+    person = quality_profiles(registry, version=10, person=True).resolve(AgentRole.ACCOUNT_RESEARCH)
+    assert account.profile.version == "v10"
     assert "read the person-research-briefing skill" in account.prompt_body
     assert "delegation in research_brief" in account.prompt_body
     assert person.profile.version == "v9-person"

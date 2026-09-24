@@ -23,6 +23,7 @@ from research_preview_support import Audit, PreviewTools, save
 from clue_agents import AgentRole
 from clue_api.agent_model_wiring import build_agent_model_provider
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_committee_tool import (
     NominateBriefedWebCommitteeTool,
     NominateBriefedWebInput,
@@ -72,10 +73,11 @@ async def main():
         committee_cap=1,
         today=date.fromisoformat(ctx["run_date"]),
         catalog_version="v4",
-        input_refs={"quality_recipe_version": 9},
+        input_refs={"quality_recipe_version": CURRENT_RECIPE_VERSION},
     )
     resolved = quality_profiles(
-        quality_tools(scope, FsStorage(out / "storage"), purge=False), version=9
+        quality_tools(scope, FsStorage(out / "storage"), purge=False),
+        version=CURRENT_RECIPE_VERSION,
     ).resolve(AgentRole.ACCOUNT_RESEARCH)
     # Only currently selected skill copies are disclosed, avoiding stale preview skills.
     shutil.rmtree(inputs / ".deepagent", ignore_errors=True)
@@ -117,7 +119,7 @@ The full production context/fleet lifecycle is not simulated here. Do not claim 
     save(out / "nomination-input-schema.json", NominateBriefedWebInput.model_json_schema())
     manifest = {
         "scope": "account-to-person brief generation only",
-        "recipe_version": 9,
+        "recipe_version": CURRENT_RECIPE_VERSION,
         "context_directory": str(args.context.resolve()),
         "person_name": args.person_name,
         "input_hashes": {

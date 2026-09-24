@@ -63,3 +63,17 @@
 - Database suite passed 12/12; all created test databases dropped. Scoped mypy, Ruff lint/format
   and git diff checks passed. No additional paid sample or live research was run.
 - Exact instructions, limitations and the untouched model output are linked in the review artifact.
+
+## Founder review follow-up
+
+- Founder accepted the approach and requested explicit charter coverage under "Where I would
+  like you to go deeper." Around 750 words is acceptable; never impose a hard word cap.
+- Edited the requested preview Markdown with that summary (675 words). Preserved exact original
+  as `person-brief.model-original.md`, matching the captured nomination; traces and JSON untouched.
+  `REVIEW-EDIT.md` distinguishes the editorial revision from generated output.
+- Versioned guidance as person-research-briefing v2, account profile/recipe/launch 10. Prompt v9
+  and person profile v9-person stay unchanged. Historical pins remain valid. Preview script now
+  resolves the current recipe constant instead of a stale literal.
+- Existing account Exa/catalog suite passed (15 tests); Ruff and diff checks passed after fixing
+  one line-wrap lint issue. Confirmed neither nomination input schema has a brief maxLength.
+- No model/provider calls, database/fleet work, or person charter implementation in this follow-up.
