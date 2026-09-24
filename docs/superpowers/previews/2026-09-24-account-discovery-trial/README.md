@@ -75,3 +75,15 @@ Read the unchanged `zafran-02/findings.md` and `COMPARISON.md`, plus exact query
 compilation, activity and metrics. This is mixed progress, not full quality acceptance. No further
 paid run or production promotion was performed; native media and integrated people/enrichment
 acceptance remain later work. Focused verification remains four passing preparation tests.
+
+## Second refinement: professional statements and workflow discovery
+
+Exact guide: `source-follow-through-v2.md`. Prepare with
+`--refinement source-follow-through-v2`; `--refined` retains the previous v1 behavior.
+The guide adds focused searches for discovered people's working methods, function/workflow-first
+system discovery, explicit follow-up prioritization and reuse of prior research when supplied.
+No known target names or missing vendor answers are baked into these instructions.
+
+Fresh `zafran-03` uses identical original context and Exa settings to zafran-02. Prior target
+results remain excluded: repeat-research reuse needs a separate integrated input test. Five
+preparation tests pass, scoped Ruff clean. Live outcome pending; no production promotion.

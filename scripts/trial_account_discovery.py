@@ -45,7 +45,16 @@ def inside(root, name):
     return path
 
 
-def prepare(source: Path, out: Path, *, refined: bool = False):
+def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str | None = None):
+    versions = {
+        "source-follow-through-v1": "source-follow-through.md",
+        "source-follow-through-v2": "source-follow-through-v2.md",
+    }
+    if refined and refinement:
+        raise ValueError("Choose --refined or --refinement, not both")
+    selected_refinement = "source-follow-through-v1" if refined else refinement
+    if selected_refinement is not None and selected_refinement not in versions:
+        raise ValueError("Unknown refinement")
     if out.exists() and any(out.iterdir()):
         raise ValueError("Use a fresh output directory")
     original = json.loads((source / "manifest.json").read_text())
@@ -75,7 +84,9 @@ def prepare(source: Path, out: Path, *, refined: bool = False):
         shutil.copyfile(source / name, dest)
 
     guidance = GUIDANCE.read_text()
-    refinement = (GUIDANCE.parent / "source-follow-through.md").read_text() if refined else ""
+    refinement = (
+        (GUIDANCE.parent / versions[selected_refinement]).read_text() if selected_refinement else ""
+    )
     if refinement:
         guidance += "\n\n" + refinement
     skill_original = (CATALOG / "skills/account-dossier/v2/SKILL.md").read_text()
@@ -127,7 +138,7 @@ def prepare(source: Path, out: Path, *, refined: bool = False):
         out / "trial-manifest.json",
         {
             "strategy": "account-discovery-first",
-            "refinement": "source-follow-through-v1" if refined else None,
+            "refinement": selected_refinement,
             "source_snapshot": str(source),
             "copied_original_inputs": selected,
             "prepared_hashes": hashes,
@@ -157,6 +168,14 @@ if __name__ == "__main__":
     parser.add_argument("--context", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--refined", action="store_true")
+    parser.add_argument(
+        "--refinement", choices=("source-follow-through-v1", "source-follow-through-v2")
+    )
     args = parser.parse_args()
-    prepare(args.context.resolve(), args.output.resolve(), refined=args.refined)
+    prepare(
+        args.context.resolve(),
+        args.output.resolve(),
+        refined=args.refined,
+        refinement=args.refinement,
+    )
     print("Prepared account discovery trial; no external calls.")

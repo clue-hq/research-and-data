@@ -58,3 +58,14 @@
   Ruff/format/diff pass. Existing Langfuse model-name warning, cloud completeness unverified.
   Trial process exited; no fleet or application writes. Stop for review before further paid runs
   or production port. Preserve unrelated side-chat working-tree changes.
+
+## Second refinement authorized
+
+- Founder approved named-person professional searches, workflow-first system discovery, explicit
+  follow-up prioritization and preserving supplied prior evidence. Added versioned v2 guidance;
+  v1 remains intact. Trial preparation accepts explicit --refinement; old --refined keeps v1.
+- Prepared zafran-03 with identical original context/Exa settings and no previous target results.
+  Prior-evidence reuse is instruction guidance only; production reference wiring/reuse acceptance
+  is not exercised in this fresh-discovery trial. No production runtime changes.
+- Five preparation tests pass, scoped Ruff clean. Authorized live comparison about to dispatch;
+  do not mutate runner or prepared inputs mid-run. Existing unrelated edits preserved.

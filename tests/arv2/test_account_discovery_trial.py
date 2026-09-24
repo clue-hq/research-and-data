@@ -95,13 +95,22 @@ def test_pins_and_path_boundaries_checked(tmp_path):
         trial.inside(source, "../other/answers.json")
 
 
-def test_refinement_reaches_actual_prompt_and_skill_without_changing_inputs_or_exa(tmp_path):
+@pytest.mark.parametrize(
+    ("kwargs", "filename"),
+    [
+        ({"refined": True}, "source-follow-through.md"),
+        ({"refinement": "source-follow-through-v2"}, "source-follow-through-v2.md"),
+    ],
+)
+def test_refinement_reaches_actual_prompt_and_skill_without_changing_inputs_or_exa(
+    tmp_path, kwargs, filename
+):
     source, baseline, refined = tmp_path / "source", tmp_path / "baseline", tmp_path / "refined"
     snapshot(source)
     trial.prepare(source, baseline)
-    trial.prepare(source, refined, refined=True)
+    trial.prepare(source, refined, **kwargs)
     trial.verify(refined)
-    addition = (trial.GUIDANCE.parent / "source-follow-through.md").read_text()
+    addition = (trial.GUIDANCE.parent / filename).read_text()
     for path in (
         "account-system-prompt.md",
         "inputs/.deepagent/skills/account-dossier/v2/SKILL.md",
