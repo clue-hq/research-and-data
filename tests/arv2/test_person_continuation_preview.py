@@ -177,3 +177,4 @@ def test_native_media_uses_configured_client_and_retains_transcript(tmp_path, mo
     result = reader(preview.ReadMedia(url=candidate.url))
     assert calls[0][1]["duration_s"] == 60
     assert result["transcript"]["text"] == "Original spoken words"
+    assert result["resolution"]["candidates"][0]["url"] == candidate.url

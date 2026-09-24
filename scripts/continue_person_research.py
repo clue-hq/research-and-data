@@ -398,6 +398,9 @@ def media_reader(out, caller, media, ctx):
     def read(args):
         resolution = resolve(caller, args.url, hint=args.hint)
         payload = {"resolution": asdict(resolution), "state": resolution.state}
+        payload["resolution"]["candidates"] = [
+            candidate.model_dump(mode="json") for candidate in resolution.candidates
+        ]
         if resolution.transcript or resolution.state != "resolved":
             return payload
         candidate = resolution.candidates[0]

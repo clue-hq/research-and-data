@@ -25,3 +25,28 @@
   rejected by automatic approval review before execution: exact multi-provider transmission of
   retained seller/ICP/persona/account context needed explicit approval. Asked the founder for
   that approval; no workaround, provider call or model execution occurred. Live run pending.
+
+## Live completion and review
+
+- Founder explicitly approved the exact payload/provider set; the same prepared `-03` attempt
+  completed in 437.83s, 29 configured person-model calls. New metered spend $1.75365760:
+  $1.665156 model + $0.08850160 providers. No initial deep request repurchased; the agent chose
+  10 searches, 10 page reads and 3 media operations. One recording was transcribed successfully.
+- Preserved unchanged generated findings, linked reading copy, complete provider source fields,
+  transcript, actual prompts/queries, raw records, cost ledger, events, trace linkage and detailed
+  COMPARISON.md under `nick-continuation-03`. Live runner snapshotted from checkpoint 8ebe763bf.
+- Meaningful recovery of missed personal-project evidence and long-form voice; unsupported
+  same-name attribution corrected. Remaining gaps: neglected project/career-transition lead,
+  inconsistent interpretation of crawl-time metadata, inferred alias/age language, imperfect
+  quote literalness and inefficient priority on low-value third-party claims. Not full PoC parity.
+- 94 file reads had no identical argument tuple; first follow-up at 74.641s. Model intervals
+  total ~370.9s; final drafting ~115.4s. Input growth/read granularity are latency concerns.
+- Confirmed all 20 actual Exa requests carry requested extras (10 links, 3 images). Returned
+  link/image metadata is retained; no separate public multimedia flag was verified.
+- Langfuse installed/flushed and trace IDs retained. Callback logged model-name parsing warning;
+  gateway/local receipts have exact model/cost. Cloud completeness not independently inspected.
+- Corrected media candidate serialization after live inspection (Pydantic candidates were
+  readable strings, now structured fields). Six focused harness tests pass after this change;
+  earlier full affected set was 36 passing tests. Live artifacts deliberately remain unchanged.
+- Closing: no application DB/fleet/enrichment/claim/page writes or production prompt activation.
+  Research-quality review remains with founder. No automatic rerun or runtime promotion.

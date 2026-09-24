@@ -21,6 +21,13 @@ only at that checkpoint. The isolated continuation is now implemented in
 production catalog selection or runtime behavior changed. The implementation notes below are
 the original draft's snapshot, not evidence that this follow-up stage has been integrated.
 
+The isolated continuation completed after explicit approval. Its unchanged generated report,
+source inventory, requests, transcript, cost/trace receipts and comparison are retained under
+`.artifacts/person-exa-comparison-20260924/nick-continuation-03/`. It improved personal discovery
+and source use, but did not achieve complete PoC coverage; the comparison records remaining
+attribution/date, follow-up priority and quote-fidelity issues. This does not activate the draft
+instructions in production. Operational record: `_memory/2026-09-24-person-continuation.md`.
+
 ## Exact text for review
 
 - [charter.md](charter.md): the complete provider-facing assignment shape, with explicit
