@@ -107,3 +107,13 @@
 - No code changes or new tests needed: hash comparisons verify exact same prompts/settings;
   existing five preparation tests remain last checked. Diff check clean. No production writes,
   fleet/person jobs/enrichment/media. Process exited. Stop for review; no automatic promotion.
+
+## Account-only PoC comparison
+
+- Founder requested Premier vs PoC account research only. Read raw control/new dossiers and source
+  sets; excluded person-depth, extraction and display. Baseline is side-agent PoC-style adaptation,
+  explicitly seeded with prior facts, not unchanged Shank-run Premier. Settings also differ.
+- Saved POC-COMPARISON.md: broader latest workflow/people/vendor coverage, but missed retained
+  adverse-source lead and overclaimed absence. Some historical scale compressed out despite
+  source retrieval. Corrected benchmark attribution: earlier system-history lead was platform,
+  not PoC control. Historical case status not independently refreshed. No provider calls/edits.

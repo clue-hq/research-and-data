@@ -115,3 +115,12 @@ source corrections demonstrate cross-context adaptation. EHR/current vendor stat
 form remain unresolved; historical EHR source from earlier trial was not rediscovered. Preparation
 was heavy (deep at260.508s). Read `premier-01/COMPARISON.md` and unchanged report/query/raw results.
 Production, prior-source reuse, person/enrichment and native media acceptance remain separate.
+
+### Premier versus PoC-style control
+
+Account-only comparison saved as `premier-01/POC-COMPARISON.md`. Baseline is the side-agent's
+22 September Premier adaptation of Shank's method, not an unchanged founder-run Premier PoC.
+It was seeded with known account evidence. Latest output is richer operationally but missed a
+seeded adverse-source lead retained by the control, then overstated absence of disputes. Historical
+scale language was retrieved but compressed out. Prior gGastro lead belongs to an earlier platform
+trial, not this PoC control. Raw outputs preserved; no new paid calls or implementation edits.
