@@ -1,6 +1,9 @@
 # Discovery-first person research trial
 
-Status: isolated trial preparation; live research quality has not been demonstrated by this test.
+Status: one isolated live trial completed on 24 September 2026; founder quality review remains.
+The [saved run and comparison](../../../../.artifacts/person-discovery-trial-20260924/nick-02/COMPARISON.md)
+record discovery gains, source-review omissions and incomplete media follow-through. This is not
+production acceptance or evidence of a general quality improvement rate.
 This experiment is separate from the parent task's saved-response continuation. It does not
 change that runner, active person profiles, fleet workers, claim writing or page synthesis.
 

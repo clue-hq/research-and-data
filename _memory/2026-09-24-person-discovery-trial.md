@@ -27,3 +27,23 @@
 - Next action: review prepared inputs/instructions, then separately authorize a paid Nick trial.
   Inspect source reads, chosen searches, first deep assignment, follow-ups and resulting report;
   compare with prior outputs held outside the agent's inputs. Offline checks do not establish quality.
+
+## Authorized live run and closing audit
+
+- Founder subsequently instructed this side conversation to proceed with the run. First attempt
+  `nick-01` failed with sandbox DNS/APIConnectionError before any research acquisition. Retained it.
+  Prepared `nick-02` with identical input/instruction/prompt/runner hashes and obtained network
+  escalation for the authorized provider calls. No production edits or fleet/database writes.
+- `nick-02` completed in 540.84 seconds: 28 model calls, eight preliminary ordinary searches,
+  one deep call, then three further searches, two page reads and two media resolutions. No
+  transcription occurred. Recorded cost $1.691946 including model and provider results.
+- Saved unchanged generated findings, exact query/dossier, full provider source fields, activity,
+  metrics, runner snapshot and comparison under `.artifacts/person-discovery-trial-20260924/nick-02`.
+  The investigation recovered the earlier benchmark's important personal/career findings without
+  supplied answers, but missed fresh profile highlights and stopped before resolving a usable
+  media candidate. Date/alias interpretation remains imperfect. Detailed evidence lives in the audit.
+- Original source bodies/context retained; dynamic source index expanded without losing any of
+  the 41 original entries. Local tracing/ledger complete for this trial; Langfuse configured and
+  flushed, with the shared model-name callback warning still present; cloud completeness unverified.
+- No further live run or production changes made. Next discussion: fresh source-field review,
+  media follow-through and inherited context wording. A single run does not establish general quality.
