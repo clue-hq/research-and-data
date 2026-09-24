@@ -31,6 +31,9 @@ The central architecture bet is that verification must be modeled at the claim/d
 
 ## Topic notes
 
+- `2026-09-24-nick-person-exa-comparison.md` — second isolated person-depth trial, fresh
+  delegation/query, missed personal-discovery benchmark and preserved playground comparison inputs.
+
 - `2026-09-24-person-exa-comparison.md` — isolated person-agent request and paid Exa trial against
   saved PoC; exact artifacts, source-level comparison, role-attribution defect and pending review.
 

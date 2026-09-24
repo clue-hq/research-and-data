@@ -76,7 +76,7 @@ def prepare(args):
         "brief_path": "/person-brief.md",
         "account_findings_path": "/account-findings.md",
     }
-    # Preserve complete pinned documents; add the exact aliases used by the approved brief.
+    # Preserve complete pinned documents; add the exact aliases used by the delegation brief.
     for ref in [ctx["icp"], *ctx["personas"], *ctx["seller_documents"]]:
         raw = inputs / "documents" / Path(ref["path"]).name
         if not raw.is_file() or digest(raw) != ref["sha256"]:
@@ -125,7 +125,7 @@ do not claim these are fresh reads from an application database. Batch independe
         f"Prepare the person-depth Exa request for {args.person_name}, "
         f"selected at {ctx['target']['name']} ({ctx['target']['domain']}) for "
         f"{ctx['seller_name']}, as of {ctx['run_date']}.\n"
-        "Your account agent's approved assignment is /person-brief.md. Full pinned context and "
+        "Your account agent's assignment is /person-brief.md. Full pinned context and "
         "document references are /research/context.json; "
         "Head-of-ABM brief is /delegation-brief.md. "
         "Retained account findings are /account-findings.md and original material is indexed at "
@@ -141,7 +141,7 @@ do not claim these are fresh reads from an application database. Batch independe
             "stage": "prepared",
             "person_name": args.person_name,
             "context_directory": str(args.context.resolve()),
-            "brief_provenance": "Founder-approved editorial expansion of the original model brief",
+            "brief_provenance": args.brief_provenance,
             "baseline_path": str(args.baseline.resolve()),
             "baseline_exposed_to_agent": False,
             "input_hashes": {
@@ -377,6 +377,10 @@ async def main():
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--person-name", default="Vari Kaur")
     parser.add_argument("--person-linkedin", default="https://www.linkedin.com/in/varinderkaur")
+    parser.add_argument(
+        "--brief-provenance",
+        default="Model-generated account-to-person brief; see source context for its trace",
+    )
     args = parser.parse_args()
     if args.stage == "prepare":
         if not args.context or not args.baseline:
