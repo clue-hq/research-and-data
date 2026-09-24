@@ -415,6 +415,7 @@ def search_body(
     text_max_chars: int = 1500,
     highlights: Mapping[str, object] | None = None,
     output_schema: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/search`` body. Every optional key is absent unless the caller passed it.
 
@@ -442,6 +443,8 @@ def search_body(
         body["category"] = category
     if highlights is not None:
         body["contents"]["highlights"] = dict(highlights)
+    if extras is not None:
+        body["contents"]["extras"] = dict(extras)
     if output_schema is not None:
         # Copied, never aliased: the same rule ``agent_run_body`` keeps for its schema.
         body["outputSchema"] = dict(output_schema)
@@ -454,6 +457,7 @@ def contents_body(
     text_max_chars: int = 8000,
     livecrawl: LivecrawlMode | None = None,
     highlights: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/contents`` body. No ``livecrawl`` key means Exa serves its indexed copy."""
     body: dict[str, Any] = {"urls": list(urls), "text": {"maxCharacters": text_max_chars}}
@@ -461,6 +465,8 @@ def contents_body(
         body["livecrawl"] = livecrawl
     if highlights is not None:
         body["highlights"] = dict(highlights)
+    if extras is not None:
+        body["extras"] = dict(extras)
     return body
 
 
@@ -913,6 +919,7 @@ class ExaClient:
         text_max_chars: int = 1500,
         highlights: Mapping[str, object] | None = None,
         output_schema: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-search",
         timeout_s: float = 180.0,
     ) -> ExaSearchResult:
@@ -934,6 +941,7 @@ class ExaClient:
                 text_max_chars=text_max_chars,
                 highlights=highlights,
                 output_schema=output_schema,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=SEARCH_ESTIMATE_USD),
             timeout_s=timeout_s,
@@ -956,6 +964,7 @@ class ExaClient:
         text_max_chars: int = 8000,
         livecrawl: LivecrawlMode | None = None,
         highlights: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-contents",
         timeout_s: float = 240.0,
     ) -> ExaContentsResult:
@@ -970,6 +979,7 @@ class ExaClient:
                 text_max_chars=text_max_chars,
                 livecrawl=livecrawl,
                 highlights=highlights,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=CONTENTS_ESTIMATE_USD_PER_URL * len(urls)),
             timeout_s=timeout_s,

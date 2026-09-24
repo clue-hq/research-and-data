@@ -106,6 +106,17 @@ def _deep(output_text: str, n_results: int) -> ExaDeepResult:
 # -- request shaping ---------------------------------------------------------------------------
 
 
+def test_optional_link_and_image_extras_reach_search_and_contents_without_changing_defaults():
+    extras = {"links": 10, "imageLinks": 3}
+    search = search_body("public interviews", extras=extras)
+    contents = contents_body(["https://example.test/interview"], extras=extras)
+    assert search["contents"]["extras"] == contents["extras"] == extras
+    extras["links"] = 99
+    assert search["contents"]["extras"]["links"] == contents["extras"]["links"] == 10
+    assert "extras" not in search_body("public interviews")["contents"]
+    assert "extras" not in contents_body(["https://example.test/interview"])
+
+
 def test_a_search_body_carries_only_the_options_the_caller_passed() -> None:
     """No module-level default may narrow a search the caller did not ask to narrow."""
     body = search_body("zafran security funding")

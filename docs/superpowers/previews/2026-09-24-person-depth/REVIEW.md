@@ -16,7 +16,8 @@ expanded findings with remaining gaps. No target-specific benchmark answers are 
 
 The full initial charter and Exa system prompt are unchanged. Captured prior prompts, requests
 and responses remain preserved in the isolated trial directories. This revision is draft text
-only; the isolated script still needs its post-Exa continuation and live follow-up test. No
+only at that checkpoint. The isolated continuation is now implemented in
+`scripts/continue_person_research.py`; its live follow-up result is recorded separately. No
 production catalog selection or runtime behavior changed. The implementation notes below are
 the original draft's snapshot, not evidence that this follow-up stage has been integrated.
 
