@@ -62,11 +62,18 @@ async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepared", required=True, type=Path)
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--discovery-trial", action="store_true")
     args = parser.parse_args()
     out = args.prepared.resolve()
     inputs = out / "inputs"
     if (out / "traces/events.jsonl").exists():
         raise ValueError("Use a fresh prepared directory; never overwrite a previous trial.")
+    if args.discovery_trial:
+        from trial_account_discovery import verify
+
+        verify(out)
+        if (out / "dispatch.json").exists():
+            raise ValueError("This trial was already dispatched; inspect its saved outcome.")
     ctx = json.loads((inputs / "research/context.json").read_text())
     target = ctx["target"]
     (out / "traces").mkdir(exist_ok=True)
@@ -86,14 +93,24 @@ Finish with finish_research: detailed source-linked findings, dossier correction
 interpretations and remaining questions. No person-depth job, nomination, specialist delegation,
 claim writing, page synthesis or fleet launch is part of this test. Do not request those tools.
 """
+    if args.discovery_trial:
+        system += (
+            "\nInspect source_review_path and all its continuations after every acquisition. "
+            "Read full_source_path for useful new fields or more context. Write the pre-deep "
+            "note in /scratch/pre-deep-review.md before composing the main Exa request.\n"
+        )
     (out / "account-system.live.md").write_text(system)
-    head_system = (out / "head-system-prompt.md").read_text()
-    head_input = (out / "head-input.md").read_text()
-    head_input += "\n\nContext selection metadata and unresolved gaps:\n" + json.dumps(ctx)
-    (out / "head-input.live.md").write_text(head_input)
+    if not args.discovery_trial:
+        head_system = (out / "head-system-prompt.md").read_text()
+        head_input = (out / "head-input.md").read_text()
+        head_input += "\n\nContext selection metadata and unresolved gaps:\n" + json.dumps(ctx)
+        (out / "head-input.live.md").write_text(head_input)
     if args.prepare_only:
         print("Prepared live research harness; no external calls.")
         return
+
+    if args.discovery_trial:
+        save(out / "dispatch.json", {"started_at": datetime.now(UTC).isoformat()})
 
     env = dotenv_values(ROOT / ".env")
     for role in ("HEAD_OF_ABM", "ACCOUNT_RESEARCH"):
@@ -113,7 +130,9 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
     lf = build_langfuse_callbacks()
     callbacks = [Audit(out, started), *([lf.handler] if lf else [])]
     models = {}
-    for role in ("head_of_abm", "account_research"):
+    for role in (
+        ("account_research",) if args.discovery_trial else ("head_of_abm", "account_research")
+    ):
         models[role] = provider.build(
             model_id=env[role.upper() + "_AGENT_MODEL"],
             role=role,
@@ -132,6 +151,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
     ark = AiArkClient(caller, secrets.ai_ark_api_key, min_gap_s=settings.arv2_ai_ark_min_gap_s)
     rows = []
     lock = asyncio.Lock()
+    field_history = {}
 
     def mount(text, path):
         start = 0
@@ -223,6 +243,17 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                     for i, hit in enumerate(
                         raw.get("results", []) if isinstance(raw, dict) else []
                     ):
+                        if args.discovery_trial:
+                            acquired.append(
+                                source(
+                                    oid,
+                                    "provider_record",
+                                    json.dumps(hit, ensure_ascii=False),
+                                    f"results/{i}",
+                                    hit.get("url"),
+                                    {"title": hit.get("title"), "content_kind": "exa_result"},
+                                )
+                            )
                         for locator, body in exa_source_texts(hit):
                             acquired.append(
                                 source(
@@ -251,6 +282,24 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                 if operation == "lookup_company":
                     value.pop("raw", None)  # Native typed fields; original response remains above.
                 value["source_navigation"] = source_navigation(acquired)
+                review_path = None
+                if args.discovery_trial and raw_ref:
+                    from person_trial_source_review import PAGE_SIZE, source_overviews
+
+                    overview = source_overviews(raw, value["source_navigation"], field_history)
+                    review_path = f"/research/acquisitions/{oid}/source-review/0.json"
+                    for start in range(0, max(len(overview), 1), PAGE_SIZE):
+                        end = start + PAGE_SIZE
+                        next_review = f"/research/acquisitions/{oid}/source-review/{end}.json"
+                        save(
+                            inputs / f"research/acquisitions/{oid}/source-review/{start}.json",
+                            {
+                                "sources": overview[start:end],
+                                "total_results": len(overview),
+                                "next_path": next_review if end < len(overview) else None,
+                            },
+                        )
+                    value["source_review_path"] = review_path
                 mount(
                     json.dumps(value, ensure_ascii=False, default=str),
                     f"research/acquisitions/{oid}",
@@ -270,6 +319,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                         "status": "completed",
                         "result_path": f"/research/acquisitions/{oid}/0.json",
                         "source_count": len(acquired),
+                        **({"source_review_path": review_path} if review_path else {}),
                     }
                 )
             except Exception as exc:
@@ -295,49 +345,55 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         propagate_trace(
             trace_name="research.live-preview",
             session_id=session,
-            tags=["insight-health", "research-stage-test"],
+            tags=[
+                "research-stage-test",
+                "account-discovery-trial" if args.discovery_trial else "account-live-preview",
+            ],
         ),
     ):
         save(
             out / "trace-linkage.json",
             {"trace_id": span.trace_id, "observation_id": span.id, "session_id": session},
         )
-        head = await models["head_of_abm"].ainvoke(
-            [SystemMessage(content=head_system), HumanMessage(content=head_input)],
-            config={"callbacks": callbacks},
-        )
-        brief = content(head)
-        if not brief.strip():
-            raise RuntimeError("Head returned no delegation brief")
-        (out / "head-brief.generated.md").write_text(brief)
-        save(out / "head-response.json", head.model_dump(mode="json"))
-        (inputs / "delegation-brief.md").write_text(
-            brief.replace("{{account_name}}", target["name"]).replace(
-                "{{account_domain}}", target["domain"]
+        if not args.discovery_trial:
+            head = await models["head_of_abm"].ainvoke(
+                [SystemMessage(content=head_system), HumanMessage(content=head_input)],
+                config={"callbacks": callbacks},
             )
-        )
+            brief = content(head)
+            if not brief.strip():
+                raise RuntimeError("Head returned no delegation brief")
+            (out / "head-brief.generated.md").write_text(brief)
+            save(out / "head-response.json", head.model_dump(mode="json"))
+            (inputs / "delegation-brief.md").write_text(
+                brief.replace("{{account_name}}", target["name"]).replace(
+                    "{{account_domain}}", target["domain"]
+                )
+            )
         tools = [
             StructuredTool.from_function(
                 coroutine=acquire_research_evidence, args_schema=AcquireResearchInput
             ),
             StructuredTool.from_function(coroutine=finish_research, return_direct=True),
         ]
+        allowed = {
+            "ls",
+            "read_file",
+            "glob",
+            "grep",
+            "acquire_research_evidence",
+            "finish_research",
+        }
+        middleware = PreviewTools(allowed)
+        if args.discovery_trial:
+            from continue_person_research import ContinuationTools
+
+            middleware = ContinuationTools(allowed | {"write_file", "edit_file", "write_todos"})
         graph = create_deep_agent(
             model=models["account_research"],
             system_prompt=system,
             tools=tools,
-            middleware=[
-                PreviewTools(
-                    {
-                        "ls",
-                        "read_file",
-                        "glob",
-                        "grep",
-                        "acquire_research_evidence",
-                        "finish_research",
-                    }
-                )
-            ],
+            middleware=[middleware],
             backend=FilesystemBackend(root_dir=inputs, virtual_mode=True),
             name="live-account-research-preview",
         )
@@ -353,7 +409,10 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         output = await asyncio.wait_for(
             graph.ainvoke(
                 {"messages": [HumanMessage(content=opening)]},
-                config={"callbacks": callbacks, "recursion_limit": 100},
+                config={
+                    "callbacks": callbacks,
+                    "recursion_limit": 200 if args.discovery_trial else 100,
+                },
             ),
             timeout=2400,
         )
@@ -368,7 +427,9 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "application_database_writes": 0,
             "limitations": [
                 "Research-stage harness: no production C5/fleet/launch lifecycle",
-                "Head model applies finalized briefing skill in an isolated call",
+                "Retained Head brief reused"
+                if args.discovery_trial
+                else "Head model applies finalized briefing skill in an isolated call",
                 "Selected dossier skill fully disclosed",
                 "Legacy source database context export; persona lineage unresolved",
                 "No claim writing, page synthesis or person-depth research",
