@@ -101,3 +101,17 @@ Workflow-first ordinary search behavior is still only partially adopted; the ear
 vacancy was not rediscovered. Preparation took ~48s longer, though total wall time was similar.
 Prior-evidence reuse was not tested. Quotation precision, candidate-source references and role/fit
 interpretations remain review points. No production changes or additional paid runs followed.
+
+## Cross-context test: Insight Health → Premier
+
+Founder authorized the identical v2 instructions/settings with retained Insight Health context.
+Prepared `premier-01` using six source-export-verified documents and the previous approved Head
+brief; no target answers included. All system/guide/Exa-setting bytes match zafran-03. No new
+prompt or runtime code changes were needed. Known persona-lineage limitations remain explicit.
+
+Completed537.88s;32 account-model calls;16 auto searches,11 page reads,1deep,1ATS,1company lookup.
+Recorded USD2.090052 plus0.1 company credit. Healthcare-specific workflows, operational voice and
+source corrections demonstrate cross-context adaptation. EHR/current vendor status and full OAC
+form remain unresolved; historical EHR source from earlier trial was not rediscovered. Preparation
+was heavy (deep at260.508s). Read `premier-01/COMPARISON.md` and unchanged report/query/raw results.
+Production, prior-source reuse, person/enrichment and native media acceptance remain separate.

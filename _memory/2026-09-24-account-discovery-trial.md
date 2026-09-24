@@ -83,3 +83,27 @@
   only instructed, not exercised. No production, person-job/enrichment or media acceptance claim.
 - Five preparation tests and Ruff/format/diff passed; no runtime edits mid-run. Closing at review
   checkpoint; no automatic further paid calls or production port. Unrelated changes preserved.
+
+## Premier cross-context test authorized
+
+- Founder requested same instructions tested on Insight Health → Premier. Prepared premier-01
+  from retained approved Head brief + six source-context hash-verified documents and project
+  state. Substituted brief verified against its original model output. No prior Premier results.
+- System/guide/Exa system/settings byte-identical to zafran-03. No new instruction changes.
+  Known persona-lineage gap preserved; retained brief allows one eventual person-depth candidate,
+  but this isolated harness launches no people/enrichment jobs. Fresh account investigation only.
+- Preparation script and explicit manifest retained in artifact root/premier-context. Starting
+  authorized paid model/Exa/optional company enrichment test with normal tracing. No app writes.
+
+## Premier cross-context result
+
+- Completed537.88s;32 account-model calls;16 auto searches,11 pages,1deep,1ATS,1company lookup.
+  Deep began260.508s. USD2.090052 plus0.1 company credit; no missing rows.98 file reads/no exact
+  argument repeat. Raw outputs/traces/ledger/query/activity/COMPARISON retained in premier-01.
+- Same instructions adapted to healthcare workflows and operating voice; source corrections
+  retained. Current systems, complete form acquisition and recent operational pain remain gaps.
+  Earlier historical system lead not rediscovered. Report has some overconfident integration
+  wording despite no actual blocker; missing per-candidate URLs. Preparation is heavy.
+- No code changes or new tests needed: hash comparisons verify exact same prompts/settings;
+  existing five preparation tests remain last checked. Diff check clean. No production writes,
+  fleet/person jobs/enrichment/media. Process exited. Stop for review; no automatic promotion.
