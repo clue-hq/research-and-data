@@ -45,3 +45,15 @@
   entity fields must be included in source inspection, not just highlights.
 - Recommend the existing exact 40-result request for a controlled settings comparison, then
   targeted source follow-up as a separate experiment. No runtime/prompt changes or paid calls.
+
+## Second founder playground response
+
+- Preserved the next response and audit at
+  `.artifacts/person-exa-comparison-20260924/nick-playground-02/`. Only a response was supplied:
+  22 rows, no source text fields, short highlights and entity/extras fields. Do not claim the
+  intended request configuration was verified. No calls or production changes made.
+- Personal benchmark still missed; the selected-profile project lead is retrieved but omitted.
+  An uncertain same-name site is now confidently attributed without a new profile connection.
+  Comparison separates coverage misses, dossier omissions, attribution and metadata errors.
+- Full provider bytes preserved, grounding-linked reading copy verified. Further progress should
+  test source-follow-up and request emphasis, rather than silently treating another retry as success.
