@@ -34,6 +34,7 @@ _OPERATION = re.compile(r"/operations/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _TRANSCRIPT = re.compile(r"/transcripts/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CAPABILITIES = re.compile(r"/capabilities/(0|[1-9][0-9]*)\.json\Z")
 _PERSON_BRIEF = re.compile(r"/person-brief/(0|[1-9][0-9]*)\.json\Z")
+_SOURCE_REVIEW = re.compile(r"/source-review/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 
 
 def _passage(body: str, start: int, path: str) -> dict[str, object]:
@@ -97,6 +98,13 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        review = _SOURCE_REVIEW.fullmatch(path)
+        if review:
+            from clue_api.arv2.quality_source_review import source_review
+
+            return await source_review(
+                conn, self._storage, authority.grant, UUID(review[1]), int(review[2])
+            )
         brief_match = _PERSON_BRIEF.fullmatch(path)
         if brief_match:
             brief = await read_person_brief(

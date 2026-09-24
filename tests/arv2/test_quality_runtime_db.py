@@ -152,7 +152,7 @@ class Models:
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11])
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
     tmp_path, revision, monkeypatch
 ):

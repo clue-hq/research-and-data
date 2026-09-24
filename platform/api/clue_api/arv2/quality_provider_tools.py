@@ -20,6 +20,7 @@ from clue_api.arv2.account_research_tools import (
     build_account_tools,
     build_person_tools,
 )
+from clue_api.arv2.person_exa_brief import uses_person_exa_brief
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_execution import reserve
 from clue_api.arv2.quality_source_navigation import operation_source_navigation
@@ -227,15 +228,28 @@ class AcquireResearchTool(Tool):
             # Privacy may have been withdrawn during the hop. Keep settlement, refuse new exposure.
             authority = await resolve_authority(conn, runtime.scope, ctx.execution_id)
             if (
-                args.operation == "research_deep"
-                and runtime.scope.subject_kind == "account"
-                and int((runtime.scope.input_refs or {}).get("quality_recipe_version", 5)) >= 8
+                (
+                    (
+                        args.operation == "research_deep"
+                        and runtime.scope.subject_kind == "account"
+                        and int((runtime.scope.input_refs or {}).get("quality_recipe_version", 5))
+                        >= 8
+                    )
+                    or (
+                        uses_person_exa_brief(runtime.scope)
+                        and args.operation in {"search_web", "fetch_page", "research_deep"}
+                    )
+                )
                 and isinstance(value, dict)
                 and value.get("result_ref")
             ):
                 value["source_navigation"] = await operation_source_navigation(
                     conn, authority.grant, UUID(str(value["result_ref"]))
                 )
+                if uses_person_exa_brief(runtime.scope):
+                    value["source_review_path"] = (
+                        f"/research/source-review/{value['result_ref']}/0.json"
+                    )
             body = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
             sha = content_address(body)
             key = artifact_key(runtime.scope.workspace_id, sha)

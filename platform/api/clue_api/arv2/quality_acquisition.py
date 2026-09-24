@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -191,6 +192,25 @@ async def _index_receipts(
         for i, result in enumerate(results if isinstance(results, list) else []):
             if not isinstance(result, dict):
                 continue
+            # A whole result retains links, structured fields and fresh highlights that can be
+            # absent from both its text field and Exa's dossier. Existing excerpt IDs stay stable.
+            sources.append(
+                await save(
+                    kind="provider_record",
+                    body=result,
+                    origin_locator=f"results/{i}",
+                    source_url=result.get("url"),
+                    metadata={
+                        "title": result.get("title"),
+                        "published_at": result.get("publishedDate"),
+                        "content_kind": "exa_result",
+                        "field_hashes": {
+                            k: hashlib.sha256(json.dumps(v, sort_keys=True).encode()).hexdigest()
+                            for k, v in result.items()
+                        },
+                    },
+                )
+            )
             for locator, content in exa_source_texts(result):
                 sources.append(
                     await save(

@@ -118,6 +118,11 @@ from clue_api.arv2.media_feeds_client import (
 )
 from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.person_compliance import apply_person_floor
+from clue_api.arv2.person_exa_brief import (
+    person_exa_arguments,
+    person_search_contents,
+    uses_person_exa_brief,
+)
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -1068,6 +1073,23 @@ class AccountResearchDeepArgs(_Args):
     num_results: int = Field(40, ge=10, le=40)
 
 
+class PersonResearchDeepArgs(_Args):
+    charter: str = Field(
+        min_length=200,
+        description="Self-contained person assignment with explicit charter subquestions and "
+        "acquired leads, or concrete questions for a substantial follow-up investigation.",
+    )
+    additional_queries: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Complementary person-specific searches, including earlier career and "
+        "personal interests where useful. These complement actual preliminary search calls.",
+    )
+    highlights_query: str = Field(default="", description="Optional targeted excerpt emphasis.")
+    same_name_exclusions: list[str] = Field(default_factory=list)
+    num_results: int = Field(20, ge=1, le=40)
+
+
 class SourceInput(_Args):
     """One retrieved thing, with the URL it came from.
 
@@ -1346,6 +1368,22 @@ async def _read_ats_board(runtime: ToolRuntime, args: ReadAtsBoardArgs) -> dict[
 async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, Any]:
     url = str(args.url)
 
+    if uses_person_exa_brief(runtime.scope):
+        from clue_api.arv2.exa_client import contents_body
+
+        kwargs = {"text_max_chars": args.max_chars, "extras": person_search_contents()["extras"]}
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_page",
+            contents_body([url], **kwargs),
+            lambda caller: runtime.clients.exa(caller).contents([url], **kwargs),
+        )
+        return {
+            "result_ref": str(operation.operation_id),
+            "results": raw.get("results", []),
+            "statuses": raw.get("statuses", []),
+        }
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).contents([url], text_max_chars=args.max_chars)
 
@@ -1363,6 +1401,25 @@ async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, An
 
 
 async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, Any]:
+    if uses_person_exa_brief(runtime.scope):
+        from clue_api.arv2.exa_client import search_body
+
+        contents = person_search_contents()
+        kwargs = {
+            "num_results": args.num_results,
+            "include_domains": args.include_domains,
+            "start_published_date": args.start_published_date,
+            "text_max_chars": contents["text"]["maxCharacters"],
+            "extras": contents["extras"],
+        }
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_search",
+            search_body(args.query, **kwargs),
+            lambda caller: runtime.clients.exa(caller).search(args.query, **kwargs),
+        )
+        return {"result_ref": str(operation.operation_id), "n_results": len(raw.get("results", []))}
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).search(
             args.query,
@@ -1916,9 +1973,31 @@ def _deep_lock(scope: JobScope, exclusions: str) -> str:
 
 
 async def _research_deep(
-    runtime: ToolRuntime, args: ResearchDeepArgs | AccountResearchDeepArgs
+    runtime: ToolRuntime, args: ResearchDeepArgs | AccountResearchDeepArgs | PersonResearchDeepArgs
 ) -> dict[str, Any]:
     scope = runtime.scope
+    if uses_person_exa_brief(scope):
+        assert isinstance(args, PersonResearchDeepArgs)
+        person_args = person_exa_arguments(**args.model_dump())
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_deep",
+            deep_reasoning_body(**person_args),
+            lambda caller: runtime.clients.exa(caller).deep_reasoning(
+                **person_args, label=f"person-deep-{scope.account_domain}"
+            ),
+        )
+        from clue_api.arv2.exa_client import read_deep_report
+
+        report = read_deep_report(raw, text_output=True) or ""
+        return {
+            "report": report,
+            "result_ref": str(operation.operation_id),
+            "n_results": len(raw.get("results", [])),
+            "source_artifact_key": operation.artifact_key,
+            "source_from_saved_response": True,
+            "gaps": [] if report.strip() else ["deep_report_empty_review_returned_sources"],
+        }
     exclusions = ", ".join(args.same_name_exclusions) or "none named"
     system_prompt = _deep_lock(scope, exclusions) + "\n\n" + EVIDENCE_RULES
     query_parts = [args.charter]
@@ -2902,7 +2981,13 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         person_tool(
             name="search_web",
             description=(
-                "One unrestricted sweep search (at most ten results) for this named person. Leave "
+                "An ordinary search for this selected person. Choose complementary angles, "
+                "including earlier roles, writing, media, background and interests. Read the "
+                "returned source overview and complete evidence, not just titles. Domain filters "
+                "are optional; use them only for a specific useful source, not every search."
+                if uses_person_exa_brief(runtime.scope)
+                else "One unrestricted sweep search (at most ten results) for this named person. "
+                "Leave "
                 "include_domains empty: restricting the domain forces the engine to return "
                 "something from that domain, and that something is a same-name stranger."
             ),
@@ -2937,12 +3022,21 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         person_tool(
             name="research_deep",
             description=(
-                "The one paid dossier call: your charter and special probes go in the query, the "
+                "Write a self-contained person assignment after complementary preliminary "
+                "searches. Carry the full person-depth charter and useful acquired sources into "
+                "the initial query; add additional_queries and optional highlights_query. "
+                "Read both dossier and returned sources. Use focused follow-up deep research "
+                "only for a substantial unresolved investigation; reuse completed work."
+                if uses_person_exa_brief(runtime.scope)
+                else "The one paid dossier call: your charter and special probes go in the query, "
+                "the "
                 "person lock (name, title, company, LinkedIn, employment history) and the evidence "
                 "law in the system prompt, and what is already established is named so the "
                 "provider finds what is NOT there. Use it once."
             ),
-            model=ResearchDeepArgs,
+            model=PersonResearchDeepArgs
+            if uses_person_exa_brief(runtime.scope)
+            else ResearchDeepArgs,
             body=_research_deep,
         ),
         person_tool(

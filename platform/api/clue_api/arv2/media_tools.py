@@ -150,6 +150,9 @@ async def discover_media(runtime: Any, args: DiscoverMediaArgs) -> dict[str, Any
                 "description": candidate.description[:1200],
                 "family": candidate.family,
                 "identity": "unverified_candidate",
+                "origin": candidate.identity_evidence,
+                "media_url": candidate.media_url,
+                "recording_status": "candidate_not_yet_attempted",
             }
             if len(json.dumps([*output, summary], ensure_ascii=False).encode()) > 10_000:
                 break
@@ -221,7 +224,15 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                         discovery_ref=discovery_ref,
                     ),
                 )
-                return {**page, "state": "ambiguous", "gap": "choose_an_exact_episode"}
+                return {
+                    **page,
+                    "state": "ambiguous",
+                    "gap": "choose_an_exact_episode",
+                    "next_action": "Inspect candidate titles, URLs, types and origins. Select a "
+                    "relevant candidate_ref or URL and call read_media again with a purpose "
+                    "and episode_hint if useful. These candidates have not yet been attempted; "
+                    "do not repeat the unchanged landing page or treat ambiguity as failure.",
+                }
             if resolved.state != "resolved":
                 gaps.extend(resolved.gaps)
                 async with runtime._conn_factory() as conn:
@@ -252,13 +263,22 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                     )
                     result["index"] = {"state": "unavailable", "gap": type(exc).__name__}
                 result["resolution_gaps"] = gaps
+                result["next_action"] = (
+                    "Use open_transcript with this version_ref to read the transcript; use "
+                    "search_transcripts for focused passages. Preserve speakers and source timing."
+                )
                 return result
             gaps.append(result.get("gap", result["state"]))
             if (
                 result["state"] in {"unknown", "dispatched", "reserved", "unavailable"}
                 and "operation_ref" in result
             ):
-                return {**result, "resolution_gaps": gaps}
+                return {
+                    **result,
+                    "resolution_gaps": gaps,
+                    "next_action": "Inspect the saved provider outcome before retrying; "
+                    "do not repurchase an uncertain transcription. Preserve the gap.",
+                }
         except RefusalError:
             raise
         except GeminiMediaError as exc:
@@ -278,7 +298,15 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
             purpose=args.purpose,
             data={"gaps": gaps},
         )
-    return {"state": "unavailable", "gaps": gaps, "source_text_is_untrusted": True}
+    return {
+        "state": "unavailable",
+        "gaps": gaps,
+        "source_text_is_untrusted": True,
+        "next_action": "No transcript obtained through this route. Use the reported gaps to "
+        "distinguish recording resolution, retrieval and transcription failures. A publisher "
+        "player, feed, indexed transcript or targeted search may offer a useful alternative; "
+        "an unrecognized recording link does not prove the recording is unavailable.",
+    }
 
 
 async def search_transcripts(runtime: Any, args: SearchTranscriptsArgs) -> dict[str, Any]:

@@ -36,7 +36,7 @@ from tests.claimstore.conftest import (  # noqa: F401
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11])
 def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path, revision):
     async def case():
         async with rollback_conn() as conn:

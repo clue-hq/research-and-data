@@ -301,14 +301,31 @@ def test_provider_drain_preserves_full_report_and_source_pages_with_ledger_join(
                 ),
             )
             refs = await index_acquisition(conn, storage, scope, report)
-            assert [r.kind for r in refs] == ["provider_record", "research_report", "web_snapshot"]
+            by_locator = {r.origin_locator: r for r in refs}
+            assert {locator: r.kind for locator, r in by_locator.items()} == {
+                "response-body": "provider_record",
+                "output.report": "research_report",
+                "results/0": "provider_record",
+                "results/0/text": "web_snapshot",
+            }
             assert all(r.ledger_id is not None for r in refs)
             grant = await grant_manifest(conn, scope, consumer_id=uuid4())
             read = await read_source(
-                conn, storage, grant, refs[1].source_id, start=len(report_body) - 100
+                conn,
+                storage,
+                grant,
+                by_locator["output.report"].source_id,
+                start=len(report_body) - 100,
             )
             assert read["text"] == report_body[-100:]
-            original = await read_source(conn, storage, grant, refs[2].source_id)
+            full_result = await read_source(conn, storage, grant, by_locator["results/0"].source_id)
+            assert json.loads(full_result["text"]) == {
+                "url": "https://clinic.test/referral",
+                "text": source_body,
+            }
+            original = await read_source(
+                conn, storage, grant, by_locator["results/0/text"].source_id
+            )
             assert original["text"] == source_body
             assert original["source_url"] == "https://clinic.test/referral"
             again = await index_acquisition(conn, storage, scope, report)
