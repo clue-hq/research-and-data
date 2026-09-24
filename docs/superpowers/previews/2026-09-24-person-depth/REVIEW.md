@@ -1,9 +1,24 @@
 # Person-depth charter and Exa instructions — review draft
 
-24 September 2026. This is the instruction-review stage agreed with the founder: show the exact
-charter and prompts before generating the person agent's first Exa assignment. These files are
-authored drafts, not outputs from a model or an Exa run. They are outside the active catalog.
-No runtime selection, provider requests, application data or fleet workers were changed.
+24 September 2026. This folder contains the authored instruction drafts and their review record.
+Model-generated requests and Exa trial outputs are preserved separately in isolated artifacts.
+These drafts remain outside the active catalog. Editing them does not change runtime selection,
+application data or fleet workers; the latest revision and outstanding test are described below.
+
+## Follow-up instruction revision — 24 September 2026
+
+After the isolated person trials, the founder clarified that the person agent owns assessing
+coverage, identifying ambiguity and adaptively asking concrete follow-up questions. Updated the
+person-agent draft and the skill's "After Exa" section accordingly. The concise prompt delegates
+the detailed procedure to the skill: read every source field, assess explicit charter questions,
+choose useful next investigations, compose self-contained requests, reassess results and return
+expanded findings with remaining gaps. No target-specific benchmark answers are inserted.
+
+The full initial charter and Exa system prompt are unchanged. Captured prior prompts, requests
+and responses remain preserved in the isolated trial directories. This revision is draft text
+only; the isolated script still needs its post-Exa continuation and live follow-up test. No
+production catalog selection or runtime behavior changed. The implementation notes below are
+the original draft's snapshot, not evidence that this follow-up stage has been integrated.
 
 ## Exact text for review
 

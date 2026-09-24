@@ -23,3 +23,17 @@
   confirmed nine sequential charter sections and all relative Markdown links; git diff --check
   passed. Reviewed the exact charter and prompts against the preserved subquestions. No model
   sample or live research executed, and no runtime-quality acceptance claimed.
+
+## Adaptive source-review instruction revision
+
+- Founder clarified ownership: person agent assesses findings against detailed charter questions,
+  discovers gaps/ambiguities and adaptively executes specific follow-ups. Exa receives concrete,
+  self-contained requests chosen by that agent.
+- Expanded draft skill's After Exa procedure; concise agent draft references it. Covers every
+  returned source field, coverage depth, source-only leads, balanced personal/professional scope,
+  tailored questions, re-assessment, attribution/date context, reuse and meaningful stopping.
+- Kept initial charter and Exa system unchanged; no subject-specific benchmark answers seeded.
+  Existing captured prompt snapshots stay intact. REVIEW marks this as an unintegrated revision.
+- Scope: reviewed prompt/skill text only. No production catalog/runtime edits, provider calls or
+  replay implementation. Next is isolated post-Exa continuation wiring and behavioral testing;
+  prompt wording alone does not establish adaptive research performance.
