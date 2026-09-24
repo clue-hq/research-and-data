@@ -93,3 +93,26 @@ def test_pins_and_path_boundaries_checked(tmp_path):
         trial.prepare(source, tmp_path / "out")
     with pytest.raises(ValueError, match="escapes snapshot"):
         trial.inside(source, "../other/answers.json")
+
+
+def test_refinement_reaches_actual_prompt_and_skill_without_changing_inputs_or_exa(tmp_path):
+    source, baseline, refined = tmp_path / "source", tmp_path / "baseline", tmp_path / "refined"
+    snapshot(source)
+    trial.prepare(source, baseline)
+    trial.prepare(source, refined, refined=True)
+    trial.verify(refined)
+    addition = (trial.GUIDANCE.parent / "source-follow-through.md").read_text()
+    for path in (
+        "account-system-prompt.md",
+        "inputs/.deepagent/skills/account-dossier/v2/SKILL.md",
+    ):
+        assert addition in (refined / path).read_text()
+        assert addition not in (baseline / path).read_text()
+    manifest = json.loads((refined / "trial-manifest.json").read_text())
+    for path, sha in manifest["copied_original_inputs"].items():
+        assert trial.digest(refined / path) == trial.digest(baseline / path) == sha
+    for path in ("instructions/exa-system.md", "instructions/request-config.json"):
+        assert (refined / path).read_bytes() == (baseline / path).read_bytes()
+    (refined / "instructions/source-follow-through.md").write_text("Changed after preparation")
+    with pytest.raises(ValueError, match="Prepared input changed"):
+        trial.verify(refined)

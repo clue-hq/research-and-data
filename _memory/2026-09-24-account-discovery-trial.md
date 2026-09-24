@@ -31,3 +31,17 @@
 - Verification remains 38 passing focused tests, scoped Ruff/diff clean. Shell `python` absent;
   used `.venv/bin/python` for audit. No further runtime edits after tested preparation; original
   snapshots retained. Promotion awaits review; no additional paid run or production activation.
+
+## Authorized focused refinement
+
+- Founder approved proceeding with trial refinement before platform promotion: relevant-team
+  and practitioner/executive public voice, selective page expansion, adaptive questions and
+  company breadth. Keep dates lenient; defer native media to platform integration. Person
+  shortlist is reasoned after account investigation, about 4–5 without padding; AI Ark/profile
+  confirmation, email enrichment and durable nominations remain integrated acceptance work.
+- Added optional `--refined` preparation and exact additive instruction file. Original guidance
+  stays intact. Both actual system prompt and mounted skill get full guide. Same original Head
+  brief/docs/charter/Exa settings; ordinary excerpts remain 1,500 characters to isolate guidance.
+- Four focused preparation tests pass, Ruff/diff clean. Fresh `zafran-02` package prepared;
+  original `zafran-01` untouched. About to run authorized isolated research-stage comparison.
+  No production configuration, fleet, DB, claims, person jobs or contact enrichment changed.

@@ -45,7 +45,7 @@ def inside(root, name):
     return path
 
 
-def prepare(source: Path, out: Path):
+def prepare(source: Path, out: Path, *, refined: bool = False):
     if out.exists() and any(out.iterdir()):
         raise ValueError("Use a fresh output directory")
     original = json.loads((source / "manifest.json").read_text())
@@ -75,6 +75,9 @@ def prepare(source: Path, out: Path):
         shutil.copyfile(source / name, dest)
 
     guidance = GUIDANCE.read_text()
+    refinement = (GUIDANCE.parent / "source-follow-through.md").read_text() if refined else ""
+    if refinement:
+        guidance += "\n\n" + refinement
     skill_original = (CATALOG / "skills/account-dossier/v2/SKILL.md").read_text()
     start = skill_original.index("## Prepare without repetitive work")
     end = skill_original.index("## Research priorities and depth", start)
@@ -98,6 +101,8 @@ def prepare(source: Path, out: Path):
     skill_path.write_text(skill)
     (out / "instructions").mkdir()
     (out / "instructions/discovery-instructions.md").write_text(guidance)
+    if refinement:
+        (out / "instructions/source-follow-through.md").write_text(refinement)
     (out / "instructions/account-dossier.original.md").write_text(skill_original)
     (out / "instructions/account-system.original.md").write_text(prompt_original)
     for name in ("exa-system.md", "request-config.json"):
@@ -122,6 +127,7 @@ def prepare(source: Path, out: Path):
         out / "trial-manifest.json",
         {
             "strategy": "account-discovery-first",
+            "refinement": "source-follow-through-v1" if refined else None,
             "source_snapshot": str(source),
             "copied_original_inputs": selected,
             "prepared_hashes": hashes,
@@ -150,6 +156,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--refined", action="store_true")
     args = parser.parse_args()
-    prepare(args.context.resolve(), args.output.resolve())
+    prepare(args.context.resolve(), args.output.resolve(), refined=args.refined)
     print("Prepared account discovery trial; no external calls.")

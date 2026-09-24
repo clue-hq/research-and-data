@@ -43,3 +43,21 @@ Read `zafran-01/COMPARISON.md`, `findings.md`, `exa-query.generated.md`, `ACTIVI
 `run-summary.json`. Date-window and interpretation mistakes remain, and some earlier sources were
 not rediscovered. Native media transcription was not tested. Langfuse cloud completeness remains
 unchecked. This is one outcome comparison; production promotion awaits founder review.
+
+## Focused refinement
+
+Founder approved improving source expansion, adaptive follow-ups, company breadth while keeping
+leadership/practitioner voice, and reasoning about relevant person candidates after account work.
+The exact additive guide is `source-follow-through.md`; prepare with `--refined` to include it in
+both the actual system prompt and mounted dossier skill. The original strategy remains available.
+
+This instruction-only experiment retains the same original Clue/Zafran context, approved Head
+brief, account charter, Exa system and retrieval settings (including 1,500-character ordinary
+excerpts). It tests targeted expansion before independently changing excerpt sizes. No date
+tightening or new verification gates. Native media integration, actual AI Ark person discovery,
+work-email enrichment and person-job dispatch remain the subsequent platform-port acceptance.
+The trial returns a reasoned candidate handoff without pretending those operations ran.
+
+Prepared refined run: `.artifacts/account-discovery-trial-20260924/zafran-02`.
+Four input/preparation checks passed, including prompt/skill delivery and unchanged original
+documents/provider settings. Scoped Ruff and diff checks passed. Live result pending.
