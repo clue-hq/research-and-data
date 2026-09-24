@@ -61,3 +61,25 @@
 - 13 focused tests passed; initial new test fixture accidentally triggered the existing thin-
   dossier retry, fixed by supplying a realistic-sized metered fake dossier. Scoped Ruff passed.
   Live comparison still pending at this checkpoint.
+
+## Focused follow-up closing audit
+
+- Authorized `nick-03` completed in 573.65 seconds with 27 model calls, 15 ordinary searches
+  (eight before the deep call), one deep call, four page reads and three media attempts. Recorded
+  model/provider cost $1.931550. No full media transcript obtained; acquisition implementation unchanged.
+- Agent received first ten source overviews inline and read both continuation pages completely
+  by recorded line ranges. A recommendation present only in fresh profile highlights reached
+  the agent and report. Personal follow-ups produced richer source-linked findings. Raw provider
+  results varied: the specific earlier omitted project was now in the dossier without supporting
+  returned fields, was investigated, and remained explicitly uncertain rather than being dropped.
+- Saved unchanged report, original records, exact query/system, full source compilation, activity,
+  measurements and comparison in `.artifacts/person-discovery-trial-20260924/nick-03`. Same original
+  input snapshot as previous trial; source/context hashes intact and all 41 original index entries
+  retained. Runner snapshots match dispatched hashes. Report matches finish-tool submission.
+- Remaining weaknesses: useful recording candidates left unfollowed; historical changes and
+  rounded metadata still called conflicts; inherited alias wording; an outside-window row; minor
+  quote normalization and imprecise tool-process description. Source overview is selective reading,
+  not proof of full evidence consumption. No production promotion or general quality guarantee.
+- Local traces and costs retained; Langfuse configured/flushed, known model-name parsing warning
+  persists; cloud completeness unverified. Offline checks remain the 13 passing focused tests and
+  scoped Ruff from preparation. No additional paid runs or unrelated changes. Founder review next.

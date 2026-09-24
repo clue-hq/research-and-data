@@ -1,11 +1,12 @@
 # Discovery-first person research trial
 
-Status: one isolated live trial completed on 24 September 2026; founder quality review remains.
+Status: two isolated live trials completed on 24 September 2026; founder quality review remains.
 The [saved run and comparison](../../../../.artifacts/person-discovery-trial-20260924/nick-02/COMPARISON.md)
 record discovery gains, source-review omissions and incomplete media follow-through. This is not
 production acceptance or evidence of a general quality improvement rate.
-This experiment is separate from the parent task's saved-response continuation. It does not
-change that runner, active person profiles, fleet workers, claim writing or page synthesis.
+This experiment is separate from the parent task's saved-response continuation. The shared
+runner retains its original adapter by default; the focused follow-up adds an optional adapter
+injection seam. Active person profiles, fleet workers, claim writing and page synthesis are unchanged.
 
 ## What is being tested
 
@@ -119,7 +120,15 @@ The shared runner accepts an optional acquisition factory, defaulting to its ori
 Only this opt-in trial uses the overview adapter. The seller/person brief, detailed charter, Exa
 system, provider options, media implementation and production profiles are unchanged.
 
-Prepared live attempt: `.artifacts/person-discovery-trial-20260924/nick-03`. Offline checks: 13
+Completed live attempt: `.artifacts/person-discovery-trial-20260924/nick-03`. Offline checks: 13
 tests passed. A saved-response handoff replay is retained outside the agent input root at
 `.artifacts/person-discovery-trial-20260924/review-replay-v2.json`; this proves visibility of the
 previously missed field, not that a model will investigate or faithfully report it.
+
+The [focused trial comparison](../../../../.artifacts/person-discovery-trial-20260924/nick-03/COMPARISON.md)
+records 573.65 seconds and $1.931550 total recorded cost. The agent reviewed all thirty source
+overviews and retained the highlight-only recommendation. It expanded personal findings through
+its own follow-ups. CocktailGPT appeared in the new dossier without its supporting source field;
+the agent investigated and retained that uncertainty. Media follow-through and false conflict
+framing remain incomplete. Live retrieval and query choices varied, so this is not an identical-
+response causal A/B test. Source reports, exact prompts, provider results and traces are retained.
