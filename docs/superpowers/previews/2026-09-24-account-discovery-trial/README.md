@@ -61,3 +61,17 @@ The trial returns a reasoned candidate handoff without pretending those operatio
 Prepared refined run: `.artifacts/account-discovery-trial-20260924/zafran-02`.
 Four input/preparation checks passed, including prompt/skill delivery and unchanged original
 documents/provider settings. Scoped Ruff and diff checks passed. Live result pending.
+
+## Refined live result
+
+`zafran-02` completed in 515.89s (8m36s), 27 model calls, eight auto searches, eight page reads,
+one deep request, one ATS read and company lookup. Recorded USD $1.547904 plus 0.1 company credit.
+The agent expanded useful job pages, corrected prior-employer tool attribution, recovered more
+product coverage and proposed five person-depth candidates. Nick's richer GTM voice was not
+rediscovered; tool coverage remains incomplete and one customer-story search drifted in priority.
+The shortlist lacks per-entry URLs and some role/fit interpretations overstate their evidence.
+
+Read the unchanged `zafran-02/findings.md` and `COMPARISON.md`, plus exact query, all-provider
+compilation, activity and metrics. This is mixed progress, not full quality acceptance. No further
+paid run or production promotion was performed; native media and integrated people/enrichment
+acceptance remain later work. Focused verification remains four passing preparation tests.

@@ -45,3 +45,16 @@
 - Four focused preparation tests pass, Ruff/diff clean. Fresh `zafran-02` package prepared;
   original `zafran-01` untouched. About to run authorized isolated research-stage comparison.
   No production configuration, fleet, DB, claims, person jobs or contact enrichment changed.
+
+## Refined trial completed
+
+- zafran-02 completed successfully: 515.89s, 27 model calls, eight auto searches/eight page reads,
+  one deep request (began172.009s), ATS/company lookup. USD1.547904 plus0.1 company credit.
+- Report/query/raw sources/activity/metrics/comparison retained unchanged in isolated artifacts.
+  Improved selected-page expansion, prior-employer attribution, product breadth and five-person
+  handoff. Mixed quality: earlier professional-voice leads not rediscovered, incomplete tool
+  coverage, customer-story follow-up drift, shortlist citation/role-hypothesis weaknesses.
+- No runtime/date/production changes after checkpoint8555ba611. Four preparation tests and scoped
+  Ruff/format/diff pass. Existing Langfuse model-name warning, cloud completeness unverified.
+  Trial process exited; no fleet or application writes. Stop for review before further paid runs
+  or production port. Preserve unrelated side-chat working-tree changes.
