@@ -31,3 +31,15 @@ results outside inputs. One live outcome is not a controlled causal A/B or a rel
 Prepared run: `.artifacts/account-discovery-trial-20260924/zafran-01`.
 Offline verification: 38 focused tests passed; scoped Ruff and diff checks passed.
 Live outcome pending at preparation checkpoint.
+
+## Live result
+
+The isolated `zafran-01` run completed in 456.62s with 26 model calls, seven ordinary auto searches
+before deep research, one after, one deep call and five page reads. The actual assignment included
+newly discovered hiring/voice/leadership leads; the final report corrected a dossier omission and
+added a useful event post. Recorded USD cost was $1.315224 plus 0.1 AI Ark company credit.
+
+Read `zafran-01/COMPARISON.md`, `findings.md`, `exa-query.generated.md`, `ACTIVITY.md` and
+`run-summary.json`. Date-window and interpretation mistakes remain, and some earlier sources were
+not rediscovered. Native media transcription was not tested. Langfuse cloud completeness remains
+unchecked. This is one outcome comparison; production promotion awaits founder review.
