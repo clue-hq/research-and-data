@@ -1,0 +1,100 @@
+# Discovery-first person research trial
+
+Status: isolated trial preparation; live research quality has not been demonstrated by this test.
+This experiment is separate from the parent task's saved-response continuation. It does not
+change that runner, active person profiles, fleet workers, claim writing or page synthesis.
+
+## What is being tested
+
+Can the configured person Deep Agent choose complementary ordinary searches, read and consolidate
+their results, write a well-informed comprehensive Exa assignment, then use source review and
+adaptive follow-ups to produce a richer person investigation?
+
+The agent chooses queries, source reads, sequencing and stopping. There is no hardcoded eleven-call
+pipeline, person-specific discovery hint or requirement to fill every category. The intended first
+deep call still carries the complete person charter; narrower follow-ups expand meaningful leads.
+Ordinary preliminary searches and `additional_queries` inside the deep request are distinct.
+
+## Input quality and exact instructions
+
+Preparation copies only files declared in the original pre-person-research snapshot's manifest,
+verifying their bytes and the pinned ICP, persona and seller document references. It preserves:
+
+- The account-authored person brief, selected identity and source references.
+- The Head-of-ABM mission, seller documents, pinned project definitions and account findings.
+- Complete retained account source fields with paged navigation.
+- The complete detailed person charter and unchanged Exa system prompt.
+
+No previous person Exa output, PoC final person report, evaluation comparison, model scratch or
+subsequent continuation results are added. Use the original request-preview snapshot as `--context`,
+not a completed continuation directory. These are retained inputs, not a newly exported application
+snapshot. Sparse personas and dated/incorrect retained interpretations remain explicit limitations.
+
+The only instruction changes are in this trial's copies:
+
+1. The skill's short optional-preparation paragraph is replaced with the exact
+   [discovery instructions](discovery-instructions.md).
+2. The person-agent prompt points to this preliminary discovery procedure.
+3. The isolated task explains the available research tools and output; it does not add a lesson
+   on Deep Agents' built-in filesystem tools.
+
+The agent still receives the full source-review/follow-up guidance from the existing person skill.
+The prepared `person-system.actual.md`, `opening-message.md` and `instructions/` contain the exact
+final texts, not a summary. `manifest.json` records input, prompt and selected runner digests.
+Conflicting old preparation wording causes preparation to fail visibly if the base text changes.
+
+## Runtime and evidence
+
+`scripts/trial_person_discovery.py` reuses `scripts/continue_person_research.py` for the real
+`create_deep_agent`, configured `ARV2_PERSON_AGENT_MODEL`, production Exa/media clients, provider
+ledger, raw response storage, request reuse, local callbacks and Langfuse tracing. There is no
+parallel provider implementation. Trace names remain those of the shared continuation runner;
+the manifest, actual prompts and distinct output directory identify this experiment.
+
+Tools cover ordinary Exa searches, page reads, Exa deep research and supported public media
+resolution/transcription. Independent acquisitions can overlap, with three provider slots.
+The existing runtime backstops remain 200 graph steps and 2,400 seconds; these are operational
+limits, not a quality threshold or 200 model turns. No paid enrichment or application writes.
+
+Original results remain intact, including source text, highlights, entities and extra links.
+Repeated URLs may be consolidated in the agent's notes but original records are not deleted.
+The researcher writes `/scratch/pre-deep-review.md` before its initial deep request so we can
+inspect which evidence informed its assignment. This is prompt guidance, not a completion gate.
+
+Preparation is offline. The explicit `run` command invokes paid configured OpenRouter/Exa and,
+when selected by the agent, media providers, with configured tracing. It refuses to restart an
+already-dispatched output directory. New experiments use new output directories.
+
+```sh
+.venv/bin/python scripts/trial_person_discovery.py prepare \
+  --context .artifacts/person-exa-comparison-20260924/nick-01 \
+  --output .artifacts/person-discovery-trial-20260924/nick-01
+```
+
+After reviewing the prepared input and instruction package, the live command is:
+
+```sh
+.venv/bin/python scripts/trial_person_discovery.py run \
+  --output .artifacts/person-discovery-trial-20260924/nick-01
+```
+
+## What we review after a live run
+
+- Input fidelity: which brief, original documents and source pages the agent actually read.
+- Search breadth: distinct useful angles; personal and earlier-career exploration alongside work.
+- Handoff: source-linked findings and concrete questions in `pre-deep-review.md`; complete charter
+  specificity and meaningful leads in the exact first Exa wire request.
+- Source use: whether the final report preserves useful source-only details and accurately
+  distinguishes speaker, current metadata, historical dates and uncertain namesake associations.
+- Adaptation: subsequent questions change with evidence; no repetitive searches or unexamined
+  acquired leads presented as a thin footprint.
+- Output: readable `findings.md`, inline URLs, attributable quotes, useful personal depth,
+  remaining gaps and honest limitations. This report is research, not claim/page synthesis.
+- Efficiency: complete tool/model event history, request purposes, provider responses and ledger,
+  wall time, model usage/cost where reported and `trace-linkage.json`.
+
+Compare against the prior initial Nick dossier, saved-response continuation and historical PoC.
+Keep those comparison materials outside the agent's input root. Judge coverage and fidelity with
+the founder; the historical comparison is not a controlled provider-variance experiment. Do not
+call offline isolation/retention checks a proof of research quality. Do not promote this into the
+production lane until the actual input, behavior and output have been reviewed.
