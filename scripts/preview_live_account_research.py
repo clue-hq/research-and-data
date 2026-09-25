@@ -18,7 +18,7 @@ from time import monotonic
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from deepagents import create_deep_agent
-from deepagents.backends import FilesystemBackend
+from deepagents.backends import CompositeBackend, FilesystemBackend
 from dotenv import dotenv_values
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
@@ -36,6 +36,7 @@ from clue_api.arv2.account_research_tools import (
 from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.ats_client import fetch_postings, find_board
 from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.exa_client import ExaClient, deep_reasoning_body, read_deep_report
 from clue_api.arv2.quality_acquisition import exa_source_texts
 from clue_api.arv2.quality_provider_tools import AcquireResearchInput
@@ -66,6 +67,9 @@ async def main():
     args = parser.parse_args()
     out = args.prepared.resolve()
     inputs = out / "inputs"
+    claim_ready = args.discovery_trial and json.loads(
+        (out / "trial-manifest.json").read_text()
+    ).get("claim_ready", False)
     if (out / "traces/events.jsonl").exists():
         raise ValueError("Use a fresh prepared directory; never overwrite a previous trial.")
     if args.discovery_trial:
@@ -98,6 +102,14 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "\nInspect source_review_path and all its continuations after every acquisition. "
             "Read full_source_path for useful new fields or more context. Write the pre-deep "
             "note in /scratch/pre-deep-review.md before composing the main Exa request.\n"
+        )
+    if claim_ready:
+        system = system.replace(
+            "Finish with finish_research: detailed source-linked findings, "
+            "dossier corrections, your\n"
+            "interpretations and remaining questions.",
+            "Finish with finish_dossier after writing the sectioned record dossier; "
+            "keep interpretations and gaps in the locations specified by the formation skill.",
         )
     (out / "account-system.live.md").write_text(system)
     if not args.discovery_trial:
@@ -173,7 +185,24 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "source_url": url,
             "origin_locator": locator,
             "metadata": metadata or {},
+            "revision": len(rows) + 1,
         }
+        row["path"] = source_path(row)
+        readable = inputs / row["path"].lstrip("/")
+        readable.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            display = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+        except ValueError:
+            display = text
+        readable.write_text(f"Source URL: {url}\nKind: {kind}\nOrigin: {locator}\n\n{display}\n")
+        if claim_ready:
+            body_path = out / "source-bodies" / (sid + ".txt")
+            body_path.parent.mkdir(exist_ok=True)
+            body_path.write_text(text)
+            row.update(
+                body_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                observed_at=datetime.now(UTC).isoformat(),
+            )
         mount(text, f"evidence/{sid}")
         rows.append(row)
         return row
@@ -314,6 +343,13 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                             else None,
                         },
                     )
+                save(
+                    inputs / "evidence/index.json",
+                    {
+                        "sources": rows[:30],
+                        "next_path": "/evidence/index/30.json" if len(rows) > 30 else None,
+                    },
+                )
                 return json.dumps(
                     {
                         "status": "completed",
@@ -376,6 +412,32 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             ),
             StructuredTool.from_function(coroutine=finish_research, return_direct=True),
         ]
+        if claim_ready:
+            from live_account_dossier import finish_live, inspect_live, save_section
+
+            async def save_dossier_section(section: str, findings: list[dict]):
+                """Save a complete section's structured findings, replacing its prior version.
+
+                Preserve existing entries when revising. Other sections are untouched.
+                Use the claim-ready-account-dossier skill for finding fields.
+                """
+                return json.dumps(save_section(out, rows, section, findings))
+
+            async def validate_dossier():
+                """Check the saved dossier format and actual source references."""
+                records, errors = inspect_live(out, rows)
+                return json.dumps({"entries": len(records), "errors": errors})
+
+            async def finish_dossier(summary: str, gaps: list[str]):
+                """Freeze the record dossier from this fresh investigation; no claim writes here."""
+                return json.dumps(finish_live(out, rows, summary, gaps))
+
+            tools = [
+                tools[0],
+                StructuredTool.from_function(coroutine=save_dossier_section),
+                StructuredTool.from_function(coroutine=validate_dossier),
+                StructuredTool.from_function(coroutine=finish_dossier),
+            ]
         allowed = {
             "ls",
             "read_file",
@@ -389,12 +451,51 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             from continue_person_research import ContinuationTools
 
             middleware = ContinuationTools(allowed | {"write_file", "edit_file", "write_todos"})
+        if claim_ready:
+            allowed.discard("finish_research")
+            allowed.update(
+                {
+                    "save_dossier_section",
+                    "validate_dossier",
+                    "finish_dossier",
+                    "write_file",
+                    "edit_file",
+                    "write_todos",
+                }
+            )
+
+            class DossierTools(ContinuationTools):
+                async def awrap_tool_call(self, request, handler):
+                    from langchain_core.messages import ToolMessage
+
+                    if (
+                        request.tool_call["name"] in {"write_file", "edit_file"}
+                        and request.tool_call["args"].get("file_path")
+                        == "/scratch/account-dossier.json"
+                    ):
+                        return ToolMessage(
+                            content="Use save_dossier_section to revise the canonical dossier.",
+                            tool_call_id=request.tool_call["id"],
+                        )
+                    if (out / "agent-completion.json").exists() and request.tool_call[
+                        "name"
+                    ] != "read_file":
+                        return ToolMessage(
+                            content="Dossier frozen; return final summary.",
+                            tool_call_id=request.tool_call["id"],
+                        )
+                    return await super().awrap_tool_call(request, handler)
+
+            middleware = DossierTools(allowed)
+        backend = FilesystemBackend(root_dir=inputs, virtual_mode=True)
+        if claim_ready:
+            backend = CompositeBackend(default=backend, routes={}, artifacts_root="/scratch")
         graph = create_deep_agent(
             model=models["account_research"],
             system_prompt=system,
             tools=tools,
             middleware=[middleware],
-            backend=FilesystemBackend(root_dir=inputs, virtual_mode=True),
+            backend=backend,
             name="live-account-research-preview",
         )
         opening = (
@@ -405,16 +506,22 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "available tools to conduct preliminary investigation, Exa deep research and useful "
             "follow-ups, then finish with source-linked findings."
         )
+        if claim_ready:
+            opening += (
+                " Apply the claim-ready-account-dossier skill during your own dossier formation. "
+                "Use save_dossier_section for structured JSON, then finish_dossier. "
+                "Do not call finish_research; it is not installed."
+            )
         (out / "account-opening.live.md").write_text(opening)
-        output = await asyncio.wait_for(
-            graph.ainvoke(
-                {"messages": [HumanMessage(content=opening)]},
-                config={
-                    "callbacks": callbacks,
-                    "recursion_limit": 200 if args.discovery_trial else 100,
-                },
-            ),
-            timeout=2400,
+        invocation = graph.ainvoke(
+            {"messages": [HumanMessage(content=opening)]},
+            config={
+                "callbacks": callbacks,
+                "recursion_limit": 200 if args.discovery_trial else 100,
+            },
+        )
+        output = (
+            await invocation if claim_ready else await asyncio.wait_for(invocation, timeout=2400)
         )
         save(out / "account-messages.json", [m.model_dump(mode="json") for m in output["messages"]])
     save(
@@ -424,6 +531,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "langfuse_installed": traced,
             "session_id": session,
             "source_records": len(rows),
+            "claim_ready_dossier": claim_ready,
             "application_database_writes": 0,
             "limitations": [
                 "Research-stage harness: no production C5/fleet/launch lifecycle",

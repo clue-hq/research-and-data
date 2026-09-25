@@ -95,6 +95,77 @@ def test_pins_and_path_boundaries_checked(tmp_path):
         trial.inside(source, "../other/answers.json")
 
 
+def test_live_claim_ready_mode_keeps_acquisition_excludes_old_results_and_direct_claim_tools(
+    tmp_path,
+):
+    source, out = tmp_path / "source", tmp_path / "trial"
+    snapshot(source)
+    trial.save(source / "inputs/evidence/old.json", {"finding": "OLD_TARGET_ANSWER"})
+    trial.prepare(source, out, refinement="source-follow-through-v2", claim_ready=True)
+    trial.verify(out)
+    prompt = (out / "account-system-prompt.md").read_text()
+    assert "FRESH RESEARCH AND CLAIM-READY DOSSIER" in prompt
+    assert "preliminary multi-angle searches" in prompt
+    assert "Delegate source processing to research_claims" not in prompt
+    assert "Delegate research_narrative" not in prompt
+    assert "OLD_TARGET_ANSWER" not in "".join(
+        p.read_text() for p in (out / "inputs").rglob("*") if p.is_file()
+    )
+    guide = (out / "inputs/.deepagent/skills/claim-ready-account-dossier/SKILL.md").read_text()
+    assert '"id":"F001"' in guide and "/scratch/coverage.md" in guide
+    assert "Zafran" not in guide and "Nick" not in guide
+    assert json.loads((out / "trial-manifest.json").read_text())["claim_ready"]
+
+
+def test_fresh_dossier_freezes_only_current_sources_and_preserves_bytes(tmp_path):
+    from live_account_dossier import finish_live, save_section
+
+    inputs = tmp_path / "inputs"
+    (inputs / "scratch").mkdir(parents=True)
+    (inputs / "evidence").mkdir()
+    path = "/evidence/0001-example.json"
+    (inputs / path.lstrip("/")).write_text("Original fresh source")
+    rows = [
+        {
+            "source_id": "fresh-source",
+            "path": path,
+            "source_url": "https://example.test/source",
+            "kind": "web_snapshot",
+            "origin_locator": "results/0",
+        }
+    ]
+    record = {
+        "id": "F001",
+        "topic": "An observation",
+        "claim_type": "observation",
+        "finding": "Original detail preserved.",
+        "source_paths": [path],
+        "review": {"status": "supported", "reason": "Fresh source"},
+    }
+    assert save_section(tmp_path, rows, "Business", [record])["saved"]
+    dossier = inputs / "scratch/account-dossier.json"
+    first = dossier.read_bytes()
+    record["source_paths"] = ["/evidence/previous-run.json"]
+    assert not save_section(tmp_path, rows, "Business", [record])["saved"]
+    assert dossier.read_bytes() == first
+    record["source_paths"] = [path]
+    record["id"] = "F002"
+    assert save_section(tmp_path, rows, "Voice", [record])["saved"]
+    record["finding"] = "Expanded detail."
+    assert save_section(tmp_path, rows, "Voice", [record])["saved"]
+    saved = json.loads(dossier.read_text())
+    assert len(saved["sections"]) == 2
+    assert saved["sections"][0]["findings"][0]["finding"] == "Original detail preserved."
+    assert saved["sections"][1]["findings"][0]["finding"] == "Expanded detail."
+    assert not save_section(tmp_path, rows, "Other", [record])["saved"]
+    body = dossier.read_bytes()
+    result = finish_live(tmp_path, rows, "Completed", [])
+    assert result["finished"] and result["entries"] == 2
+    assert (tmp_path / "dossier.json").read_bytes() == body
+    assert "https://example.test/source" in (tmp_path / "findings.md").read_text()
+    assert not save_section(tmp_path, rows, "Voice", [record])["saved"]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "filename"),
     [

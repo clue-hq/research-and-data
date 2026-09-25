@@ -7,9 +7,11 @@ Retains an approved, freshly authored Head brief; never imports past target rese
 from __future__ import annotations
 
 import argparse
+import calendar
 import hashlib
 import json
 import shutil
+from datetime import date
 from pathlib import Path
 
 from research_preview_support import save
@@ -45,7 +47,14 @@ def inside(root, name):
     return path
 
 
-def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str | None = None):
+def prepare(
+    source: Path,
+    out: Path,
+    *,
+    refined: bool = False,
+    refinement: str | None = None,
+    claim_ready: bool = False,
+):
     versions = {
         "source-follow-through-v1": "source-follow-through.md",
         "source-follow-through-v2": "source-follow-through-v2.md",
@@ -82,6 +91,15 @@ def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str |
         dest = out / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source / name, dest)
+    if claim_ready:
+        today = date.today()
+        month_index = today.year * 12 + today.month - 1 - 9
+        year, month_zero = divmod(month_index, 12)
+        start_date = date(
+            year, month_zero + 1, min(today.day, calendar.monthrange(year, month_zero + 1)[1])
+        )
+        context.update(run_date=today.isoformat(), recent_window_start=start_date.isoformat())
+        save(out / "inputs/research/context.json", context)
 
     guidance = GUIDANCE.read_text()
     refinement = (
@@ -106,6 +124,10 @@ def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str |
         "Media can be explored through searches and page reads; native transcription is not "
         "installed in this account trial. Record that limitation honestly.\n"
     )
+    if claim_ready:
+        from live_account_dossier import prepare_format
+
+        prompt = prepare_format(out, prompt)
     (out / "account-system-prompt.md").write_text(prompt)
     skill_path = out / "inputs/.deepagent/skills/account-dossier/v2/SKILL.md"
     skill_path.parent.mkdir(parents=True)
@@ -122,7 +144,17 @@ def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str |
         )
     (out / "inputs/scratch").mkdir()
     runner_hashes = {}
-    for name in RUNNERS:
+    runners = (
+        (
+            *RUNNERS,
+            "scripts/live_account_dossier.py",
+            "scripts/account_dossier_trial.py",
+            "scripts/trial_account_claims.py",
+        )
+        if claim_ready
+        else RUNNERS
+    )
+    for name in runners:
         dest = out / "runner-snapshot" / name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, dest)
@@ -139,6 +171,7 @@ def prepare(source: Path, out: Path, *, refined: bool = False, refinement: str |
         {
             "strategy": "account-discovery-first",
             "refinement": selected_refinement,
+            "claim_ready": claim_ready,
             "source_snapshot": str(source),
             "copied_original_inputs": selected,
             "prepared_hashes": hashes,
@@ -168,6 +201,7 @@ if __name__ == "__main__":
     parser.add_argument("--context", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--refined", action="store_true")
+    parser.add_argument("--claim-ready", action="store_true")
     parser.add_argument(
         "--refinement", choices=("source-follow-through-v1", "source-follow-through-v2")
     )
@@ -177,5 +211,6 @@ if __name__ == "__main__":
         args.output.resolve(),
         refined=args.refined,
         refinement=args.refinement,
+        claim_ready=args.claim_ready,
     )
     print("Prepared account discovery trial; no external calls.")
