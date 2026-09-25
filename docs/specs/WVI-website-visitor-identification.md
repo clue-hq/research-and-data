@@ -7,7 +7,7 @@ account, contact, project, artifact and channel that caused it; hand the result 
 **Method tags:** `[FETCHED]` read from the vendor's live page or docs this session · `[SNIPPET]`
 search-result text only · `[VENDOR]` a vendor's own claim, unaudited · `[REPO]` verified in this
 worktree at `9ae1b211b` (paths are repo-relative). "Not published" beats a guess.
-**Companions:** `ARV2-MASTER-PLAN.md` (authoritative for the research lane and the accounts
+**Companions:** `WVI-2-research-register-and-90pct-blueprint.md` (papers, repos, open data, the ≥90%-precision principles, the RB2B caveat, the quality blueprint), `ARV2-MASTER-PLAN.md` (authoritative for the research lane and the accounts
 screens), `pricing-strategy/08-ploy-pricing-teardown.md`, `pricing-strategy/_scratch/groupC-data-signals.md`.
 
 ---

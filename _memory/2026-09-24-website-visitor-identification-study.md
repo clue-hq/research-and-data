@@ -49,3 +49,15 @@ $149–199 ungated.
 - No code, no migration, no `.env.example` change. Founder rulings W1–W9 open.
 - Provider choice for rung 2 unproven; run the known-visitor test on cluehq.ai first (V2 gate).
 - `pricing-strategy/` stays uncommitted by founder instruction; this note + the spec are committed.
+
+## Addendum (same day) — research register + 90%-precision blueprint
+Founder follow-up: find all research (papers, repos, open data), define the principles for ≥90%
+accuracy, and the RB2B caveat. Delivered **`docs/specs/WVI-2-research-register-and-90pct-blueprint.md`**.
+Key facts gathered: Prefix2Org (IMC 2025) public dataset covers 99.96% of prefixes, 99% recall on
+validated space; ASdb 93% category accuracy; FP-Stalker: 50% of fingerprints change <5 days (link,
+don't pin); Zimmeck 2017 F1 0.91 with IP anchors; CIKM 2016 F1 ≈0.40 without; Su et al. >70% of
+~400 people re-identified from browsing; UID2 hash normalisation; Splink/Ditto for binding; PostHog
+merge semantics; Apple Private Relay egress CSV + cloud/VPN lists for exclusion; IPinfo Lite free.
+Definition adopted: precision ≥0.90 on asserted bindings, coverage reported separately; rung-0
+identifications are the free label set that calibrates rungs 1–2. RB2B caveat: deterministic at
+capture, probabilistic at transfer (browser continuity + personal-email→employer second lookup).
