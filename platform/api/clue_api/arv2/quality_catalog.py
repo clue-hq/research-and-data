@@ -11,7 +11,7 @@ from clue_api.arv2.account_research_catalog import CatalogResource, ResourceBund
 ROOT = Path(__file__).parents[3] / "agents" / "catalog" / "research-quality"
 
 
-CURRENT_RECIPE_VERSION = 13
+CURRENT_RECIPE_VERSION = 14
 
 
 def load_quality_resources(

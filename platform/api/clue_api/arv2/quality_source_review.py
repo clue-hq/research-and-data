@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_evidence import EvidenceGrant, list_sources, read_source
 from clue_storage import StorageBackend
 
@@ -68,7 +69,7 @@ async def source_review(
                 "source_id": row["source_id"],
                 "url": row.get("source_url"),
                 "title": result.get("title"),
-                "full_source_path": f"/evidence/{row['source_id']}/0.json",
+                "full_source_path": source_path(row),
                 "origin_locator": row["origin_locator"],
                 "available_fields": list(result),
                 "previous_capture": prior is not None,

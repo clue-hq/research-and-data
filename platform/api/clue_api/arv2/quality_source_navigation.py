@@ -7,17 +7,18 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_evidence import EvidenceGrant, list_sources
 
 
 def source_navigation(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Keep original locators and separate synthesized reports from returned source excerpts."""
     return {
-        "evidence_index_path": "/evidence/index/0.json",
+        "evidence_index_path": "/evidence/index.json",
         "sources": [
             {
                 "source_id": row["source_id"],
-                "path": f"/evidence/{row['source_id']}/0.json",
+                "path": source_path(row),
                 "kind": row["kind"],
                 "url": row.get("source_url"),
                 "origin_locator": row["origin_locator"],

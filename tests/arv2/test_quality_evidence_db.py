@@ -49,7 +49,9 @@ async def seed(conn, storage):
         conn,
         _request(f),
         storage=storage,
-        settings=settings_for(arv2_account_research_enabled=True),
+        settings=settings_for(
+            arv2_account_research_enabled=True, arv2_research_catalog_version="v2"
+        ),
         profile_sha256=arv2_account_profile_sha256(version="v2"),
     )
     return [

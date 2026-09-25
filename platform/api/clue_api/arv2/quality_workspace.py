@@ -8,9 +8,8 @@ the named tools, including after a prior successful read, replay, revocation or 
 from __future__ import annotations
 
 import json
-import re
+from pathlib import PurePosixPath
 from typing import Any
-from uuid import UUID
 
 from deepagents.backends.protocol import (
     BackendProtocol,
@@ -26,19 +25,19 @@ from deepagents.backends.protocol import (
 )
 from deepagents.backends.utils import slice_read_response
 
+from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH
 from clue_api.arv2.quality_evidence import (
     EvidenceGrant,
     EvidenceUnavailable,
     list_sources,
     read_source,
+    resolve_source,
 )
 from clue_db import ConnFactory
 from clue_storage import StorageBackend, StorageError
 
 _READ_ONLY = "permission_denied: evidence originals are read-only"
 _ASYNC = "Use the asynchronous research runtime for authorized evidence access."
-_SOURCE = re.compile(r"/evidence/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
-_INDEX = re.compile(r"/evidence/index/(0|[1-9][0-9]*)\.json\Z")
 
 
 def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
@@ -67,57 +66,74 @@ class EvidenceWorkspace(BackendProtocol):
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         if offset < 0:
             return ReadResult(error="Read offset must be nonnegative.")
-        source = _SOURCE.fullmatch(file_path)
-        index = _INDEX.fullmatch(file_path)
         try:
             async with self._connections() as conn:
-                if index:
-                    result = await list_sources(conn, self._grant, after=int(index[1]), limit=0)
-                    after = result.get("next_after")
-                    result["next_path"] = f"/evidence/index/{after}.json" if after else None
-                    for item in result["sources"]:
-                        item["path"] = f"/evidence/{item['source_id']}/0.json"
-                elif source:
-                    result = await read_source(
-                        conn, self._storage, self._grant, UUID(source[1]), start=int(source[2])
-                    )
-                    after = result.get("next_start")
-                    result["next_path"] = (
-                        f"/evidence/{source[1]}/{after}.json" if after is not None else None
-                    )
-                    # Framework file tools cap individual lines. Split without changing bytes
-                    # so a long report paragraph cannot be silently clipped by that formatter.
+                if file_path == INDEX_PATH:
+                    result = await list_sources(conn, self._grant, after=0, limit=0)
+                    result["next_path"] = None
+                elif SOURCE_PATH.fullmatch(file_path):
+                    ref = await resolve_source(conn, self._grant, file_path)
+                    result = await read_source(conn, self._storage, self._grant, ref.source_id)
+                    result["next_path"] = None
+                    # Segment long lines without changing the original bytes.
                     body = result.pop("text")
                     result["text_segments"] = [
-                        {"start": result["start"] + i, "text": body[i : i + 256]}
-                        for i in range(0, len(body), 256)
+                        {"start": i, "text": body[i : i + 256]} for i in range(0, len(body), 256)
                     ]
                 else:
-                    # Do not hand arbitrary input paths to an underlying filesystem/backend.
-                    return ReadResult(error="Unknown evidence path; read /evidence/index/0.json.")
+                    return ReadResult(
+                        error=f"Unknown evidence path; read {INDEX_PATH} or ls /evidence."
+                    )
             return render_view(result, offset=offset, limit=limit)
-        except (EvidenceUnavailable, StorageError, ValueError):
+        except EvidenceUnavailable as exc:
+            return ReadResult(error=str(exc))
+        except StorageError:
             return ReadResult(
-                error="Evidence unavailable; request a current grant from the parent."
+                error="Source bytes are unavailable or erased. Inspect "
+                f"{INDEX_PATH}; report the listed path rather than guessing another name."
             )
 
     async def als(self, path: str) -> LsResult:
         if path.rstrip("/") != "/evidence":
-            return LsResult(error="List /evidence, then follow the paginated index.")
-        read = await self.aread("/evidence/index/0.json")
-        if read.error:
-            return LsResult(error=read.error)
-        return LsResult(entries=[FileInfo(path="/evidence/index/0.json", is_dir=False)])
+            return LsResult(
+                error=f"Evidence files live directly under /evidence; read {INDEX_PATH}."
+            )
+        try:
+            async with self._connections() as conn:
+                page = await list_sources(conn, self._grant, after=0, limit=0)
+            return LsResult(
+                entries=[
+                    FileInfo(path=INDEX_PATH, is_dir=False),
+                    *[
+                        FileInfo(path=row["path"], is_dir=False, size=row["byte_size"])
+                        for row in page["sources"]
+                        if row.get("available")
+                    ],
+                ]
+            )
+        except (EvidenceUnavailable, StorageError):
+            return LsResult(error="Evidence authority unavailable; request an authorized task.")
 
     async def aglob(self, pattern: str, path: str | None = None) -> GlobResult:
+        listing = await self.als(path or "/evidence")
+        if listing.error:
+            return GlobResult(error=listing.error)
+        if not pattern or ".." in PurePosixPath(pattern).parts:
+            return GlobResult(
+                error="Use a file-name pattern such as *hiring*.json under /evidence."
+            )
         return GlobResult(
-            error="Use /evidence/index/0.json and its continuation for scoped listing."
+            matches=[
+                row for row in listing.entries or [] if PurePosixPath(row["path"]).match(pattern)
+            ]
         )
 
     async def agrep(
         self, pattern: str, path: str | None = None, glob: str | None = None
     ) -> GrepResult:
-        return GrepResult(error="Use search_evidence with a granted source_id and a literal query.")
+        return GrepResult(
+            error="Use search_evidence with the readable source path and a literal query."
+        )
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         return ReadResult(error=_ASYNC)

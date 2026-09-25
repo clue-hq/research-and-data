@@ -180,7 +180,7 @@ class AcquireResearchTool(Tool):
                     status="outcome_unknown",
                     replayed=True,
                     error_code="dispatch_outcome_unknown",
-                    recovery="Inspect /evidence/index/0.json; record the gap without repurchasing.",
+                    recovery="Inspect /evidence/index.json; record the gap without repurchasing.",
                 )
             )
         # The existing tool normalizes provider refusals. Exceptions after dispatch remain unknown;

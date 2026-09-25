@@ -109,18 +109,11 @@ def test_company_mapping_reuses_exact_claims_and_tool_results_without_purchase(t
             )
             saved = json.loads(await read_document(backend, result.references["result_path"]))
             assert "error" not in saved
-            source_ids = (
-                (
-                    await conn.execute(
-                        text("SELECT source_id FROM arv2_evidence_source WHERE job_id=:job"),
-                        {"job": scope.job_id},
-                    )
-                )
-                .scalars()
-                .all()
-            )
+            index = await backend.aread("/evidence/index.json")
             originals = [
-                await read_document(backend, f"/evidence/{sid}/0.json") for sid in source_ids
+                await read_document(backend, row["path"])
+                for row in json.loads(index.file_data["content"])["sources"]
+                if row.get("available")
             ]
             assert any("Provider promotional description." in body for body in originals)
             assert (

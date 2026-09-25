@@ -8,6 +8,7 @@ import pytest
 from deepagents.backends.protocol import BackendProtocol
 from sqlalchemy import text
 
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_claims import ClaimProposal
 from clue_api.arv2.quality_evidence import EvidenceUnavailable, JsonSupport, revoke_grant
@@ -91,7 +92,7 @@ def test_claim_tool_correction_changes_live_view_and_revocation_denies_replay(tm
             assert (await read(backend, "/research/catalog/0.json"))[
                 "kind"
             ] == "field_definitions_not_evidence"
-            source_body = await read_document(backend, f"/evidence/{source.source_id}/0.json")
+            source_body = await read_document(backend, source_path(source.model_dump()))
             assert json.loads(source_body) == {"employees": 64}
             for path in ("/evidence/../secret", "/research/documents/" + str(uuid4()) + "/0.json"):
                 assert (await backend.aread(path)).error
@@ -164,7 +165,7 @@ def test_claim_tool_correction_changes_live_view_and_revocation_denies_replay(tm
             assert json.loads(await read_document(backend, path))["value_json"] == 64
             authority = await resolve_authority(conn, scope, child)
             await revoke_grant(conn, authority.grant)
-            assert (await backend.aread(f"/evidence/{source.source_id}/0.json")).error
+            assert (await backend.aread(source_path(source.model_dump()))).error
             assert (await backend.aread(path)).error
             with pytest.raises(EvidenceUnavailable):
                 await submit.invoke(args, ctx)
@@ -203,11 +204,11 @@ def test_child_manifest_is_fixed_parent_can_read_later_sources(tmp_path):
                 yield conn
 
             backend = research_backend(BackendProtocol(), connections, storage, scope, child)
-            assert (await read(backend, "/evidence/index/0.json"))["sources"] == []
+            assert (await read(backend, "/evidence/index.json"))["sources"] == []
             original = "Complete original report. " * 1200
             source = await save(conn, storage, op, original)
-            assert (await backend.aread(f"/evidence/{source.source_id}/0.json")).error
+            assert (await backend.aread(source_path(source.model_dump()))).error
             pbackend = research_backend(BackendProtocol(), connections, storage, scope, parent)
-            assert await read_document(pbackend, f"/evidence/{source.source_id}/0.json") == original
+            assert await read_document(pbackend, source_path(source.model_dump())) == original
 
     run_async(case())

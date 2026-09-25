@@ -119,7 +119,7 @@ def person_task_instruction(brief: dict[str, Any]) -> str:
         + "\n\nRead /research/context.json for the selected person, discovery references, "
         "complete pinned seller/product/ICP/persona documents and account findings. "
         f"The original delegation is at {BRIEF_PATH}; original account reports, pages and "
-        "transcripts are accessible through /evidence/index/0.json. Reuse acquired material "
+        "transcripts are accessible through /evidence/index.json. Reuse acquired material "
         "and read further as useful. Relationship verification remains deferred; present "
         "uncertainty without requiring employment or location proofs."
     )

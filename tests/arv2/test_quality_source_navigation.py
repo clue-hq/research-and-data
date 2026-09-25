@@ -17,6 +17,7 @@ def test_navigation_preserves_url_and_excerpt_locator_without_exposing_erased_me
         [
             {
                 "source_id": source,
+                "revision": 1,
                 "available": True,
                 "kind": "web_snapshot",
                 "source_url": "https://example.test/bdr",
@@ -30,7 +31,7 @@ def test_navigation_preserves_url_and_excerpt_locator_without_exposing_erased_me
     assert result["sources"] == [
         {
             "source_id": source,
-            "path": f"/evidence/{source}/0.json",
+            "path": "/evidence/0001-bdr.json",
             "kind": "web_snapshot",
             "url": "https://example.test/bdr",
             "origin_locator": "results/17/highlights/0",
@@ -55,6 +56,7 @@ def test_operation_navigation_consumes_every_page_using_same_grant_and_operation
                     "source_id": str(uuid4()),
                     "available": True,
                     "kind": "research_report",
+                    "revision": after + 1,
                     "origin_locator": "output.content",
                 }
             ],

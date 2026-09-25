@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH, source_path
 from clue_api.arv2.research_operations import OperationScope, job_available
 from clue_obs import get_logger
 from clue_storage import (
@@ -375,7 +376,7 @@ async def list_sources(
     return {
         "revision": revision,
         "sources": [
-            dict(s.model_dump(mode="json"), available=True)
+            dict(s.model_dump(mode="json"), path=source_path(s.model_dump()), available=True)
             if s.artifact_key in available
             and (s.original_key is None or s.original_key in available)
             else {"source_id": str(s.source_id), "revision": s.revision, "available": False}
@@ -388,27 +389,54 @@ async def list_sources(
 async def resolve_source(
     conn: AsyncConnection,
     grant: EvidenceGrant,
-    source_id: UUID,
+    source_id: UUID | str,
 ) -> SourceRef:
     revision, subject = await _grant(conn, grant)
+    requested_path = str(source_id) if str(source_id).startswith("/evidence/") else None
+    path_match = SOURCE_PATH.fullmatch(requested_path) if requested_path else None
+    if requested_path and not path_match:
+        raise EvidenceUnavailable(f"Invalid evidence path; copy an exact path from {INDEX_PATH}.")
+    number = int(path_match[1]) if path_match else None
+    if number is not None and number > 2_147_483_647:
+        raise EvidenceUnavailable(f"Invalid source number; copy an exact path from {INDEX_PATH}.")
+    try:
+        identifier = None if path_match else UUID(str(source_id))
+    except ValueError as exc:
+        raise EvidenceUnavailable(f"Invalid source reference; read {INDEX_PATH}.") from exc
     row = (
         (
             await conn.execute(
                 text(
-                    "SELECT * FROM arv2_evidence_source WHERE source_id=:id "
+                    "SELECT * FROM arv2_evidence_source WHERE "
+                    "((CAST(:id AS uuid) IS NOT NULL AND source_id=CAST(:id AS uuid)) OR "
+                    "(CAST(:number AS integer) IS NOT NULL AND revision=CAST(:number AS integer))) "
                     "AND workspace_id=:ws AND run_id=:run AND account_id=:account AND "
                     "revision<=:revision "
                     "AND (:subject=account_id OR subject_id IN (:subject,account_id))"
                 ),
-                dict(_params(grant.scope), id=source_id, revision=revision, subject=subject),
+                dict(
+                    _params(grant.scope),
+                    id=identifier,
+                    number=number,
+                    revision=revision,
+                    subject=subject,
+                ),
             )
         )
         .mappings()
         .one_or_none()
     )
     if row is None:
-        raise EvidenceUnavailable("source outside grant; call list_evidence for valid source IDs")
-    return SourceRef.model_validate(dict(row))
+        raise EvidenceUnavailable(
+            f"Source unavailable in this evidence view; read {INDEX_PATH} "
+            "and copy its exact path. Report a listed path that fails."
+        )
+    ref = SourceRef.model_validate(dict(row))
+    if requested_path and requested_path != source_path(ref.model_dump()):
+        raise EvidenceUnavailable(
+            f"Source name does not match; copy its exact path from {INDEX_PATH}."
+        )
+    return ref
 
 
 async def _body(conn: AsyncConnection, storage: StorageBackend, ref: SourceRef) -> bytes:
@@ -467,6 +495,7 @@ async def read_source(
     end = min(len(raw), start + limit) if limit > 0 else len(raw)
     return {
         "source_id": str(source_id),
+        "path": source_path(ref.model_dump()),
         "text": raw[start:end],
         "start": start,
         "end": end,

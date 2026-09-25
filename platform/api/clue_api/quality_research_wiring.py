@@ -88,7 +88,7 @@ from clue_api.arv2.quality_execution import (
     reserve,
     runtime_remaining,
 )
-from clue_api.arv2.quality_findings import RecordResearchFindingTool
+from clue_api.arv2.quality_findings import RecordPathResearchFindingTool, RecordResearchFindingTool
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
@@ -101,8 +101,10 @@ from clue_api.arv2.quality_provider_tools import AcquireResearchTool
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
     CorrectResearchClaimTool,
+    PathProcessingDispositionTool,
     ProcessingDispositionTool,
     SearchEvidenceTool,
+    SearchPathEvidenceTool,
     SubmitResearchClaimTool,
 )
 from clue_api.arv2.quality_views import research_backend
@@ -201,6 +203,9 @@ def quality_tools(
         ReadPageInputsTool,
         PublishResearchPageTool,
         RecordResearchFindingTool,
+        RecordPathResearchFindingTool,
+        SearchPathEvidenceTool,
+        PathProcessingDispositionTool,
         NominateSourceCommitteeTool,
         NominateSourceWebCommitteeTool,
         NominateBriefedCommitteeTool,
@@ -260,7 +265,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: "v13"
+            role: ("v14-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v14")
+            if version >= 14
+            else "v13"
             if version >= 13 and not person and role == AgentRole.ACCOUNT_RESEARCH
             else "v12"
             if version >= 12 and not person and role == AgentRole.ACCOUNT_RESEARCH
@@ -725,7 +732,7 @@ class ResearchUnitRuntime:
                 {
                     "context_id": str(self.context_id),
                     "context_path": "/research/context.json",
-                    "evidence_path": "/evidence/index/0.json",
+                    "evidence_path": "/evidence/index.json",
                     "subject_kind": self.scope.subject_kind,
                     "subject_id": str(self.scope.person_subject_id or self.scope.account_id),
                     "account_id": str(self.scope.account_id),

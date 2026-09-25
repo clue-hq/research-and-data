@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from deepagents.backends.protocol import BackendProtocol, FileInfo, LsResult, ReadResult
+from deepagents.backends.protocol import BackendProtocol, FileInfo, GlobResult, LsResult, ReadResult
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -108,6 +108,7 @@ class ResearchViewMount(EvidenceWorkspace):
                 scope,
                 context_id=authority.context_id,
                 version=None if dossier[1] == "latest" else int(dossier[1]),
+                grant=authority.grant,
             )
         review = _SOURCE_REVIEW.fullmatch(path)
         if review:
@@ -243,7 +244,7 @@ class ResearchViewMount(EvidenceWorkspace):
             result["claims_path"] = "/research/claims/0.json"
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
-            result["evidence_path"] = "/evidence/index/0.json"
+            result["evidence_path"] = "/evidence/index.json"
             if not scope.person_subject_id:
                 result["account_dossier_path"] = "/research/account-dossier/latest.json"
             if scope.person_subject_id:
@@ -269,7 +270,7 @@ class ResearchViewMount(EvidenceWorkspace):
                 }
                 result["account_research_references"] = {
                     "findings": "/research/claims/0.json",
-                    "original_reports_pages_and_transcripts": "/evidence/index/0.json",
+                    "original_reports_pages_and_transcripts": "/evidence/index.json",
                 }
             if advisory_research(scope):
                 result["review_policy"] = {
@@ -388,8 +389,25 @@ class ResearchViewMount(EvidenceWorkspace):
         }
 
     async def als(self, path: str) -> LsResult:
+        if self._evidence:
+            try:
+                async with self._connections() as conn:
+                    authority = await resolve_authority(conn, self._scope, self._execution_id)
+                listing = await EvidenceWorkspace(
+                    self._connections, self._storage, authority.grant
+                ).als("/evidence" + path.rstrip("/"))
+                if listing.error:
+                    return listing
+                return LsResult(
+                    entries=[
+                        {**row, "path": row["path"].removeprefix("/evidence")}
+                        for row in listing.entries or []
+                    ]
+                )
+            except (ValueError, StorageError):
+                return LsResult(error="Evidence authority unavailable; request an authorized task.")
         if path not in ("/", ""):
-            return LsResult(error="Open /research/context.json or /evidence/index/0.json.")
+            return LsResult(error="Open /research/context.json or /evidence/index.json.")
         try:
             async with self._connections() as conn:
                 await resolve_authority(conn, self._scope, self._execution_id)
@@ -403,6 +421,20 @@ class ResearchViewMount(EvidenceWorkspace):
                     if self._evidence
                     else ("/context.json", "/catalog/0.json", "/claims/0.json")
                 )
+            ]
+        )
+
+    async def aglob(self, pattern: str, path: str | None = None) -> GlobResult:
+        from pathlib import PurePosixPath
+
+        listing = await self.als(path or "/")
+        if listing.error:
+            return GlobResult(error=listing.error)
+        if not pattern or ".." in PurePosixPath(pattern).parts:
+            return GlobResult(error="Use a file-name glob pattern within this research view.")
+        return GlobResult(
+            matches=[
+                row for row in listing.entries or [] if PurePosixPath(row["path"]).match(pattern)
             ]
         )
 
@@ -420,6 +452,9 @@ def research_backend(
 
     return CompositeBackend(
         default=default,
+        # Deep Agents places compaction archives and large tool results under this root.
+        # /work is already private, readable and writable in every research profile.
+        artifacts_root="/work",
         routes={
             "/research/": ResearchViewMount(
                 connections, storage, scope, execution_id, capabilities=capabilities

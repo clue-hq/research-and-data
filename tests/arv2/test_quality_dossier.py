@@ -26,7 +26,12 @@ def test_dossier_resources_are_pinned_account_only_with_same_tools(tmp_path):
     assert quality_profiles(tools, version=13, person=True).resolve(AgentRole.ACCOUNT_RESEARCH) == (
         quality_profiles(tools, version=12, person=True).resolve(AgentRole.ACCOUNT_RESEARCH)
     )
-    assert json.loads(load_quality_resources("arv2-account").profile.body)["recipe_version"] == 13
+    assert (
+        json.loads(load_quality_resources("arv2-account", version=13).profile.body)[
+            "recipe_version"
+        ]
+        == 13
+    )
     assert uses_account_dossier(scope(13))
     assert not uses_account_dossier(scope(12))
     assert not uses_account_dossier(scope(13, person=True))
@@ -35,16 +40,34 @@ def test_dossier_resources_are_pinned_account_only_with_same_tools(tmp_path):
 def test_inventory_does_not_equate_retrieval_with_reading_or_invent_source_links():
     report = (
         "[Known](https://example.test/source). More: "
-        "https://example.test/unfetched. /evidence/s2/0.json"
+        "https://example.test/unfetched. /evidence/0002-web-snapshot.json"
     )
     inventory = source_inventory(
         report,
         [
-            {"source_id": "s1", "source_url": "https://example.test/source", "available": True},
-            {"source_id": "s2", "source_url": None, "available": True},
-            {"source_id": "s3", "source_url": "https://example.test/extra", "available": True},
+            {
+                "source_id": "s1",
+                "revision": 1,
+                "kind": "web_snapshot",
+                "source_url": "https://example.test/source",
+                "available": True,
+            },
+            {
+                "source_id": "s2",
+                "revision": 2,
+                "kind": "web_snapshot",
+                "source_url": None,
+                "available": True,
+            },
+            {
+                "source_id": "s3",
+                "revision": 3,
+                "kind": "web_snapshot",
+                "source_url": "https://example.test/extra",
+                "available": True,
+            },
         ],
     )
-    assert [s["citation_match"] for s in inventory["sources"]] == ["url", "source_id", None]
+    assert [s["citation_match"] for s in inventory["sources"]] == ["url", "path", None]
     assert inventory["unmatched_cited_urls"] == ["https://example.test/unfetched"]
     assert "not proof of reading" in inventory["interpretation"]

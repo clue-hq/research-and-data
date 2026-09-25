@@ -1,0 +1,63 @@
+schema_version: '1'
+kind: profile
+name: quality-research-claims
+version: v14
+status: active
+role: research_claims
+prompt:
+  name: quality-research-claims
+  version: v14
+  sha256: 1815ae9faa45a0fb1cc9715311b26be35a7527bce9fa0bcc3185f3fdc5ffdb6a
+skills:
+- name: governed-evidence
+  version: v3
+  sha256: 8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22
+tools:
+- name: record_research_finding
+  version: '2'
+  input_schema_sha256: 502e43eeaef9a277b03fa5ab6445473e6d0587b873807166aac43013e0e5b5e5
+  output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+- name: search_evidence
+  version: '2'
+  input_schema_sha256: d6eee650044a263b8d59f276ce887ccdd314816cb7f736ccc360e7760107ab4d
+  output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+- name: record_research_disposition
+  version: '2'
+  input_schema_sha256: ab84cc6ece3a67ba0f3c6076915bbdf6f48a3256a7ed15053a0975c42caea6ed
+  output_schema_sha256: d5458cf618b731af3058bd1bacf7100d2993c66a59d478b96d1ee01685f2d913
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 120.0
+  max_retries: 2
+  max_output_tokens: 16384
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .yaml
+  readable_prefixes:
+  - .deepagent
+  - inputs
+  - context
+  - work
+  - outputs
+  - research
+  - evidence
+  writable_prefixes:
+  - work
+  - outputs
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 64
+turn_timeout_s: 1800.0
+max_model_rounds: 100

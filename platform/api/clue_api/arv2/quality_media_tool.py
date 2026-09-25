@@ -26,7 +26,7 @@ class SubmitTranscriptClaimTool(_ResearchWriteTool):
         "A personal voice needs a same-recording self-introduction and consistent speaker label; "
         "episode titles and model labels alone remain qualified. Repairs require rechecking "
         "current "
-        "versions. Recover refused references through /evidence/index/0.json without a paid call."
+        "versions. Recover refused references through /evidence/index.json without a paid call."
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -51,7 +51,7 @@ class SubmitTranscriptClaimTool(_ResearchWriteTool):
             references=TranscriptClaimReceipt(
                 **asdict(receipt),
                 recovery=(
-                    "Read /evidence/index/0.json, then the transcript segment view; correct the "
+                    "Read /evidence/index.json, then the transcript segment view; correct the "
                     "reference using a new proposal key. Do not repeat acquisition."
                     if receipt.status == "refused"
                     else None

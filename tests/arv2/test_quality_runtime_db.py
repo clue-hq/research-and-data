@@ -18,6 +18,7 @@ from clue_agents import (
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.account_research_catalog import RESEARCH_PROVIDER_POLICY
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_execution import Allowance
 from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
 from clue_config import load_settings
@@ -58,7 +59,7 @@ class Models:
                         "role": "research_claims",
                         "goal": "Map the saved staff count.",
                         "instructions": (
-                            "Inspect the original provider record through /evidence/index/0.json. "
+                            "Inspect the original provider record through /evidence/index.json. "
                             "Record the supported count and processing receipt."
                         ),
                     },
@@ -93,7 +94,7 @@ class Models:
             script = [
                 call(
                     "read_file",
-                    {"file_path": f"/evidence/{self.source.source_id}/0.json"},
+                    {"file_path": source_path(self.source.model_dump())},
                     "child-read",
                 ),
                 call(
@@ -145,7 +146,11 @@ class Models:
                     "operation_key": "staff",
                     "topic": "Staff count",
                     "finding": "64 employees",
-                    "source_ids": [str(self.source.source_id)],
+                    **(
+                        {"source_paths": [source_path(self.source.model_dump())]}
+                        if (self.scope.input_refs or {}).get("quality_recipe_version", 5) >= 14
+                        else {"source_ids": [str(self.source.source_id)]}
+                    ),
                 },
                 "submit",
             )
@@ -159,7 +164,7 @@ class Models:
                             "file_path": "/outputs/account-dossier.md",
                             "content": (
                                 "# Account findings\n\n64 employees. Source: "
-                                f"/evidence/{self.source.source_id}/0.json\n"
+                                f"{source_path(self.source.model_dump())}\n"
                             ),
                         },
                         "dossier",
@@ -179,7 +184,7 @@ class Models:
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13, 14])
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
     tmp_path, revision, monkeypatch
 ):

@@ -153,7 +153,7 @@ async def read_transcript(
             else None,
         }
     raise EvidenceUnavailable(
-        "invalid transcript reference; read /evidence/index/0.json for valid versions"
+        "invalid transcript reference; read /evidence/index.json for valid versions"
     )
 
 

@@ -31,7 +31,7 @@ class RecordFindingInput(ToolInput):
 
 class RecordResearchFindingTool(_ResearchWriteTool):
     name = "record_research_finding"
-    input_model = RecordFindingInput
+    input_model: ClassVar[type[ToolInput]] = RecordFindingInput
     output_model: ClassVar[type[ToolOutput]] = ResearchClaimReceipt
     model_description = (
         "Save a research finding in plain language or JSON. Supply a topic, the finding, saved "
@@ -91,4 +91,38 @@ class RecordResearchFindingTool(_ResearchWriteTool):
             tool=self.name,
             version=self.version,
             references=ResearchClaimReceipt(**asdict(receipt)).model_dump(mode="json"),
+        )
+
+
+class RecordPathFindingInput(ToolInput):
+    operation_key: str = Field(min_length=1, max_length=200)
+    topic: str = Field(min_length=1, max_length=200)
+    finding: JsonValue
+    source_paths: tuple[str, ...] = Field(
+        default=(), description="Exact readable paths from /evidence/index.json."
+    )
+    notes: str = ""
+
+
+class RecordPathResearchFindingTool(RecordResearchFindingTool):
+    version = "2"
+    input_model = RecordPathFindingInput
+    model_description = RecordResearchFindingTool.model_description.replace(
+        "source IDs", "source_paths copied from /evidence/index.json or ls /evidence"
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        from clue_api.arv2.quality_evidence import resolve_source
+
+        args = RecordPathFindingInput.model_validate(inputs)
+        authority = await self.authority(ctx)
+        async with ctx.conn_factory() as conn:
+            ids = tuple(
+                [
+                    (await resolve_source(conn, authority.grant, path)).source_id
+                    for path in args.source_paths
+                ]
+            )
+        return await super().invoke(
+            RecordFindingInput(**args.model_dump(exclude={"source_paths"}), source_ids=ids), ctx
         )

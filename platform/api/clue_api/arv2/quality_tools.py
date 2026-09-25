@@ -15,6 +15,7 @@ from pydantic import Field, model_validator
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_claims import ClaimProposal, ClaimSupport, submit_proposal
 from clue_api.arv2.quality_evidence import JsonSupport, TextSupport, validate_support
@@ -246,7 +247,7 @@ class SearchEvidenceOutput(ToolOutput):
 
 class SearchEvidenceTool(_ResearchWriteTool):
     name = "search_evidence"
-    input_model = SearchEvidenceInput
+    input_model: ClassVar[type[ToolInput]] = SearchEvidenceInput
     output_model = SearchEvidenceOutput
     effect_class = ToolEffectClass.READ
     model_description = (
@@ -256,11 +257,12 @@ class SearchEvidenceTool(_ResearchWriteTool):
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        from clue_api.arv2.quality_evidence import search_source
+        from clue_api.arv2.quality_evidence import resolve_source, search_source
 
         args = SearchEvidenceInput.model_validate(inputs)
         authority = await self.authority(ctx)
         async with ctx.conn_factory() as conn:
+            source = await resolve_source(conn, authority.grant, args.source_id)
             result = await search_source(
                 conn,
                 self.storage,
@@ -277,7 +279,7 @@ class SearchEvidenceTool(_ResearchWriteTool):
                 EvidenceMatch(
                     start=m["start"],
                     end=m["end"],
-                    path=f"/evidence/{args.source_id}/{max(0, m['start'] - 160)}.json",
+                    path=source_path(source.model_dump()),
                 )
                 for m in result["matches"]
             ),
@@ -303,7 +305,7 @@ class ProcessingDispositionOutput(ToolOutput):
 
 class ProcessingDispositionTool(_ResearchWriteTool):
     name = "record_research_disposition"
-    input_model = ProcessingDispositionInput
+    input_model: ClassVar[type[ToolInput]] = ProcessingDispositionInput
     output_model = ProcessingDispositionOutput
     model_description = (
         "Record which source unit was processed, excluded, conflicted, or needs follow-up and why. "
@@ -349,4 +351,65 @@ class ProcessingDispositionTool(_ResearchWriteTool):
         )
         return ToolResult(
             tool=self.name, version=self.version, references=value.model_dump(mode="json")
+        )
+
+
+class SearchPathEvidenceInput(ToolInput):
+    source_path: str = Field(description="Exact readable path from /evidence/index.json.")
+    query: str = Field(min_length=1, max_length=500)
+    start: int = Field(default=0, ge=0)
+    limit: int = Field(default=10, ge=1, le=20)
+
+
+class SearchPathEvidenceTool(SearchEvidenceTool):
+    version = "2"
+    input_model = SearchPathEvidenceInput
+    model_description = (
+        SearchEvidenceTool.model_description
+        + " Supply the readable source_path from the evidence index."
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        from clue_api.arv2.quality_evidence import resolve_source
+
+        args = SearchPathEvidenceInput.model_validate(inputs)
+        authority = await self.authority(ctx)
+        async with ctx.conn_factory() as conn:
+            source = await resolve_source(conn, authority.grant, args.source_path)
+        return await super().invoke(
+            SearchEvidenceInput(
+                **args.model_dump(exclude={"source_path"}), source_id=source.source_id
+            ),
+            ctx,
+        )
+
+
+class PathProcessingDispositionInput(ToolInput):
+    source_path: str = Field(description="Exact readable path from /evidence/index.json.")
+    unit_locator: str = Field(min_length=1, max_length=300)
+    decision: Literal["written", "reused", "excluded", "conflict", "unprocessed", "gap"]
+    reason: str = Field(min_length=1, max_length=4000)
+    claim_ids: tuple[UUID, ...] = Field(default=(), max_length=50)
+
+
+class PathProcessingDispositionTool(ProcessingDispositionTool):
+    version = "2"
+    input_model = PathProcessingDispositionInput
+    model_description = (
+        ProcessingDispositionTool.model_description
+        + " Supply the readable source_path from the evidence index."
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        from clue_api.arv2.quality_evidence import resolve_source
+
+        args = PathProcessingDispositionInput.model_validate(inputs)
+        authority = await self.authority(ctx)
+        async with ctx.conn_factory() as conn:
+            source = await resolve_source(conn, authority.grant, args.source_path)
+        return await super().invoke(
+            ProcessingDispositionInput(
+                **args.model_dump(exclude={"source_path"}), source_id=source.source_id
+            ),
+            ctx,
         )

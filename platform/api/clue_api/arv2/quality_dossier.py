@@ -20,8 +20,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
+from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_authority import resolve_authority
-from clue_api.arv2.quality_evidence import list_sources
+from clue_api.arv2.quality_evidence import EvidenceGrant, list_sources
 from clue_api.quality_research_artifacts import ResearchArtifacts
 from clue_db import ConnFactory
 from clue_obs import get_logger
@@ -48,6 +49,7 @@ def source_inventory(markdown: str, sources: list[dict[str, Any]]) -> dict[str, 
     entries = []
     for source in sources:
         sid = source["source_id"]
+        path = source_path(source) if source.get("available") else None
         entries.append(
             {
                 **{
@@ -65,9 +67,11 @@ def source_inventory(markdown: str, sources: list[dict[str, Any]]) -> dict[str, 
                         "available",
                     )
                 },
-                "path": f"/evidence/{sid}/0.json",
+                "path": path,
                 "citation_match": (
-                    "source_id"
+                    "path"
+                    if path and path in markdown
+                    else "source_id"
                     if sid in markdown
                     else "url"
                     if source.get("source_url") in urls
@@ -94,6 +98,7 @@ async def read_dossier(
     *,
     context_id: UUID,
     version: int | None = None,
+    grant: EvidenceGrant | None = None,
 ) -> dict[str, Any]:
     if scope.person_subject_id is not None:
         raise ValueError("account dossier is not a person-scoped evidence view")
@@ -139,6 +144,15 @@ async def read_dossier(
     )
     if ref.content_sha256 != manifest["report"]["sha256"]:
         raise ValueError("dossier content differs from its saved version")
+    if grant is not None:
+        # Navigation is a current scoped view, including for retained dev dossiers.
+        # The saved report and manifest bytes remain unchanged.
+        available = await list_sources(conn, grant, limit=0)
+        paths = {s["source_id"]: s for s in available["sources"] if s.get("available")}
+        for entry in manifest.get("source_inventory", {}).get("sources", []):
+            current = paths.get(entry["source_id"])
+            entry["path"] = current["path"] if current else None
+            entry["available"] = current is not None
     return {**manifest, "manifest_key": key, "markdown": body.decode("utf-8")}
 
 

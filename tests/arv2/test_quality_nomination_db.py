@@ -149,7 +149,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     **args.model_dump(),
                     research_brief="Research Dana for the selected seller. Read the full "
                     "person charter; explore the hiring initiative and earlier career. "
-                    "Consult /research/context.json and /evidence/index/0.json.",
+                    "Consult /research/context.json and /evidence/index.json.",
                 )
             receipt = await nominate.invoke(args, context)
             replay = await nominate.invoke(args, context)
@@ -213,7 +213,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     "brief"
                 ] == args.research_brief
                 # Originals and full pinned documents remain readable from the person job.
-                evidence = await read(view, "/evidence/index/0.json")
+                evidence = await read(view, "/evidence/index.json")
                 assert evidence["sources"]
                 for path in context_view["document_paths"].values():
                     assert await read_document(view, path)
