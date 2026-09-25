@@ -1,7 +1,11 @@
-# Account dossier to claims — review draft 1
+# Account dossier to claims — review draft 2
 
 Status: isolated harness implemented, inputs prepared and offline writer checks
 passed on 25 September 2026. The explicitly approved model trial completed with 53 records.
+Revision 2 strengthens public-statement preservation and granularity, adds a
+section-by-section guide, and adds `potential_conflict` with scoped claim references
+to the isolated writer. These changes have not been live-tested. Run-01 remains
+frozen under its original prompt, skill and four-status contract.
 No production skill/profile or application tool contract has been promoted.
 See `.artifacts/account-claims-trial-20260925/run-01/REVIEW.md` for remaining quality gaps.
 
@@ -14,16 +18,19 @@ than running both at once. See the execution receipt below for this first trial.
 
 ## Scope and ownership
 
-One account research Deep Agent converts the retained r13 initial Zafran dossier
+The isolated claim-writing agent converts the retained r13 initial Zafran dossier
 and its corresponding original account sources into claims in an isolated test
-context. It writes directly; no claim specialist, person jobs, reconciliation,
+context. Run-01 used the account model directly. The next proposed deployment is
+one cheaper claim-writing subagent per entity, with the research agent retaining
+responsibility for coverage; that delegation has not been wired by this revision.
+The trial writer performs its own claim writes; no further delegation, person jobs, reconciliation,
 new research, enrichment, narrative generation or publication. A fresh execution
 will read saved research; this trial does not prove the benefit of retaining the
 original researcher's conversation context.
 
 The founder's current ruling governs this trial: claim content is an observation
 or reported statement. Agent interpretation is optional attached context, never
-a standalone factual claim. Duplicate, wrong-entity and insufficient-context
+a standalone factual claim. Duplicate, wrong-entity, insufficient-context and potential-conflict
 records remain stored and reviewable. No additional verification process, quote
 offset requirement, field-classification gate or coverage-completion gate is proposed.
 
@@ -53,6 +60,7 @@ The proposed agent-facing writing arguments are:
     "status": "supported",
     "reason": "Brief explanation of the status",
     "duplicate_of": null,
+    "conflicts_with": [],
     "expected_entity": null
   },
   "agent_interpretation": null
@@ -76,12 +84,17 @@ otherwise supported records. There is no numeric confidence threshold.
 | `duplicate` | Equivalent to another stored claim; `duplicate_of` is that real claim ID. Preserve the duplicate record and its sources. |
 | `wrong_entity` | The material does not concern the trial target. `expected_entity` records a known name/domain/profile and optional already-known entity ID; otherwise null. Explain why; never guess a replacement identity. |
 | `insufficient_context` | The proposed assertion remains unclear from available material. Preserve what was actually found and name the missing context; do not invent the missing assertion. |
+| `potential_conflict` | Retained evidence appears inconsistent with another same-subject claim. `conflicts_with` must reference one or more already-stored claims in this isolated trial; explain relevant dates and why the discrepancy remains. Both records survive. |
 
 Primary status precedence for overlapping issues: wrong entity, then insufficient
-context, then duplicate, otherwise supported. Put additional concerns in
+context, then potential conflict, then duplicate, otherwise supported. Put additional concerns in
 qualifications/reason. This is writing guidance, not a semantic rules engine.
-Contradictory attributed statements can both be supported as statements; record
-the conflict in qualifications instead of silently choosing a winner.
+Contradictory attributed statements may each have evidence. Retain both and use
+potential-conflict status and references for the unresolved discrepancy. A newer
+clearly dated update can establish the preferred current state while the older
+record remains historical. A crawl date alone cannot establish that preference.
+`conflicts_with` is also allowed under a higher-priority review status. Conflicting
+records remain connected by the one-way link without inventing reciprocal updates.
 
 `agent_interpretation` explains possible significance or a hypothesis. It cannot
 introduce an unsupported premise into the factual finding, acquire its own claim
@@ -100,9 +113,9 @@ entity during this single-account exercise.
 | `quality_findings.py`, `record_research_finding@3` | Already accepts topic, JSON finding, readable source paths and notes; calculates canonical content identity within a job. Extend the same writer in an isolated version/profile to accept the proposed metadata. Do not fork claim persistence. |
 | `quality_claims.py`, `FindingProposal` / `submit_proposal` | Already stores value JSON, source support, subject/context, provenance and assessment history. Map observation to `observation`, reported statement to existing `attributed_statement`; do not expose `inference` in this trial. |
 | `claim.value_json` | Store topic, finding and the proposed metadata together; no separate claims database and no new claim table are needed for the experiment. Runtime-owned identity stays in existing columns. |
-| `claim_quality_current` and assessment history | Keep distinct from the new detailed review status. Proposed mapping: supported -> supported (qualified if limitations); duplicate -> qualified; wrong_entity -> invalid; insufficient_context -> unresolved. These are the agent's recorded assessments, not an additional judge. |
+| `claim_quality_current` and assessment history | Keep distinct from the new detailed review status. Proposed mapping: supported -> supported (qualified if limitations); duplicate -> qualified; wrong_entity -> invalid; insufficient_context -> unresolved; potential_conflict -> qualified with explicit linked-conflict notes. These are the agent's recorded assessments, not an additional judge. |
 | `quality_tools.py`, correction operations | Existing correction/withdrawal/conflict tools preserve history. They do not currently expose this new review vocabulary. Before execution, make the isolated writer's changed-record handling explicit; a changed payload alone creates another record, not a correction. |
-| `quality_views.py` / ordinary quality readers | Read JSON and audit state, but do not implement this proposed review contract. An isolated review exporter must include all four statuses and supersession history while respecting scope and source erasure. Do not use an ordinary supported-only reader to evaluate coverage. |
+| `quality_views.py` / ordinary quality readers | Read JSON and audit state, but do not implement this proposed review contract. An isolated review exporter must include all five statuses and supersession history while respecting scope and source erasure. Do not use an ordinary supported-only reader to evaluate coverage. |
 
 Important current limitation: `record_research_finding@3` defaults the outer claim
 kind to observation and constructs a supported assessment with qualifications.
@@ -111,8 +124,8 @@ The proposed skill must not be run against the unchanged v3 tool pretending thes
 semantics are implemented. An isolated compatible tool/profile and exporter are
 prerequisites now implemented by the isolated harness described below.
 
-The existing `Quality` vocabulary has no duplicate status/link. Store the detailed
-review object in value JSON, validate duplicate references within the isolated
+The existing `Quality` vocabulary has no duplicate or potential-conflict status/link. Store the detailed
+review object in value JSON, validate duplicate/conflict references within the isolated
 account/context, and do not overload `superseded_by` to mean duplicate. Supersession
 continues to mean an explicit correction. Exact retries reuse their receipt;
 distinct source occurrences may produce retained duplicate records. Do not create
@@ -198,3 +211,59 @@ source and input digest.
 Review the written findings and omissions before any production integration or
 additional paid iteration. A successful tool run does not establish exhaustive
 coverage or factual correctness.
+
+## Claim kinds, review status and topics are separate
+
+The isolated tool exposes only `observation` and `reported_statement`. The latter
+maps to the shared writer's `attributed_statement`. The shared proposal schema also
+supports `inference`, but it remains excluded from this experiment; interpretation
+is attached context, not a factual claim kind. All trial records use the existing
+`account.research_finding` field. Funding, public voice, hiring, events and workflows
+are topics within that field, not a new catalog of database claim kinds.
+
+The five review statuses describe how to read a claim, not what kind of evidence
+it contains. `potential_conflict` therefore belongs beside supported/duplicate,
+not beside observation/reported statement. No production schema migration or
+production reader change is included.
+
+## Cheaper model and subagent direction — proposed next trial
+
+The founder now prefers trying a cheaper dedicated writer. This changes the earlier
+choice that the research model itself should perform conversion. Keep research
+ownership with the parent; assign conversion to one child per entity with the same
+source access, skill, claim tools, attribution and all-status coverage report.
+Do not split into one child per dossier section: that duplicates reading and makes
+overlap and conflict handling harder. The child returns durable claim references,
+coverage and unresolved issues; the parent reviews those against research goals
+instead of repeating every extraction step.
+
+Candidate: `deepseek/deepseek-v4-flash`, the exact V4 Flash identifier confirmed on
+[OpenRouter](https://openrouter.ai/deepseek/deepseek-v4-flash) on 25 September 2026.
+The newer `deepseek/deepseek-v4.1-flash` also exists, but is a different model; do not
+silently substitute it. Provider pricing/routing varies. Actual cost and fidelity
+must be measured on the frozen inputs. The first run's $2.11 is not an estimate
+for the next model.
+
+First exercise the cheaper writer independently on the same saved dossier/originals
+with these revised instructions, then wire the tested writer under the parent.
+Because instructions and model both change, that comparison tests the proposed
+configuration as a whole, not an isolated claim of model superiority. No new paid
+run, environment/model change or subagent integration occurred in this revision.
+When integrated, reuse the existing research-claims model role/settings and governed
+subagent machinery; do not change the main account research model just to lower
+claim-writing cost.
+
+Proposed parent-to-writer assignment (bind references, do not paraphrase evidence):
+
+> Convert the completed investigation for {account name/domain} into claims. Read
+> the claim-writing skill at {skill ref}, the dossier at {dossier ref}, and the
+> original source inventory at {source index}. Seller/ICP/persona context is at
+> {context refs}. Preserve meaningful facts and the actual public statements,
+> especially their distinctive language and qualifications. Follow the skill's
+> granularity and section guidance; the dossier may have omitted source findings.
+> Use the scoped writer and read-back tools. Retain uncertainty and linked potential
+> conflicts. Return stored claim references, coverage and unresolved items through
+> {output refs}. Do not acquire new research, launch person jobs or write page copy.
+
+This is delegation by the parent, not permission for the writer to delegate again.
+The system/task drafts prohibit further delegation inside the writing job.

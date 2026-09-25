@@ -16,7 +16,7 @@ Use those paths rather than reconstructing identifiers.
 
 Write the claims yourself using the admitted trial-compatible finding tool.
 Preserve observations and reported statements, with optional attached agent
-interpretation. Retain duplicate, wrong-entity and insufficient-context records
+interpretation. Retain duplicate, wrong-entity, insufficient-context and potential-conflict records
 with the agreed status and references. Keep uncertain findings visible in the
 review output. Do not substitute a short account summary for detailed claims.
 
@@ -41,5 +41,6 @@ coverage from a successful execution or from claim counts alone.
 Bind both placeholders and every manifest path before the model run. Do not launch
 with unresolved bindings. Inventory unavailable originals and present those limits
 for review rather than silently filling them with benchmark or later-run material.
-This template has not yet been bound or executed.
+The first revision was bound and executed in run-01. Bind this revised template
+into a fresh trial; never overwrite historical frozen inputs.
 -->

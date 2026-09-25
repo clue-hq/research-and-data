@@ -74,3 +74,22 @@
 - Ruff, py_compile and whitespace checks pass. Shared real-DB smoke passed before
   execution; no repeated paid research. Local per-turn traces and exact executed
   runner snapshot retained; Langfuse warnings documented in review.
+
+## Revision 2: statement preservation, granularity and linked conflicts
+
+- Founder requests explicit public-statement preservation across media/books/posts,
+  stronger independently assessable claim units and section-wise dossier guidance.
+  Updated draft SYSTEM/SKILL/TASK and README; initial trial artifacts unchanged.
+- Added potential_conflict review status and conflicts_with claim IDs to isolated
+  harness only. Same-trial references validated; pair retained, mapped qualified
+  with explanation; no supersession, new production gates or schema migration.
+- Recency guidance prefers newer relevant dated state, keeps history, distinguishes
+  retrieval dates, and checks parsing/scope before declaring a contradiction.
+- Founder now prefers a cheaper dedicated writer. Documented proposed DeepSeek V4
+  Flash test then one governed writing child per entity under researcher ownership.
+  No model/env or production delegation changes; no new paid call in this revision.
+- Four focused offline tests pass for link requirements, replay normalization,
+  cross-trial reference rejection, and shared-writer mapping without replacement.
+  Initial pytest.mark.asyncio attempt failed because plugin unavailable; switched
+  tests to repository-style asyncio.run. Ruff/compile/whitespace checks pass.
+  Five-status DB smoke is prepared but not rerun against preserved run-01.

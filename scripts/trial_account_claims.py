@@ -94,9 +94,12 @@ def scope_from(m):
 
 class Review(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["supported", "duplicate", "wrong_entity", "insufficient_context"]
+    status: Literal[
+        "supported", "duplicate", "wrong_entity", "insufficient_context", "potential_conflict"
+    ]
     reason: str = Field(min_length=1)
     duplicate_of: UUID | None = None
+    conflicts_with: list[UUID] = Field(default_factory=list)
     expected_entity: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
@@ -105,6 +108,9 @@ class Review(BaseModel):
             raise ValueError(
                 "Only duplicate status requires duplicate_of, using a returned claim ID."
             )
+        if self.status == "potential_conflict" and not self.conflicts_with:
+            raise ValueError("potential_conflict requires conflicts_with returned claim IDs.")
+        self.conflicts_with = sorted(set(self.conflicts_with))
         return self
 
 
@@ -126,6 +132,13 @@ def assessment_for(args):
     notes = list(args.qualifications)
     if status == "duplicate":
         notes.append(f"Duplicate of {args.review.duplicate_of}")
+    if args.review.conflicts_with:
+        notes.append(
+            "Potential conflict with claims: "
+            + ", ".join(str(claim_id) for claim_id in args.review.conflicts_with)
+            + "; both records remain retained. "
+            + args.review.reason
+        )
     if not args.source_paths:
         notes.append("No original source reference attached.")
     return SemanticAssessment(
@@ -182,8 +195,11 @@ class Writer:
         unknown = set(args.source_paths) - self.sources.keys()
         if unknown:
             raise ValueError(f"Use an exact source path from /evidence/index.md: {sorted(unknown)}")
-        if args.review.duplicate_of:
+        if args.review.duplicate_of or args.review.conflicts_with:
             known = {r["id"]: r for r in await self.rows(conn)}
+            if set(args.review.conflicts_with) - known.keys():
+                raise ValueError("conflicts_with must name stored claims from this isolated trial.")
+        if args.review.duplicate_of:
             if args.review.duplicate_of not in known:
                 raise ValueError("duplicate_of must name a stored claim from this isolated trial.")
             if known[args.review.duplicate_of]["value_json"]["review"]["status"] == "duplicate":
@@ -255,6 +271,11 @@ class Writer:
             )
             if review.get("duplicate_of"):
                 lines.append(f"Duplicate of: `{review['duplicate_of']}`")
+            if review.get("conflicts_with"):
+                lines.append(
+                    "Potential conflict with: "
+                    + ", ".join(f"`{claim_id}`" for claim_id in review["conflicts_with"])
+                )
             if review.get("expected_entity"):
                 lines.append(f"Expected entity: {review['expected_entity']}")
             if v.get("agent_interpretation"):
@@ -474,17 +495,19 @@ async def smoke(writer):
                 ("duplicate", "qualified"),
                 ("wrong_entity", "invalid"),
                 ("insufficient_context", "unresolved"),
+                ("potential_conflict", "qualified"),
             ]
             for status, expected in cases:
                 r = Review(
                     status=status,
                     reason="Offline metadata probe",
                     duplicate_of=first["claim_id"] if status == "duplicate" else None,
+                    conflicts_with=[first["claim_id"]] if status == "potential_conflict" else [],
                 )
                 receipt = await writer.write(conn, Finding(**base, review=r))
                 assert receipt["status"] == expected and receipt["claim_id"]
             rows = await writer.rows(conn)
-            assert len(rows) == 4 and all(
+            assert len(rows) == 5 and all(
                 r["write_markers"]["claim_kind"] == "attributed_statement" for r in rows
             )
             try:
