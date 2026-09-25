@@ -28,6 +28,7 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_agents.tool_recovery import ToolRepairRoundsMiddleware
 from clue_core.provider_failures import classify_exception, failure_code
 from clue_obs import get_logger
 
@@ -338,6 +339,7 @@ class DeepAgentTurnRuntime:
                 tools=list(governed_tools),
                 system_prompt=resolved_profile.prompt_body,
                 middleware=(
+                    ToolRepairRoundsMiddleware(),
                     ExactAgentToolSurfaceMiddleware(
                         profile=resolved_profile,
                         # Some reviewed profile capabilities are constitution-dependent.  For

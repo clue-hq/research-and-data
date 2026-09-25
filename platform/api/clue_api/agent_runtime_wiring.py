@@ -49,6 +49,7 @@ from clue_agents.contracts import (
     ReasonCode,
     normalize_virtual_path,
 )
+from clue_agents.tool_recovery import MAX_TOOL_REPAIR_ROUNDS
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus, ModelCostSource
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
@@ -100,13 +101,6 @@ log = get_logger("clue_api.agent_runtime_wiring")
 
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
-
-# One turn's budget for *refused* governed invocations, shared by every governed tool the model
-# holds. The hard ceiling is already there — ``DeepAgentTurnRuntime`` caps the graph at
-# ``max_rounds * 2 + 4`` supersteps, so a repair loop cannot run forever — but that ceiling is
-# reached only after ~24 further paid model calls. Three refusals is the point past which the model
-# is no longer misreading an argument contract, so the turn stops paying to find out.
-_MAX_GOVERNED_TOOL_FAILURES = 3
 
 _GOVERNED_TOOL_REPAIR_HELP = (
     "Nothing was recorded: no durable state changed and this operation did not happen. Correct "
@@ -404,6 +398,7 @@ class GovernedToolFailure(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    governed_repair_budgeted: bool = True
     error: Literal["plan_rejected", "operation_failed"]
     address: str
     node_key: str
@@ -839,7 +834,7 @@ class GovernedAgentToolFactory:
         self._stream = stream
         # Per-turn state: the factory is constructed once per turn, next to the turn's execution
         # adapter, so this budget is shared across every governed tool the model may call.
-        self._tool_failures = 0
+        # Repair rounds are checkpointed by ToolRepairRoundsMiddleware, never per-call counters.
 
     async def _check_work(self) -> None:
         if self._before_work is not None:
@@ -935,7 +930,7 @@ class GovernedAgentToolFactory:
                         f"{issue.location}: {issue.code}: {issue.message}"
                         for issue in rejected.review.issues
                     ),
-                    raise_when_exhausted=rejected,
+                    runtime=runtime,
                 )
             await self._check_work()
             final_progress = None
@@ -971,7 +966,7 @@ class GovernedAgentToolFactory:
                         f"{failure.error_type}: {failure.message}" for failure in failures
                     )
                     or ("the governed operation did not complete",),
-                    raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                    runtime=runtime,
                     budgeted=not honest_read,
                 )
             recovered = await self._execution.recover(
@@ -1054,29 +1049,11 @@ class GovernedAgentToolFactory:
         node_key: str,
         error_type: str,
         reasons: tuple[str, ...],
-        raise_when_exhausted: BaseException,
+        runtime: ToolRuntime,
         budgeted: bool = True,
     ) -> str:
-        """Hand one refused governed invocation back to the model, within a per-turn budget.
-
-        The refusal is a tool *result*, not an exception, because an exception raised out of a
-        ``StructuredTool`` coroutine ends the LangGraph run: the operation's durable failure record
-        was written, nothing committed, and the model was told nothing — it could not correct the
-        argument that was refused, and the turn died with no user-facing answer.
-
-        Once the budget is spent the original exception is raised, which is exactly today's
-        behaviour: the turn fails closed with its stable error code and still commits nothing.
-        A repeated refusal is not a misread argument contract, and each further attempt is a paid
-        model call.
-
-        W10: a refusal that is *not* ``budgeted`` is still operator-visible but costs the turn
-        nothing — a precondition refusal from an effect-free read has answered the question it was
-        asked, so it can neither exhaust the budget nor raise.
-        """
-
-        if budgeted:
-            self._tool_failures += 1
-        exhausted = budgeted and self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        """Return every failure; only the next model boundary may exhaust repair rounds."""
+        attempt = runtime.state.get("tool_repair_rounds", 0) + int(budgeted)
         log.warning(
             "agent.tool_repair",
             address=address,
@@ -1084,17 +1061,16 @@ class GovernedAgentToolFactory:
             error=error,
             error_type=error_type,
             reasons=list(reasons),
-            attempt=self._tool_failures,
-            exhausted=exhausted,
+            attempt=attempt,
+            exhausted=budgeted and attempt > MAX_TOOL_REPAIR_ROUNDS,
             budgeted=budgeted,
         )
-        if exhausted:
-            raise raise_when_exhausted
         return GovernedToolFailure(
             error=error,
             address=address,
             node_key=node_key,
             reasons=reasons,
+            governed_repair_budgeted=budgeted,
         ).model_dump_json()
 
     def _delegation_tool(self) -> BaseTool:
@@ -1132,7 +1108,7 @@ class GovernedAgentToolFactory:
                     node_key=f"delegate_{role.value}_{digest}",
                     error_type="virtual_view_is_not_a_file",
                     reasons=(reason,),
-                    raise_when_exhausted=ValueError(reason),
+                    runtime=runtime,
                 )
             domain_ref_inputs = list(model_input.domain_refs)
             if role is AgentRole.RESEARCH:

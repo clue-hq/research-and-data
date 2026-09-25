@@ -422,3 +422,70 @@ def test_honest_read_refusals_do_not_spend_the_repair_budget(
     assert [fields["budgeted"] for _, fields in emitted] == [False] * 5
     assert all(fields["exhausted"] is False for _, fields in emitted)
     assert len(calls.batches) == 6
+
+
+def test_seven_parallel_refusals_all_reach_the_next_model_round() -> None:
+    execution = _RefusingExecution(refusals=7)
+    batch = AIMessage(
+        content="", tool_calls=[_route_call(f"bad-{i}").tool_calls[0] for i in range(7)]
+    )
+    outcome, calls = _run(
+        (
+            batch,
+            _route_call("corrected", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 8
+    assert len(calls.batches) == 3
+    feedback = [m for m in calls.batches[1] if getattr(m, "type", None) == "tool"]
+    assert len(feedback) == 7
+    assert all(_VERIFIER_REFUSAL in str(m.content) for m in feedback)
+
+
+def test_failed_batch_preserves_successful_sibling_without_repeating_it() -> None:
+    execution = _RefusingExecution(refusals=7)
+    batch = AIMessage(
+        content="", tool_calls=[_route_call(f"sibling-{i}").tool_calls[0] for i in range(8)]
+    )
+    outcome, calls = _run(
+        (
+            batch,
+            _route_call("repair-only", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 9
+    feedback = [m for m in calls.batches[1] if getattr(m, "type", None) == "tool"]
+    assert len(feedback) == 8
+    assert sum(_VERIFIER_REFUSAL in str(m.content) for m in feedback) == 7
+
+
+def test_repair_round_state_survives_compaction_and_does_not_count_batch_twice() -> None:
+    from langchain_core.messages import ToolMessage
+
+    from clue_agents.tool_recovery import ToolRepairRoundsMiddleware
+
+    async def case():
+        middleware = ToolRepairRoundsMiddleware()
+        batch = _route_call("after-compaction")
+        state = {
+            "messages": [
+                batch,
+                ToolMessage(
+                    content='{"governed_repair_budgeted":true}', tool_call_id="after-compaction"
+                ),
+            ],
+            "tool_repair_rounds": 2,
+            "tool_repair_batch": ["archived-batch"],
+        }
+        update = await middleware.abefore_model(state, None)
+        assert update["tool_repair_rounds"] == 3
+        state.update(update)
+        assert await middleware.abefore_model(state, None) is None
+
+    run_async(case())

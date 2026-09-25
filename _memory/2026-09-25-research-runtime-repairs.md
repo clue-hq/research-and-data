@@ -94,3 +94,8 @@
 - Immutable recipe/profile revision 15 is the new launch default; historical resources retained.
 - Selected offline DB/runtime/catalog checks: 31 passed. /tmp/arv_runtime_checks.py blocks external sockets; escalated only for isolated local Docker/Postgres access after sandbox refused the socket. No external calls or fleet jobs this turn.
 - Next: whole-batch model feedback and explicit durable failed-attempt replacement.
+
+## Batch repair feedback checkpoint
+- Native Deep Agents before-model middleware now charges one repair round per completely settled failed batch, with checkpointed count/batch identity. Per-tool errors always return feedback; fourth failed round stops before another model call. Read precondition refusals remain non-budgeted.
+- Nine scripted-model offline checks passed: seven parallel failures all visible, mixed success retained, sequential exhaustion, plan rejection, checkpoint/compaction state and duplicate-batch handling.
+- Existing unrelated dirty account-research-briefing skill has a pin-digest mismatch. Tests use /tmp/arv_catalog_snapshot.py: isolated catalog copy, only that file restored from HEAD; the user's edit is untouched. No providers used.
