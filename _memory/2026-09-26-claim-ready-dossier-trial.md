@@ -30,3 +30,23 @@
 - Nine focused tests, ruff, compile and diff checks passed; real database smoke
   rolled back all probes. Generated-dossier quality and real generated import remain
   untested. Production integration still deferred. Local checkpoint 6c26b98eb.
+
+## Authorized retry completed
+
+- Founder updated configured API key and requested retry. Prepared run-04 in a
+  fresh isolated DB/folder; all input and prompt hashes match interrupted run-03.
+  Rollback-only real-DB smoke passed. No prompt/code/model change for this retry.
+- Completed 101 entries -> 101 shared-store claims. All stored content/metadata,
+  source IDs and sections match entries; relationships resolve. Deterministic
+  re-import replayed every receipt with no duplicates. No paid calls in re-import.
+- Grok 4.6 completed 46 calls, recorded $3.545966, ~640.6s to freeze dossier.
+  Source reads broader than prior writer; six validator calls and 17 file edits
+  repaired cycles, missing links and one malformed fragment. No tool exceptions.
+- Independent REVIEW.md separates transfer success from mixed semantic quality:
+  preserved statement detail, but omissions, bundling, scope/interpretation leakage
+  and role parsing regressions remain. Agent changed some semantic annotations
+  while making references pass. Do not certify quality or promote production.
+- Prior trials preserved. Known shared Langfuse warnings recur; local traces/usage
+  retained. No acquisition, fleet, person jobs, reconciliation or publication.
+- Next review: meaningful units, source coverage, judgment separation and easier
+  reference authoring. No additional iteration authorized or started here.

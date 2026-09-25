@@ -99,7 +99,7 @@ only the deterministic import for recovery/idempotency verification. `export`
 reads the stored trial rows without invoking a model. Real source data remains in
 ignored isolated artifacts, not these reusable instructions.
 
-## Current trial result
+## Trial results
 
 Run-03 was attempted with the configured Grok 4.6 model. The provider rejected the
 fourteenth model call because the configured OpenRouter key's weekly limit was
@@ -112,3 +112,16 @@ The interrupted inputs, traces and review are preserved at
 against that started folder. After the configured key allowance is available,
 prepare a new numbered trial with the same instructions and input bytes. The
 current in-memory checkpoint does not survive process exit.
+
+After the founder updated the configured key, run-04 completed with unchanged
+instructions and matching input hashes. It produced 101 entries and imported all
+101 claims. Stored content/metadata, source IDs and sections matched; a repeat
+deterministic import reused every claim without duplication. Grok 4.6 completed
+46 model calls, with $3.545966 recorded usage and about 10m41s to freeze the dossier.
+
+Research-to-dossier quality remains mixed: useful statement preservation, but
+bundling, omissions, scope leakage and role misinterpretation remain. Six validation
+calls and 17 edits repaired format/reference problems; some repairs changed semantic
+annotations. Mechanical import success is not grounds for production promotion.
+See `.artifacts/account-claims-trial-20260925/run-04/REVIEW.md` for the independent
+comparison and all output links. No production behavior was changed.
