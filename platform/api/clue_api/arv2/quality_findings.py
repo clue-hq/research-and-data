@@ -15,7 +15,9 @@ from clue_api.arv2.quality_claims import (
 from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.quality_tools import ResearchClaimReceipt, _ResearchWriteTool
 from clue_core import IdentityBinding, UseClass
+from clue_core.equality import canonical_json
 from clue_obs import get_logger
+from clue_storage import content_address
 from clue_toolbelt import ToolContext, ToolInput, ToolOutput, ToolResult
 
 log = get_logger(__name__)
@@ -126,3 +128,57 @@ class RecordPathResearchFindingTool(RecordResearchFindingTool):
         return await super().invoke(
             RecordFindingInput(**args.model_dump(exclude={"source_paths"}), source_ids=ids), ctx
         )
+
+
+class RecordContentFindingInput(ToolInput):
+    topic: str = Field(min_length=1, max_length=200)
+    finding: JsonValue
+    source_paths: tuple[str, ...] = Field(
+        default=(), description="Exact readable paths from /evidence/index.json."
+    )
+    notes: str = ""
+
+
+class RecordContentResearchFindingTool(RecordResearchFindingTool):
+    """New findings identify themselves by their canonical content within the research job.
+
+    This is exact retry protection, not semantic deduplication or a correction mechanism.
+    Old versions retain their immutable caller-key contract for already pinned executions.
+    """
+
+    version = "3"
+    input_model = RecordContentFindingInput
+    model_description = RecordPathResearchFindingTool.model_description + (
+        " Write identity is assigned automatically. An identical finding and sources replay "
+        "the existing receipt; different content creates a separate finding. Use correction "
+        "tools to change an earlier finding. Do not invent an operation key."
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        from clue_api.arv2.quality_evidence import resolve_source
+
+        args = RecordContentFindingInput.model_validate(inputs)
+        authority = await self.authority(ctx)
+        async with ctx.conn_factory() as conn:
+            ids = tuple(
+                sorted(
+                    {
+                        (await resolve_source(conn, authority.grant, path)).source_id
+                        for path in args.source_paths
+                    }
+                )
+            )
+        # Canonicalize object order as well as source order before both hashing and submission:
+        # submit_proposal checks the bytes of the immutable proposal on a retry.
+        import json
+
+        payload = json.loads(
+            canonical_json(
+                {
+                    **args.model_dump(mode="json", exclude={"source_paths"}),
+                    "source_ids": [str(id) for id in ids],
+                }
+            )
+        )
+        key = "finding:" + content_address(canonical_json(payload).encode())
+        return await super().invoke(RecordFindingInput(operation_key=key, **payload), ctx)

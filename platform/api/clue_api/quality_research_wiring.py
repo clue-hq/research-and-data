@@ -88,7 +88,11 @@ from clue_api.arv2.quality_execution import (
     reserve,
     runtime_remaining,
 )
-from clue_api.arv2.quality_findings import RecordPathResearchFindingTool, RecordResearchFindingTool
+from clue_api.arv2.quality_findings import (
+    RecordContentResearchFindingTool,
+    RecordPathResearchFindingTool,
+    RecordResearchFindingTool,
+)
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
@@ -204,6 +208,7 @@ def quality_tools(
         PublishResearchPageTool,
         RecordResearchFindingTool,
         RecordPathResearchFindingTool,
+        RecordContentResearchFindingTool,
         SearchPathEvidenceTool,
         PathProcessingDispositionTool,
         NominateSourceCommitteeTool,
@@ -265,7 +270,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: ("v14-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v14")
+            role: ("v15-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v15")
+            if version >= 15
+            else ("v14-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v14")
             if version >= 14
             else "v13"
             if version >= 13 and not person and role == AgentRole.ACCOUNT_RESEARCH

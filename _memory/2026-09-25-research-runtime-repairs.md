@@ -88,3 +88,9 @@
 - Closing checkpoint 2: final path-boundary follow-up passed (4 tests), including invented source
   numbers that must return useful feedback instead of overflowing the database integer type.
   No historical evidence deleted, no schema migration, and no remote publication.
+
+## Finding write identity checkpoint (2026-09-25)
+- New record_research_finding@3 derives its job-scoped identity from canonical content and canonical resolved source IDs. No model operation_key; exact retries replay, different payloads remain separate, explicit correction tools remain the update path.
+- Immutable recipe/profile revision 15 is the new launch default; historical resources retained.
+- Selected offline DB/runtime/catalog checks: 31 passed. /tmp/arv_runtime_checks.py blocks external sockets; escalated only for isolated local Docker/Postgres access after sandbox refused the socket. No external calls or fleet jobs this turn.
+- Next: whole-batch model feedback and explicit durable failed-attempt replacement.

@@ -143,7 +143,11 @@ class Models:
             script[1] = call(
                 "record_research_finding",
                 {
-                    "operation_key": "staff",
+                    **(
+                        {"operation_key": "staff"}
+                        if (self.scope.input_refs or {}).get("quality_recipe_version", 5) < 15
+                        else {}
+                    ),
                     "topic": "Staff count",
                     "finding": "64 employees",
                     **(
@@ -184,7 +188,7 @@ class Models:
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13, 14])
+@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13, 14, 15])
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
     tmp_path, revision, monkeypatch
 ):

@@ -9,7 +9,12 @@ from deepagents.backends.protocol import BackendProtocol
 from sqlalchemy import text
 
 from clue_api.arv2.quality_execution import Allowance, bind_execution
-from clue_api.arv2.quality_findings import RecordPathFindingInput, RecordPathResearchFindingTool
+from clue_api.arv2.quality_findings import (
+    RecordContentFindingInput,
+    RecordContentResearchFindingTool,
+    RecordPathFindingInput,
+    RecordPathResearchFindingTool,
+)
 from clue_api.arv2.quality_tools import (
     PathProcessingDispositionInput,
     PathProcessingDispositionTool,
@@ -81,6 +86,32 @@ def test_path_tools_preserve_canonical_evidence_and_reject_invented_names(tmp_pa
             receipt = await writer.invoke(args, ctx)
             assert receipt.version == "2"
             assert (await writer.invoke(args, ctx)).references["replayed"]
+            content_writer = RecordContentResearchFindingTool(job, storage, purge_unevidenced=False)
+            content = RecordContentFindingInput(
+                topic="staff",
+                finding={"count": 64, "qualifier": "reported"},
+                source_paths=(path,),
+            )
+            first = await content_writer.invoke(content, ctx)
+            assert first.version == "3"
+            # Equivalent object/source order reuses both the receipt and canonical proposal bytes.
+            retry = await content_writer.invoke(
+                content.model_copy(
+                    update={
+                        "finding": {"qualifier": "reported", "count": 64},
+                        "source_paths": (path, path),
+                    }
+                ),
+                ctx,
+            )
+            assert retry.references["replayed"]
+            assert retry.references["claim_id"] == first.references["claim_id"]
+            # Reusing the topic for a different fact can never cause the old key collision.
+            other = await content_writer.invoke(
+                content.model_copy(update={"finding": "Other fact"}), ctx
+            )
+            assert other.references["claim_id"] != first.references["claim_id"]
+            assert "operation_key" not in RecordContentFindingInput.model_fields
             claim = UUID(receipt.references["claim_id"])
             disposition = await PathProcessingDispositionTool(
                 job, storage, purge_unevidenced=False
