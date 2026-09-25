@@ -16,3 +16,17 @@
 - Authorized Grok/OpenRouter saved-data trial started with shared Langfuse and local
   traces. No fleet, person research, reconciliation, publication or new Exa/AI Ark.
   Results and quality assessment pending. Review production integration separately.
+
+## Closing checkpoint: provider limit
+
+- Run-03 ended during source reading: OpenRouter 403 weekly key limit exceeded.
+  Thirteen completed model calls, fourteenth rejected; no dossier-writing calls,
+  generated entries or trial claims. No tool/parser/import failure established.
+- Preserved local traces, frozen instructions and REVIEW.md/review-metrics.json in
+  the isolated folder. Source/context hashes match prior run. User notified and
+  asked to report when configured key allowance is available. No alternate key/model
+  or billing change attempted. Retry must preserve interrupted run; current harness
+  has an in-memory checkpoint, so do not claim durable in-place continuation.
+- Nine focused tests, ruff, compile and diff checks passed; real database smoke
+  rolled back all probes. Generated-dossier quality and real generated import remain
+  untested. Production integration still deferred. Local checkpoint 6c26b98eb.

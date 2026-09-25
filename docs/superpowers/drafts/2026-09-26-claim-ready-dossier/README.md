@@ -98,3 +98,17 @@ The model step is paid and requires task authorization. `import-dossier` can rep
 only the deterministic import for recovery/idempotency verification. `export`
 reads the stored trial rows without invoking a model. Real source data remains in
 ignored isolated artifacts, not these reusable instructions.
+
+## Current trial result
+
+Run-03 was attempted with the configured Grok 4.6 model. The provider rejected the
+fourteenth model call because the configured OpenRouter key's weekly limit was
+exhausted. Thirteen calls completed, but the agent had not yet written its dossier.
+No generated records were imported. Nine offline tests and the rollback-only real
+database smoke passed; research quality remains untested for this format.
+
+The interrupted inputs, traces and review are preserved at
+`.artifacts/account-claims-trial-20260925/run-03/`. Do not repeat the `run` command
+against that started folder. After the configured key allowance is available,
+prepare a new numbered trial with the same instructions and input bytes. The
+current in-memory checkpoint does not survive process exit.
