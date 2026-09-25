@@ -440,6 +440,8 @@ def test_frozen_contract_json_schema_digests() -> None:
     # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
     # Research quality Q4: admit two specialist roles and explicit trusted budget mode.
     # Existing plans decode to enforced; new roles are admitted by f4b30cb3d088.
+    # 2026-09-25: AgentPlan tool steps gain explicit retry_of failed-node references.
+    # Absent/empty retry_of is omitted on serialization, preserving historical proposal bytes.
     assert actual == {
         "AgentProfile": "f4480edc18fd37250f861018a7448c38c36355d8cf087b59c4a037a7e0b8507e",
         "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
@@ -450,7 +452,7 @@ def test_frozen_contract_json_schema_digests() -> None:
         # the merge commit (the in-commit contract-delta ritual).
         "AgentConstitution": ("45ab9cf133eedcc2c6d9eff6409da1b186c7d99286d101278d72eb1185fbf0ee"),
         "AgentTurnRequest": ("cd432d8372524ce2a2aa9e8977dfadfa3fa60eeb52a9bd5590b241d6a38161ac"),
-        "AgentPlan": "88a61868a570f8ad8bf0f45970603f363e7ca7e5bc20db6f2dbd05a901e1cc8a",
+        "AgentPlan": "86b4deb6954a986879f257a8b0e3197f4880761b330e87c0e4bbc028a02d54c0",
         "ValidatedPlan": ("cc19a5139945377d7a50fdde0ea8dba06de1882dcdd2215227379b5f94105fc1"),
         "DelegationRequest": ("50953fc74274f844c3af26eab94d5897f759ffb6d8a8bf365b459664acbfae95"),
         "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
@@ -464,3 +466,13 @@ def test_frozen_contract_json_schema_digests() -> None:
             "9c946fd10396d7dd002acc638a2e27f8729b62bd3b52a5bf188babe787c8dabe"
         ),
     }
+
+
+def test_tool_repair_metadata_is_explicit_and_absent_from_historical_plan_bytes():
+    from clue_agents.contracts import PlanToolStep
+
+    step = PlanToolStep(node_key="write", tool=tool_pin(), purpose="Write finding")
+    assert "retry_of" not in step.model_dump(mode="json")
+    repaired = step.model_copy(update={"retry_of": ("earlier-failure",)})
+    assert repaired.model_dump(mode="json")["retry_of"] == ["earlier-failure"]
+    assert repaired.arguments == {}

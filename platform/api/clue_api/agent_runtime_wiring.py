@@ -47,6 +47,7 @@ from clue_agents.contracts import (
     PlanDelegationStep,
     PlanToolStep,
     ReasonCode,
+    StableId,
     normalize_virtual_path,
 )
 from clue_agents.tool_recovery import MAX_TOOL_REPAIR_ROUNDS
@@ -103,9 +104,11 @@ _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
 
 _GOVERNED_TOOL_REPAIR_HELP = (
-    "Nothing was recorded: no durable state changed and this operation did not happen. Correct "
-    "exactly what the reasons name and call the tool again, or tell the human what is blocking "
-    "you. Do not report this as captured."
+    "No successful receipt was returned. Preserve successful sibling results. Correct what "
+    "the reasons name and retry only the failed work. For an executed failed attempt, supply "
+    "its node_key in retry_of (include earlier failed attempts of that same work too). "
+    "Plan rejections have no execution node: omit retry_of for them. Do not claim success "
+    "without a receipt; a late infrastructure error may occur after tool effects."
 )
 
 
@@ -392,8 +395,8 @@ class GovernedToolFailure(BaseModel):
     LangGraph run and the model was never told why (the live Stage-0 defect: a paraphrased claim
     value failed the interview verifier and the turn ended ``runtime_error`` in silence).
 
-    ``recorded`` is pinned ``False``: the durable failure record is unchanged, nothing committed,
-    and the model must not describe this operation as having happened.
+    ``recorded`` means no successful governed receipt was returned, not a guarantee of rollback.
+    Failed attempts remain auditable; late infrastructure errors may follow durable tool effects.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -558,6 +561,7 @@ def _with_trusted_runtime(
     model: type[BaseModel],
     *,
     name: str,
+    allow_repair: bool = False,
 ) -> type[BaseModel]:
     """Add LangGraph's injected runtime and hide trusted authority from the model-visible schema.
 
@@ -592,7 +596,24 @@ def _with_trusted_runtime(
             (model,),
             {
                 "__module__": __name__,
-                "__annotations__": {"runtime": ToolRuntime},
+                "__annotations__": {
+                    "runtime": ToolRuntime,
+                    **({"retry_of": tuple[StableId, ...]} if allow_repair else {}),
+                },
+                **(
+                    {
+                        "retry_of": Field(
+                            default=(),
+                            description=(
+                                "Corrected retry only: node_key values of earlier failed attempts "
+                                "for this work and tool. Success resolves those failures; "
+                                "omit for new work and plan_rejected feedback."
+                            ),
+                        )
+                    }
+                    if allow_repair
+                    else {}
+                ),
                 "model_config": cast(ConfigDict, config),
             },
         ),
@@ -875,6 +896,7 @@ class GovernedAgentToolFactory:
 
         async def invoke(runtime: ToolRuntime, **kwargs: Any) -> str:
             await self._check_work()
+            retry_of = tuple(kwargs.pop("retry_of", ()))
             tool_call_id = str(runtime.tool_call_id)
             call_digest = hashlib.sha256(tool_call_id.encode()).hexdigest()[:24]
             node_key = f"agent_{name}_{call_digest}"
@@ -893,6 +915,7 @@ class GovernedAgentToolFactory:
                         tool=pin,
                         arguments=_json_arguments(kwargs),
                         purpose=f"Governed direct invocation of {pin.address}.",
+                        retry_of=retry_of,
                     ),
                 ),
                 proposed_at=self._request.requested_at,
@@ -1012,6 +1035,7 @@ class GovernedAgentToolFactory:
             args_schema=_with_trusted_runtime(
                 descriptor.input_model,
                 name=f"{descriptor.input_model.__name__}AgentRuntime",
+                allow_repair=True,
             ),
         )
 

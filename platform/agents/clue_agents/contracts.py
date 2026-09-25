@@ -600,6 +600,7 @@ class AgentTurnRequest(FrozenContract):
 
 
 class PlanToolStep(FrozenContract):
+    retry_of: tuple[StableId, ...] = Field(default=(), exclude_if=lambda value: not value)
     kind: Literal["tool"] = "tool"
     node_key: StableId
     depends_on: tuple[StableId, ...] = ()

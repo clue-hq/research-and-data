@@ -43,7 +43,8 @@ def call(name, args, index):
 
 
 class Models:
-    def __init__(self, source, scope, context_id):
+    def __init__(self, source, scope, context_id, *, repair=False):
+        self.repair = repair
         self.builds = []
         self.source = source
         self.scope, self.context_id = scope, context_id
@@ -185,12 +186,51 @@ class Models:
                         "dossier-read",
                     ),
                 )
+        if self.repair and role == "research_claims":
+            import hashlib
+
+            position = next(
+                i
+                for i, m in enumerate(script)
+                if m.tool_calls[0]["name"] == "record_research_finding"
+            )
+            base = script[position].tool_calls[0]["args"]
+            failed, corrected = [], []
+            for i in range(7):
+                call_id = f"call-invalid-{i}"
+                args = {**base, "topic": f"Finding {i}"}
+                failed.append(
+                    {
+                        "name": "record_research_finding",
+                        "id": call_id,
+                        "args": {**args, "source_paths": ["/evidence/nonexistent.json"]},
+                        "type": "tool_call",
+                    }
+                )
+                key = (
+                    "agent_record_research_finding_"
+                    + hashlib.sha256(call_id.encode()).hexdigest()[:24]
+                )
+                corrected.append(
+                    {
+                        "name": "record_research_finding",
+                        "id": f"call-fixed-{i}",
+                        "args": {**args, "retry_of": [key]},
+                        "type": "tool_call",
+                    }
+                )
+            script[position : position + 1] = [
+                AIMessage(content="", tool_calls=failed),
+                AIMessage(content="", tool_calls=corrected),
+            ]
         return ScriptedAgentChatModel(responses=script)
 
 
-@pytest.mark.parametrize("revision", [5, 6, 9, 11, 13, 14, 15])
+@pytest.mark.parametrize(
+    "revision,repair", [(v, False) for v in [5, 6, 9, 11, 13, 14, 15]] + [(15, True)]
+)
 def test_real_parent_delegates_in_slot_and_replays_committed_results(
-    tmp_path, revision, monkeypatch
+    tmp_path, revision, repair, monkeypatch
 ):
     original_generate = ScriptedAgentChatModel._generate
     seen_prompts = []
@@ -235,7 +275,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 ).prepare(),
                 artifact_sink=DurableAgentArtifactStore(storage=storage, conn_factory=connections),
             )
-            models = Models(source, scope, context_id)
+            models = Models(source, scope, context_id, repair=repair)
             runtime = ResearchUnitRuntime(
                 scope=scope,
                 context_id=context_id,
@@ -261,7 +301,25 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                     {"ws": scope.workspace_id},
                 )
             ).all()
-            assert len(claims) == 1 and claims[0].conclusion == "supported"
+            assert len(claims) == (7 if repair else 1)
+            assert all(c.conclusion == "supported" for c in claims)
+            if repair:
+                events = (
+                    (
+                        await conn.execute(
+                            text(
+                                "SELECT event_type FROM execution_event WHERE execution_id IN "
+                                "(SELECT execution_id FROM arv2_quality_execution "
+                                "WHERE job_id=:job)"
+                            ),
+                            {"job": scope.job_id},
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                assert events.count("node.failed") == 7
+                assert events.count("node.recovered") == 7
             executions = (
                 await conn.execute(
                     text(
@@ -296,7 +354,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
             ).all()
             assert [(r.role, r.n) for r in calls] == [
                 ("account_research", 5 if revision >= 13 else 4),
-                ("research_claims", 5 if revision >= 13 else 4),
+                ("research_claims", (5 if revision >= 13 else 4) + int(repair)),
             ]
             second = await runtime.run(
                 objective="Read the complete saved report and delegate faithful claim processing."
@@ -306,7 +364,7 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 exclude={"operation_receipts"}
             )
             assert models.builds == ["account_research", "research_claims"]
-            assert len(seen_prompts) == (10 if revision >= 13 else 8)
+            assert len(seen_prompts) == (10 if revision >= 13 else 8) + int(repair)
             assert all(RESEARCH_PROVIDER_POLICY in prompt for prompt in seen_prompts)
             parameters = (
                 (

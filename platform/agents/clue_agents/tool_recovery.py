@@ -18,6 +18,9 @@ class ToolRepairRoundsMiddleware(AgentMiddleware[Any, Any, Any]):
 
     async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         del runtime
+        turn = str(state.get("turn_id"))
+        if state.get("tool_repair_turn") != turn:
+            return {"tool_repair_turn": turn, "tool_repair_rounds": 0, "tool_repair_batch": []}
         messages = state.get("messages", ())
         latest = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
         if latest is None or not latest.tool_calls:

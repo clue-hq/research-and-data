@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -175,6 +175,7 @@ async def _runtime(
     max_depth: int = 1,
     max_fanout: int = 2,
     interaction: bool = False,
+    interaction_children: int = 2,
     storage: _MemoryStorage | None = None,
     controls: Any | None = None,
     pre_satisfied_nodes: dict[str, dict[str, Any]] | None = None,
@@ -210,7 +211,7 @@ async def _runtime(
                     authority="human",
                     resume_condition=GateResumeCondition.INPUT_AVAILABLE,
                     dynamic_tool_allowlist=(descriptor.address,),
-                    max_children=2,
+                    max_children=interaction_children,
                     requirements=(tool_pin,),
                 ),
                 BarrierNode(
@@ -1297,5 +1298,118 @@ def test_an_interaction_child_carries_the_turns_identity_into_its_tool_context()
                 action_ref=action_ref,
             )
             assert tool.identities == [(None, "usr_lane_d1_principal", action_ref)]
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("leave_unresolved", [False, True])
+def test_explicit_tool_repair_preserves_failures_and_settles_only_named_attempts(
+    leave_unresolved: bool,
+) -> None:
+    async def scenario():
+        async with rollback_conn(seed_pack=False) as conn:
+            eid, executor, tool, generation = await _runtime(
+                conn,
+                interaction=True,
+                interaction_children=5,
+                max_nodes=7,
+            )
+            await executor.execute(eid, worker_id="worker", lease_generation=generation)
+            original = tool.invoke
+
+            async def invoke(inputs, ctx):
+                if inputs.value < 0:
+                    raise ValueError("repair this value")
+                return await original(inputs, ctx)
+
+            tool.invoke = invoke
+
+            async def attempt(key, value):
+                appended = await executor.append_interaction_tool(
+                    execution_id=eid,
+                    workspace_id="ws-c5-executor",
+                    slot_key="interactions",
+                    node_key=key,
+                    tool_name=tool.name,
+                    tool_version=tool.version,
+                    inputs={"value": value},
+                    actor="agent",
+                )
+                with suppress(ValueError):
+                    await executor.invoke_interaction_tool(
+                        appended, inputs={"value": value}, actor="agent"
+                    )
+                return appended
+
+            failed_attempt = await attempt("failed-a", -1)
+            await attempt("failed-b", -2)
+            await attempt("unrelated-failure", -3)
+            args = {
+                "execution_id": eid,
+                "workspace_id": "ws-c5-executor",
+                "slot_key": "interactions",
+                "failed_node_key": "failed-a",
+                "replacement_node_key": "fixed",
+                "tool_address": tool.descriptor.address,
+            }
+            await executor.validate_interaction_repair(**args)
+            with pytest.raises(ExecutionConflict, match="durable node"):
+                await executor.resolve_interaction_failure(**args)
+            with pytest.raises(ExecutionConflict, match="successful durable"):
+                await executor.resolve_interaction_failure(
+                    **{**args, "replacement_node_key": "failed-b"}
+                )
+            with pytest.raises(ExecutionConflict, match="outside this workspace"):
+                await executor.validate_interaction_repair(**{**args, "workspace_id": "another"})
+            with pytest.raises(ExecutionConflict, match="same agent slot and tool"):
+                await executor.validate_interaction_repair(**{**args, "slot_key": "foreign-slot"})
+            with pytest.raises(ExecutionConflict, match="same agent slot and tool"):
+                await executor.validate_interaction_repair(
+                    **{**args, "tool_address": "different@1"}
+                )
+            await attempt("fixed", 17)
+            # Success alone does not resolve any earlier node.
+            assert len(await executor._failed_keys(eid)) == 3
+            await executor.resolve_interaction_failure(**args)
+            # Repeat invocation is idempotent; the event rather than process memory is authority.
+            await executor.resolve_interaction_failure(**args)
+            with pytest.raises(ExecutionConflict, match="was recovered"):
+                await executor.invoke_interaction_tool(
+                    failed_attempt, inputs={"value": -1}, actor="agent"
+                )
+            with pytest.raises(ExecutionConflict, match="another replacement"):
+                await executor.validate_interaction_repair(
+                    **{**args, "replacement_node_key": "other"}
+                )
+            await executor.resolve_interaction_failure(**{**args, "failed_node_key": "failed-b"})
+            if not leave_unresolved:
+                await executor.resolve_interaction_failure(
+                    **{**args, "failed_node_key": "unrelated-failure"}
+                )
+            remaining = await executor.unresolved_interaction_failures(
+                execution_id=eid, workspace_id="ws-c5-executor", slot_key="interactions"
+            )
+            assert remaining == (("unrelated-failure",) if leave_unresolved else ())
+            await executor.decide_gate(
+                execution_id=eid, node_key="interactions", actor="human", decision="stage0_complete"
+            )
+            result = await executor.execute(eid, worker_id="worker", lease_generation=generation)
+            assert result.status == (
+                ExecutionStatus.FAILED if leave_unresolved else ExecutionStatus.COMPLETED
+            )
+            assert "failed-a" not in result.completed_node_keys
+            events = (
+                (
+                    await conn.execute(
+                        text("SELECT event_type FROM execution_event WHERE execution_id=:id"),
+                        {"id": eid},
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert events.count("node.failed") == 3
+            assert events.count("node.recovered") == (2 if leave_unresolved else 3)
+            assert tool.calls == 1
 
     run_async(scenario())

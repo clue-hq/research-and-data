@@ -898,7 +898,9 @@ class RecipeExecutor:
                     lease_generation=lease_generation,
                 )
                 continue
-            if len(completed) == len(nodes):
+            recovered = await self._event_node_keys(execution_id, "node.recovered")
+            settled = completed | recovered
+            if len(settled) == len(nodes):
                 await self._append(
                     runtime,
                     event_type=ExecutionEventType.EXECUTION_COMPLETED,
@@ -910,7 +912,7 @@ class RecipeExecutor:
             ready = [
                 node
                 for node in nodes
-                if node.spec.node_key not in completed
+                if node.spec.node_key not in settled
                 and set(node.spec.dependencies).issubset(completed)
                 and not (isinstance(node.spec, GateNode) and node.spec.node_key in opened_gates)
             ]
@@ -1298,6 +1300,197 @@ class RecipeExecutor:
             created=True,
         )
 
+    async def validate_interaction_repair(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+        failed_node_key: str,
+        replacement_node_key: str,
+        tool_address: str,
+    ) -> None:
+        """Validate an explicit retry before invoking the replacement tool."""
+        await self._interaction_repair(
+            execution_id=execution_id,
+            workspace_id=workspace_id,
+            slot_key=slot_key,
+            failed_node_key=failed_node_key,
+            replacement_node_key=replacement_node_key,
+            tool_address=tool_address,
+            commit=False,
+        )
+
+    async def resolve_interaction_failure(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+        failed_node_key: str,
+        replacement_node_key: str,
+        tool_address: str,
+    ) -> None:
+        """Append recovery only after the replacement has a durable successful receipt."""
+        await self._interaction_repair(
+            execution_id=execution_id,
+            workspace_id=workspace_id,
+            slot_key=slot_key,
+            failed_node_key=failed_node_key,
+            replacement_node_key=replacement_node_key,
+            tool_address=tool_address,
+            commit=True,
+        )
+
+    async def _interaction_repair(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+        failed_node_key: str,
+        replacement_node_key: str,
+        tool_address: str,
+        commit: bool,
+    ) -> None:
+        runtime = await self._load_runtime(execution_id)
+        if runtime.workspace_id != workspace_id:
+            raise ExecutionConflict("repair is outside this workspace")
+        if failed_node_key == replacement_node_key:
+            raise ExecutionConflict("a repair requires a distinct replacement attempt")
+        async with self._conn_factory() as conn:
+            # Same lock order as interaction append; serialize competing repair declarations.
+            await conn.execute(
+                text("SELECT id FROM execution WHERE id=:id FOR UPDATE"), {"id": execution_id}
+            )
+            cursor = await get_cursor(conn, execution_id, for_update=True)
+            nodes = (
+                (
+                    await conn.execute(
+                        text("""
+                SELECT id, node_key, declared_by_node_id, definition_json FROM execution_node
+                WHERE execution_id=:id AND node_key=ANY(CAST(:keys AS text[]))
+            """),
+                        {"id": execution_id, "keys": [failed_node_key, replacement_node_key]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            by_key = {row["node_key"]: row for row in nodes}
+            slot_id = execution_node_id(execution_id, slot_key)
+            old = by_key.get(failed_node_key)
+            if old is None:
+                raise ExecutionConflict(
+                    "retry_of must name an existing failed tool in this execution"
+                )
+            for key in (failed_node_key, replacement_node_key) if commit else (failed_node_key,):
+                row = by_key.get(key)
+                if row is None:
+                    raise ExecutionConflict("replacement tool has no durable node")
+                definition = row["definition_json"]
+                node = definition["node"]
+                address = f"{node.get('tool_name')}@{node.get('tool_version')}"
+                if (
+                    row["declared_by_node_id"] != slot_id
+                    or address != tool_address
+                    or definition.get("actor") != "agent"
+                ):
+                    raise ExecutionConflict("repair must remain in the same agent slot and tool")
+            events = (
+                (
+                    await conn.execute(
+                        text("""
+                SELECT node_id, event_type, payload_json FROM execution_event
+                WHERE execution_id=:id AND node_id=ANY(CAST(:nodes AS uuid[]))
+                ORDER BY seq
+            """),
+                        {"id": execution_id, "nodes": [row["id"] for row in nodes]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            if not any(
+                e["node_id"] == old["id"] and e["event_type"] == "node.failed" for e in events
+            ):
+                raise ExecutionConflict("retry_of does not identify a failed attempt")
+            prior = next(
+                (
+                    e
+                    for e in events
+                    if e["node_id"] == old["id"] and e["event_type"] == "node.recovered"
+                ),
+                None,
+            )
+            if prior is not None:
+                if prior["payload_json"]["replacement_node_key"] != replacement_node_key:
+                    raise ExecutionConflict("failed attempt already has another replacement")
+                return
+            # Repair is restricted to direct agent leaves. It cannot rewrite graph dependencies.
+            dependents = (
+                await conn.execute(
+                    text("""
+                SELECT 1 FROM execution_node WHERE execution_id=:id
+                AND (definition_json->'node'->'dependencies') ? :key LIMIT 1
+            """),
+                    {"id": execution_id, "key": failed_node_key},
+                )
+            ).first()
+            if dependents is not None:
+                raise ExecutionConflict("failed node with dependents requires graph-level recovery")
+            if not commit:
+                return
+            replacement = by_key[replacement_node_key]
+            completed = any(
+                e["node_id"] == replacement["id"] and e["event_type"] == "node.completed"
+                for e in events
+            )
+            failed = any(
+                e["node_id"] == replacement["id"] and e["event_type"] == "node.failed"
+                for e in events
+            )
+            if not completed or failed:
+                raise ExecutionConflict("replacement must have a successful durable tool receipt")
+            if cursor.status in {ExecutionStatus.COMPLETED, ExecutionStatus.FAILED}:
+                raise ExecutionConflict("terminal execution cannot acquire a new repair")
+            await self._journal.append_event(
+                conn,
+                execution_id=execution_id,
+                node_id=old["id"],
+                event_type=ExecutionEventType.NODE_RECOVERED,
+                actor="agent",
+                payload={
+                    "replacement_node_key": replacement_node_key,
+                    "replacement_node_id": str(replacement["id"]),
+                    "tool_address": tool_address,
+                },
+                expected_state_version=cursor.state_version,
+            )
+
+    async def unresolved_interaction_failures(
+        self,
+        *,
+        execution_id: ExecutionId,
+        workspace_id: str,
+        slot_key: str,
+    ) -> tuple[str, ...]:
+        runtime = await self._load_runtime(execution_id)
+        if runtime.workspace_id != workspace_id:
+            raise ExecutionConflict("execution is outside this workspace")
+        failed = await self._failed_keys(execution_id)
+        async with self._conn_factory() as conn:
+            rows = (
+                await conn.execute(
+                    text("""
+                SELECT node_key FROM execution_node WHERE execution_id=:id
+                AND declared_by_node_id=:slot
+            """),
+                    {"id": execution_id, "slot": execution_node_id(execution_id, slot_key)},
+                )
+            ).all()
+        return tuple(sorted(failed & {str(row[0]) for row in rows}))
+
     async def inspect_interaction_slot(
         self,
         *,
@@ -1389,6 +1582,10 @@ class RecipeExecutor:
             raise ExecutionConflict("the appended interaction tool disappeared")
         if actor != node.actor:
             raise ExecutionConflict("interaction tool actor differs from its durable declaration")
+        if node.spec.node_key in await self._event_node_keys(append.execution_id, "node.recovered"):
+            raise ExecutionConflict(
+                "this failed attempt was recovered; use its replacement receipt"
+            )
         if node.parameter_artifact_key is None or node.parameter_sha256 is None:
             raise ExecutionConflict("the appended interaction tool has no durable parameter body")
         durable_inputs = await self._parameters.resolve(
@@ -2354,7 +2551,9 @@ class RecipeExecutor:
         return await self._event_node_keys(execution_id, "node.completed")
 
     async def _failed_keys(self, execution_id: ExecutionId) -> set[str]:
-        return await self._event_node_keys(execution_id, "node.failed")
+        failed = await self._event_node_keys(execution_id, "node.failed")
+        recovered = await self._event_node_keys(execution_id, "node.recovered")
+        return failed - recovered
 
     async def _event_node_keys(self, execution_id: ExecutionId, event_type: str) -> set[str]:
         async with self._conn_factory() as conn:

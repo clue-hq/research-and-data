@@ -985,7 +985,7 @@ def test_research_delegation_virtual_views_are_recoverable_without_file_access()
         }
         refused = json.loads(
             await tool.coroutine(
-                runtime=SimpleNamespace(tool_call_id="wrong-copy"),
+                runtime=SimpleNamespace(tool_call_id="wrong-copy", state={}),
                 canonical_paths=["research/context.json", "evidence/index/0.json"],
                 **args,
             )

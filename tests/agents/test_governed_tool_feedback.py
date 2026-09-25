@@ -480,6 +480,7 @@ def test_repair_round_state_survives_compaction_and_does_not_count_batch_twice()
                     content='{"governed_repair_budgeted":true}', tool_call_id="after-compaction"
                 ),
             ],
+            "tool_repair_turn": "None",
             "tool_repair_rounds": 2,
             "tool_repair_batch": ["archived-batch"],
         }
@@ -489,3 +490,25 @@ def test_repair_round_state_survives_compaction_and_does_not_count_batch_twice()
         assert await middleware.abefore_model(state, None) is None
 
     run_async(case())
+
+
+def test_finalize_waits_for_sibling_results_instead_of_committing_mid_batch():
+    execution = _RefusingExecution(refusals=0)
+    batch = AIMessage(
+        content="",
+        tool_calls=[
+            _route_call("successful-work", quote=_ANSWER).tool_calls[0],
+            _finalize_call("premature", status="awaiting_input", user_message=_QUESTION).tool_calls[
+                0
+            ],
+        ],
+    )
+    outcome, calls = _run(
+        (batch, _finalize_call("settled", status="awaiting_input", user_message=_QUESTION)),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 1
+    assert len(execution.envelopes) == 1
+    assert len(calls.batches) == 2
+    assert "Call finalize_turn alone" in str(calls.batches[1][-1].content)

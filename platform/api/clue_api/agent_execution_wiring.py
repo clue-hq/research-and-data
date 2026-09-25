@@ -1808,6 +1808,15 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 operation=operation,
                 step=step,
             )
+        for failed_key in step.retry_of:
+            await self._executor.validate_interaction_repair(
+                execution_id=plan.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
         parameter_bytes = await self._artifacts.read(operation.parameter_artifact_ref)
         inputs_value = json.loads(parameter_bytes)
         if not isinstance(inputs_value, dict):
@@ -1882,6 +1891,22 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             result=canonical_result,
             result_ref=result_ref,
         )
+        for failed_key in step.retry_of:
+            await self._executor.resolve_interaction_failure(
+                execution_id=plan.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
+            log.info(
+                "agent.tool_recovered",
+                execution_id=str(plan.execution_id),
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
         await self._crash_hook(
             "post_tool_complete",
             execution_id=plan.execution_id,
@@ -2045,6 +2070,18 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         authority = getattr(self, "_finalization_authority", None)
         if authority is None:
             raise RuntimeError("finalization authority is not composed")
+        if envelope.status.value == "completed":
+            unresolved = await self._executor.unresolved_interaction_failures(
+                execution_id=self._constitution.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+            )
+            if unresolved:
+                raise ValueError(
+                    "Unresolved failed tool attempts remain: "
+                    + ", ".join(unresolved)
+                    + ". Correct using retry_of, or finalize with an honest blocked status."
+                )
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,

@@ -223,6 +223,19 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
             tool.return_direct = True
         tool_call_id = str(request.tool_call.get("id", _FINALIZE_TOOL_NAME))
         try:
+            latest = next(
+                (
+                    m
+                    for m in reversed(request.state.get("messages", ()))
+                    if isinstance(m, AIMessage)
+                ),
+                None,
+            )
+            if latest is not None and len(latest.tool_calls) > 1:
+                raise ValueError(
+                    "Call finalize_turn alone after reading the completed tool batch results. "
+                    "Other calls in this batch are still allowed to finish."
+                )
             result = await handler(request)
         except ValueError as error:
             # Argument-schema violations are already turned into an error ``ToolMessage`` by the
