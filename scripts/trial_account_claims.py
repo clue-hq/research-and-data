@@ -202,7 +202,7 @@ class Writer:
         )
         return [dict(r) for r in rows]
 
-    async def write(self, conn, args):
+    async def write(self, conn, args, *, dossier_entry=None):
         unknown = set(args.source_paths) - self.sources.keys()
         if unknown:
             raise ValueError(f"Use an exact source path from /evidence/index.md: {sorted(unknown)}")
@@ -221,6 +221,8 @@ class Writer:
                 await resolve_source(conn, self.grant, UUID(self.sources[path]["source_id"]))
             )
         payload = args.model_dump(mode="json", exclude={"source_paths"})
+        if dossier_entry is not None:
+            payload["dossier_entry"] = dossier_entry
         payload["sources"] = [
             {
                 "source_id": str(r.source_id),
@@ -301,7 +303,7 @@ class Writer:
         return rows
 
 
-async def prepare():
+async def prepare(*, dossier_mode=False):
     if OUT.exists():
         raise ValueError("Trial folder already exists; preserve it and choose a new run.")
     user, url = db_config()
@@ -465,6 +467,11 @@ async def prepare():
     )
     (OUT / "system-prompt.md").write_text(system)
     (OUT / "task-prompt.md").write_text(task)
+    if dossier_mode:
+        from account_dossier_trial import prepare_instructions
+
+        prepare_instructions(OUT)
+        m["trial_mode"] = "claim-ready-dossier"
     m["input_hashes"] = {
         str(f.relative_to(workspace)): hashlib.sha256(f.read_bytes()).hexdigest()
         for f in workspace.rglob("*")
@@ -521,6 +528,17 @@ async def smoke(writer):
             assert len(rows) == 5 and all(
                 r["write_markers"]["claim_kind"] == "attributed_statement" for r in rows
             )
+            if writer.m.get("trial_mode") == "claim-ready-dossier":
+                origin = {"id": "F001", "section": "Offline fixture", "dossier_sha256": "probe"}
+                probe = Finding(
+                    **{**base, "finding": "Exact “quotation” | line\ncontinued"}, review=a.review
+                )
+                receipt = await writer.write(conn, probe, dossier_entry=origin)
+                replay = await writer.write(conn, probe, dossier_entry=origin)
+                assert replay["claim_id"] == receipt["claim_id"] and replay["replayed"]
+                stored = next(r for r in await writer.rows(conn) if r["id"] == receipt["claim_id"])
+                assert stored["value_json"]["finding"] == probe.finding
+                assert stored["value_json"]["dossier_entry"] == origin
             try:
                 await writer.write(
                     conn,
@@ -653,6 +671,52 @@ async def run(writer):
         StructuredTool.from_function(coroutine=read_trial_claims),
         StructuredTool.from_function(coroutine=finish_trial, return_direct=True),
     ]
+    dossier_mode = writer.m.get("trial_mode") == "claim-ready-dossier"
+    if dossier_mode:
+        from account_dossier_trial import DOSSIER, inspect_dossier, render_dossier
+
+        async def validate_dossier():
+            """Check the saved dossier's syntax and references, without judging its meaning."""
+            path = OUT / "workspace" / DOSSIER
+            if not path.exists():
+                return json.dumps({"errors": ["Write /" + DOSSIER + " first."]})
+            records, errors = inspect_dossier(path.read_text(), writer.sources)
+            return json.dumps({"entries": len(records), "errors": errors})
+
+        async def finish_dossier(summary: str, gaps: list[str]):
+            """Freeze the dossier for subsequent mechanical import; report actual remaining gaps."""
+            feedback = json.loads(await validate_dossier())
+            if feedback["errors"]:
+                return json.dumps({"finished": False, **feedback})
+            if not feedback["entries"]:
+                return json.dumps({"finished": False, "error": "Dossier has no finding entries"})
+            path = OUT / "workspace" / DOSSIER
+            shutil.copyfile(path, OUT / "dossier.entries.md")
+            records, _ = inspect_dossier(path.read_text(), writer.sources)
+            (OUT / "dossier.readable.md").write_text(render_dossier(records, writer.sources))
+            save(
+                OUT / "agent-completion.json",
+                {
+                    "summary": summary,
+                    "gaps": gaps,
+                    "entries": len(records),
+                    "finished_at": datetime.now(UTC).isoformat(),
+                    "claims_written_by_agent": 0,
+                    "dossier_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                },
+            )
+            return json.dumps(
+                {
+                    "finished": True,
+                    "entries": len(records),
+                    "instruction": "Dossier frozen. Return your final summary now.",
+                }
+            )
+
+        tools = [
+            StructuredTool.from_function(coroutine=validate_dossier),
+            StructuredTool.from_function(coroutine=finish_dossier),
+        ]
     allowed = {
         "ls",
         "read_file",
@@ -667,6 +731,14 @@ async def run(writer):
     class BoundTools(PreviewTools):
         async def awrap_tool_call(self, request, handler):
             call = request.tool_call
+            if (
+                dossier_mode
+                and (OUT / "agent-completion.json").exists()
+                and call["name"] in {"write_file", "edit_file", "finish_dossier"}
+            ):
+                return ToolMessage(
+                    content="Dossier is frozen; return your final summary.", tool_call_id=call["id"]
+                )
             if call["name"] in {"write_file", "edit_file"}:
                 path = call["args"].get("file_path", "")
                 if not path.startswith(("/work/", "/outputs/")) or ".." in Path(path).parts:
@@ -701,9 +773,13 @@ async def run(writer):
         middleware=[BoundTools(allowed), ToolRepairRoundsMiddleware()],
         backend=backend,
         checkpointer=InMemorySaver(),
-        name="isolated-account-claim-writer",
+        name="isolated-account-dossier-author" if dossier_mode else "isolated-account-claim-writer",
     )
     shutil.copyfile(Path(__file__), OUT / "harness.executed.py")
+    if dossier_mode:
+        import account_dossier_trial
+
+        shutil.copyfile(account_dossier_trial.__file__, OUT / "dossier-adapter.executed.py")
     save(
         OUT / "started.json",
         {
@@ -743,6 +819,13 @@ async def run(writer):
     finally:
         await writer.export()
         flush_langfuse()
+    if dossier_mode:
+        from account_dossier_trial import import_dossier
+
+        with observation(name="account-dossier-programmatic-import", as_type="span"):
+            receipt = await import_dossier(writer, OUT)
+        flush_langfuse()
+        print(json.dumps({"imported": receipt["stored"], "errors": receipt["errors"]}, default=str))
     print("Agent trial finished; inspect claims.md and workspace/work/coverage.md.")
 
 
@@ -750,12 +833,15 @@ async def main():
     global OUT, DB
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["prepare", "smoke", "run", "export"])
+    parser.add_argument("action", choices=["prepare", "smoke", "run", "export", "import-dossier"])
     parser.add_argument("--run-number", type=int, default=1)
+    parser.add_argument(
+        "--dossier-mode", action="store_true", help="Prepare the isolated record-dossier experiment"
+    )
     args = parser.parse_args()
     OUT, DB = run_paths(args.run_number)
     if args.action == "prepare":
-        await prepare()
+        await prepare(dossier_mode=args.dossier_mode)
         return
     m = json.loads((OUT / "manifest.json").read_text())
     if m["database"] != DB or DB == SOURCE_DB:
@@ -768,6 +854,13 @@ async def main():
             await smoke(writer)
         elif args.action == "run":
             await run(writer)
+        elif args.action == "import-dossier":
+            if m.get("trial_mode") != "claim-ready-dossier":
+                raise ValueError("Not a dossier-mode trial")
+            from account_dossier_trial import import_dossier
+
+            receipt = await import_dossier(writer, OUT)
+            print(json.dumps({"stored": receipt["stored"], "errors": receipt["errors"]}))
         else:
             await writer.export()
     finally:
