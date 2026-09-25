@@ -1,5 +1,24 @@
 # Claim-ready account dossier — isolated trial
 
+**Fresh-research extension (26 September):** the live account trial now uses JSON
+sections/findings through `save_dossier_section`, rather than asking the agent to
+edit record lines. The saved-data format described below remains preserved for
+earlier comparisons. `scripts/live_account_dossier.py::prepare_format` adapts this
+skill's format section while keeping its substantive rules; it snapshots the exact
+resulting skill and prompt addition in each prepared trial folder. The live agent
+does its own acquisition, source review and final dossier formation. Exa still
+receives a research assignment, not claim-storage instructions.
+
+The canonical live output is `dossier.json`; readable Markdown and the existing
+importer's sectioned records are derived from that JSON without a second model.
+The authoring tool checks shape, unique finding IDs and retained source paths;
+final validation checks related IDs. These checks do not establish semantic quality.
+Production prompts and dossier storage are unchanged.
+
+Fresh trial evidence: `.artifacts/account-discovery-trial-20260926/zafran-claim-ready-03/REVIEW.md`.
+It completed 80 findings and an exact 80-claim isolated import/re-import, but
+source omissions, granularity and interpretation problems remain. No promotion.
+
 The researcher authors the claim-ready findings while forming the dossier. Code
 imports those records without a second model selecting, splitting or paraphrasing
 them. This is a trial, not a promoted production format.
