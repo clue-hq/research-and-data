@@ -4,7 +4,7 @@ Status: isolated harness implemented, inputs prepared and offline writer checks
 passed on 25 September 2026. The explicitly approved model trial completed with 53 records.
 Revision 2 strengthens public-statement preservation and granularity, adds a
 section-by-section guide, and adds `potential_conflict` with scoped claim references
-to the isolated writer. These changes have not been live-tested. Run-01 remains
+to the isolated writer. These changes were exercised in run-02 on Grok 4.6; see the comparison below. Run-01 remains
 frozen under its original prompt, skill and four-status contract.
 No production skill/profile or application tool contract has been promoted.
 See `.artifacts/account-claims-trial-20260925/run-01/REVIEW.md` for remaining quality gaps.
@@ -226,9 +226,9 @@ it contains. `potential_conflict` therefore belongs beside supported/duplicate,
 not beside observation/reported statement. No production schema migration or
 production reader change is included.
 
-## Cheaper model and subagent direction — proposed next trial
+## Cheaper model and subagent direction — deferred
 
-The founder now prefers trying a cheaper dedicated writer. This changes the earlier
+The founder considered trying a cheaper dedicated writer. This changes the earlier
 choice that the research model itself should perform conversion. Keep research
 ownership with the parent; assign conversion to one child per entity with the same
 source access, skill, claim tools, attribution and all-status coverage report.
@@ -237,7 +237,11 @@ overlap and conflict handling harder. The child returns durable claim references
 coverage and unresolved issues; the parent reviews those against research goals
 instead of repeating every extraction step.
 
-Candidate: `deepseek/deepseek-v4-flash`, the exact V4 Flash identifier confirmed on
+Subsequent founder decision: keep Grok 4.6 for the next run. The model switch
+and subagent integration below are deferred. Run-02 uses the same standalone
+account-model harness with the revised skill and system/task prompts.
+
+Deferred candidate: `deepseek/deepseek-v4-flash`, the exact V4 Flash identifier confirmed on
 [OpenRouter](https://openrouter.ai/deepseek/deepseek-v4-flash) on 25 September 2026.
 The newer `deepseek/deepseek-v4.1-flash` also exists, but is a different model; do not
 silently substitute it. Provider pricing/routing varies. Actual cost and fidelity
@@ -267,3 +271,22 @@ Proposed parent-to-writer assignment (bind references, do not paraphrase evidenc
 
 This is delegation by the parent, not permission for the writer to delegate again.
 The system/task drafts prohibit further delegation inside the writing job.
+
+## Run-02 result — 25 September 2026
+
+The founder kept Grok 4.6 and requested a second standalone trial. Run with
+`--run-number 2` to select its separate output/database; never overwrite run-01.
+The 352 admitted source records and seller context match run-01 by hash. Revised
+instructions and five review statuses are the intended differences.
+
+Output: `.artifacts/account-claims-trial-20260925/run-02/REVIEW.md` and `claims.md`.
+101 records: 90 supported, nine insufficient_context, two potential_conflict.
+Recorded model cost $2.937184; 45 model calls; elapsed 13m 58s. Claims persisted
+without tool errors. Five offline tests and five-status transactional DB smoke
+passed before dispatch. Native compaction archived history in the trial filesystem.
+
+Public-statement preservation and several findings improved; source coverage is
+still incomplete, some earlier details disappeared, bundling persists in places,
+and a real but semantically wrong conflict reference remains. The agent reports
+the latter; no correction tool was provided. Review both trials before iteration.
+No model switch, production subagent integration, new acquisition or publication.

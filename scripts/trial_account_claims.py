@@ -49,10 +49,21 @@ from clue_storage.fs import FsStorage
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / ".artifacts/arv4-clue-zafran-20260925-r13"
 DRAFT = ROOT / "docs/superpowers/drafts/2026-09-25-account-claims-trial"
-OUT = ROOT / ".artifacts/account-claims-trial-20260925/run-01"
-DB = "clue_account_claims_trial_20260925_01"
 SOURCE_DB = "clue_zafran_r13_20260925"
 CONTAINER = "clue-zafran-quality-live"
+
+
+def run_paths(number):
+    if number < 1:
+        raise ValueError("Run number must be positive")
+    suffix = f"{number:02d}"
+    return (
+        ROOT / f".artifacts/account-claims-trial-20260925/run-{suffix}",
+        f"clue_account_claims_trial_20260925_{suffix}",
+    )
+
+
+OUT, DB = run_paths(1)
 
 
 def save(path, data):
@@ -736,10 +747,13 @@ async def run(writer):
 
 
 async def main():
+    global OUT, DB
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["prepare", "smoke", "run", "export"])
+    parser.add_argument("--run-number", type=int, default=1)
     args = parser.parse_args()
+    OUT, DB = run_paths(args.run_number)
     if args.action == "prepare":
         await prepare()
         return

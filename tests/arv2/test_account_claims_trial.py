@@ -127,3 +127,13 @@ def test_linked_conflict_written_through_shared_writer_without_replacing_other_c
     assert receipt["review_status"] == "potential_conflict"
     assert original["value_json"]["review"]["status"] == "supported"
     assert "superseded_by" not in proposal.value
+
+
+def test_numbered_runs_have_distinct_output_and_database_without_reusing_original():
+    first_path, first_db = trial.run_paths(1)
+    next_path, next_db = trial.run_paths(2)
+    assert first_path.name == "run-01" and next_path.name == "run-02"
+    assert next_path != first_path and next_db != first_db
+    assert next_db != trial.SOURCE_DB
+    with pytest.raises(ValueError, match="positive"):
+        trial.run_paths(0)

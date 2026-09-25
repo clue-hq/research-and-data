@@ -93,3 +93,34 @@
   Initial pytest.mark.asyncio attempt failed because plugin unavailable; switched
   tests to repository-style asyncio.run. Ruff/compile/whitespace checks pass.
   Five-status DB smoke is prepared but not rerun against preserved run-01.
+
+## Second account trial preparation
+
+- Founder explicitly keeps Grok 4.6 and requests the next claim-writing run.
+  DeepSeek/model switch and subagent integration remain deferred. Current account
+  model confirmed x-ai/grok-4.6; retain same standalone harness for comparison.
+- Added numbered-run CLI to keep DB/output separate; preparing run-02 from the
+  original source database, not the first trial's claims. Revised prompts/skill
+  and potential-conflict contract; no acquisition, fleet, publication or person jobs.
+
+## Second trial completed
+
+- Source/context hashes match first run; different trial ID, output folder and
+  isolated physical DB. Same Grok 4.6, revised instructions and fifth review status.
+- Five focused tests and five-status real-DB transactional smoke passed. No probe
+  rows persisted. Live execution authorized by founder's request; no extra consent
+  was needed. No acquisition provider calls, fleet or production changes.
+- Completed 101 claims in 837.7 seconds, 45 model calls, $2.937184 recorded model
+  cost. Statuses: 90 supported, nine insufficient_context, two potential_conflict.
+  Fresh DB export confirms count. No tool errors; all cited sources opened.
+- Improved public statements, role-title interpretation and some recovered source
+  findings. Coverage still incomplete; earlier findings omitted, some records still
+  bundled, and one conflict points to a related but semantically wrong claim. Agent
+  noticed the link error but cannot repair without a correction tool. No silent edits.
+- Native compaction wrote an archive in this isolated filesystem and execution
+  continued. Does not certify production workspace or archive reopening. Known
+  Langfuse active-span/model-name warnings recur; local traces/usage retained.
+- Comparison/review at run-02/REVIEW.md with both successes and regressions; frozen
+  system/task/skill and full outputs preserved. No third trial or follow-up fixes.
+- Closing checks: numbered-run isolation test, focused suite, ruff/compile and
+  whitespace pass; historical prompt and context hashes remain unchanged.
