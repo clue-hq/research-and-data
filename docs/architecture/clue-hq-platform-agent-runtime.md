@@ -274,7 +274,7 @@ implementation in havana with recorded evidence trails; the work is instantiatio
 Native parallel tool batches settle completely before the next model call. Governed failures
 return per-call feedback; successful sibling receipts remain valid. The checkpointed allowance
 counts failed batches followed by corrective model rounds, not the number of sibling errors.
-Three corrective rounds are available per turn; a fourth failed batch stops before another call.
+Ten corrective rounds are available per agent turn; an eleventh failed batch stops before another call.
 Finalization must be a separate call after reading sibling results, so it cannot commit midway
 through an unfinished batch.
 

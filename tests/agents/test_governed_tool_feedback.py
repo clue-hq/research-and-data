@@ -287,8 +287,8 @@ def test_a_retry_is_a_new_operation_and_cannot_collide_with_the_refused_one() ->
     assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
 
 
-def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The repair budget is spent, and then the wrapper raises exactly as it always did.
+def test_an_eleventh_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The complete eleventh failed batch stops the next model call.
 
     ``DeepAgentTurnRuntime`` already caps the graph at ``max_rounds * 2 + 4`` supersteps, so this
     budget is not what makes the loop terminate — it is what stops the turn paying for ~24 further
@@ -301,9 +301,9 @@ def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch)
         "log",
         SimpleNamespace(warning=lambda event, **fields: emitted.append((event, fields))),
     )
-    execution = _RefusingExecution(refusals=9)
+    execution = _RefusingExecution(refusals=11)
     outcome, calls = _run(
-        tuple(_route_call(f"route-{ordinal}") for ordinal in range(4)),
+        tuple(_route_call(f"route-{ordinal}") for ordinal in range(11)),
         execution=execution,
     )
 
@@ -311,14 +311,14 @@ def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch)
     assert outcome.failure_code == "runtime_error"
     assert outcome.finalization_ref is None
     assert execution.envelopes == []
-    # Three visible repairs, then the fourth refusal ends the turn: four model calls, no more.
-    assert len(calls.batches) == 4
-    assert [event for event, _ in emitted] == ["agent.tool_repair"] * 4
-    assert [fields["attempt"] for _, fields in emitted] == [1, 2, 3, 4]
-    assert [fields["exhausted"] for _, fields in emitted] == [False, False, False, True]
+    # Ten corrective rounds are allowed; the eleventh failed batch exhausts them.
+    assert len(calls.batches) == 11
+    assert [event for event, _ in emitted] == ["agent.tool_repair"] * 11
+    assert [fields["attempt"] for _, fields in emitted] == list(range(1, 12))
+    assert [fields["exhausted"] for _, fields in emitted] == [False] * 10 + [True]
     # W10 spares only an effect-free read refused by precondition; a write refused on its value
-    # still pays, so every one of these four spends the budget.
-    assert [fields["budgeted"] for _, fields in emitted] == [True] * 4
+    # still pays, so every one of these eleven spends the budget.
+    assert [fields["budgeted"] for _, fields in emitted] == [True] * 11
     assert emitted[0][1]["error_type"] == "ValueError"
     assert emitted[0][1]["reasons"] == [f"ValueError: {_VERIFIER_REFUSAL}"]
 
@@ -512,3 +512,18 @@ def test_finalize_waits_for_sibling_results_instead_of_committing_mid_batch():
     assert len(execution.envelopes) == 1
     assert len(calls.batches) == 2
     assert "Call finalize_turn alone" in str(calls.batches[1][-1].content)
+
+
+def test_the_tenth_corrective_round_can_succeed() -> None:
+    execution = _RefusingExecution(refusals=10)
+    outcome, calls = _run(
+        (
+            *(_route_call(f"failed-{i}") for i in range(10)),
+            _route_call("tenth-correction", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 11
+    assert len(calls.batches) == 12

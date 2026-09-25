@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from clue_agents.state import ClueDeepAgentState
 from clue_obs import get_logger
 
-MAX_TOOL_REPAIR_ROUNDS = 3
+MAX_TOOL_REPAIR_ROUNDS = 10
 log = get_logger(__name__)
 
 
