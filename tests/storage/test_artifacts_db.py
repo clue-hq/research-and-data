@@ -83,6 +83,80 @@ def test_concurrent_readers_retain_shared_evidence_without_lock_upgrade() -> Non
     run_async(case())
 
 
+def test_research_snapshots_can_rerecord_each_others_source_without_deadlock() -> None:
+    """r13: source SHARE locks must not conflict with re-recording unchanged live bytes.
+
+    Each writer holds the other snapshot as source evidence before persisting its own
+    existing content-addressed output. An unconditional upsert upgrades to an exclusive
+    row lock and creates a cycle, even with sorted source reads.
+    """
+
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            bodies = [uuid.uuid4().bytes, uuid.uuid4().bytes]
+            async with engine.begin() as conn:
+                records = [await _record(conn, body, ws) for body in bodies]
+            readers = asyncio.Barrier(2)
+
+            async def persist(index):
+                async with engine.begin() as conn:
+                    await conn.execute(text("SET LOCAL statement_timeout='5s'"))
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key=:key FOR SHARE"),
+                        {"key": records[1 - index].storage_key},
+                    )
+                    await asyncio.wait_for(readers.wait(), timeout=5)
+                    repeated = await _record(conn, bodies[index], ws)
+                    assert repeated == records[index]
+
+            try:
+                outcomes = await asyncio.gather(persist(0), persist(1), return_exceptions=True)
+                for outcome in outcomes:
+                    if isinstance(outcome, BaseException):
+                        raise outcome
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE workspace_id=:ws"), {"ws": ws}
+                    )
+
+    run_async(case())
+
+
+def test_rerecording_live_bytes_still_locks_against_erasure() -> None:
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            data = uuid.uuid4().bytes
+            async with engine.begin() as conn:
+                original = await _record(conn, data, ws)
+            key = original.storage_key
+            try:
+                async with engine.begin() as reader:
+                    assert await _record(reader, data, ws) == original
+                    # An eraser cannot acquire its exclusive lock while live bytes are reused.
+                    with pytest.raises(DBAPIError) as blocked:
+                        async with engine.begin() as eraser:
+                            await eraser.execute(
+                                text(
+                                    "SELECT storage_key FROM artifact "
+                                    "WHERE storage_key=:key FOR UPDATE NOWAIT"
+                                ),
+                                {"key": key},
+                            )
+                    assert blocked.value.orig.sqlstate == "55P03"
+                async with engine.begin() as eraser:
+                    assert await erase_if_unreferenced(eraser, key)
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE storage_key=:key"), {"key": key}
+                    )
+
+    run_async(case())
+
+
 async def _record(conn: AsyncConnection, data: bytes, workspace_id: str | None = "ws_t"):
     sha = content_address(data)
     key = artifact_key(workspace_id, sha)

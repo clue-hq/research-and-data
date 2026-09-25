@@ -98,13 +98,15 @@ async def record_artifact(
     """Upsert one snapshot row and return the canonical record. **Call before the blob put** —
     the row is the lock that serializes writers against a concurrent erasure.
 
-    On conflict (the key is content-addressed, so the identical bytes are already recorded) the
-    existing row wins — original timestamps and source link preserved — but its erasure state is
-    **cleared**: recording is the caller's statement that a live blob (re-)exists under this key,
-    so an ``erased_at``/``purged_at`` left by a prior DSAR purge must not survive (the
-    silent-resurrection contradiction, audit finding 4). ``DO UPDATE`` (unlike ``DO NOTHING``)
-    also takes the row lock, which is what serializes this writer against an in-flight
-    :func:`erase_if_unreferenced` / :func:`purge_erased_artifacts` on the same key.
+    An identical live record is reused under ``FOR SHARE``: its metadata needs no mutation,
+    and the shared lock still excludes concurrent erasure. Research transactions already hold
+    shared locks on their source artifacts; upgrading an unchanged output to an exclusive lock
+    can deadlock when two outputs also appear in each other's source sets (r13).
+
+    New records and changed/erased records take the upsert path. On conflict the existing
+    metadata wins, but ordinary erasure state is cleared: recording says a live blob (re-)exists
+    under this key. Privacy-erased records are never resurrected. Both paths hold a row lock
+    until the caller's transaction ends, serializing against erasure and purge.
 
     **Concurrent duplicate bytes.** ``ON CONFLICT (storage_key)`` names one arbiter index, and
     Postgres' speculative insertion resolves a conflict only on *that* index. The table also
@@ -118,6 +120,32 @@ async def record_artifact(
     surfaces the winner's row is committed, so the retry resolves through the arbiter and keeps the
     resurrect/row-lock guarantees above intact.
     """
+    live = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_COLUMNS} FROM artifact WHERE storage_key=:key "
+                    "AND workspace_id IS NOT DISTINCT FROM :ws AND content_sha256=:sha "
+                    "AND media_type=:media AND size_bytes=:size "
+                    "AND erased_at IS NULL AND purged_at IS NULL AND NOT privacy_erased FOR SHARE"
+                ),
+                {
+                    "key": storage_key,
+                    "ws": workspace_id,
+                    "sha": content_sha256,
+                    "media": media_type,
+                    "size": size_bytes,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if live is not None:
+        data = dict(live)
+        data["artifact_id"] = str(data["artifact_id"])
+        return ArtifactRecord.model_validate(data)
+
     statement = text(
         "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
         "size_bytes, source_key, source_url) "
