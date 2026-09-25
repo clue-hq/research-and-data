@@ -22,3 +22,55 @@
 - Closing verification: draft files read back, referenced primary r13 dossier and
   manifests exist, git diff whitespace check passed. No application test suite run
   for this documentation-only change. Existing unrelated edits left untouched.
+
+## System-prompt emphasis revision
+
+- Founder chooses agent method first; PoC-style method comparison later. Strengthened
+  SYSTEM.md with pipeline position, downstream significance, loss/distortion risks,
+  exhaustive meaningful coverage and explicit skill/manifest/capability reading.
+  Preserves uncertain/contrary findings, separates interpretation and acknowledges
+  unprocessed material instead of making a false completeness guarantee.
+- First prompt preserved in commit 463de8329. No active resource/tool changes or
+  trial execution; isolated writer/exporter and resolved input preparation remain.
+- Read-back and whitespace validation only; no model/provider calls or data writes.
+
+## Isolated harness and approved execution
+
+- Added scripts/trial_account_claims.py using native Deep Agents, configured account
+  model/gateway, shared submit_proposal and original source authorization. Separate
+  physical database/blobs/output and write namespace; no production selector changes.
+- Prepared frozen initial-report source inventory, readable virtual workspace,
+  prompt/input hashes, explicit capabilities and all-status JSON/Markdown exporter.
+- Real-DB smoke checks passed four review statuses, attributed-statement mapping,
+  canonical duplicate links, exact replay and bad-source rejection. All probes
+  rolled back before live run. Offline setup first failed on a wrong timestamp
+  column; corrected to the schema's collected_at before passing the smoke.
+- External execution initially blocked by automatic review pending explicit payload
+  approval. Founder then approved saved account evidence/context to OpenRouter plus
+  Langfuse; retried and running. No research providers, fleet, person jobs or
+  publication. Keep historical data and trial outputs separate.
+- Initial static check found long lines; formatted after preserving executed runner
+  snapshot. Ruff and compile now pass. System python is absent; use .venv/bin/python.
+- Limitations: fresh conversation, no C5/fleet lifecycle, in-memory checkpoints,
+  no correction tool in first trial. Completed claim writes survive interruption.
+- Observed shared Langfuse no-active-span/model-name parsing warnings; local full
+  model/tool traces and gateway usage receipts retained. Trace completeness is
+  not certified merely by install success.
+
+## Closing result
+
+- Approved isolated account trial completed in 500.6 seconds: 32 configured model
+  calls, gateway-reported cost $2.11164, 53 successful writes. Status counts: 49
+  supported, one wrong_entity, three insufficient_context; no tool failures.
+- Fresh database export confirms stored rows. Every cited source was opened.
+  Direct reads reached 65 of 352 admitted records (many wrappers overlap); this
+  is not a completeness percentage. Agent wrote coverage and review files.
+- Independent REVIEW.md in run-01 records successes and remaining quality gaps:
+  omitted source finding, compressed attributed voice, role-label misinterpretation,
+  overly broad records and account/person scope leakage. Original outputs preserved.
+- No new iteration, corrections or production promotion. Correction operation is
+  absent; do not claim changing a payload repairs an earlier claim. No person,
+  reconciliation, display or full-fleet behavior certified by this experiment.
+- Ruff, py_compile and whitespace checks pass. Shared real-DB smoke passed before
+  execution; no repeated paid research. Local per-turn traces and exact executed
+  runner snapshot retained; Langfuse warnings documented in review.
