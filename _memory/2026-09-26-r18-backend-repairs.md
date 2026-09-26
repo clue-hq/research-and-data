@@ -29,3 +29,11 @@ now validates instead of model_copy bypassing size checks. A real 82-finding scr
 exposed that old research profiles cannot read reads/. New resource revision 19 adds that
 read-only prefix for all research roles, leaving old pinned resources and prompts unchanged.
 Large-import finalization/trace test still being verified at this checkpoint.
+
+## Deadlock checkpoint complete
+
+Both lock-cycle regression variants pass (legacy 40P01 and repaired success). Five duplicate
+signal deliveries retain one revision; five distinct concurrent events receive consecutive
+revisions with no lost updates. Existing generation, early-person-release, driver and JSON
+import suites pass: 18 focused DB checks in this final group. Changes are limited to nomination
+parent locks and generation writer locks; cap/revision serialization remains exclusive.

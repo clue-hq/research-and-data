@@ -88,9 +88,10 @@ class NominateCommitteeTool(_ResearchWriteTool):
         if authority.role != "account_research" or self.scope.person_subject_id:
             raise ValueError("only the account parent may nominate candidates")
         async with ctx.conn_factory() as conn:
-            # One lock enforces the account's cap across simultaneous tool calls and retries.
+            # Serialize nominees/cap checks, but permit FK KEY SHARE checks from generation
+            # signals. UPDATE here caused the r18 job -> generation -> job lock cycle.
             await conn.execute(
-                text("SELECT job_id FROM arv2_research_job WHERE job_id=:id FOR UPDATE"),
+                text("SELECT job_id FROM arv2_research_job WHERE job_id=:id FOR NO KEY UPDATE"),
                 {"id": self.scope.job_id},
             )
             contact, supports, refs = await self.candidate(conn, authority, args)

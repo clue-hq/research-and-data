@@ -52,7 +52,9 @@ async def read_generation(
             await conn.execute(
                 text(
                     "SELECT * FROM arv2_account_research_generation WHERE generation_id=:id "
-                    "AND workspace_id=:ws" + (" FOR UPDATE" if lock else "")
+                    # Serialize revision writers without blocking FK KEY SHARE readers
+                    # registering children. Generation identity keys never change here.
+                    "AND workspace_id=:ws" + (" FOR NO KEY UPDATE" if lock else "")
                 ),
                 {"id": generation_id, "ws": workspace_id},
             )
