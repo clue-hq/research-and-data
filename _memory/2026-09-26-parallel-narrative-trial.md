@@ -43,3 +43,10 @@
 - Narrative words 6,963→5,564; serialized output chars 341,356→75,792, largely ledger removal. Some sections grew while becoming faster. Combined interventions/provider variance preclude attributing gains to one change.
 - Targeted quality review: useful workflow/voice/project detail survives; some earlier public-statement detail omitted, some tangential third-party content and repetitive seller caveats remain. Do not call fewer citations an omission percentage or semantic completeness proof. No editorial alteration to model outputs.
 - No research/provider enrichment, application DB writes or publication. No new code change/test suite needed for this run; prepared manifests/maps validated, all eight stored outputs structurally/reference valid. Further selection/prompt work and full-load acceptance still open.
+
+## Founder rollback of section-focus prompt refinement
+
+- User requested removal of the last section-focused narrative change. Archived exact active v4 as PROMPTS-v4.md and restored PROMPTS.md byte-for-byte from PROMPTS-v3.md (cmp verified).
+- Retained request-local aliases, constrained references, programmatic citation accounting and optional selection notes. No code/schema/input selection/model/concurrency changes. Shared/section-specific focus changes and their example are reverted together.
+- Clarified that ledger-removal instructions were also a model-input change since the first paid trial, besides aliases and section focus. Claim evidence and seller context were unchanged; causes of quality differences are not isolated.
+- Existing paid results and v4 prepared previews remain frozen/historical, not future launch inputs. Fresh preparation reads restored v3. Verified prompt parsing and required aliases/ledger-free contract offline. No paid rerun or application mutation.

@@ -482,3 +482,11 @@ Provider-reported upstream inference cost: $0.117255525. Original claim packets 
 See `.artifacts/parallel-narrative-trial-20260926/run-02-largest-eight/REVIEW.md` for section timings,
 readable outputs and remaining selection/wording issues. This validates the isolated subset's
 latency, not full 19-section or production pipeline performance; content acceptance remains open.
+
+Current instruction ruling after the eight-section trial: the founder requested reverting the
+last section-focus refinement. `PROMPTS.md` is restored byte-for-byte to draft v3, retaining
+ledger removal and request-local claim aliases. Draft v4 (including its teaching example) is
+preserved in `PROMPTS-v4.md` only as historical evidence; it is not the active prompt for fresh
+preparation. Existing prepared/paid v4 artifacts stay frozen. A future trial must prepare fresh
+inputs from the restored prompt rather than reuse the earlier v4 preview. No rerun is implied by
+this rollback, and no single cause of the observed selection differences has been established.
