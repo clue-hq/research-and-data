@@ -50,3 +50,10 @@
 - Retained request-local aliases, constrained references, programmatic citation accounting and optional selection notes. No code/schema/input selection/model/concurrency changes. Shared/section-specific focus changes and their example are reverted together.
 - Clarified that ledger-removal instructions were also a model-input change since the first paid trial, besides aliases and section focus. Claim evidence and seller context were unchanged; causes of quality differences are not isolated.
 - Existing paid results and v4 prepared previews remain frozen/historical, not future launch inputs. Fresh preparation reads restored v3. Verified prompt parsing and required aliases/ledger-free contract offline. No paid rerun or application mutation.
+
+## Researcher classification guidance
+
+- Founder approved field/category classification direction and requested thorough dossier-charter guidance. Inspected active quality revision19: both claim-ready skills v2, Finding/Entry lack field/category fields, importer hardcodes subject.research_finding. Narrative trial categories are manual overlay, not proof of researcher classification.
+- Added draft shared supplement and trial/integration boundary under docs/superpowers/drafts/2026-09-26-dossier-classification/. Covers field meaning, typed values, subject/source/time distinctions, non-forced fallback, category precision, public-wording preservation, scoped field proposals, account/person section guidance, bad/better cases and correction review.
+- Exact proposed system addition documented. Draft not installed: schema/import support must land with versioned resources, preserving typed values and original evidence without duplicate logical findings. Current skills/manifests remain untouched.
+- This checkpoint is guidance only; actual classification trial, importer/schema changes and quality validation remain outstanding. No paid calls, DB changes or runtime activation.
