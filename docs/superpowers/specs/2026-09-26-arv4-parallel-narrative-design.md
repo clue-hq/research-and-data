@@ -469,3 +469,9 @@ calls total). Provider-reported BYOK upstream inference cost was $0.47973107. In
 took 368.09 seconds; recovery took another 129.59 seconds. The 60-second target was missed.
 Reference-enumeration recovery helped, but excessive length/repetition and incomplete coverage
 ledgers remain. This is an isolated trial result, not production integration or content acceptance.
+
+Prompt refinement after review: draft v4 sharpens each section's writing purpose and includes
+one explicitly fictional bad/better example. Evidence may recur across sections, but each section
+should develop its own question; overview synthesis and detailed insights retain distinct emphasis.
+Public wording and meaningful qualifications remain intact. This is instruction guidance for parallel
+writers, not a new sequential reviewer, word cap or output gate. The JSON contract remains v3.

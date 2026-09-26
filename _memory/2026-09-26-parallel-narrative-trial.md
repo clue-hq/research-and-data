@@ -25,3 +25,10 @@
 - Responses are validated against aliases, then sentence and selection-note references are resolved and revalidated against canonical packet before saving sections/diagnostics/rendering. Original provider response retains model aliases for audit. Langfuse attempt metadata and receipts include request ID/map hash. No global lookup or approximate matching.
 - Recovery preserves exact map/request identity and handles the actual final failed attempt number; it does not mint a fresh alias assignment. Full section retry behavior is otherwise unchanged; focused reference-only correction remains future work.
 - 18 focused tests passed; ruff and diff checks passed. Prepared .artifacts/parallel-narrative-trial-20260926/local-reference-preview offline, round-tripped all 19 prior narratives through aliases to identical durable references and prose, and verified unchanged canonical inputs. No paid calls, workers, DB writes or production integration. Live reliability/latency improvement remains unmeasured.
+
+## Follow-up: distinct section purpose and teaching example
+
+- User approved clearer writing responsibilities and requested one bad/better example in the prompt. Updated PROMPTS.md to draft v4; preserved previous exact bytes in PROMPTS-v3.md. Output schema remains v3 (no contract change).
+- Shared instructions distinguish overview synthesis from detailed insights, permit claim reuse with different explanation, preserve substantive public statements and necessary qualifications, and discourage repetitive setup/caveats. Added one explicitly fictional Acme scenario with a bad repeated conclusion and better fit/signal/voice treatments. The example is guidance only, never target evidence or mandatory ABM framing.
+- Refined Why they fit, Buying signals and Contact insights assignments. No claim selection, metadata, model, concurrency, runtime or frontend changes.
+- Offline preparation verified all 19 section requests contain the shared example; template parsing still resolves 18 assignments (research-notes shared). Prepared section-purpose-preview under the trial artifacts. No paid generation; quality and timing impact still require live comparison.

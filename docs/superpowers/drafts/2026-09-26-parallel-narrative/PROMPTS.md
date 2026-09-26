@@ -1,7 +1,7 @@
-# Parallel narrative: exact prompt draft v3
+# Parallel narrative: exact prompt draft v4
 
 Review-only companion to the [design spec](../../specs/2026-09-26-arv4-parallel-narrative-design.md).
-Previous instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md) and [PROMPTS-v2.md](PROMPTS-v2.md).
+Previous instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md) [PROMPTS-v2.md](PROMPTS-v2.md) and [PROMPTS-v3.md](PROMPTS-v3.md).
 Not installed in the agent catalog. These are section-writer instructions, not a researcher skill.
 They contain no Zafran, Clue, healthcare, or other fixture-specific assumptions.
 
@@ -25,12 +25,51 @@ selected-product evidence. If seller context is missing, explain that limitation
 it with a generic product description. An ICP criterion describes the seller's preference,
 not an observed fact about the target.
 
-Answer the section's question using its relevant evidence. Give concrete findings and meaningful
-public statements priority over generic praise or filler. Preserve important wording, metrics,
-dates, qualifications and attribution. There is no fixed quota of two or three items. Group
-complementary evidence when it helps explain one point, but do not blend independent speakers,
-events or initiatives into an unattributed summary. Do not omit an important contrary finding
-because it weakens the seller's case.
+Write for this section's specific purpose. Answer its assigned question directly using the
+supplied evidence and seller context. The same claim may support several sections: develop the
+perspective needed here, with enough factual context for this section to stand alone. Avoid
+repeating the full research history or the same seller-relevance argument in every section.
+
+Overview sections synthesize; Insights sections explain supporting evidence in greater detail.
+This is a difference in emphasis, not permission to discard important findings. Why they fit
+owns the seller-capability/value connection; Buying signals emphasizes concrete evidence;
+Contact insights preserves people's public wording and reasoning; Why now develops timing;
+Strategy and initiatives explains objectives and progress; How to approach proposes actions.
+Do not wait for other writers or assume you have read their outputs. Use these responsibilities
+to guide your own section independently.
+
+Preserve independently meaningful findings, distinctive public wording, metrics, attribution,
+dates and qualifications. Brevity comes from removing repeated explanations and unnecessary
+setup, not replacing specifics with generic summaries. There is no fixed quota of findings or
+paragraphs. Group complementary evidence when it explains one point, but keep independent
+speakers, events and initiatives identifiable. Include important contrary findings.
+
+Keep uncertainty specific to the assertion it affects. State material limitations clearly,
+but avoid repeating generic caveats when the wording already makes the distinction clear.
+Never remove a qualification whose absence would change the meaning. Research notes may explain
+a conflict fully; other sections still retain the qualification necessary to avoid misleading
+readers. Do not merely refer readers elsewhere instead of explaining the relevant finding.
+
+FICTIONAL TEACHING EXAMPLE — not evidence about the target or seller in your packet.
+Suppose the seller supports account research and coordinated campaign preparation. Acme's
+marketing leader posts: "We're hiring someone to own our 1:1 and 1:few campaigns—from account
+research through webinars and field events—with a small team."
+BAD, repeated across sections: "Acme is expanding ABM with a small team, making it a strong fit
+for the seller's platform." This loses specifics, repeats a conclusion and overstates fit.
+BETTER, tailored to each section:
+- Why they fit: "The proposed role spans account research, webinars and field events. That
+  breadth connects to the seller's documented research and campaign-preparation capabilities;
+  reducing preparation effort is a potential value, not a disclosed execution problem."
+- Buying signals: "The hiring mandate combines 1:1 and 1:few campaigns, account research,
+  webinars and field events, explicitly with a small team. These are stated requirements for
+  the role, rather than evidence that the current program is failing."
+- Contact insights: "The leader describes ownership 'from account research through webinars
+  and field events—with a small team.' Their wording makes both the breadth of responsibility
+  and the team constraint concrete."
+In real output, attach supplied claim citations in reference arrays and seller-document
+citations where capabilities are used; mark the proposed value connection as inference.
+This example illustrates differentiated writing, not mandatory topics, length or wording.
+Never copy its fictional evidence or assume that every seller or target works in ABM.
 
 Public statements are valuable signals. Keep distinctive phrases and substantive reasoning,
 especially the words that explain priorities, constraints or methods. Quotation marks contain
@@ -73,7 +112,8 @@ Do not invent a fit score, numeric ranking, contact, channel preference or missi
 
 Before returning, critically review the section against these instructions and its section
 assignment. Correct unsupported additions, compressed-away public wording, misattribution,
-repetition and missing qualifications. Review in both directions: selected evidence to prose
+repetition and missing qualifications. Check that every item answers this section's question
+and adds substance rather than repeating another item. Review in both directions: selected evidence to prose
 for meaningful omissions, and prose to evidence for unsupported assertions. This is your final
 writing review, not a request for a second agent or new research.
 
@@ -161,7 +201,10 @@ current strategy, active initiatives, responsibilities and requirements. For eac
 connect the target observation to a documented seller capability and explain the possible value.
 Include meaningful mismatches and uncertainties. A preferred ICP attribute is not proof of a
 problem or purchase intent. Distinguish stated pain from your inferred opportunity. Do not invent
-a fit score or make every finding support a sale.
+a fit score or make every finding support a sale. Use concrete supporting detail without
+reproducing the full hiring inventory, company history or every related quotation. Keep a
+distinctive phrase here when it materially explains the connection; develop the seller-value
+argument rather than duplicating the detailed evidence inventory.
 ```
 
 ### overview / why-now
@@ -212,7 +255,10 @@ readable; do not add blanket do-not-mention rules or require new verification be
 ```text
 Present the concrete evidence of operational needs, constraints, requirements or changes that
 may be relevant to the seller. Preserve exact useful public wording and substantive details
-from job mandates, workflows and people's statements. Explain potential relevance separately.
+from job mandates, workflows and people's statements. Lead with the evidence and what it
+establishes. Explain potential relevance briefly and separately; do not repeat the complete
+seller-capability argument from Why they fit. Several sources may support one finding, but
+independently meaningful signals must remain identifiable.
 Explicit purchasing intent and an inferred buying signal are different. A vacancy is evidence
 of recruiting and stated responsibilities, not proof the program is absent or the work undone.
 Do not turn evidence of competence or success into a fabricated operational pain.
@@ -265,7 +311,10 @@ team leaders and practitioners. Retain the speaker's distinctive wording and rea
 its context, source and date where available. Separate their own words from quoted or relayed
 third parties. Explain relevance to seller/persona needs without converting opinion into fact.
 Include source-grounded strengths and working methods, not only pain. Do not replace several
-independent voices with one generic team sentiment. Link known people using supplied IDs.
+independent voices with one generic team sentiment or reduce substantive wording to vague labels
+such as "values efficiency." Different ideas from one speaker may deserve separate treatment.
+Explain relevance briefly without turning this into another company-fit argument, leadership
+roster or collection of outreach suggestions. Link known people using supplied IDs.
 ```
 
 ### insights / business-context
