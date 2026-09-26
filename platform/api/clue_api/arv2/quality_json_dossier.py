@@ -23,6 +23,7 @@ from clue_api.arv2.dossier_json import Entry, parse_json_dossier, replace_sectio
 from clue_api.arv2.dossier_revision import claim_versions, import_revision, revision_plan
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_evidence import list_sources
+from clue_api.arv2.quality_person_release import mark_account_import_ready
 from clue_api.arv2.quality_tools import _ResearchWriteTool
 from clue_api.quality_research_artifacts import ResearchArtifacts
 from clue_obs import get_logger
@@ -460,6 +461,7 @@ class FinishDossierTool(_DossierTool):
         body = encode(saved["document"])
         digest = hashlib.sha256(body).hexdigest()
         if saved["state"] == "complete":
+            await mark_account_import_ready(conn, self.scope, saved)
             return {
                 "finished": True,
                 "path": VIEW,
@@ -512,6 +514,7 @@ class FinishDossierTool(_DossierTool):
                 "receipt": receipt,
             },
         )
+        await mark_account_import_ready(conn, self.scope, saved)
         return {
             "finished": receipt["complete"],
             "path": VIEW,

@@ -681,36 +681,36 @@ class Arv2AccountResearchWorkHandler:
             for row in missing:
                 await record_child_result(conn, workspace_id=row.workspace_id, job_id=row.job_id)
             pending = await pending_continuations(conn)
-            children = (
-                await conn.execute(
-                    text("""SELECT c.workspace_id,c.job_id,j.run_id,r.project_run_id
-                FROM arv2_generation_child c JOIN arv2_research_job j ON j.job_id=c.job_id
-                JOIN arv2_account_research_generation g ON g.generation_id=c.generation_id
-                JOIN arv2_research_run r ON r.run_id=j.run_id
-                WHERE j.status='not_started' AND g.initial_settled_at IS NOT NULL
-                  AND g.state NOT IN ('suspended','privacy_stopped')
-                  AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
-                ORDER BY j.created_at,c.job_id LIMIT 200""")
-                )
-            ).all()
+            from clue_api.arv2.quality_person_release import ready_person_jobs
+
+            children = await ready_person_jobs(conn)
         offered = 0
         for child in children:
-            offered += await enqueue_launched_jobs(
+            child_offered = await enqueue_launched_jobs(
                 self._queue,
                 Arv2LaunchReceipt(
-                    run_id=child.run_id,
-                    job_ids=(child.job_id,),
+                    run_id=child["run_id"],
+                    job_ids=(child["job_id"],),
                     replayed=True,
-                    project_run_id=child.project_run_id,
+                    project_run_id=child["project_run_id"],
                     to_enqueue=(
                         QueuedJob(
-                            job_id=child.job_id,
-                            run_id=child.run_id,
-                            workspace_id=child.workspace_id,
+                            job_id=child["job_id"],
+                            run_id=child["run_id"],
+                            workspace_id=child["workspace_id"],
                         ),
                     ),
                 ),
             )
+            offered += child_offered
+            if child_offered:
+                log.info(
+                    "arv2.person_research.released",
+                    workspace_id=child["workspace_id"],
+                    run_id=str(child["run_id"]),
+                    job_id=str(child["job_id"]),
+                    parent_job_id=str(child["parent_job_id"]),
+                )
         for g in pending:
             offered += int(
                 await self._queue.enqueue(
@@ -1093,7 +1093,13 @@ class Arv2AccountResearchWorkHandler:
             tools_builder=build_person_tools if person else build_account_tools,
             model_id=self._person_model_id if person else self._model_id,
             model_role=_PERSON_MODEL_ROLE if person else _MODEL_ROLE,
-            task_instruction=person_task_instruction(person_brief)
+            task_instruction=person_task_instruction(
+                person_brief,
+                account_dossier_available=(
+                    quality_input_refs["quality_recipe_version"] >= 18
+                    and bool(quality_input_refs.get("parent_job_id"))
+                ),
+            )
             if person_brief
             else (
                 (
@@ -1536,37 +1542,27 @@ class Arv2AccountResearchWorkHandler:
                     ),
                     context_id=composition.run.context_id,
                 )
-                children = (
-                    (
-                        await conn.execute(
-                            text("""SELECT c.job_id FROM arv2_generation_child c
-                    JOIN arv2_research_job j ON j.job_id=c.job_id AND j.workspace_id=c.workspace_id
-                    WHERE c.generation_id=:id AND j.status='not_started'
-                      AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'"""),
-                            {"id": generation.generation_id},
-                        )
-                    )
-                    .scalars()
-                    .all()
-                )
-                committee = CommitteeStepResult(
-                    (),
-                    tuple(
-                        QueuedJob(
-                            job_id=jid,
-                            run_id=composition.run.run_id,
-                            workspace_id=composition.run.workspace_id,
-                        )
-                        for jid in children
-                    ),
-                    (),
-                )
                 await signal(
                     conn,
                     workspace_id=composition.run.workspace_id,
                     generation_id=generation.generation_id,
                     event_id=uuid5(NAMESPACE_URL, f"quality-initial:{composition.job.job_id}"),
                     reason="initial_settled",
+                )
+                from clue_api.arv2.quality_person_release import ready_person_jobs
+
+                children = await ready_person_jobs(conn, generation_id=generation.generation_id)
+                committee = CommitteeStepResult(
+                    (),
+                    tuple(
+                        QueuedJob(
+                            job_id=child["job_id"],
+                            run_id=child["run_id"],
+                            workspace_id=child["workspace_id"],
+                        )
+                        for child in children
+                    ),
+                    (),
                 )
             else:
                 await record_child_result(

@@ -108,7 +108,9 @@ async def read_person_brief(
     return body
 
 
-def person_task_instruction(brief: dict[str, Any]) -> str:
+def person_task_instruction(
+    brief: dict[str, Any], *, account_dossier_available: bool = False
+) -> str:
     """Put the parent's exact assignment in the opening, with selective original reads."""
     assignment: str = brief["brief"]
     return (
@@ -122,4 +124,12 @@ def person_task_instruction(brief: dict[str, Any]) -> str:
         "transcripts are accessible through /evidence/index.json. Reuse acquired material "
         "and read further as useful. Relationship verification remains deferred; present "
         "uncertainty without requiring employment or location proofs."
+        + (
+            "\nThe account's completed JSON dossier and import receipt are available read-only at "
+            "/research/parent-account-dossier.json. Read them as account context, alongside the "
+            "original sources. The account agent may still be writing its narrative; your research "
+            "can proceed independently. Write your own person dossier, not the account dossier."
+            if account_dossier_available
+            else ""
+        )
     )

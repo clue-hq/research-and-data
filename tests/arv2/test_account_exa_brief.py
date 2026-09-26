@@ -127,7 +127,7 @@ def test_source_excerpts_keep_original_positions_without_becoming_full_pages():
 
 def test_new_pins_preserve_historical_profiles_and_scope_person_tools(tmp_path):
     assert Settings(arv2_research_catalog_version="v4").arv2_research_catalog_version == "v4"
-    bundle = load_quality_resources("arv2-account")
+    bundle = load_quality_resources("arv2-account", version=15)
     assert json.loads(bundle.profile.body)["recipe_version"] == 15
     for version in (6, 7, 8, 9, 10):
         old = load_quality_resources("arv2-account", version=version)

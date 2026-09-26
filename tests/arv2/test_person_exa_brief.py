@@ -79,7 +79,7 @@ def test_person_request_preserves_agent_assignment_and_full_wire_identity(monkey
 
 
 def test_promotion_changes_only_person_profile_and_preserves_exact_charter(tmp_path):
-    bundle = load_quality_resources("arv2-person")
+    bundle = load_quality_resources("arv2-person", version=13)
     assert json.loads(bundle.profile.body)["recipe_version"] == 13
     assert load_quality_resources("arv2-person", expected_pin=bundle_pin(bundle)) == bundle
     for revision in range(2, 12):

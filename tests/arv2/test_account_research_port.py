@@ -21,7 +21,7 @@ def test_default_and_new_pins_select_discovery_account_without_changing_person_o
     assert Settings(_env_file=None).arv2_research_catalog_version == "v4"
     bundle = load_quality_resources("arv2-account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 17
+    assert manifest["recipe_version"] == 18
     assert json.loads((ROOT / "recipe-v12.json").read_text())["version"] == 12
     for revision in range(2, 14):
         old = load_quality_resources("arv2-account", version=revision)

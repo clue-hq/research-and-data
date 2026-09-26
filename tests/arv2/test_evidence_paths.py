@@ -52,4 +52,9 @@ def test_revision14_pins_path_tools_and_readable_navigation(tmp_path):
                     "record_research_disposition",
                 ):
                     assert tool.version == "2"
-    assert json.loads(load_quality_resources("arv2-account").profile.body)["recipe_version"] == 15
+    assert (
+        json.loads(load_quality_resources("arv2-account", version=15).profile.body)[
+            "recipe_version"
+        ]
+        == 15
+    )

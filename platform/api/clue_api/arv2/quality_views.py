@@ -20,6 +20,11 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.person_research_brief import BRIEF_PATH, read_person_brief
 from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
+from clue_api.arv2.quality_person_release import (
+    PARENT_DOSSIER_PATH,
+    read_parent_dossier,
+    releases_after_import,
+)
 from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_view
@@ -98,6 +103,8 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        if path == "/parent-account-dossier.json":
+            return await read_parent_dossier(conn, self._storage, scope, authority.context_id)
         if path == "/dossier/latest.json":
             from clue_api.arv2.quality_json_dossier import read_json_dossier
 
@@ -280,6 +287,8 @@ class ResearchViewMount(EvidenceWorkspace):
                     "findings": "/research/claims/0.json",
                     "original_reports_pages_and_transcripts": "/evidence/index.json",
                 }
+                if releases_after_import(scope) and (scope.input_refs or {}).get("parent_job_id"):
+                    result["account_research_references"]["dossier"] = PARENT_DOSSIER_PATH
             if advisory_research(scope):
                 result["review_policy"] = {
                     "verification": "deferred",
@@ -434,6 +443,13 @@ class ResearchViewMount(EvidenceWorkspace):
                         "/catalog/0.json",
                         "/claims/0.json",
                         "/dossier/latest.json",
+                        *(
+                            ("/parent-account-dossier.json",)
+                            if self._scope.person_subject_id
+                            and releases_after_import(self._scope)
+                            and (self._scope.input_refs or {}).get("parent_job_id")
+                            else ()
+                        ),
                     )
                 )
             ]
