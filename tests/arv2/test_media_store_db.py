@@ -82,8 +82,11 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                 )
                 == 1
             )
-            assert generation.attributes["langfuse.observation.metadata.cost_source"] == "unpriced"
-            assert "langfuse.observation.cost_details" not in generation.attributes
+            assert generation.attributes["langfuse.observation.metadata.cost_source"] == "estimate"
+            assert (
+                json.loads(generation.attributes["langfuse.observation.cost_details"])["total"]
+                == 0.0043
+            )
 
             ledger = (
                 (
@@ -98,8 +101,8 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                 .mappings()
                 .one()
             )
-            assert ledger["cost_usd"] is None and ledger["media_seconds"] == 60
-            assert ledger["extras_json"]["cost_source"] == "unpriced"
+            assert float(ledger["cost_usd"]) == 0.0043 and ledger["media_seconds"] == 60
+            assert ledger["extras_json"]["cost_source"] == "estimate"
             assert ledger["extras_json"]["langfuse_trace_id"] == format(
                 generation.context.trace_id, "032x"
             )
@@ -124,7 +127,8 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                 conn_factory=rt._conn_factory,
             )
             video_line = next(p for p in report.providers if p.provider == "deepgram")
-            assert video_line.unpriced_calls == 1 and video_line.free_calls == 0
+            assert video_line.estimated_calls == 1 and video_line.unpriced_calls == 0
+            assert video_line.free_calls == 0
             logs = [
                 e for e in captured.entries if str(e.get("event", "")).startswith("arv2.media.")
             ]

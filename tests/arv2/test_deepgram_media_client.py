@@ -1,6 +1,7 @@
 """Offline protocol, faithful segmentation and no-repurchase checks."""
 
 import json
+from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -71,10 +72,44 @@ def test_native_wire_ledger_and_saved_raw_response(url):
     assert request.body == (json.dumps({"url": url}).encode() if url else b"audio")
     row = next(r for r in ledger.rows if r.phase == "result")
     assert row.provider_request_id == "fixture" and row.media_seconds == 2
-    assert row.cost_usd is None
+    assert row.cost_usd == Decimal(2) * Decimal("0.0043") / 60
+    assert row.extras["cost_source"] == "estimate"
+    assert row.extras["invoice_verified"] is False
     record, body = raw.records[0]
     assert json.loads(body) == speech()
     assert record.request.headers["Authorization"] != "Token secret"
+
+
+@pytest.mark.parametrize("duration", [0, 2.125, 2570])
+def test_cost_uses_provider_duration_and_configured_rate(duration):
+    from clue_api.arv2.deepgram_media_client import read_cost
+
+    result = read_cost(
+        HttpResponse(
+            200,
+            body=json.dumps(
+                {"metadata": {"duration": duration, "request_id": "cost-fixture"}}
+            ).encode(),
+        ),
+        usd_per_minute=Decimal("0.0052"),
+    )
+    assert result.cost_usd == Decimal(str(duration)) * Decimal("0.0052") / 60
+    assert result.inferred and result.provider_request_id == "cost-fixture"
+
+
+@pytest.mark.parametrize(
+    "status,metadata", [(200, {}), (503, {"duration": 10}), (200, {"duration": -1})]
+)
+def test_missing_or_failed_metering_stays_unknown(status, metadata):
+    from clue_api.arv2.deepgram_media_client import read_cost
+
+    assert (
+        read_cost(
+            HttpResponse(status, body=json.dumps({"metadata": metadata}).encode()),
+            usd_per_minute=Decimal("0.0043"),
+        ).cost_usd
+        is None
+    )
 
 
 def test_no_automatic_retry_after_failed_paid_attempt():

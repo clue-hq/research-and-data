@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
+from decimal import Decimal
 from itertools import groupby
 from typing import Any
 from urllib.parse import urlencode
@@ -76,13 +77,24 @@ def time_value(value: Any) -> float | None:
     return None
 
 
-def read_cost(response: HttpResponse) -> CostReading:
+def read_cost(response: HttpResponse, *, usd_per_minute: Decimal) -> CostReading:
     body = json.loads(response.body)
     metadata = body.get("metadata", {})
     duration = time_value(metadata.get("duration"))
     return CostReading(
         provider_request_id=metadata.get("request_id") or body.get("request_id"),
-        media_seconds=math.ceil(duration) if duration else None,
+        media_seconds=math.ceil(duration) if duration is not None else None,
+        cost_usd=(Decimal(str(duration)) * usd_per_minute / 60)
+        if 200 <= response.status < 300 and duration is not None
+        else None,
+        inferred=True,
+        extras={
+            "duration_seconds": duration,
+            "usd_per_minute": str(usd_per_minute),
+            "pricing_basis": "configured_nova3_prerecorded_rate",
+            "invoice_verified": False,
+            "usd_unpriced": not (200 <= response.status < 300 and duration is not None),
+        },
     )
 
 
@@ -201,8 +213,18 @@ class DeepgramMediaError(ValueError):
 
 
 class DeepgramMediaClient:
-    def __init__(self, caller: ProviderCaller, api_key: SecretStr | None, *, language: str = "en"):
+    def __init__(
+        self,
+        caller: ProviderCaller,
+        api_key: SecretStr | None,
+        *,
+        language: str = "en",
+        usd_per_minute: Decimal = Decimal("0.0043"),
+    ):
         self.caller, self.api_key, self.language = caller, api_key, language
+        if not usd_per_minute.is_finite() or usd_per_minute < 0:
+            raise ValueError("Deepgram rate must be finite and nonnegative")
+        self.usd_per_minute = usd_per_minute
 
     def transcribe(
         self,
@@ -231,11 +253,20 @@ class DeepgramMediaClient:
                     body=body,
                     timeout_s=660,
                 ),
-                estimate=SpendEstimate(media_seconds=duration_s),
+                estimate=SpendEstimate(
+                    media_seconds=duration_s, usd=Decimal(duration_s) * self.usd_per_minute / 60
+                ),
                 binary_request=not bool(media_url),
                 max_attempts=1,
-                cost_reader=read_cost,
-                extras={"usd_unpriced": True, "model": "nova-3", "diarize_model": "v2"},
+                cost_reader=lambda response: read_cost(
+                    response, usd_per_minute=self.usd_per_minute
+                ),
+                extras={
+                    "usd_unpriced": True,
+                    "model": "nova-3",
+                    "diarize_model": "v2",
+                    "usd_per_minute": str(self.usd_per_minute),
+                },
             )
         )
         if not 200 <= result.response.status < 300:

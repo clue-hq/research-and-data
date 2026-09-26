@@ -363,6 +363,13 @@ class Settings(BaseSettings):
     # Active recording ASR is Deepgram Nova-3; Gemini fields above serve legacy callers.
     # en matches the trial; auto detects dominant language; multi permits code-switching.
     arv2_deepgram_language: str = "en"
+    # PAYG prerecorded list rates; computed USD is an estimate, not invoice metering.
+    arv2_deepgram_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0043"), ge=0, allow_inf_nan=False
+    )
+    arv2_deepgram_multi_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0052"), ge=0, allow_inf_nan=False
+    )
     # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
     # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.
     arv2_embedding_model: str = "google/gemini-embedding-2"

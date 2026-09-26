@@ -2012,7 +2012,14 @@ class _LiveClients:
 
     def transcription(self, caller: ProviderCaller) -> DeepgramMediaClient:
         return DeepgramMediaClient(
-            caller, self._deepgram_api_key, language=self._settings.arv2_deepgram_language
+            caller,
+            self._deepgram_api_key,
+            language=self._settings.arv2_deepgram_language,
+            usd_per_minute=(
+                self._settings.arv2_deepgram_multi_usd_per_minute
+                if self._settings.arv2_deepgram_language == "multi"
+                else self._settings.arv2_deepgram_usd_per_minute
+            ),
         )
 
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient:
