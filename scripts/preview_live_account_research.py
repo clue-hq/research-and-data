@@ -70,6 +70,9 @@ async def main():
     claim_ready = args.discovery_trial and json.loads(
         (out / "trial-manifest.json").read_text()
     ).get("claim_ready", False)
+    replay = claim_ready and json.loads((out / "trial-manifest.json").read_text()).get(
+        "replay_saved_research", False
+    )
     if (out / "traces/events.jsonl").exists():
         raise ValueError("Use a fresh prepared directory; never overwrite a previous trial.")
     if args.discovery_trial:
@@ -81,7 +84,7 @@ async def main():
     ctx = json.loads((inputs / "research/context.json").read_text())
     target = ctx["target"]
     (out / "traces").mkdir(exist_ok=True)
-    caps = {name: schema.model_json_schema() for name, schema in SCHEMAS.items()}
+    caps = {} if replay else {name: schema.model_json_schema() for name, schema in SCHEMAS.items()}
     save(inputs / "research/capabilities/0.json", {"operations": caps})
     system = (out / "account-system-prompt.md").read_text().split("\n\nPREVIEW SCOPE:")[0]
     system += """\n\nLIVE RESEARCH-STAGE TEST SCOPE
@@ -111,6 +114,9 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "Finish with finish_dossier after writing the sectioned record dossier; "
             "keep interpretations and gaps in the locations specified by the formation skill.",
         )
+    if replay:
+        # Replay has a complete saved-evidence assignment, with no acquisition instructions.
+        system = (out / "account-system-prompt.md").read_text()
     (out / "account-system.live.md").write_text(system)
     if not args.discovery_trial:
         head_system = (out / "head-system-prompt.md").read_text()
@@ -161,7 +167,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
     )
     exa = ExaClient(caller, secrets.exa_api_key)
     ark = AiArkClient(caller, secrets.ai_ark_api_key, min_gap_s=settings.arv2_ai_ark_min_gap_s)
-    rows = []
+    rows = json.loads((out / "source-manifest.json").read_text()) if replay else []
     lock = asyncio.Lock()
     field_history = {}
 
@@ -209,6 +215,8 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
 
     async def acquire_research_evidence(operation: str, arguments: dict) -> str:
         """Acquire research using the operation schemas in /research/capabilities/0.json."""
+        if replay:
+            raise RuntimeError("Acquisition disabled for saved-evidence replay")
         if operation not in SCHEMAS:
             return json.dumps(
                 {"status": "unavailable", "reason": "Outside this research-stage test"}
@@ -433,7 +441,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                 return json.dumps(finish_live(out, rows, summary, gaps))
 
             tools = [
-                tools[0],
+                *([] if replay else [tools[0]]),
                 StructuredTool.from_function(coroutine=save_dossier_section),
                 StructuredTool.from_function(coroutine=validate_dossier),
                 StructuredTool.from_function(coroutine=finish_dossier),
@@ -453,6 +461,8 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             middleware = ContinuationTools(allowed | {"write_file", "edit_file", "write_todos"})
         if claim_ready:
             allowed.discard("finish_research")
+            if replay:
+                allowed.discard("acquire_research_evidence")
             allowed.update(
                 {
                     "save_dossier_section",
@@ -512,6 +522,8 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                 "Use save_dossier_section for structured JSON, then finish_dossier. "
                 "Do not call finish_research; it is not installed."
             )
+        if replay:
+            opening = (out / "task-prompt.md").read_text()
         (out / "account-opening.live.md").write_text(opening)
         invocation = graph.ainvoke(
             {"messages": [HumanMessage(content=opening)]},
@@ -532,6 +544,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "session_id": session,
             "source_records": len(rows),
             "claim_ready_dossier": claim_ready,
+            "replay_saved_research": replay,
             "application_database_writes": 0,
             "limitations": [
                 "Research-stage harness: no production C5/fleet/launch lifecycle",

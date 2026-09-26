@@ -117,6 +117,48 @@ def test_live_claim_ready_mode_keeps_acquisition_excludes_old_results_and_direct
     assert json.loads((out / "trial-manifest.json").read_text())["claim_ready"]
 
 
+def test_saved_replay_preserves_sources_excludes_answers_and_disables_acquisition(tmp_path):
+    from live_account_dossier import prepare_replay
+
+    source, out = tmp_path / "saved", tmp_path / "replay"
+    trial.save(source / "inputs/research/context.json", {"target": {"name": "Example"}})
+    trial.save(source / "inputs/research/capabilities/0.json", {"operations": {"search": {}}})
+    trial.save(source / "inputs/evidence/index.json", {"sources": []})
+    (source / "inputs/delegation-brief.md").write_text("Seller purpose")
+    (source / "source-bodies").mkdir()
+    body = source / "source-bodies/source-one.txt"
+    body.write_text("Original public statement")
+    trial.save(
+        source / "source-manifest.json",
+        [
+            {
+                "source_id": "source-one",
+                "body_sha256": trial.digest(body),
+            }
+        ],
+    )
+    trial.save(source / "dossier.json", {"sections": []})
+    (source / "REVIEW.md").write_text("DO NOT SEED REVIEW ANSWERS")
+    trial.save(source / "inputs/scratch/coverage.json", {"answer": "OLD_NOTES"})
+    prepare_replay(source, out)
+    trial.verify(out)
+    assert (out / "source-bodies/source-one.txt").read_bytes() == body.read_bytes()
+    assert json.loads((out / "inputs/research/capabilities/0.json").read_text()) == {
+        "operations": {}
+    }
+    manifest = json.loads((out / "trial-manifest.json").read_text())
+    assert manifest["replay_saved_research"] and manifest["claim_ready"]
+    inputs = "".join(p.read_text() for p in (out / "inputs").rglob("*") if p.is_file())
+    assert "DO NOT SEED" not in inputs and "OLD_NOTES" not in inputs
+    assert "Decide what the finding actually establishes" in inputs
+    assert "No acquisition tools are installed" in (out / "account-system-prompt.md").read_text()
+    with pytest.raises(ValueError, match="fresh replay"):
+        prepare_replay(source, out)
+    body.write_text("Changed source")
+    with pytest.raises(ValueError, match="source body changed"):
+        prepare_replay(source, tmp_path / "changed")
+
+
 def test_fresh_dossier_freezes_only_current_sources_and_preserves_bytes(tmp_path):
     from live_account_dossier import finish_live, save_section
 

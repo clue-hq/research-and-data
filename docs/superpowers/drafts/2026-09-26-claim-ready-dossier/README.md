@@ -29,6 +29,17 @@ bidirectional source/entry review for omissions and unsupported additions. All
 examples remain generic. Historical trial snapshots are unchanged. This revision
 has not had a paid quality evaluation and does not change production or validators.
 
+**Saved-source JSON replay:** `live_account_dossier.prepare_replay` prepares a new
+directory from a completed fresh trial. It copies original evidence, the prior
+draft dossier and seller/context references, excluding old working notes, model
+history and reviewer answers. It uses the revised formation skill with the same
+JSON section tools. The preview runner recognizes `replay_saved_research`, removes
+the acquisition tool and its allowed operations, and uses a saved-evidence task
+instead of fresh-research instructions. Only model calls are paid. The finished
+dossier can use the existing isolated importer with a fresh run number. This
+tests revised selection on the same acquired material, not fresh discovery or
+preservation of the original researcher's conversation context.
+
 The researcher authors the claim-ready findings while forming the dossier. Code
 imports those records without a second model selecting, splitting or paraphrasing
 them. This is a trial, not a promoted production format.

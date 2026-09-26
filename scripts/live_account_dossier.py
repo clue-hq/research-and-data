@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
@@ -19,12 +20,8 @@ from account_dossier_trial import DRAFT, Entry, import_dossier, inspect_dossier,
 from research_preview_support import save
 
 
-def prepare_format(out, prompt):
-    # Remove unavailable production responsibilities rather than append contradictory guidance.
-    start = prompt.index("Select committee candidates through either web research")
-    end = prompt.index("Selected account-dossier skill (complete body):", start)
-    prompt = prompt[:start] + prompt[end:]
-    prompt = prompt.split("ISOLATED TRIAL:")[0]
+def prepare_skill(out):
+    """Share the JSON formation contract between fresh acquisition and saved replay."""
     guide = (
         (DRAFT / "SKILL.md")
         .read_text()
@@ -60,6 +57,15 @@ rendered mechanically from these objects; no second authored report is needed.
     path = out / "inputs/.deepagent/skills/claim-ready-account-dossier/SKILL.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(guide)
+
+
+def prepare_format(out, prompt):
+    # Remove unavailable production responsibilities rather than append contradictory guidance.
+    start = prompt.index("Select committee candidates through either web research")
+    end = prompt.index("Selected account-dossier skill (complete body):", start)
+    prompt = prompt[:start] + prompt[end:]
+    prompt = prompt.split("ISOLATED TRIAL:")[0]
+    prepare_skill(out)
     addition = """
 
 FRESH RESEARCH AND CLAIM-READY DOSSIER
@@ -103,6 +109,105 @@ and read accessible media text and record unresolved recordings honestly.
 """
     (out / "dossier-formation.live.md").write_text(addition)
     return prompt + addition
+
+
+def prepare_replay(source, out):
+    """Replay formation only, retaining original evidence and excluding prior review/notes."""
+    from trial_account_discovery import ROOT, RUNNERS, digest
+
+    if out.exists():
+        raise ValueError("Use a fresh replay directory")
+    rows = json.loads((source / "source-manifest.json").read_text())
+    for row in rows:
+        body = source / "source-bodies" / (row["source_id"] + ".txt")
+        if digest(body) != row["body_sha256"]:
+            raise ValueError("Saved source body changed")
+    for name in ("evidence", "research", "documents", "project"):
+        if (source / "inputs" / name).exists():
+            shutil.copytree(source / "inputs" / name, out / "inputs" / name)
+    shutil.copyfile(source / "inputs/delegation-brief.md", out / "inputs/delegation-brief.md")
+    shutil.copytree(source / "source-bodies", out / "source-bodies")
+    shutil.copyfile(source / "source-manifest.json", out / "source-manifest.json")
+    shutil.copyfile(source / "dossier.json", out / "inputs/research/prior-dossier.json")
+    save(out / "inputs/research/capabilities/0.json", {"operations": {}})
+    (out / "inputs/scratch").mkdir()
+    prepare_skill(out)
+    system = (DRAFT / "SYSTEM.md").read_text()
+    start = system.index("Retain the dossier's meaningful section headings.")
+    end = system.index("Public statements deserve deliberate attention.", start)
+    system = (
+        system[:start]
+        + (
+            "Use save_dossier_section(section, findings) for structured JSON following the skill. "
+            "One finding is an independently assessable observation or reported statement. "
+            "Separate independent events and speakers; preserve coherent workflows and quotes.\n\n"
+        )
+        + system[end:]
+    )
+    system = system.replace("/skills/", "/.deepagent/skills/").replace("/work/", "/scratch/")
+    system = system.replace(
+        "Write the dossier incrementally at /outputs/account-dossier.entries.md.",
+        "Write incrementally with save_dossier_section; it saves /scratch/account-dossier.json.",
+    )
+    system += (
+        "\nThe saved draft dossier is a coverage aid, not independent evidence. Reassess "
+        "its entries against original sources; do not inherit its classifications or IDs "
+        "without review. No acquisition tools are installed.\n"
+    )
+    (out / "account-system-prompt.md").write_text(system)
+    task = (
+        "Use /delegation-brief.md, /research/context.json and its pinned documents for "
+        "context. Read /research/prior-dossier.json alongside /evidence/index.json and "
+        "its continuations. Re-author the account findings from this saved investigation "
+        "using the revised claim-ready-account-dossier skill. Inspect original sources "
+        "for omissions and correct unsupported additions; preserve useful wording and "
+        "uncertainty. Do not target a record count. Use save_dossier_section, "
+        "validate_dossier and finish_dossier. Keep coverage/review notes in /scratch/. "
+        "This is saved-evidence formation, not a fresh investigation or the original "
+        "agent conversation. No purchases, person jobs, publication or new research."
+    )
+    (out / "task-prompt.md").write_text(task)
+    save(
+        out / "inputs/trial-manifest.json",
+        {
+            "dossier": "/research/prior-dossier.json",
+            "sources": "/evidence/index.json",
+            "context": "/research/context.json",
+            "source_count": len(rows),
+            "dossier_output": "/scratch/account-dossier.json",
+            "acquisition_enabled": False,
+        },
+    )
+    runners = (
+        *RUNNERS,
+        "scripts/live_account_dossier.py",
+        "scripts/account_dossier_trial.py",
+        "scripts/trial_account_claims.py",
+    )
+    for name in runners:
+        dest = out / "runner-snapshot" / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, dest)
+    files = [
+        p
+        for base in (out / "inputs", out / "source-bodies")
+        for p in base.rglob("*")
+        if p.is_file()
+    ]
+    files.extend(
+        out / name
+        for name in ("account-system-prompt.md", "task-prompt.md", "source-manifest.json")
+    )
+    save(
+        out / "trial-manifest.json",
+        {
+            "claim_ready": True,
+            "replay_saved_research": True,
+            "source_snapshot": str(source),
+            "prepared_hashes": {str(p.relative_to(out)): digest(p) for p in files},
+            "runner_hashes": {name: digest(ROOT / name) for name in runners},
+        },
+    )
 
 
 def source_aliases(inputs, rows):
