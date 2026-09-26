@@ -23,3 +23,18 @@ Closing: 133 offline + 14 isolated DB checks passed, Ruff and targeted mypy clea
 trial responses replayed through production parser with all spans valid, no paid/network calls.
 Local credential and ffmpeg/ffprobe/Node/Deno availability confirmed without secret output.
 Local checkpoint contains this integration only; unrelated pre-existing changes left untouched.
+
+## Paid provider smoke, founder requested
+
+Ran live `_LiveClients.for_job().transcription()` with shared preparation/parser and standard
+raw/ledger sinks, configured Langfuse, using the retained public 42:49 interview. Isolated files;
+no fleet jobs, application DB writes, claims or additional research providers.
+First test-only sink incorrectly implemented persist instead of save; provider response reached
+but was not retained. Fixed harness by removing wrapper; offline-tested FileRawSink/export;
+deliberate run-02 submission succeeded. Two submissions overall, first billing/outcome unknown.
+Production application code unchanged. No automatic retries.
+Success: 6846 words, 575 segments, 3 voice clusters, no missing word times/speakers, checksum
+matched, ledger 2570 media seconds, USD unknown, 5.4 seconds elapsed. Prior trial 6850 words/576
+segments; same last-word timing. Confidence metrics are not accuracy measurement.
+Review and files: `.artifacts/deepgram-integration-live-20260926/REVIEW.md`.
+Live provider/client/parser now checked; full fleet execution/listening accuracy still separate.

@@ -1,7 +1,7 @@
 # Deepgram integration into research media
 
-Status: implemented locally; offline and isolated database verification below. No new paid
-transcription or fleet launch performed for this integration.
+Status: implemented locally; offline and isolated database verification below. Subsequent
+founder-authorized paid production-client test passed (26 September); no fleet launch.
 
 ## Behavior
 
@@ -78,7 +78,13 @@ passed. Four saved trial responses parsed successfully (576 / 241 / 145 / 1,694 
 with valid spans and no utterance-word fallback needed. Configured key and local ffmpeg,
 ffprobe, Node and Deno availability were confirmed without printing credentials.
 
-Live integrated ASR quality is not certified by these checks. The saved standalone benchmark
+A subsequent paid production-client test on the retained 42:49 interview succeeded: 6,846 words,
+575 segments, three speaker clusters, matching audio checksum and 2,570 ledger media seconds.
+One earlier submission lost its response to a test-only sink error; the standard sink was
+offline-checked before the successful deliberate retry. USD billing is unreported, including
+the first attempt. See `.artifacts/deepgram-integration-live-20260926/REVIEW.md`.
+
+Full fleet execution and listening-based ASR quality are not certified by these checks. The saved standalone benchmark
 remains the evidence for acoustic performance; noisy/overlapping speech still needs review.
 
 The separately discussed parent-account dossier reference and earlier person-job release are
