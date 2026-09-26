@@ -15,3 +15,23 @@
   enrichment, fleet, person jobs or publication. Import target isolated run-07.
 - Semantic results and import verification pending; keep this distinct from adoption
   or proof that examples resolve the prior errors.
+
+## Completed result
+
+- Run-02 completed under 700 graph steps without continuation: 72 model calls,
+  693.58s, $5.264324 recorded model spend, zero new research-provider calls.
+- Final 122 findings in 12 sections, including 32 separate calendar event entries.
+  Gap bundle and fit/committee summaries now live in review notes, not claim rows;
+  fit section has zero findings. Relevant public language retained/recovered.
+- Public-statement granularity remains unreliable: multiple speakers still bundled;
+  ambiguous title parsing still creates a questionable role discrepancy. Other
+  conflict comparisons remain subjective and potentially incomparable. No manual
+  corrections or production promotion. Source-to-output review is targeted.
+- One wrong expected_entity type and cyclic/unresolved references were repaired.
+  Two validation calls; sampled repaired statuses unchanged. No semantic gate added.
+- All 122 stored in isolated run-07 with exact content, metadata, source IDs and
+  section equality. Repeat import reused every ID, no duplicates/errors. Historical
+  source run, previous replays and user edits preserved.
+- Detailed independent review and artifacts: .artifacts/account-dossier-replay-20260926/run-02/REVIEW.md.
+  Follow-up suggestion is a narrow multi-speaker source exercise, not more acquisition;
+  no additional paid run authorized or started in this checkpoint.

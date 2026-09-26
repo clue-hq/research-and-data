@@ -49,6 +49,16 @@ text and research gaps stored as supported observations remain. No semantic acce
 or production promotion. The founder increased subsequent claim-ready trials to 700
 graph steps; other runtime limits remain unchanged.
 
+Worked-example replay run-02 completed with the same source/draft/context inputs;
+only the skill and system prompt changed among initial inputs. Expanded examples
+cover researcher reasoning/coverage gaps and public-statement preservation,
+independent speakers and interview attribution. It produced 122 findings, stored
+exactly in isolated run-07; repeat import reused all IDs. Gap and fit bundles moved
+to notes, and calendar events were separated, but speaker bundling and title/scope
+judgments remain faulty. Cost $5.264324 across 72 model calls, no acquisition, no
+continuation under the 700-step limit. Full review:
+`.artifacts/account-dossier-replay-20260926/run-02/REVIEW.md`. No production promotion.
+
 The researcher authors the claim-ready findings while forming the dossier. Code
 imports those records without a second model selecting, splitting or paraphrasing
 them. This is a trial, not a promoted production format.
