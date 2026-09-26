@@ -267,7 +267,7 @@ truncate quotes, or use token-based near-duplicate deletion. If a packet is too 
 and report a capacity failure; separately review segmentation using whole findings. Do not silently
 switch to an unreviewed summarizer. The time objective does not authorize omission.
 
-### Output v2 (trial wrapper; revised after the first trial)
+### Output v3 (trial wrapper; request-local claim references)
 
 One object: `section` + `selectionNotes` + `contextGaps`. The historical v1 prompts and executed
 trial artifacts retain their original per-claim `coverage` contract.
@@ -288,6 +288,19 @@ cause an automatic model retry or block display. Keep these diagnostics in the a
 
 No fixed 2–3 item quota. Focused items may connect complementary facts; independently meaningful
 statements/events retain clear attribution and remain separately inspectable.
+
+For generation, code assigns C1, C2, etc. to the already scoped claims in each frozen section
+packet. It saves a request ID, canonical packet hash and alias-to-UUID map; the model sees only
+local claim references in citation fields and structured duplicate/conflict/supersession links.
+Finding text, attribution and qualifications are unchanged. The exact packet's aliases constrain
+the reference schema from the first call. Seller-document and contact IDs are unchanged.
+
+Validate returned aliases against that request, then resolve sentence and selection-note references
+to durable UUIDs before storing or rendering the section. Mapping checks precede paid execution;
+no global alias lookup, approximate ID matching or source refetching. Retries reuse the saved map.
+A new prepared request has its own identity/map, even if some aliases repeat. Retain raw model
+responses, the original packet and map for audit. These temporary aliases grant no data access
+and are not frontend labels. The v1/v2 prompts and paid artifacts remain historical references.
 
 Citations reference claims and seller documents; the backend resolves display links. Do not let
 the model generate/retarget URLs. Missing sources are visibly qualified; no new requirement that

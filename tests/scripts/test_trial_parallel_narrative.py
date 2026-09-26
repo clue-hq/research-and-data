@@ -183,7 +183,7 @@ def test_notes_cannot_silently_replace_legacy_coverage_contract():
         trial.validate(json.dumps(out), packet(), [])
     with pytest.raises(ValueError, match="Prepare a fresh directory"):
         trial.require_current_output({})
-    trial.require_current_output({"output_version": 2})
+    trial.require_current_output({"output_version": trial.OUTPUT_VERSION})
 
 
 def test_prompt_and_schema_remove_per_claim_ledger_but_keep_citations():
@@ -196,3 +196,136 @@ def test_prompt_and_schema_remove_per_claim_ledger_but_keep_citations():
     assert "Do not produce a ledger" in system
     assert "Account for every supplied primary claim" not in system
     assert "coverage" not in user
+
+
+def alias_request(p=None, request_id="request-one"):
+    p = p or packet()
+    view, mapping = trial.localize_claims(p, request_id)
+    return {"packet": p, "model_packet": view, "request_id": request_id}, mapping
+
+
+def test_aliases_preserve_text_and_remap_links_without_mutating_original():
+    p = packet()
+    p["claims"].append({**record(), "claim_id": "claim-b"})
+    p["claims"][0]["superseded_by"] = "claim-b"
+    p["claims"][0]["value_json"]["review"].update(
+        duplicate_of="claim-b", conflicts_with=["claim-b"]
+    )
+    frozen = json.dumps(p)
+    req, mapping = alias_request(p)
+    a = req["model_packet"]["claims"][0]
+    assert json.dumps(p) == frozen
+    assert a["claim_id"] == "C1"
+    assert a["superseded_by"] == "C2"
+    assert a["value_json"]["review"]["duplicate_of"] == "C2"
+    assert a["value_json"]["review"]["conflicts_with"] == ["C2"]
+    assert a["value_json"]["finding"] == p["claims"][0]["value_json"]["finding"]
+    assert mapping["aliases"] == {"C1": "claim-a", "C2": "claim-b"}
+    assert trial.localize_claims(p, "request-one") == (req["model_packet"], mapping)
+
+
+def test_alias_response_resolves_every_citation_location_and_leaves_prose_unchanged():
+    req, mapping = alias_request()
+    s = {
+        "text": "Exact wording.",
+        "claimIds": ["C1"],
+        "sellerEvidenceIds": ["seller-a"],
+        "kind": "qualified",
+        "qualifications": ["Uncertain."],
+    }
+    output = response()
+    output["section"]["intro"] = [s]
+    output["section"]["items"] = [
+        {
+            "h2": "Heading",
+            "body": [s],
+            "contactIds": ["person-a"],
+            "sendLine": {**s, "kind": "inference"},
+        }
+    ]
+    output["selectionNotes"] = [{"claimIds": ["C1"], "reason": "Useful distinction."}]
+    resolved = trial.resolve_claim_aliases(
+        json.dumps(output), req, mapping, [{"document_id": "seller-a"}]
+    )
+    for sentence in trial.sentences(resolved):
+        assert sentence["claimIds"] == ["claim-a"]
+        assert sentence["text"] == s["text"]
+        assert sentence["sellerEvidenceIds"] == ["seller-a"]
+    assert resolved["section"]["items"][0]["contactIds"] == ["person-a"]
+    assert resolved["selectionNotes"][0]["claimIds"] == ["claim-a"]
+    assert trial.diagnose(resolved, req["packet"])["primary"]["cited_claim_ids"] == ["claim-a"]
+
+
+def test_cross_request_mapping_and_modified_packet_are_rejected():
+    req, mapping = alias_request()
+    other, other_map = alias_request(request_id="request-two")
+    assert mapping["aliases"] == other_map["aliases"]
+    with pytest.raises(ValueError, match="does not belong"):
+        trial.resolve_claim_aliases(json.dumps(response()), req, other_map, [])
+    other["packet"]["claims"][0]["value_json"]["finding"] = "Changed evidence."
+    with pytest.raises(ValueError, match="does not belong"):
+        trial.check_alias_binding(other, other_map)
+
+
+def test_unknown_alias_is_not_guessed_or_resolved_as_uuid():
+    req, mapping = alias_request()
+    for invalid in ["C999", "claim-a"]:
+        output = response()
+        output["selectionNotes"] = [{"claimIds": [invalid], "reason": "Invalid reference."}]
+        with pytest.raises(ValueError, match="invalid_claim_ids"):
+            trial.resolve_claim_aliases(json.dumps(output), req, mapping, [])
+    schema = trial.reference_schema(req["model_packet"], [{"document_id": "seller-a"}])
+    assert schema["$defs"]["ClaimReference"]["enum"] == ["C1"]
+
+
+def test_duplicate_or_missing_linked_claim_is_reported_during_preparation():
+    p = packet()
+    p["claims"].append(record())
+    with pytest.raises(ValueError, match="Duplicate claim IDs"):
+        trial.localize_claims(p, "request")
+    p = packet()
+    p["claims"][0]["superseded_by"] = "missing"
+    with pytest.raises(ValueError, match="include its context first"):
+        trial.localize_claims(p, "request")
+
+
+def test_recovery_preserves_frozen_alias_mapping_and_reference_schema(tmp_path):
+    source = tmp_path / "original"
+    destination = tmp_path / "recovery"
+    req, mapping = alias_request()
+    req.update(system="Writer instructions", user="Frozen packet request")
+    name = "overview--why-now.json"
+    docs = [{"document_id": "seller-a"}]
+    trial.save(source / "inputs" / name, req)
+    trial.save(source / "reference-maps" / name, mapping)
+    trial.save(source / "schema.json", trial.Output.model_json_schema())
+    trial.save(source / "shared-context.json", {"seller_documents": docs})
+    (source / "repair-prompt.txt").write_text("{{validation_errors_json}}\n{{previous_response}}")
+    (source / "system-prompt.txt").write_text("Writer instructions")
+    item = {
+        "file": name,
+        "section": "overview/why-now",
+        "input_sha256": trial.sha(source / "inputs" / name),
+        "reference_map_sha256": trial.sha(source / "reference-maps" / name),
+    }
+    trial.save(
+        source / "prepared.json", {"output_version": trial.OUTPUT_VERSION, "packets": [item]}
+    )
+    trial.save(source / "summary.json", {"statuses": {"structural_failure": 1}})
+    trial.save(
+        source / "receipts" / name, {"status": "structural_failure", "attempts": [{"attempt": 1}]}
+    )
+    out = response()
+    out["selectionNotes"] = [{"claimIds": ["C99"], "reason": "Bad reference."}]
+    trial.save(source / "responses/overview--why-now.1.json", {"content": json.dumps(out)})
+    items = trial.prepare_recovery(source, destination)
+    recovered, recovered_map = trial.load_request(destination, items[0])
+    assert recovered_map == mapping
+    assert recovered["model_packet"] == req["model_packet"]
+    assert recovered["packet"] == req["packet"]
+    assert "C99" in recovered["user"]
+    assert (destination / "reference-maps" / name).read_bytes() == (
+        source / "reference-maps" / name
+    ).read_bytes()
+    schema = json.loads((destination / "schemas" / name).read_text())
+    assert schema["$defs"]["ClaimReference"]["enum"] == ["C1"]

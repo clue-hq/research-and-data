@@ -1,7 +1,7 @@
-# Parallel narrative: exact prompt draft v2
+# Parallel narrative: exact prompt draft v3
 
 Review-only companion to the [design spec](../../specs/2026-09-26-arv4-parallel-narrative-design.md).
-Previous trial instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md).
+Previous instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md) and [PROMPTS-v2.md](PROMPTS-v2.md).
 Not installed in the agent catalog. These are section-writer instructions, not a researcher skill.
 They contain no Zafran, Clue, healthcare, or other fixture-specific assumptions.
 
@@ -63,7 +63,12 @@ introduce employment-proof, second-source or outreach-eligibility requirements.
 Return the exact requested JSON shape for one section. Fixed section key comes from the packet;
 write useful item headings and sentences. Do not put claim IDs, source URLs or document IDs in
 prose. Put references only in their reference arrays; the application supplies source links.
-Use only supplied IDs. Proposed opener text goes in sendLine, not in a source quotation.
+Each claim's claim_id is a request-local alias such as C1 or C17. Cite these exact aliases
+in sentence claimIds and selectionNotes.claimIds, for example ["C1", "C3"]. Duplicate, conflict
+and supersession links use the same aliases. Do not assign aliases yourself, reconstruct UUIDs,
+or carry aliases from another request. The backend resolves them to durable claim references.
+Seller document IDs and contact IDs remain exactly as supplied; they are not claim aliases.
+Never print these IDs or aliases in prose. Proposed opener text goes in sendLine, not in a source quotation.
 Do not invent a fit score, numeric ranking, contact, channel preference or missing date.
 
 Before returning, critically review the section against these instructions and its section

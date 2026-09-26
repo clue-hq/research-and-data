@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ROOT = Path(__file__).resolve().parents[1]
 INPUT = ROOT / ".artifacts/narrative-selection-20260926"
 DRAFT = ROOT / "docs/superpowers/drafts/2026-09-26-parallel-narrative/PROMPTS.md"
-OUTPUT_VERSION = 2
+OUTPUT_VERSION = 3
 SECTION_ORDER = {
     "overview": [
         "what-they-do",
@@ -100,7 +100,7 @@ class Output(Strict):
 def require_current_output(manifest):
     if manifest.get("output_version") != OUTPUT_VERSION:
         raise ValueError(
-            "This runner requires output version 2. Prepare a fresh directory; "
+            f"This runner requires output version {OUTPUT_VERSION}. Prepare a fresh directory; "
             "use the archived executed runner to inspect/reproduce older contracts."
         )
 
@@ -116,6 +116,70 @@ def sha(path):
 
 def compact(obj):
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def localize_claims(packet, request_id):
+    """Request-scoped aliases; never mutate evidence text or durable input records."""
+    ids = [c["claim_id"] for c in packet["claims"]]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Duplicate claim IDs in packet; prepare one record per claim.")
+    reverse = {cid: f"C{i}" for i, cid in enumerate(ids, 1)}
+    view = json.loads(json.dumps(packet))
+
+    def linked(cid):
+        if cid is None:
+            return None
+        if cid not in reverse:
+            raise ValueError(
+                f"Linked claim {cid} is absent from packet; include its context first."
+            )
+        return reverse[cid]
+
+    for claim in view["claims"]:
+        claim["claim_id"] = reverse[claim["claim_id"]]
+        if "superseded_by" in claim:
+            claim["superseded_by"] = linked(claim["superseded_by"])
+        value = claim["value_json"]
+        review = value.get("review") if isinstance(value, dict) else None
+        if isinstance(review, dict):
+            if "duplicate_of" in review:
+                review["duplicate_of"] = linked(review["duplicate_of"])
+            if "conflicts_with" in review:
+                review["conflicts_with"] = [linked(cid) for cid in review["conflicts_with"]]
+    mapping = {
+        "request_id": request_id,
+        "packet_sha256": hashlib.sha256(compact(packet).encode()).hexdigest(),
+        "aliases": {alias: cid for cid, alias in reverse.items()},
+    }
+    return view, mapping
+
+
+def check_alias_binding(request, mapping):
+    expected_view, expected_mapping = localize_claims(request["packet"], request["request_id"])
+    if mapping != expected_mapping or request["model_packet"] != expected_view:
+        raise ValueError("Alias mapping does not belong to this request and frozen packet.")
+
+
+def resolve_claim_aliases(raw, request, mapping, docs):
+    check_alias_binding(request, mapping)
+    result = validate(raw, request["model_packet"], docs)
+    aliases = mapping["aliases"]
+    for sentence in sentences(result):
+        sentence["claimIds"] = [aliases[cid] for cid in sentence["claimIds"]]
+    for note in result["selectionNotes"]:
+        note["claimIds"] = [aliases[cid] for cid in note["claimIds"]]
+    # Persist and render durable UUID references, never request-local aliases.
+    return validate(json.dumps(result), request["packet"], docs)
+
+
+def load_request(out, item):
+    request = json.loads((out / "inputs" / item["file"]).read_text())
+    mapping_path = out / "reference-maps" / item["file"]
+    if sha(mapping_path) != item["reference_map_sha256"]:
+        raise ValueError("Saved alias mapping changed after preparation.")
+    mapping = json.loads(mapping_path.read_text())
+    check_alias_binding(request, mapping)
+    return request, mapping
 
 
 def prompts():
@@ -205,12 +269,22 @@ def prepare(out, model, concurrency):
             ],
             "claims": claims,
         }
+        request_id = str(uuid4())
+        model_packet, mapping = localize_claims(packet, request_id)
         system_full = system + "\n\nPINNED SELLER AND PROJECT CONTEXT (DATA)\n" + compact(context)
         user = template.replace("{{section_instruction}}", assignment).replace(
-            "{{packet_json}}", compact(packet)
+            "{{packet_json}}", compact(model_packet)
         )
-        request = {"system": system_full, "user": user, "packet": packet}
+        request = {
+            "system": system_full,
+            "user": user,
+            "packet": packet,
+            "model_packet": model_packet,
+            "request_id": request_id,
+        }
         save(out / "inputs" / path.name, request)
+        save(out / "reference-maps" / path.name, mapping)
+        save(out / "schemas" / path.name, reference_schema(model_packet, documents))
         packets.append(
             {
                 "file": path.name,
@@ -218,6 +292,8 @@ def prepare(out, model, concurrency):
                 "claim_count": len(claims),
                 "request_characters": len(system_full) + len(user),
                 "input_sha256": sha(out / "inputs" / path.name),
+                "reference_map_sha256": sha(out / "reference-maps" / path.name),
+                "schema_sha256": sha(out / "schemas" / path.name),
             }
         )
     assert len(packets) == 19
@@ -243,7 +319,8 @@ def prepare(out, model, concurrency):
             "shared_context_sha256": sha(out / "shared-context.json"),
             "repair_prompt_sha256": sha(out / "repair-prompt.txt"),
             "changes": (
-                "Output v2 replaces the per-claim ledger with optional selection notes; "
+                "Output v3 uses request-local claim aliases resolved to durable IDs; "
+                "optional selection notes replace the per-claim ledger; "
                 "citation accounting is computed in code. Inputs omit only duplicate dossier "
                 "original mirrors and unrelated field definitions; no findings shortened."
             ),
@@ -330,15 +407,18 @@ def prepare_recovery(source, out):
         assert receipt["status"] == "structural_failure", (
             "Do not replay ambiguous provider failures."
         )
-        request = json.loads((source / "inputs" / item["file"]).read_text())
-        previous = json.loads((source / "responses" / f"{slug}.2.json").read_text())["content"]
+        request, mapping = load_request(source, item)
+        last_attempt = receipt["attempts"][-1]["attempt"]
+        previous = json.loads((source / "responses" / f"{slug}.{last_attempt}.json").read_text())[
+            "content"
+        ]
         raw = (
             previous
             if isinstance(previous, str)
             else "".join(b["text"] for b in previous if b.get("type") == "text")
         )
         try:
-            validate(raw, request["packet"], docs)
+            resolve_claim_aliases(raw, request, mapping, docs)
         except ValueError as exc:
             feedback = str(exc)
         else:
@@ -347,7 +427,8 @@ def prepare_recovery(source, out):
             "{{previous_response}}", raw
         )
         save(out / "inputs" / item["file"], request)
-        save(out / "schemas" / item["file"], reference_schema(request["packet"], docs))
+        save(out / "reference-maps" / item["file"], mapping)
+        save(out / "schemas" / item["file"], reference_schema(request["model_packet"], docs))
         chosen.append(
             {
                 **item,
@@ -492,6 +573,8 @@ async def run(out):
     require_current_output(m)
     for item in m["packets"]:
         assert sha(out / "inputs" / item["file"]) == item["input_sha256"]
+        load_request(out, item)
+        assert sha(out / "schemas" / item["file"]) == item["schema_sha256"]
     assert sha(out / "schema.json") == m["schema_sha256"]
     assert sha(out / "shared-context.json") == m["shared_context_sha256"]
     assert sha(out / "repair-prompt.txt") == m["repair_prompt_sha256"]
@@ -549,7 +632,7 @@ async def run(out):
 
     async def one(item):
         slug = Path(item["file"]).stem
-        request = json.loads((out / "inputs" / item["file"]).read_text())
+        request, mapping = load_request(out, item)
         packet = request["packet"]
         section_model = model
         if item.get("schema_sha256"):
@@ -566,7 +649,13 @@ async def run(out):
                 }
             )
         messages = [SystemMessage(content=request["system"]), HumanMessage(content=request["user"])]
-        receipt = {"section": item["section"], "attempts": [], "input_sha256": item["input_sha256"]}
+        receipt = {
+            "section": item["section"],
+            "attempts": [],
+            "input_sha256": item["input_sha256"],
+            "request_id": request["request_id"],
+            "reference_map_sha256": item["reference_map_sha256"],
+        }
         async with sem:
             receipt["queue_seconds"] = monotonic() - began
             lf = build_langfuse_callbacks()
@@ -581,6 +670,8 @@ async def run(out):
                         "trial_run_id": runid,
                         "attempt": attempt,
                         "packet_hash": item["input_sha256"],
+                        "request_id": request["request_id"],
+                        "reference_map_sha256": item["reference_map_sha256"],
                         "claim_count": item["claim_count"],
                     },
                 ) as obs:
@@ -615,7 +706,9 @@ async def run(out):
                         }
                         receipt["attempts"].append(ar)
                         try:
-                            result = validate(raw, packet, context["seller_documents"])
+                            result = resolve_claim_aliases(
+                                raw, request, mapping, context["seller_documents"]
+                            )
                         except Exception as exc:
                             ar["structural_error"] = str(exc)
                             obs.update(output={"status": "structural_error", "error": str(exc)})
