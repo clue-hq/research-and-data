@@ -19,6 +19,16 @@ Fresh trial evidence: `.artifacts/account-discovery-trial-20260926/zafran-claim-
 It completed 80 findings and an exact 80-claim isolated import/re-import, but
 source omissions, granularity and interpretation problems remain. No promotion.
 
+**Selection-guidance revision (26 September, after fresh trial 03):** updated the
+shared skill, saved-data system prompt and fresh-run system addition. The revision
+distinguishes source assertions from inferred consequences and research questions;
+requires canonical findings instead of repeated fit summaries; clarifies independent
+events/speakers, comparable conflicts and checked relationship targets; and prevents
+format feedback from being treated as evidence for changing an assessment. It adds
+bidirectional source/entry review for omissions and unsupported additions. All
+examples remain generic. Historical trial snapshots are unchanged. This revision
+has not had a paid quality evaluation and does not change production or validators.
+
 The researcher authors the claim-ready findings while forming the dossier. Code
 imports those records without a second model selecting, splitting or paraphrasing
 them. This is a trial, not a promoted production format.

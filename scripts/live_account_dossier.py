@@ -75,6 +75,17 @@ bundled independent facts will carry directly into downstream claims. Read
 public-statement fidelity, section-wise coverage and separation of interpretation.
 Its formation rules apply to the material YOU acquire during this investigation.
 
+Apply the skill's selection rules before saving: identify the subject and actual
+source assertion; keep your inferred consequences, fit and buying roles in optional
+interpretation, and unanswered research questions in notes. Qualifying a hypothesis
+does not turn it into a fact. Preserve partial evidence with its uncertainty. Write
+each finding once, adding complementary sources rather than duplicate fit summaries.
+Separate independent events and speakers. Ambiguous role text does not establish a
+conflict; compare subject, attribute, scope and time. Read actual entries before
+linking their IDs. Review sources for omitted substance and entries for unsupported
+additions. Repair validation errors without weakening a judgment simply to pass;
+only source evidence justifies reassessment. Document unresolved limitations.
+
 Use save_dossier_section to save structured JSON sections containing individual
 findings, using that skill's fields and stable F-identifiers. Keep relevant
 public wording, attribution, dates and source references. Use paths actually returned

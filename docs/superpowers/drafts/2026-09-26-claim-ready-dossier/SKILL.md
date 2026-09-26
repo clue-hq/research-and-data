@@ -30,6 +30,39 @@ Keep provider-reported typed facts attributed to that provider. Do not copy an
 enrichment provider's promotional description into a substantive company finding.
 Build company descriptions from acquired research and company-page evidence.
 
+## Decide what the finding actually establishes
+
+Before writing an entry, identify its subject, the specific source assertion and
+the passage supporting it. Choose `reported_statement` when recording what an
+identified speaker or publisher says; choose `observation` for what the inspected
+material directly establishes. Neither type licenses adding your own conclusion.
+
+Keep these destinations distinct:
+
+- **Finding:** the observed fact or attributed statement, with its original scope.
+- **agent_interpretation:** your optional inference about relevance, consequences,
+  likely needs or buying roles, attached to the underlying finding.
+- **Working notes:** research questions, missing channels, next steps and judgments
+  without a specific underlying finding. These are not account facts.
+
+For example, an announced office opening is a finding. “This may increase demand
+for workflow software” is interpretation. Adding “possibly,” “likely” or “hypothesis”
+inside factual text does not make that inference an observation. An identified
+leader's prediction can instead be a reported statement, attributed as a prediction.
+
+“I could not find a budget” belongs in notes. A source stating that the company
+declined to disclose its budget is a reported statement. Preserve genuinely partial
+source assertions with `insufficient_context`; do not manufacture a source assertion
+from an unanswered research question. These distinctions organize information, not
+discard uncertainty or introduce an automated verification gate.
+
+Keep one canonical entry for a finding across the dossier. Before adding it, compare
+existing entries' subject, event, time and assertion. Add complementary evidence or
+detail to that entry; use references in notes for relevance to other sections. A
+fit summary repeating existing facts is not another fact. A genuinely distinct
+retained occurrence with no added substance may be marked `duplicate` and linked;
+new events or materially different statements should remain independently recorded.
+
 ## Format: section headings, one finding per record line
 
 Use a Markdown title and `## Section heading` lines. Preserve the relevant dossier
@@ -82,6 +115,11 @@ A post announcing a partnership and a later conference talk contains two events.
 If the author also describes a meaningful operational frustration, preserve that
 statement separately with its wording. These are generic illustrations, not expected
 findings or mandatory categories to fill.
+
+A calendar containing several appearances needs separate event entries. A page
+quoting several employees needs separately attributed statements. Shared sources,
+topics or seller relevance do not justify bundling independently correctable facts.
+Conversely, multiple sources supporting the same event need not create extra entries.
 
 Preserve numbers, units, ranges and relationship direction. Distinguish a job
 requirement from installed practice, a provider estimate from a disclosed figure,
@@ -141,6 +179,22 @@ update about current state, while keeping the earlier observation explicitly
 historical. Retrieval dates do not establish factual recency. If dates cannot
 settle a genuine disagreement, preserve both with an honest conflict explanation.
 
+A conflict requires competing assertions about the same subject and attribute in
+comparable scope and time. A functional, field or regional role does not by itself
+contradict a company-wide role. Flattened headings can concatenate a person's name
+and title; preserve ambiguous wording rather than inventing a name, mandate or
+contradiction. Reopen the available passage for context and retain unresolved meaning
+as a qualification or `insufficient_context` when appropriate.
+
+Read the actual destination entry before adding a related ID, including IDs mentioned
+in prose. Verify its subject and assertion; do not reconstruct links from memory.
+If validation reports a missing conflict reference, write the actual competing
+finding and link it. Do not merge away the disagreement, invent an ID or switch to
+`supported` merely to make validation succeed. Change an assessment only when source
+review warrants it, and explain that reason. If the existing representation cannot
+express a concern, preserve the source assertion and document the limitation in
+review notes rather than claiming the concern has been resolved.
+
 ## Section-wise formation guide
 
 Match sections by meaning rather than imposing an exact count. Keep headings and
@@ -159,7 +213,7 @@ findings specific to the actual investigation, using these handling principles:
 | Timing and developments | Retain independent events and their dates; avoid rewriting the same event as another timeline claim. Historical context stays labelled. |
 | Contrary evidence and risks | Preserve adverse reports and responses separately with attribution and unresolved disagreements. Risk significance is optional interpretation. |
 | Unexpected findings and gaps | Include concrete source-only discoveries and incomplete assertions. Unanswered questions go in notes; absence from inspected material is not proof of nonexistence. |
-| Fit and committee discussion | Attach judgments to underlying observations or notes. Keep actual appointments as findings; do not turn seller claims or buying-role hypotheses into target facts. |
+| Fit and committee discussion | Attach judgments to underlying observations or notes referencing existing IDs. Do not create repeated factual fit summaries. Keep actual appointments as findings; buying roles and inferred authority remain interpretation unless explicitly supported by an attributed source. |
 | Source corrections | Preserve source limitations and suspected errors. Repair this dossier before final submission; do not claim to have corrected historical data. |
 
 ## Finish with a reviewable handoff
@@ -171,6 +225,13 @@ and boilerplate separately. Do not use coverage tracking as a new completion gat
 Read back the dossier. Check that entries retain useful public wording, independent
 units, correct attribution and relationship targets. Inspect source material for
 omissions, not only the older dossier. Write remaining limitations to /work/review.md.
+
+Review in both directions: source passages → findings for omitted substance, then
+findings → passages for unsupported additions. Give meaningful source-only product
+developments and public statements the same attention as dossier summaries. Check
+specifically for hypotheses in factual text, research questions masquerading as
+observations, repeated summaries, bundled speakers/events and unrelated ID links.
+This is your reasoning task, not a required second specialist or automated gate.
 
 Call validate_dossier for syntax/source-reference feedback. Correct reported format
 issues in the same file. This tool does not judge facts or declare coverage complete.

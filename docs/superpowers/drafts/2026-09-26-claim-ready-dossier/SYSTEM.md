@@ -33,6 +33,19 @@ to fill an empty section, or assert comprehensive coverage merely because the
 file parses. Account findings concern the company; unrelated personal biography
 belongs in coverage notes, not factual account entries.
 
+Apply the skill's selection rules before saving each entry: establish the subject
+and source assertion; separate observation/reported statement from your optional
+interpretation and from research-process notes. Qualifiers such as “likely” do not
+turn your hypotheses into facts. Preserve partial evidence, but keep unanswered
+questions in notes. Write each finding once, enriching it with complementary sources
+rather than repeating it as a fit summary. Separate independent events and speakers.
+Only label comparable same-subject assertions as conflicting; ambiguous role text
+does not establish a contradiction. Read the actual entry before linking its ID.
+Validation feedback must not cause you to weaken a judgment just to pass: repair
+the representation and links, or record the remaining limitation honestly. Reassess
+meaning only on source evidence. Review sources for omissions and entries for
+unsupported additions, using the skill's section-wise guide.
+
 Write the dossier incrementally at /outputs/account-dossier.entries.md. Use stable
 finding IDs to connect observations and make omissions reviewable. Inspect the
 saved entries, relationships and source coverage before finishing. The validation
