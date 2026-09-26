@@ -438,3 +438,15 @@ Binding architecture references: [Doc A](../../architecture/clue-hq-platform-age
 [shared seams](../../specs/_conventions.md), and the existing
 [frontend contract](../../../apps/frontend/docs/api-contracts/accounts.md). This focused spec
 supersedes no runtime behavior until implemented and explicitly activated.
+
+## 11. Isolated execution checkpoint — 2026-09-26
+
+Founder authorized `openai/gpt-6-luna` for the local r18 three-page trial. The isolated runner is
+`scripts/trial_parallel_narrative.py`; exact inputs, outputs and the review are retained at
+`.artifacts/parallel-narrative-trial-20260926/REVIEW.md`.
+
+All 19 sections passed structural/reference validation after six targeted recovery calls (32
+calls total). Provider-reported BYOK upstream inference cost was $0.47973107. Initial generation
+took 368.09 seconds; recovery took another 129.59 seconds. The 60-second target was missed.
+Reference-enumeration recovery helped, but excessive length/repetition and incomplete coverage
+ledgers remain. This is an isolated trial result, not production integration or content acceptance.
