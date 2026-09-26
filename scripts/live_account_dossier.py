@@ -23,6 +23,12 @@ from clue_api.arv2.dossier_import import import_account_dossier
 from clue_api.arv2.dossier_json import parse_json_dossier
 
 
+def dossier_workspace_path(out):
+    manifest = out / "trial-manifest.json"
+    person = manifest.exists() and json.loads(manifest.read_text()).get("subject_kind") == "person"
+    return "/scratch/person-dossier.json" if person else "/scratch/account-dossier.json"
+
+
 def prepare_skill(out):
     """Share the JSON formation contract between fresh acquisition and saved replay."""
     guide = (
@@ -244,7 +250,7 @@ def source_aliases(inputs, rows):
 
 
 def inspect_live(out, rows):
-    path = out / "inputs/scratch/account-dossier.json"
+    path = out / "inputs" / dossier_workspace_path(out).lstrip("/")
     if not path.exists():
         return [], [{"error": "Use save_dossier_section first"}]
     parsed = parse_json_dossier(path.read_bytes())
@@ -289,7 +295,7 @@ def save_section(out, rows, section, findings):
             unknown = set(entry.source_paths) - sources.keys()
             if unknown:
                 raise ValueError(f"Unknown source paths: {sorted(unknown)}")
-        path = out / "inputs/scratch/account-dossier.json"
+        path = out / "inputs" / dossier_workspace_path(out).lstrip("/")
         document = json.loads(path.read_text()) if path.exists() else {"sections": []}
         others = [s for s in document["sections"] if s["section"] != section]
         ids = [f["id"] for s in others for f in s["findings"]] + [e.id for e in entries]
@@ -304,7 +310,7 @@ def save_section(out, rows, section, findings):
         save(path, document)
         return {
             "saved": True,
-            "path": "/scratch/account-dossier.json",
+            "path": dossier_workspace_path(out),
             "section": section,
             "entries": len(findings),
         }
@@ -318,11 +324,17 @@ def finish_live(out, rows, summary, gaps):
     records, errors = inspect_live(out, rows)
     if errors or not records:
         return {"finished": False, "errors": errors or [{"error": "No finding entries"}]}
-    structured = (out / "inputs/scratch/account-dossier.json").read_bytes()
+    structured = (out / "inputs" / dossier_workspace_path(out).lstrip("/")).read_bytes()
     body = record_lines(json.loads(structured)).encode()
     (out / "dossier.json").write_bytes(structured)
     (out / "dossier.entries.md").write_bytes(body)
-    rendered = render_dossier(records, source_aliases(out / "inputs", rows))
+    rendered = render_dossier(
+        records,
+        source_aliases(out / "inputs", rows),
+        subject_label="Person"
+        if dossier_workspace_path(out).endswith("person-dossier.json")
+        else "Account",
+    )
     (out / "dossier.readable.md").write_text(rendered)
     (out / "findings.md").write_text(rendered)
     save(out / "source-manifest.json", rows)
@@ -344,6 +356,7 @@ def finish_live(out, rows, summary, gaps):
 async def admit_and_import(live, run_number):
     """Reuse a fresh isolated clone solely as a persistence fixture, after live research."""
     import trial_account_claims as trial
+    from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from clue_api.arv2.quality_evidence import grant_manifest, persist_source
@@ -374,8 +387,49 @@ async def admit_and_import(live, run_number):
     engine, storage = create_async_engine(url), FsStorage(trial.OUT / "blobs")
     try:
         rows = json.loads((live / "source-manifest.json").read_text())
+        context = json.loads((live / "inputs/research/context.json").read_text())
+        replay = json.loads((live / "trial-manifest.json").read_text())
+        if replay.get("subject_kind") == "person":
+            assignment = context["person_assignment"]
+            # Bind the saved person to an existing job in the isolated fixture.
+            # Never select by name alone or create a new production person job.
+            async with engine.connect() as conn:
+                matches = (
+                    (
+                        await conn.execute(
+                            text("""SELECT j.job_id,c.id,c.full_name,c.linkedin_url
+                          FROM arv2_research_job j
+                          JOIN contact_entity c ON c.id=j.subject_entity_id
+                          WHERE j.run_id=:run AND j.workspace_id=:ws
+                            AND j.account_entity_id=:account AND j.subject_type='person'
+                            AND regexp_replace(lower(rtrim(c.linkedin_url,'/')),
+                                '^https?://(www[.])?', '')=
+                                regexp_replace(lower(rtrim(:profile,'/')),
+                                '^https?://(www[.])?', '')"""),
+                            {
+                                "run": UUID(m["run_id"]),
+                                "ws": m["workspace_id"],
+                                "account": UUID(m["account_id"]),
+                                "profile": assignment["linkedin_url"],
+                            },
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
+            if len(matches) != 1:
+                raise ValueError("Person fixture must contain exactly one matching profile/job")
+            person = matches[0]
+            m.update(
+                subject_kind="person",
+                job_id=str(person["job_id"]),
+                contact_id=str(person["id"]),
+                person_name=person["full_name"],
+                person_linkedin_url=person["linkedin_url"],
+                actor_ref=f"person-dossier-trial:{m['trial_id']}",
+            )
         scope = trial.scope_from(m)
-        target = json.loads((live / "inputs/research/context.json").read_text())["target"]
+        target = context["target"]
         if target["domain"] != scope.account_domain:
             raise ValueError("Live target differs from the isolated persistence fixture")
         op = OperationScope(scope.workspace_id, scope.run_id, scope.job_id, scope.account_id)
@@ -389,13 +443,15 @@ async def admit_and_import(live, run_number):
                     conn,
                     storage,
                     op,
-                    kind=row["kind"],
+                    # Older person trials called the raw media resolver response
+                    # media_result. It is a provider record, not a transcript.
+                    kind="provider_record" if row["kind"] == "media_result" else row["kind"],
                     body=body,
                     original_key=None,
                     source_url=row.get("source_url"),
                     origin_locator=f"live-trial:{live.name}:{row['source_id']}:{row['origin_locator']}",
                     observed_at=datetime.fromisoformat(row["observed_at"]),
-                    metadata=row.get("metadata", {}),
+                    metadata={**row.get("metadata", {}), "trial_source_kind": row["kind"]},
                 )
                 for path in [
                     live / "inputs" / row["path"].lstrip("/"),
@@ -406,7 +462,7 @@ async def admit_and_import(live, run_number):
                             "path": "/" + str(path.relative_to(live / "inputs")),
                             "source_id": str(ref.source_id),
                             "url": row.get("source_url"),
-                            "kind": row["kind"],
+                            "kind": ref.kind,
                             "locator": row["origin_locator"],
                         }
                     )
@@ -416,7 +472,7 @@ async def admit_and_import(live, run_number):
             grant_id=str(grant.grant_id),
             live_source=str(live),
             trial_mode="claim-ready-dossier",
-            model_generation_used_old_sources=False,
+            model_generation_used_old_sources=bool(replay.get("replay_saved_research")),
         )
         save(manifest_path, m)
         for name in ["dossier.json", "dossier.entries.md", "agent-completion.json"]:
@@ -429,7 +485,7 @@ async def admit_and_import(live, run_number):
                 writer.scope,
                 writer.grant,
                 context_id=writer.context,
-                actor_ref=f"account-claim-trial:{m['trial_id']}",
+                actor_ref=writer.actor_ref,
                 import_id=UUID(m["trial_id"]),
                 body=(trial.OUT / "dossier.json").read_bytes(),
                 expected_sha256=completion["structured_dossier_sha256"],

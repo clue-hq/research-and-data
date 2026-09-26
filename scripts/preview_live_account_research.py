@@ -73,6 +73,11 @@ async def main():
     replay = claim_ready and json.loads((out / "trial-manifest.json").read_text()).get(
         "replay_saved_research", False
     )
+    person_replay = (
+        replay
+        and json.loads((out / "trial-manifest.json").read_text()).get("subject_kind") == "person"
+    )
+    research_role = "arv2_person" if person_replay else "account_research"
     if (out / "traces/events.jsonl").exists():
         raise ValueError("Use a fresh prepared directory; never overwrite a previous trial.")
     if args.discovery_trial:
@@ -131,7 +136,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         save(out / "dispatch.json", {"started_at": datetime.now(UTC).isoformat()})
 
     env = dotenv_values(ROOT / ".env")
-    for role in ("HEAD_OF_ABM", "ACCOUNT_RESEARCH"):
+    for role in ("HEAD_OF_ABM", research_role.upper()):
         key = role + "_AGENT_MODEL_EFFORT"
         if env.get(key):
             os.environ.setdefault(key, env[key])
@@ -144,19 +149,19 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
     gateway = default_gateway_config()
     provider = build_agent_model_provider(config=gateway, secrets=secrets)
     started = monotonic()
-    session = "live-account-research-" + str(uuid4())
+    session = ("person-dossier-replay-" if person_replay else "live-account-research-") + str(
+        uuid4()
+    )
     lf = build_langfuse_callbacks()
     callbacks = [Audit(out, started), *([lf.handler] if lf else [])]
     models = {}
-    for role in (
-        ("account_research",) if args.discovery_trial else ("head_of_abm", "account_research")
-    ):
+    for role in (research_role,) if args.discovery_trial else ("head_of_abm", research_role):
         models[role] = provider.build(
             model_id=env[role.upper() + "_AGENT_MODEL"],
             role=role,
             timeout_s=gateway.timeout_s,
             max_retries=gateway.max_retries,
-            max_output_tokens=16000 if role == "account_research" else 6000,
+            max_output_tokens=16000 if role == research_role else 6000,
             temperature=0,
         )
     caller = ProviderCaller(
@@ -421,7 +426,12 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             StructuredTool.from_function(coroutine=finish_research, return_direct=True),
         ]
         if claim_ready:
-            from live_account_dossier import finish_live, inspect_live, save_section
+            from live_account_dossier import (
+                dossier_workspace_path,
+                finish_live,
+                inspect_live,
+                save_section,
+            )
 
             async def save_dossier_section(section: str, findings: list[dict]):
                 """Save a complete section's structured findings, replacing its prior version.
@@ -478,11 +488,10 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                 async def awrap_tool_call(self, request, handler):
                     from langchain_core.messages import ToolMessage
 
-                    if (
-                        request.tool_call["name"] in {"write_file", "edit_file"}
-                        and request.tool_call["args"].get("file_path")
-                        == "/scratch/account-dossier.json"
-                    ):
+                    if request.tool_call["name"] in {
+                        "write_file",
+                        "edit_file",
+                    } and request.tool_call["args"].get("file_path") == dossier_workspace_path(out):
                         return ToolMessage(
                             content="Use save_dossier_section to revise the canonical dossier.",
                             tool_call_id=request.tool_call["id"],
@@ -501,12 +510,12 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         if claim_ready:
             backend = CompositeBackend(default=backend, routes={}, artifacts_root="/scratch")
         graph = create_deep_agent(
-            model=models["account_research"],
+            model=models[research_role],
             system_prompt=system,
             tools=tools,
             middleware=[middleware],
             backend=backend,
-            name="live-account-research-preview",
+            name="person-dossier-replay" if person_replay else "live-account-research-preview",
         )
         opening = (
             f"Investigate {target['name']} ({target['domain']}) for {ctx['seller_name']} "
@@ -528,9 +537,12 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         messages = [HumanMessage(content=opening)]
         if replay and (out / "continuation-messages.json").exists():
             saved = json.loads((out / "continuation-messages.json").read_text())
-            messages = messages_from_dict(
-                [{"type": m["type"], "data": m} for m in saved if m["type"] != "system"]
-            ) + messages
+            messages = (
+                messages_from_dict(
+                    [{"type": m["type"], "data": m} for m in saved if m["type"] != "system"]
+                )
+                + messages
+            )
         invocation = graph.ainvoke(
             {"messages": messages},
             config={
@@ -551,6 +563,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
             "source_records": len(rows),
             "claim_ready_dossier": claim_ready,
             "replay_saved_research": replay,
+            "research_role": research_role,
             "application_database_writes": 0,
             "limitations": [
                 "Research-stage harness: no production C5/fleet/launch lifecycle",

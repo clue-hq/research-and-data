@@ -95,6 +95,10 @@ def scope_from(m):
         today=date(2026, 9, 24),
         catalog_version="v4",
         input_refs={"quality_recipe_version": 15},
+        subject_kind=m.get("subject_kind", "account"),
+        contact_id=UUID(m["contact_id"]) if m.get("contact_id") else None,
+        person_name=m.get("person_name", ""),
+        person_linkedin_url=m.get("person_linkedin_url", ""),
     )
 
 
@@ -112,6 +116,7 @@ class Writer:
         )
         self.sources = {s["path"]: s for s in manifest["sources"]}
         self.prefix = f"trial:{manifest['trial_id']}:"
+        self.actor_ref = manifest.get("actor_ref", f"account-claim-trial:{manifest['trial_id']}")
         self.lock = asyncio.Lock()
 
     async def rows(self, conn):
@@ -127,8 +132,8 @@ class Writer:
                     {
                         "ws": self.scope.workspace_id,
                         "job": self.scope.job_id,
-                        "entity": self.scope.account_id,
-                        "actor": f"account-claim-trial:{self.m['trial_id']}",
+                        "entity": self.scope.person_subject_id or self.scope.account_id,
+                        "actor": self.actor_ref,
                     },
                 )
             )
@@ -173,7 +178,8 @@ class Writer:
             rows = await self.rows(conn)
         save(OUT / "claims.json", rows)
         save(OUT / "workspace/claims/index.json", rows)
-        lines = ["# Account claims — isolated agent trial", "", f"Records: {len(rows)}", ""]
+        kind = "Person" if self.scope.person_subject_id else "Account"
+        lines = [f"# {kind} claims — isolated agent trial", "", f"Records: {len(rows)}", ""]
         for row in rows:
             v = row["value_json"]
             review = v["review"]

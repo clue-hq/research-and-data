@@ -1,4 +1,4 @@
-"""Deterministic account JSON -> shared claim store; no acquisition or model calls.
+"""Deterministic research JSON -> shared claim store; no acquisition or model calls.
 
 The caller supplies an immutable dossier, a run-bound grant and an import ID. It
 owns the outer transaction. Each finding uses a savepoint so one failed write does
@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import text
@@ -23,6 +23,7 @@ from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.quality_claims import FindingProposal, SourceSupport, submit_proposal
 from clue_api.arv2.quality_evidence import EvidenceGrant, SourceRef, authorize_grant, resolve_source
 from clue_api.arv2.quality_policy import advisory_research
+from clue_core import IdentityBinding, UseClass
 from clue_core.equality import canonical_json
 from clue_obs import get_logger, observation
 from clue_storage import StorageBackend
@@ -37,6 +38,7 @@ def finding_proposal(
     origin: dict[str, Any] | None,
     operation_key: str | None = None,
     key_prefix: str = "",
+    subject_kind: Literal["account", "person"] = "account",
 ) -> FindingProposal:
     """Keep the trial and reusable importer on one lossless payload mapping."""
     payload = finding.model_dump(mode="json", exclude={"source_paths"})
@@ -57,18 +59,20 @@ def finding_proposal(
     return FindingProposal(
         operation_key=operation_key
         or key_prefix + hashlib.sha256(canonical_json(payload).encode()).hexdigest(),
-        field_key="account.research_finding",
+        field_key=("contact" if subject_kind == "person" else "account") + ".research_finding",
         value=payload,
         claim_kind="attributed_statement"
         if finding.claim_type == "reported_statement"
         else "observation",
         support=tuple(SourceSupport(source_id=r.source_id) for r in refs),
         assessment=assessment_for(finding),
+        identity_binding=IdentityBinding.WEAK if subject_kind == "person" else None,
+        use_class=UseClass.PERSONAL_PUBLIC_NON_SENSITIVE if subject_kind == "person" else None,
         outreach_safe=False,
     )
 
 
-async def import_account_dossier(
+async def import_research_dossier(
     conn: AsyncConnection,
     storage: StorageBackend,
     scope: JobScope,
@@ -86,10 +90,13 @@ async def import_account_dossier(
     Aliases are for relocated trial sources; production paths resolve directly
     against the evidence grant. Alias targets undergo that same authorization.
     Duplicate/conflict labels are retained, not deduplicated or reconciled here.
-    This account-only seam intentionally does not alter fleet/runtime selection.
+    Subject comes from the bound job, never from model-authored JSON. Person
+    imports retain public material without certifying identity or outreach use.
+    This seam intentionally does not alter fleet/runtime selection.
     """
-    if scope.subject_kind != "account" or not advisory_research(scope):
-        raise ValueError("Account dossier import requires the advisory account research scope")
+    if not advisory_research(scope):
+        raise ValueError("Dossier import requires an advisory research scope")
+    subject = scope.person_subject_id or scope.account_id
     if (
         grant.scope.workspace_id,
         grant.scope.run_id,
@@ -111,6 +118,17 @@ async def import_account_dossier(
     ).scalar_one_or_none()
     if pinned != context_id:
         raise ValueError("Dossier requires the exact pinned research context")
+    stored_subject = (
+        await conn.execute(
+            text(
+                "SELECT COALESCE(subject_entity_id,account_entity_id) FROM arv2_research_job "
+                "WHERE job_id=:job AND run_id=:run AND workspace_id=:ws"
+            ),
+            {"job": scope.job_id, "run": scope.run_id, "ws": scope.workspace_id},
+        )
+    ).scalar_one_or_none()
+    if stored_subject != subject:
+        raise ValueError("Dossier subject does not match the bound research job")
     parsed = parse_json_dossier(body)
     result: dict[str, Any] = {
         "import_id": str(import_id),
@@ -127,6 +145,8 @@ async def import_account_dossier(
         "run_id": str(scope.run_id),
         "job_id": str(scope.job_id),
         "account_id": str(scope.account_id),
+        "subject_id": str(subject),
+        "subject_kind": scope.subject_kind,
         "import_id": str(import_id),
         "dossier_sha256": parsed.sha256,
     }
@@ -150,7 +170,7 @@ async def import_account_dossier(
                     {
                         "ws": scope.workspace_id,
                         "job": scope.job_id,
-                        "entity": scope.account_id,
+                        "entity": subject,
                         "import": str(import_id),
                     },
                 )
@@ -202,6 +222,7 @@ async def import_account_dossier(
                         refs,
                         origin=origin,
                         operation_key=f"dossier:{import_id}:{entry.id}",
+                        subject_kind=scope.subject_kind,
                     )
                     receipt = await submit_proposal(
                         conn,
@@ -226,7 +247,7 @@ async def import_account_dossier(
                             {
                                 "id": receipt.claim_id,
                                 "ws": scope.workspace_id,
-                                "entity": scope.account_id,
+                                "entity": subject,
                             },
                         )
                     ).scalar_one()
@@ -284,3 +305,8 @@ async def import_account_dossier(
             complete=result["complete"],
         )
     return result
+
+
+# Preserve the existing account caller while sharing one implementation with
+# person replay. Scope and bound job determine the entity, not this historical name.
+import_account_dossier = import_research_dossier

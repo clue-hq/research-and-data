@@ -187,3 +187,59 @@ def test_unknown_sources_revoked_grant_and_cross_context_never_become_success(tm
                 await invoke(conn, ctx, document(finding()))
 
     run_async(case())
+
+
+def test_person_dossier_stays_on_contact_and_cannot_be_retargeted_to_account(tmp_path):
+    from clue_api.arv2.account_research_store import create_job
+    from clue_api.arv2.research_operations import OperationScope
+    from clue_research.identity import insert_contact_entity
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage, account, _, kwargs = await context(conn, tmp_path)
+            contact = await insert_contact_entity(
+                conn, account_entity_id=account.account_id, full_name="Alex Fixture"
+            )
+            jid = uuid4()
+            await create_job(
+                conn,
+                job_id=jid,
+                run_id=account.run_id,
+                workspace_id=account.workspace_id,
+                account_entity_id=account.account_id,
+                subject_type="person",
+                subject_entity_id=contact,
+                profile_sha256="a" * 64,
+            )
+            job = replace(account, job_id=jid, subject_kind="person", contact_id=contact)
+            op = OperationScope(job.workspace_id, job.run_id, jid, job.account_id)
+            source = await save(conn, storage, op, "I built this side project.")
+            grant = await grant_manifest(conn, op, consumer_id=uuid4())
+            kwargs["source_aliases"] = {"/evidence/001-interview.json": source.source_id}
+            ctx = (storage, job, grant, kwargs)
+            result = await invoke(
+                conn, ctx, document(finding(finding="I built this side project."))
+            )
+            assert result["complete"] and result["stored"] == 1, result
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT entity_id,entity_type,field_key,outreach_safe "
+                        "FROM claim WHERE id=:id"
+                    ),
+                    {"id": result["entries"][0]["claim_id"]},
+                )
+            ).one()
+            assert row.entity_id == contact and row.entity_type == "contact"
+            assert row.field_key == "contact.research_finding" and not row.outreach_safe
+            assert (
+                await invoke(conn, ctx, document(finding(finding="I built this side project.")))
+            )["entries"][0]["replayed"]
+            with pytest.raises(ValueError, match="subject does not match"):
+                await invoke(
+                    conn,
+                    (storage, replace(job, subject_kind="account", contact_id=None), grant, kwargs),
+                    document(finding()),
+                )
+
+    run_async(case())

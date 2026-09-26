@@ -95,9 +95,9 @@ def inspect_dossier(body, sources):
     return ordered, errors + dependency_errors
 
 
-def render_dossier(records, sources):
+def render_dossier(records, sources, *, subject_label="Account"):
     lines = [
-        "# Account dossier — readable record view",
+        f"# {subject_label} dossier — readable record view",
         "",
         "Rendered mechanically from the agent's entries; no second model or summary.",
         "",

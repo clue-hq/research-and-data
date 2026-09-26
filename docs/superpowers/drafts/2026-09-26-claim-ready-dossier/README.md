@@ -15,6 +15,37 @@ The authoring tool checks shape, unique finding IDs and retained source paths;
 final validation checks related IDs. These checks do not establish semantic quality.
 Production prompts and dossier storage are unchanged.
 
+## Person saved-dossier test
+
+`scripts/trial_person_dossier.py` prepares a saved-person replay using the same
+section tools, JSON contract, public-statement rules, review tags and worked examples.
+`PERSON.md` supplies person-specific formation instructions and a section guide;
+the prepared skill replaces the account-only biography exclusion. Exact generated
+instructions are snapshotted under each trial's `inputs/.deepagent/skills/`.
+Original source segments are reassembled with continuity checks, not summarized.
+The configured `arv2_person` model performs formation with acquisition disabled.
+
+The shared importer is now named `import_research_dossier`; the historical account
+name remains an alias. A person scope writes `contact.research_finding` to the
+contact bound to its persisted job. It cannot be retargeted to the account. The
+isolated adapter matches the supplied LinkedIn identity to one existing person job
+in a fresh database clone, admits the saved sources, then imports the frozen JSON.
+No production jobs are launched or modified.
+
+The trial retains public person findings with weak identity-binding metadata and
+`outreach_safe=false`; the coarse public-personal use label is a retention default,
+not a per-finding sensitivity judgment or permission to use findings in outreach.
+Semantic quality and finer classification remain separate from exact JSON storage.
+This experiment neither purchases new research nor proves the original researcher's
+conversation context was preserved. Production person dossier adoption is pending.
+
+Completed saved-person trial: nick-01 produced 79 findings across eight sections,
+all imported as contact claims in isolated run-09. Re-import reused all IDs and
+independent export comparisons passed. Grok 4.6 cost $3.249254 (51 calls); no research
+acquisition. Public voice and outside-work material survived, but source-reading,
+subject selection, repeated summaries and some bundled conflicts remain imperfect.
+Review: `.artifacts/person-dossier-replay-20260926/nick-01/REVIEW.md`.
+
 ## Programmatic JSON import
 
 The live/replay adapter now imports `dossier.json` directly through
@@ -51,7 +82,7 @@ receipts are not full completion. Original JSON remains retained by the caller.
 
 The reusable seam is available in the platform package and used by the isolated
 trial adapter. It is **not yet selected by production fleet jobs**. No changes to
-specialist ownership, person research, reconciliation or display accompany it.
+production specialist ownership, person research, reconciliation or display accompany it.
 
 Storage-only verification: saved replay run-02's 122 findings imported exactly into
 isolated run-08, then all 122 receipts replayed without new claims. External network
