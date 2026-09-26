@@ -20,7 +20,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from deepagents import create_deep_agent
 from deepagents.backends import CompositeBackend, FilesystemBackend
 from dotenv import dotenv_values
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict
 from langchain_core.tools import StructuredTool
 from research_preview_support import Audit, PreviewTools, content, save
 
@@ -525,11 +525,17 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         if replay:
             opening = (out / "task-prompt.md").read_text()
         (out / "account-opening.live.md").write_text(opening)
+        messages = [HumanMessage(content=opening)]
+        if replay and (out / "continuation-messages.json").exists():
+            saved = json.loads((out / "continuation-messages.json").read_text())
+            messages = messages_from_dict(
+                [{"type": m["type"], "data": m} for m in saved if m["type"] != "system"]
+            ) + messages
         invocation = graph.ainvoke(
-            {"messages": [HumanMessage(content=opening)]},
+            {"messages": messages},
             config={
                 "callbacks": callbacks,
-                "recursion_limit": 200 if args.discovery_trial else 100,
+                "recursion_limit": 700 if claim_ready else (200 if args.discovery_trial else 100),
             },
         )
         output = (

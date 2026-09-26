@@ -40,6 +40,15 @@ dossier can use the existing isolated importer with a fresh run number. This
 tests revised selection on the same acquired material, not fresh discovery or
 preservation of the original researcher's conversation context.
 
+Completed replay: `.artifacts/account-dossier-replay-20260926/REVIEW.md`. Initial
+execution reached the 200-step graph limit; one saved-context continuation finalized
+95 findings. All imported exactly into isolated run-06 and replayed without duplicate
+writes. Total model cost was $3.935124, no new research acquisitions. Specific source
+omissions improved, but bundled findings, repeated fit summaries, speculative factual
+text and research gaps stored as supported observations remain. No semantic acceptance
+or production promotion. The founder increased subsequent claim-ready trials to 700
+graph steps; other runtime limits remain unchanged.
+
 The researcher authors the claim-ready findings while forming the dossier. Code
 imports those records without a second model selecting, splitting or paraphrasing
 them. This is a trial, not a promoted production format.
