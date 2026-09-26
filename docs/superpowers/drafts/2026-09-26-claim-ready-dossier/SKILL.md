@@ -63,6 +63,61 @@ fit summary repeating existing facts is not another fact. A genuinely distinct
 retained occurrence with no added substance may be marked `duplicate` and linked;
 new events or materially different statements should remain independently recorded.
 
+### Worked example: your reasoning and coverage assessment are not source facts
+
+During an investigation you will form conclusions of your own, reason about the
+seller's relevance, plan follow-ups and evaluate how complete your coverage is.
+These are useful parts of your work, but they are not automatically facts about
+the target account. Identify whether a proposed entry came from a source or from
+your assessment of the investigation before deciding where to store it.
+
+For example, after reviewing a fictional company Acme's website, vacancies and
+interviews, you assess your coverage and conclude: “We have not established Acme's
+marketing headcount, campaign budget or installed ABM platform. These remain open
+questions before we can understand its marketing operation fully.” This is your
+research status, not a statement Acme made and not evidence that it has no budget,
+marketing team or ABM platform. A research dossier's “Open questions” section can
+contain exactly this kind of analyst reasoning; copying it does not make it an
+externally supported fact.
+
+**Wrong destination — a finding:**
+
+```text
+claim_type: observation
+finding: Acme's marketing headcount, campaign budget and ABM platform remain unknown.
+review.status: supported
+qualifications: This records research gaps, not account facts.
+```
+
+This still becomes a stored claim. “Not a fact,” “research note,” or “for evaluation
+only” in its text or qualifications does not change the record's destination.
+Attaching pages you searched does not make those pages assert your research gap.
+
+**Right destination — separate questions in /work/review.md:**
+
+```text
+Unknown: Acme's marketing headcount.
+Evidence reviewed: [actual retained source references].
+Current conclusion: Not established from the material reviewed.
+Possible follow-up: Inspect current team information or an attributable statement.
+```
+
+Record the budget and platform questions separately in those notes as well. Do not
+assign finding IDs to these questions or put them in the findings array. If your
+thought is instead “this workflow could benefit from the seller's offering,” place
+it in the underlying finding's agent_interpretation, or in notes if there is no
+specific underlying finding. Do not create a factual entry just to house reasoning.
+
+By contrast, if an actual interview says “Acme declined to disclose its budget,”
+retain that as an attributed reported_statement with its source. If a source offers
+only a partial assertion, preserve that assertion with its limitations; uncertainty
+does not require omission. The distinction is between evidence about the account
+and your own unanswered question, not between complete and incomplete research.
+
+All worked examples in this skill are fictional teaching material. They are not
+research, expected discoveries, source paths to copy, or a target record count.
+Field excerpts illustrate decisions; use the full output contract for actual writes.
+
 ## Format: section headings, one finding per record line
 
 Use a Markdown title and `## Section heading` lines. Preserve the relevant dossier
@@ -151,6 +206,59 @@ reconstructing the original words. There is no arbitrary sentence quota.
 
 A person's statement about the target's operations belongs here with attribution.
 Unrelated personal biography belongs in coverage notes for this account-only task.
+
+### Worked example: preserve the words carrying the signal
+
+Fictional source — Maya, Head of Growth, writes:
+
+> Two marketers support forty named accounts. Every campaign brief is rebuilt
+> manually, and Sales often receives the material after the meeting. We're trying
+> to fix that without adding headcount.
+
+**Wrong:** “Acme is scaling ABM and needs marketing automation.” This drops the
+numbers, manual preparation, late handoff and staffing constraint, and invents a
+purchasing conclusion.
+
+**Right:** a reported_statement preserving Maya's complete passage above, her
+name and stated role, actual retained source path/URL and available statement date.
+These sentences describe one coherent workflow problem; keep the connection between
+them. Store any seller relevance separately, for example in agent_interpretation:
+“The manual preparation and late delivery may be relevant to the seller's workflow
+capabilities. This does not establish a purchasing decision or budget.” Do not put
+that interpretation inside the quotation or factual finding.
+
+### Worked example: a shared page does not make different speakers one finding
+
+Fictional careers page:
+
+> Maya: “Our campaign briefs are rebuilt manually.”
+>
+> Arun: “Security reviews determine which vendors we can approve.”
+
+**Wrong:** one observation saying “Acme's leaders report manual workflows and
+difficult procurement.” It merges speakers and introduces “difficult.”
+
+**Right:** two reported_statement findings, each with its own speaker, exact words,
+available role/date and the same retained page reference. Do not combine the quotes
+or replace their wording with a shared theme. A second person's substantive reply
+on a post can likewise deserve its own attributed finding. Keep contextual links
+without making one person's statement the other person's words.
+
+### Worked example: the interviewer’s question is not the guest’s assertion
+
+Fictional transcript:
+
+> Host: “Are you replacing your CRM?”
+>
+> Guest: “No. We're keeping it and improving the handoff around it.”
+
+**Wrong:** “The guest discussed plans to replace the CRM.”
+
+**Right:** a reported_statement preserving the guest's answer, including “No,”
+with the host's question as explicitly attributed context. Retain the recording URL,
+known speaker identity, date and timestamp when available; do not invent missing
+labels. Apply the same distinction to narration or quotations in articles and books.
+Negation, uncertainty and context are part of the signal even when they weaken fit.
 
 ## Status and relationships
 

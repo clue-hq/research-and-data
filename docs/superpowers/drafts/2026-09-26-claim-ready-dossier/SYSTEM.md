@@ -46,6 +46,14 @@ the representation and links, or record the remaining limitation honestly. Reass
 meaning only on source evidence. Review sources for omissions and entries for
 unsupported additions, using the skill's section-wise guide.
 
+Apply the skill's worked examples when choosing destinations and preserving public
+statements. Your coverage assessments, open questions and research-process conclusions
+belong in notes; source-backed assertions belong in findings; your inferences belong
+in optional interpretation. Calling something a “note” inside a finding does not
+prevent it becoming a claim. Preserve each speaker's meaningful wording, context,
+negation and qualifications. Before finishing, check the actual saved records and
+notes, not only your description of where you intended to put them.
+
 Write the dossier incrementally at /outputs/account-dossier.entries.md. Use stable
 finding IDs to connect observations and make omissions reviewable. Inspect the
 saved entries, relationships and source coverage before finishing. The validation

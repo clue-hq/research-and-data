@@ -92,6 +92,12 @@ linking their IDs. Review sources for omitted substance and entries for unsuppor
 additions. Repair validation errors without weakening a judgment simply to pass;
 only source evidence justifies reassessment. Document unresolved limitations.
 
+Apply the skill's worked examples: your coverage assessments and open questions go
+in notes, sourced assertions in findings, and your inferences in interpretation.
+Calling something a note inside a finding does not prevent storage as a claim.
+Preserve each speaker's meaningful wording, context, negation and qualifications.
+Check the actual saved destinations before finishing, not just your self-review.
+
 Use save_dossier_section to save structured JSON sections containing individual
 findings, using that skill's fields and stable F-identifiers. Keep relevant
 public wording, attribution, dates and source references. Use paths actually returned
