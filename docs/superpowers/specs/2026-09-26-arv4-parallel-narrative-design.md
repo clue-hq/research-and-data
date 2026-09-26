@@ -475,3 +475,10 @@ one explicitly fictional bad/better example. Evidence may recur across sections,
 should develop its own question; overview synthesis and detailed insights retain distinct emphasis.
 Public wording and meaningful qualifications remain intact. This is instruction guidance for parallel
 writers, not a new sequential reviewer, word cap or output gate. The JSON contract remains v3.
+
+Follow-up trial, largest four account + four person inputs: prompt v4, ledger-free output and
+request-local references completed all eight first-attempt calls in 51.375 seconds with no repairs.
+Provider-reported upstream inference cost: $0.117255525. Original claim packets unchanged.
+See `.artifacts/parallel-narrative-trial-20260926/run-02-largest-eight/REVIEW.md` for section timings,
+readable outputs and remaining selection/wording issues. This validates the isolated subset's
+latency, not full 19-section or production pipeline performance; content acceptance remains open.
