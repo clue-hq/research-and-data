@@ -16,8 +16,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from account_dossier_trial import DRAFT, Entry, import_dossier, inspect_dossier, render_dossier
+from account_dossier_trial import DRAFT, Entry, render_dossier
 from research_preview_support import save
+
+from clue_api.arv2.dossier_import import import_account_dossier
+from clue_api.arv2.dossier_json import parse_json_dossier
 
 
 def prepare_skill(out):
@@ -194,6 +197,9 @@ def prepare_replay(source, out):
         "scripts/live_account_dossier.py",
         "scripts/account_dossier_trial.py",
         "scripts/trial_account_claims.py",
+        "platform/api/clue_api/arv2/dossier_findings.py",
+        "platform/api/clue_api/arv2/dossier_json.py",
+        "platform/api/clue_api/arv2/dossier_import.py",
     )
     for name in runners:
         dest = out / "runner-snapshot" / name
@@ -241,9 +247,25 @@ def inspect_live(out, rows):
     path = out / "inputs/scratch/account-dossier.json"
     if not path.exists():
         return [], [{"error": "Use save_dossier_section first"}]
-    return inspect_dossier(
-        record_lines(json.loads(path.read_text())), source_aliases(out / "inputs", rows)
-    )
+    parsed = parse_json_dossier(path.read_bytes())
+    aliases = source_aliases(out / "inputs", rows)
+    records = [
+        {
+            "line": i + 1,
+            "section": r.section,
+            "entry": r.entry,
+            "raw": json.dumps(r.original, ensure_ascii=False),
+        }
+        for i, r in enumerate(parsed.records)
+    ]
+    errors = list(parsed.errors)
+    for record in records:
+        unknown = set(record["entry"].source_paths) - aliases.keys()
+        if unknown:
+            errors.append(
+                {"id": record["entry"].id, "error": f"Unknown source paths: {sorted(unknown)}"}
+            )
+    return records, errors
 
 
 def record_lines(document):
@@ -331,6 +353,10 @@ async def admit_and_import(live, run_number):
     trial.OUT, trial.DB = trial.run_paths(run_number)
     if not (live / "agent-completion.json").exists():
         raise ValueError("Live researcher has not frozen a dossier")
+    completion = json.loads((live / "agent-completion.json").read_text())
+    structured = (live / "dossier.json").read_bytes()
+    if hashlib.sha256(structured).hexdigest() != completion["structured_dossier_sha256"]:
+        raise ValueError("Frozen JSON dossier differs from the generation receipt")
     if not trial.OUT.exists():
         await trial.prepare(dossier_mode=True)
     manifest_path = trial.OUT / "manifest.json"
@@ -339,6 +365,9 @@ async def admit_and_import(live, run_number):
         raise ValueError("Not an isolated trial database")
     if (trial.OUT / "started.json").exists():
         raise ValueError("Do not reuse a model-generation trial for fresh-source import")
+    previous_receipt = trial.OUT / "import-receipt.json"
+    if previous_receipt.exists() and "import_id" not in json.loads(previous_receipt.read_text()):
+        raise ValueError("Legacy importer already used this trial; choose a new isolated run")
     if m.get("live_source") and m["live_source"] != str(live):
         raise ValueError("Another live investigation already bound to this import")
     _, url = trial.db_config()
@@ -390,12 +419,27 @@ async def admit_and_import(live, run_number):
             model_generation_used_old_sources=False,
         )
         save(manifest_path, m)
-        for name in ["dossier.entries.md", "agent-completion.json"]:
+        for name in ["dossier.json", "dossier.entries.md", "agent-completion.json"]:
             (trial.OUT / name).write_bytes((live / name).read_bytes())
         writer = trial.Writer(m, engine, storage)
-        result = await import_dossier(writer, trial.OUT)
+        async with engine.begin() as conn:
+            result = await import_account_dossier(
+                conn,
+                storage,
+                writer.scope,
+                writer.grant,
+                context_id=writer.context,
+                actor_ref=f"account-claim-trial:{m['trial_id']}",
+                import_id=UUID(m["trial_id"]),
+                body=(trial.OUT / "dossier.json").read_bytes(),
+                expected_sha256=completion["structured_dossier_sha256"],
+                source_aliases={s["path"]: UUID(s["source_id"]) for s in sources},
+            )
+        save(trial.OUT / "import-receipt.json", result)
+        await writer.export()
+        (trial.OUT / "dossier.readable.md").write_bytes((live / "dossier.readable.md").read_bytes())
         save(
-            live / "claim-import-location.json",
+            live / "claim-imports" / f"{m['trial_id']}.json",
             {
                 "folder": str(trial.OUT),
                 "database": trial.DB,

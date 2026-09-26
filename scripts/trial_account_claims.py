@@ -19,20 +19,16 @@ from dataclasses import asdict
 from datetime import UTC, date, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Literal
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from clue_api.arv2.account_research_claims import JobScope
-from clue_api.arv2.evidence_paths import source_path
+from clue_api.arv2.dossier_findings import Finding, Review, assessment_for  # noqa: F401
+from clue_api.arv2.dossier_import import finding_proposal
 from clue_api.arv2.quality_claims import (
-    FindingProposal,
-    SemanticAssessment,
-    SourceSupport,
     submit_proposal,
 )
 from clue_api.arv2.quality_evidence import (
@@ -43,7 +39,6 @@ from clue_api.arv2.quality_evidence import (
     resolve_source,
 )
 from clue_api.arv2.research_operations import OperationScope
-from clue_core.equality import canonical_json
 from clue_storage.fs import FsStorage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,66 +95,6 @@ def scope_from(m):
         today=date(2026, 9, 24),
         catalog_version="v4",
         input_refs={"quality_recipe_version": 15},
-    )
-
-
-class Review(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    status: Literal[
-        "supported", "duplicate", "wrong_entity", "insufficient_context", "potential_conflict"
-    ]
-    reason: str = Field(min_length=1)
-    duplicate_of: UUID | None = None
-    conflicts_with: list[UUID] = Field(default_factory=list)
-    expected_entity: dict[str, JsonValue] | None = None
-
-    @model_validator(mode="after")
-    def linked(self):
-        if (self.status == "duplicate") != (self.duplicate_of is not None):
-            raise ValueError(
-                "Only duplicate status requires duplicate_of, using a returned claim ID."
-            )
-        if self.status == "potential_conflict" and not self.conflicts_with:
-            raise ValueError("potential_conflict requires conflicts_with returned claim IDs.")
-        self.conflicts_with = sorted(set(self.conflicts_with))
-        return self
-
-
-class Finding(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    topic: str = Field(min_length=1)
-    claim_type: Literal["observation", "reported_statement"]
-    finding: JsonValue
-    source_paths: list[str] = Field(default_factory=list)
-    attribution: str | None = None
-    time_context: str | None = None
-    qualifications: list[str] = Field(default_factory=list)
-    review: Review
-    agent_interpretation: str | None = None
-
-
-def assessment_for(args):
-    status = args.review.status
-    notes = list(args.qualifications)
-    if status == "duplicate":
-        notes.append(f"Duplicate of {args.review.duplicate_of}")
-    if args.review.conflicts_with:
-        notes.append(
-            "Potential conflict with claims: "
-            + ", ".join(str(claim_id) for claim_id in args.review.conflicts_with)
-            + "; both records remain retained. "
-            + args.review.reason
-        )
-    if not args.source_paths:
-        notes.append("No original source reference attached.")
-    return SemanticAssessment(
-        entity="contradicted" if status == "wrong_entity" else "supported",
-        field_meaning="supported",
-        entailment="uncertain" if status == "insufficient_context" else "supported",
-        relationship_direction="not_applicable",
-        temporal_scope="supported",
-        explanation=args.review.reason,
-        qualifications=tuple(notes),
     )
 
 
@@ -220,31 +155,7 @@ class Writer:
             refs.append(
                 await resolve_source(conn, self.grant, UUID(self.sources[path]["source_id"]))
             )
-        payload = args.model_dump(mode="json", exclude={"source_paths"})
-        if dossier_entry is not None:
-            payload["dossier_entry"] = dossier_entry
-        payload["sources"] = [
-            {
-                "source_id": str(r.source_id),
-                "path": source_path(r.model_dump()),
-                "url": r.source_url,
-                "kind": r.kind,
-                "locator": r.origin_locator,
-            }
-            for r in refs
-        ]
-        digest = hashlib.sha256(canonical_json(payload).encode()).hexdigest()
-        proposal = FindingProposal(
-            operation_key=self.prefix + digest,
-            field_key="account.research_finding",
-            value=payload,
-            claim_kind="attributed_statement"
-            if args.claim_type == "reported_statement"
-            else "observation",
-            support=tuple(SourceSupport(source_id=r.source_id) for r in refs),
-            assessment=assessment_for(args),
-            outreach_safe=False,
-        )
+        proposal = finding_proposal(args, refs, origin=dossier_entry, key_prefix=self.prefix)
         receipt = await submit_proposal(
             conn,
             self.storage,

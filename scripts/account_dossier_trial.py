@@ -11,53 +11,14 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from trial_account_claims import Finding, Review, save
+from trial_account_claims import save
+
+from clue_api.arv2.dossier_json import Entry, EntryReview  # noqa: F401
 
 DRAFT = (
     Path(__file__).resolve().parents[1] / "docs/superpowers/drafts/2026-09-26-claim-ready-dossier"
 )
 DOSSIER = "outputs/account-dossier.entries.md"
-
-
-class EntryReview(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    status: str
-    reason: str
-    duplicate_of: str | None = None
-    conflicts_with: list[str] = Field(default_factory=list)
-    expected_entity: dict | None = None
-
-    @model_validator(mode="after")
-    def contract(self):
-        # Reuse the existing review contract; temporary UUIDs validate shape only.
-        placeholder = "00000000-0000-0000-0000-000000000001"
-        Review.model_validate(
-            {
-                **self.model_dump(),
-                "duplicate_of": placeholder if self.duplicate_of is not None else None,
-                "conflicts_with": [placeholder for _ in self.conflicts_with],
-            }
-        )
-        return self
-
-
-class Entry(Finding):
-    id: str = Field(pattern=r"^F[0-9]{3,}$")
-    review: EntryReview
-
-    def dependencies(self):
-        return set(self.review.conflicts_with) | (
-            {self.review.duplicate_of} if self.review.duplicate_of is not None else set()
-        )
-
-    def as_finding(self, mapping):
-        data = self.model_dump(mode="json", exclude={"id"})
-        data["review"]["duplicate_of"] = (
-            mapping[self.review.duplicate_of] if self.review.duplicate_of else None
-        )
-        data["review"]["conflicts_with"] = [mapping[k] for k in self.review.conflicts_with]
-        return Finding.model_validate(data)
 
 
 def parse_dossier(body, sources):

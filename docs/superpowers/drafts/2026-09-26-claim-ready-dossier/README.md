@@ -9,11 +9,54 @@ resulting skill and prompt addition in each prepared trial folder. The live agen
 does its own acquisition, source review and final dossier formation. Exa still
 receives a research assignment, not claim-storage instructions.
 
-The canonical live output is `dossier.json`; readable Markdown and the existing
-importer's sectioned records are derived from that JSON without a second model.
+The canonical live output is `dossier.json`; readable Markdown and legacy
+sectioned records are derived from that JSON without a second model.
 The authoring tool checks shape, unique finding IDs and retained source paths;
 final validation checks related IDs. These checks do not establish semantic quality.
 Production prompts and dossier storage are unchanged.
+
+## Programmatic JSON import
+
+The live/replay adapter now imports `dossier.json` directly through
+`clue_api.arv2.dossier_import.import_account_dossier`; Markdown is not the input.
+The existing line-format importer remains for earlier trial artifacts only.
+
+| Authored JSON | Stored account claim |
+| --- | --- |
+| Each finding object | One `account.research_finding` claim |
+| Finding text/object, topic, attribution, time, qualifications | Preserved values |
+| `observation` / `reported_statement` | Observation / attributed-statement metadata |
+| Optional `agent_interpretation` | Separate property, never folded into factual text |
+| All five review statuses | Retained, including duplicate, wrong entity and uncertainty |
+| `source_paths` | Authorized sources with IDs, canonical paths, URLs, kinds and locators |
+| Duplicate/conflict finding IDs | Related stored claim IDs; original IDs retained too |
+| Section and original finding object | Dossier origin metadata with document/entry hashes |
+
+The caller supplies an immutable JSON snapshot, its expected hash, an import ID,
+and the run's exact context/evidence grant. The service uses the existing proposal
+writer and claim store; it does not call a model, acquire sources, classify claim
+topics into other catalog fields, merge similar findings or synthesize page copy.
+
+It rejects ambiguous JSON object keys rather than accepting the last value. Record
+errors have JSON locations; valid independent findings can still be stored. Each
+write has a database savepoint and readback comparison. Failed dependencies remain
+explicit errors. Missing/cyclic references are reported without changing the
+agent's judgment. The receipt reports `complete`, counts, outcomes, errors and
+readback checks. The caller commits the outer transaction before publishing it.
+
+Retries of the same job/import reuse durable claim receipts. Once claims exist,
+that import ID cannot silently switch to a different document. Corrections and
+semantic deduplication across different imports remain separate work. Partial
+receipts are not full completion. Original JSON remains retained by the caller.
+
+The reusable seam is available in the platform package and used by the isolated
+trial adapter. It is **not yet selected by production fleet jobs**. No changes to
+specialist ownership, person research, reconciliation or display accompany it.
+
+Storage-only verification: saved replay run-02's 122 findings imported exactly into
+isolated run-08, then all 122 receipts replayed without new claims. External network
+access was blocked; no model/research costs. Independent comparison and receipts:
+`.artifacts/account-claims-trial-20260925/run-08/IMPORT-REVIEW.md`.
 
 Fresh trial evidence: `.artifacts/account-discovery-trial-20260926/zafran-claim-ready-03/REVIEW.md`.
 It completed 80 findings and an exact 80-claim isolated import/re-import, but
