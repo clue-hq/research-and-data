@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.dossier_import import import_research_dossier
 from clue_api.arv2.dossier_json import Entry, parse_json_dossier, replace_section
+from clue_api.arv2.dossier_revision import claim_versions, import_revision, revision_plan
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_evidence import list_sources
 from clue_api.arv2.quality_tools import _ResearchWriteTool
@@ -255,6 +256,140 @@ class SaveDossierSectionTool(_DossierTool):
         }
 
 
+class BeginRevisionInput(ToolInput):
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1)
+    withdrawals: dict[str, str] = Field(default_factory=dict)
+
+
+class BeginDossierRevisionTool(_DossierTool):
+    name = "begin_dossier_revision"
+    input_model = BeginRevisionInput
+    model_description = (
+        "Start a new draft from this job's completed imported dossier. Read latest.json first, "
+        "supply its expected_version and a correction/extension reason. Preserve F-IDs for revised "
+        "findings. Explicit withdrawals map removed F-IDs to reasons; do not omit other findings. "
+        "Old claims remain current until finish_dossier applies the whole revision atomically."
+    )
+
+    async def apply(
+        self,
+        conn: AsyncConnection,
+        authority: Any,
+        saved: dict[str, Any],
+        aliases: dict[str, UUID],
+        inputs: ToolInput,
+    ) -> dict[str, Any]:
+        args = BeginRevisionInput.model_validate(inputs)
+        if int((self.scope.input_refs or {}).get("quality_recipe_version", 0)) < 17:
+            raise ValueError("Dossier revisions require recipe 17 or newer")
+        if saved["state"] != "complete" or saved["version"] != args.expected_version:
+            return {
+                "started": False,
+                "error": "Read latest.json; expected a completed version",
+                "path": VIEW,
+            }
+        ids = {e["id"] for e in saved["receipt"]["entries"]}
+        if (
+            args.withdrawals.keys() - ids
+            or not args.reason.strip()
+            or any(not reason.strip() for reason in args.withdrawals.values())
+        ):
+            return {
+                "started": False,
+                "error": "Use existing finding IDs and nonempty reasons",
+                "path": VIEW,
+            }
+        revisions = await claim_versions(
+            conn, self.scope, authority.context_id, saved["receipt"]["entries"]
+        )
+        document = {
+            "sections": [
+                {
+                    **section,
+                    "findings": [f for f in section["findings"] if f["id"] not in args.withdrawals],
+                }
+                for section in saved["document"]["sections"]
+            ]
+        }
+        draft = await _persist(
+            conn,
+            self.storage,
+            self.scope,
+            authority.context_id,
+            {
+                "state": "draft",
+                "version": saved["version"] + 1,
+                "document": document,
+                "revision": {
+                    "base_version": saved["version"],
+                    "base_artifact_key": saved["artifact_key"],
+                    "base_document": saved["document"],
+                    "base_receipt": saved["receipt"],
+                    "claim_revisions": revisions,
+                    "reason": args.reason,
+                    "withdrawals": args.withdrawals,
+                },
+            },
+        )
+        return {
+            "started": True,
+            "path": VIEW,
+            "version": draft["version"],
+            "base_version": saved["version"],
+        }
+
+
+class DiscardRevisionInput(ToolInput):
+    expected_version: int = Field(ge=1)
+
+
+class DiscardDossierRevisionTool(_DossierTool):
+    name = "discard_dossier_revision"
+    input_model = DiscardRevisionInput
+    model_description = (
+        "Discard an unapplied dossier revision, restoring the last imported document and receipt. "
+        "Requires its current expected_version. No claim is removed or changed. "
+        "Draft history remains."
+    )
+
+    async def apply(
+        self,
+        conn: AsyncConnection,
+        authority: Any,
+        saved: dict[str, Any],
+        aliases: dict[str, UUID],
+        inputs: ToolInput,
+    ) -> dict[str, Any]:
+        args = DiscardRevisionInput.model_validate(inputs)
+        if (
+            saved["state"] != "draft"
+            or not saved.get("revision")
+            or saved["version"] != args.expected_version
+        ):
+            return {
+                "discarded": False,
+                "error": "Expected the current unapplied revision",
+                "path": VIEW,
+            }
+        revision = saved["revision"]
+        restored = await _persist(
+            conn,
+            self.storage,
+            self.scope,
+            authority.context_id,
+            {
+                "state": "complete",
+                "version": saved["version"] + 1,
+                "document": revision["base_document"],
+                "receipt": revision["base_receipt"],
+                "discarded_revision_artifact_key": saved["artifact_key"],
+                "previous_import_artifact_key": revision["base_artifact_key"],
+            },
+        )
+        return {"discarded": True, "version": restored["version"], "path": VIEW}
+
+
 def validation(saved: dict[str, Any], aliases: dict[str, UUID]) -> dict[str, Any]:
     parsed = parse_json_dossier(encode(saved["document"]))
     errors = list(parsed.errors)
@@ -264,7 +399,12 @@ def validation(saved: dict[str, Any], aliases: dict[str, UUID]) -> dict[str, Any
             errors.append(
                 {"id": record.entry.id, "error": f"Unavailable source paths: {sorted(unknown)}"}
             )
-    if not parsed.finding_count:
+    if saved.get("revision"):
+        try:
+            revision_plan(saved)
+        except ValueError as exc:
+            errors.append({"error": str(exc)})
+    if not parsed.finding_count and not saved.get("revision"):
         errors.append(
             {"error": "No findings; report incomplete research rather than an empty import"}
         )
@@ -319,19 +459,38 @@ class FinishDossierTool(_DossierTool):
             return {"finished": False, **check}
         body = encode(saved["document"])
         digest = hashlib.sha256(body).hexdigest()
-        import_id = uuid5(NAMESPACE_URL, f"research-json-dossier:{self.scope.job_id}:{digest}")
-        receipt = await import_research_dossier(
-            conn,
-            self.storage,
-            self.scope,
-            authority.grant,
-            context_id=authority.context_id,
-            actor_ref=authority.actor_ref,
-            import_id=import_id,
-            body=body,
-            expected_sha256=digest,
-            source_aliases=aliases,
-        )
+        if saved["state"] == "complete":
+            return {
+                "finished": True,
+                "path": VIEW,
+                "artifact_key": saved["artifact_key"],
+                "document_artifact_key": saved["document_artifact_key"],
+                "claim_ids": [e["claim_id"] for e in saved["receipt"]["entries"]],
+                **saved["receipt"],
+                "entries": [{**e, "replayed": True} for e in saved["receipt"]["entries"]],
+            }
+        generation = saved.get("revision", {}).get("base_version")
+        identity = f"research-json-dossier:{self.scope.job_id}:{digest}"
+        if generation is not None:
+            identity += f":revision-after:{generation}"
+        import_id = uuid5(NAMESPACE_URL, identity)
+        if saved.get("revision"):
+            receipt = await import_revision(
+                conn, self.storage, self.scope, authority, saved, aliases, body, digest, import_id
+            )
+        else:
+            receipt = await import_research_dossier(
+                conn,
+                self.storage,
+                self.scope,
+                authority.grant,
+                context_id=authority.context_id,
+                actor_ref=authority.actor_ref,
+                import_id=import_id,
+                body=body,
+                expected_sha256=digest,
+                source_aliases=aliases,
+            )
         receipt = json.loads(json.dumps(receipt, default=str))
         saved = await _persist(
             conn,
@@ -341,7 +500,13 @@ class FinishDossierTool(_DossierTool):
             {
                 **saved,
                 "version": saved["version"] + 1,
-                "state": "complete" if receipt["complete"] else "import_pending",
+                "state": (
+                    "complete"
+                    if receipt["complete"]
+                    else "draft"
+                    if saved.get("revision")
+                    else "import_pending"
+                ),
                 "dossier_sha256": digest,
                 "import_id": str(import_id),
                 "receipt": receipt,
@@ -356,4 +521,6 @@ class FinishDossierTool(_DossierTool):
             "stored": receipt["stored"],
             "errors": receipt["errors"],
             "entries": receipt["entries"],
+            "changes": receipt.get("changes", []),
+            "reused": receipt.get("reused", 0),
         }

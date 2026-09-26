@@ -84,6 +84,7 @@ async def import_research_dossier(
     body: bytes,
     expected_sha256: str,
     source_aliases: Mapping[str, UUID] | None = None,
+    reuse_entries: Mapping[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Import a frozen JSON snapshot and return one outcome per attempted finding.
 
@@ -206,6 +207,48 @@ async def import_research_dossier(
                         )
                         refs_by_id[ref.source_id] = ref
                     refs = [refs_by_id[key] for key in sorted(refs_by_id)]
+                    reuse = (reuse_entries or {}).get(entry.id)
+                    if reuse is not None:
+                        prior_value = (
+                            await conn.execute(
+                                text("""SELECT c.value_json
+                            FROM claim c JOIN arv2_quality_proposal p ON p.claim_id=c.id
+                            JOIN claim_quality_current q ON q.claim_id=c.id
+                            WHERE c.id=:id AND c.workspace_id=:ws AND c.entity_id=:entity
+                            AND p.job_id=:job AND q.context_id=:context
+                            AND c.superseded_by IS NULL"""),
+                                {
+                                    "id": UUID(reuse["claim_id"]),
+                                    "ws": scope.workspace_id,
+                                    "entity": subject,
+                                    "job": scope.job_id,
+                                    "context": context_id,
+                                },
+                            )
+                        ).scalar_one_or_none()
+                        if (
+                            prior_value is None
+                            or prior_value.get("dossier_entry", {}).get("original")
+                            != record.original
+                            or prior_value["dossier_entry"]["section"] != record.section
+                        ):
+                            raise ValueError("Reusable finding differs from its stored original")
+                        expected = finding_proposal(
+                            finding,
+                            refs,
+                            origin=prior_value["dossier_entry"],
+                            operation_key=f"dossier:{import_id}:{entry.id}",
+                            subject_kind=scope.subject_kind,
+                        )
+                        if expected.value != prior_value:
+                            raise ValueError(
+                                "Reusable finding has changed evidence or related claims"
+                            )
+                        mapping[entry.id] = reuse["claim_id"]
+                        result["entries"].append(
+                            {**reuse, "location": record.location, "reused": True}
+                        )
+                        continue
                     origin = {
                         "id": entry.id,
                         "section": record.section,

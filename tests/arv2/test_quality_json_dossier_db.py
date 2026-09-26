@@ -455,3 +455,315 @@ def test_real_deep_agent_c5_tools_and_cold_finalization_replay(tmp_path, person)
             workspaces.close()
 
     run_async(case())
+
+
+@pytest.mark.parametrize("person", [False, True])
+def test_revision_reuses_replaces_remaps_and_preserves_history(tmp_path, person):
+    from clue_api.arv2.quality_json_dossier import BeginDossierRevisionTool, BeginRevisionInput
+
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path, person)
+            job = replace(job, input_refs={"quality_recipe_version": 17})
+            first = finding("F001", source_paths=[path])
+            second = finding("F002", source_paths=[path], finding="Independent announcement")
+            related = finding(
+                "F003",
+                source_paths=[path],
+                review={
+                    "status": "potential_conflict",
+                    "reason": "Uncertain dates",
+                    "conflicts_with": ["F001"],
+                },
+            )
+            removed = finding("F004", source_paths=[path], finding="Researcher's question")
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[first, second, related, removed]),
+            )
+            initial = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            old_ids = {e["id"]: e["claim_id"] for e in initial["entries"]}
+            from clue_api.arv2.display.recipes import load_display_recipes
+            from clue_api.arv2.quality_generation import (
+                ensure_generation,
+                read_generation,
+                signal_subject_change,
+            )
+            from clue_api.arv2.quality_page_inputs import page_inputs
+            from clue_research.claimstore.quality import deliver_invalidations
+
+            await load_display_recipes(conn)
+            generation = await ensure_generation(
+                conn,
+                OperationScope(job.workspace_id, job.run_id, job.job_id, job.account_id),
+                context_id=cid,
+            )
+            await deliver_invalidations(
+                conn, workspace_id=job.workspace_id, apply=signal_subject_change
+            )
+            page = "contact" if person else "overview"
+            old_inputs = await page_inputs(conn, job, context_id=cid, page=page)
+            saved = await read_json_dossier(conn, storage, job, cid)
+            assert not (
+                await invoke(
+                    BeginDossierRevisionTool,
+                    job,
+                    storage,
+                    ctx,
+                    BeginRevisionInput(
+                        expected_version=saved["version"] + 1, reason="Wrong version"
+                    ),
+                )
+            )["started"]
+            assert (
+                await invoke(
+                    BeginDossierRevisionTool,
+                    job,
+                    storage,
+                    ctx,
+                    BeginRevisionInput(
+                        expected_version=saved["version"],
+                        reason="More precise wording",
+                        withdrawals={"F004": "Investigator question, not an observation"},
+                    ),
+                )
+            )["started"]
+            first = {
+                **first,
+                "finding": "Revised observation with uncertain attribution",
+                "review": {"status": "insufficient_context", "reason": "Attribution uncertain"},
+            }
+            addition = finding("F005", source_paths=[path], finding="New independent event")
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[first, second, related, addition]),
+            )
+            result = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert result["finished"], result
+            ids = {e["id"]: e["claim_id"] for e in result["entries"]}
+            # Existing page dependencies change immediately; durable refresh signals replay once.
+            changed_inputs = await page_inputs(conn, job, context_id=cid, page=page)
+            assert changed_inputs.sha256 != old_inputs.sha256
+            await deliver_invalidations(
+                conn, workspace_id=job.workspace_id, apply=signal_subject_change
+            )
+            changed_generation = await read_generation(
+                conn, workspace_id=job.workspace_id, generation_id=generation.generation_id
+            )
+            assert changed_generation.input_revision > old_inputs.generation.input_revision
+            await deliver_invalidations(
+                conn, workspace_id=job.workspace_id, apply=signal_subject_change
+            )
+            assert (
+                await read_generation(
+                    conn, workspace_id=job.workspace_id, generation_id=generation.generation_id
+                )
+            ).input_revision == changed_generation.input_revision
+            assert ids["F002"] == old_ids["F002"]
+            assert ids["F001"] != old_ids["F001"]
+            assert ids["F003"] != old_ids["F003"]  # Reference now points at the revised finding.
+            rows = (
+                (
+                    await conn.execute(
+                        text("""SELECT c.id,c.value_json,c.superseded_by,q.conclusion
+                FROM claim c JOIN claim_quality_current q ON q.claim_id=c.id
+                WHERE c.id=ANY(:ids)"""),
+                        {"ids": [UUID(x) for x in [*old_ids.values(), *ids.values()]]},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            byid = {str(r["id"]): r for r in rows}
+            assert str(byid[old_ids["F001"]]["superseded_by"]) == ids["F001"]
+            assert byid[old_ids["F004"]]["conclusion"] == "invalid"
+            assert byid[ids["F001"]]["conclusion"] != "supported"
+            assert byid[ids["F003"]]["value_json"]["review"]["conflicts_with"] == [ids["F001"]]
+            # Corrected values and immutable originals both survive; no replacement of raw evidence.
+            assert byid[old_ids["F001"]]["value_json"]["finding"] != first["finding"]
+            replay = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert replay["claim_ids"] == result["claim_ids"]
+            assert (await read_json_dossier(conn, storage, job, cid))["version"] == saved[
+                "version"
+            ] + 3
+            events = (
+                await conn.execute(
+                    text("SELECT count(*) FROM claim_quality_event WHERE claim_id=:id"),
+                    {"id": UUID(old_ids["F001"])},
+                )
+            ).scalar_one()
+            assert events >= 2  # Initial assessment plus durable invalidation of old version.
+            # Reverting wording creates a new version; it never revives a retired claim.
+            latest = await read_json_dossier(conn, storage, job, cid)
+            await invoke(
+                BeginDossierRevisionTool,
+                job,
+                storage,
+                ctx,
+                BeginRevisionInput(
+                    expected_version=latest["version"], reason="Resolve attribution"
+                ),
+            )
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(
+                    section="Voice",
+                    findings=[finding("F001", source_paths=[path]), second, related, addition],
+                ),
+            )
+            final = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert final["finished"], final
+            assert next(e["claim_id"] for e in final["entries"] if e["id"] == "F001") not in (
+                ids["F001"],
+                old_ids["F001"],
+            )
+
+    run_async(case())
+
+
+def test_failed_revision_rolls_back_and_can_be_repaired_or_discarded(tmp_path, monkeypatch):
+    from clue_api.arv2 import dossier_revision
+    from clue_api.arv2.quality_json_dossier import (
+        BeginDossierRevisionTool,
+        BeginRevisionInput,
+        DiscardDossierRevisionTool,
+        DiscardRevisionInput,
+    )
+
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path)
+            job = replace(job, input_refs={"quality_recipe_version": 17})
+            original = finding(source_paths=[path])
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[original]),
+            )
+            initial = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            saved = await read_json_dossier(conn, storage, job, cid)
+            await invoke(
+                BeginDossierRevisionTool,
+                job,
+                storage,
+                ctx,
+                BeginRevisionInput(expected_version=saved["version"], reason="Correction"),
+            )
+            # Accidental omission cannot silently retire the original.
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[]),
+            )
+            invalid = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert not invalid["finished"] and "withdrawals" in str(invalid["errors"])
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[{**original, "finding": "Corrected"}]),
+            )
+            before = (await conn.execute(text("SELECT count(*) FROM claim"))).scalar_one()
+            retire = dossier_revision.assess_claim
+
+            async def fail(*args, **kwargs):
+                raise ValueError("Injected retirement failure")
+
+            monkeypatch.setattr(dossier_revision, "assess_claim", fail)
+            failed = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert not failed["finished"] and not failed["claim_ids"]
+            assert (await conn.execute(text("SELECT count(*) FROM claim"))).scalar_one() == before
+            monkeypatch.setattr(dossier_revision, "assess_claim", retire)
+            latest = await read_json_dossier(conn, storage, job, cid)
+            assert latest["state"] == "draft"
+            result = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert result["finished"], result
+            latest = await read_json_dossier(conn, storage, job, cid)
+            await invoke(
+                BeginDossierRevisionTool,
+                job,
+                storage,
+                ctx,
+                BeginRevisionInput(expected_version=latest["version"], reason="Optional extension"),
+            )
+            draft = await read_json_dossier(conn, storage, job, cid)
+            assert (
+                await invoke(
+                    DiscardDossierRevisionTool,
+                    job,
+                    storage,
+                    ctx,
+                    DiscardRevisionInput(expected_version=draft["version"]),
+                )
+            )["discarded"]
+            restored = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert restored["claim_ids"] == result["claim_ids"] != initial["claim_ids"]
+
+    run_async(case())
+
+
+def test_revision_refuses_out_of_band_claim_change(tmp_path):
+    from clue_api.arv2.quality_json_dossier import BeginDossierRevisionTool, BeginRevisionInput
+    from clue_research.claimstore.quality import assess_claim
+
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path)
+            job = replace(job, input_refs={"quality_recipe_version": 17})
+            original = finding(source_paths=[path])
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[original]),
+            )
+            initial = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            saved = await read_json_dossier(conn, storage, job, cid)
+            await invoke(
+                BeginDossierRevisionTool,
+                job,
+                storage,
+                ctx,
+                BeginRevisionInput(expected_version=saved["version"], reason="Correction"),
+            )
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[{**original, "finding": "Changed"}]),
+            )
+            await assess_claim(
+                conn,
+                workspace_id=job.workspace_id,
+                entity_id=job.account_id,
+                claim_id=UUID(initial["claim_ids"][0]),
+                operation_id=uuid4(),
+                expected_revision=1,
+                conclusion="unresolved",
+                kind="conflict",
+                actor_ref="independent-review",
+                rationale_key=saved["artifact_key"],
+                support_artifacts=(),
+                context_id=cid,
+            )
+            result = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            assert not result["finished"] and not result["claim_ids"]
+            assert "changed since revision began" in str(result["errors"])
+
+    run_async(case())

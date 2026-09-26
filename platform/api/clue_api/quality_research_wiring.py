@@ -94,6 +94,8 @@ from clue_api.arv2.quality_findings import (
     RecordResearchFindingTool,
 )
 from clue_api.arv2.quality_json_dossier import (
+    BeginDossierRevisionTool,
+    DiscardDossierRevisionTool,
     FinishDossierTool,
     SaveDossierSectionTool,
     ValidateDossierTool,
@@ -223,6 +225,8 @@ def quality_tools(
         NominateBriefedCommitteeTool,
         NominateBriefedWebCommitteeTool,
         PublishAdvisoryResearchPageTool,
+        DiscardDossierRevisionTool,
+        BeginDossierRevisionTool,
         SaveDossierSectionTool,
         ValidateDossierTool,
         FinishDossierTool,
@@ -244,6 +248,8 @@ def quality_profiles(
                 "acquire_research_evidence",
                 "nominate_committee_candidate",
                 "nominate_web_committee_candidate",
+                "discard_dossier_revision",
+                "begin_dossier_revision",
                 "save_dossier_section",
                 "validate_dossier",
                 "finish_dossier",
@@ -283,7 +289,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: ("v16-person" if person else "v16")
+            role: ("v17-person" if person else "v17")
+            if version >= 17 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v16-person" if person else "v16")
             if version >= 16 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v15-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v15")
             if version >= 15
