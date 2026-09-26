@@ -84,6 +84,7 @@ from clue_api.arv2.account_research_store import (
     set_job_stage,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.ats_client import (
     BoardFetchFailed,
     BoardNotFound,
@@ -1500,7 +1501,7 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
         # investors, round dates, round count — has no registered home, so the whole block is still
         # returned as context and the agent quotes it into a claim with the evidence it finds
         # elsewhere.
-        "funding": funding if isinstance(funding, Mapping) else None,
+        "funding": enrichment_only(funding) if isinstance(funding, Mapping) else None,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "cost": _cost_json(company.cost),
     }
@@ -1521,7 +1522,6 @@ async def _lookup_people(runtime: ToolRuntime, args: LookupPeopleArgs) -> dict[s
             {
                 "full_name": person.full_name,
                 "title": person.title,
-                "headline": person.headline,
                 "linkedin_url": person.linkedin_url,
                 "current_company": person.current_company,
                 "current_company_domain": person.current_company_domain,
@@ -1676,7 +1676,6 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
         "person": {
             "full_name": record.full_name,
             "title": record.title,
-            "headline": record.headline,
             "linkedin_url": record.linkedin_url,
             "current_company": record.current_company,
             "current_company_domain": record.current_company_domain,

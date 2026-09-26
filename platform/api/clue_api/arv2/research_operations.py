@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_refusals import RefusalError
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.sinks import LedgerRow
 from clue_core import decode_jsonb
@@ -200,6 +201,8 @@ async def body(
         raise RefusalError("tool_error", "saved response is not valid JSON") from exc
     if not isinstance(result, dict):
         raise RefusalError("tool_error", "saved response is not a JSON object")
+    if envelope.get("record", {}).get("provider") == "ai_ark":
+        result = enrichment_only(result)
     return op, result
 
 

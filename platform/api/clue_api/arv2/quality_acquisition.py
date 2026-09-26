@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.exa_client import _read_output, _read_report, read_deep_report
 from clue_api.arv2.provider_ledger import DrainReport, ledger_id_for
 from clue_api.arv2.quality_evidence import SourceRef, persist_source
@@ -145,7 +146,9 @@ async def _index_receipts(
             observed_at=row.recorded_at,
             ledger_id=ledger,
             operation_id=operation_id,
-            normalizer_version=f"{row.provider}:v1",
+            normalizer_version=f"{row.provider}:enrichment-v2"
+            if row.provider == "ai_ark"
+            else f"{row.provider}:v1",
         )
 
         if (
@@ -167,7 +170,17 @@ async def _index_receipts(
             )
             continue
         sources.append(
-            await save(kind="provider_record", body=body, origin_locator="response-body")
+            await save(
+                kind="provider_record",
+                body=enrichment_only(body) if row.provider == "ai_ark" else body,
+                origin_locator="response-body",
+                metadata={
+                    "content_kind": "ai_ark_enrichment",
+                    "excluded_content": "descriptive_prose",
+                }
+                if row.provider == "ai_ark"
+                else None,
+            )
         )
         if row.provider != "exa" or not isinstance(body, dict):
             continue

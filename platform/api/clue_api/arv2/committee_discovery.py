@@ -38,6 +38,7 @@ from clue_api.arv2.ai_ark_client import (
     person_from_record,
     role_search_body,
 )
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.claim_writer import WriteReceipt
 from clue_api.arv2.exa_client import read_deep_report
 from clue_core import ExtractionMethod
@@ -321,7 +322,6 @@ def page_result(
                 "provider_subject_id": person.ark_id,
                 "name": person.full_name,
                 "title": person.title,
-                "headline": person.headline,
                 "linkedin_url": person.linkedin_url,
                 "current_company": person.current_company,
                 "current_company_domain": person.current_company_domain,
@@ -330,7 +330,7 @@ def page_result(
                 else "stated"
                 if person.current_company_domain
                 else "unknown",
-                **({"profile": row} if full else {}),
+                **({"profile": enrichment_only(row)} if full else {}),
             }
         )
     last = raw.get("last")
@@ -586,7 +586,10 @@ async def load_person_seed(runtime: ToolRuntime) -> dict[str, Any] | None:
             raise RefusalError(
                 "subject_lock_failed", "source profile belongs to a different contact"
             )
-    seed = {**reference_data(op, person.ark_id or "", parent_id), "profile": dict(person.raw)}
+    seed = {
+        **reference_data(op, person.ark_id or "", parent_id),
+        "profile": enrichment_only(person.raw),
+    }
     runtime.person_seed = seed
     await runtime.write(
         [provider_evidence(d, seed) for d in ai_ark_person_claims(person, runtime.scope)]
@@ -682,7 +685,7 @@ async def lookup_bound_person(runtime: ToolRuntime, args: Any) -> dict[str, Any]
         await load_person_seed(runtime)
     if runtime.person_seed is not None:
         return {
-            "profile": runtime.person_seed["profile"],
+            "profile": enrichment_only(runtime.person_seed["profile"]),
             "channels": await enrich_contact(runtime, EnrichContactArgs()),
         }
     locked = fold(runtime.scope.person_linkedin_url)
@@ -737,12 +740,12 @@ async def lookup_bound_person(runtime: ToolRuntime, args: Any) -> dict[str, Any]
                 "ws": runtime.scope.workspace_id,
             },
         )
-    runtime.person_seed = {**refs, "profile": dict(person.raw)}
+    runtime.person_seed = {**refs, "profile": enrichment_only(person.raw)}
     await runtime.write(
         [provider_evidence(d, refs) for d in ai_ark_person_claims(person, runtime.scope)]
     )
     return {
-        "profile": dict(person.raw),
+        "profile": enrichment_only(person.raw),
         "channels": await enrich_contact(runtime, EnrichContactArgs()),
     }
 

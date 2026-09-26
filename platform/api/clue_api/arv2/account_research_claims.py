@@ -686,7 +686,7 @@ def ai_ark_company_claims(
 ) -> list[ClaimDraft]:
     """Basic typed company facts, cited by raw path, never by a fake URL.
 
-    Provider descriptions stay in the raw record; company_about is synthesized from research.
+    Provider descriptions belong only in the raw audit; company_about comes from research.
 
     ``https://api.ai-ark.com/v1/companies?domain=…`` is not a page a human can open, so writing it
     as ``source_url`` would manufacture provenance. The claim cites the record instead: the
@@ -932,7 +932,7 @@ def _career_history(raw: Mapping[str, Any]) -> JsonValue | None:
 def ai_ark_person_claims(person: AiArkPerson, scope: JobScope) -> list[ClaimDraft]:
     """Basic typed contact facts, cited by raw path.
 
-    Free-form headlines and biographies stay in the raw record, not automatic claims.
+    Free-form headlines and biographies belong only in the raw audit, not research inputs.
 
     The same law as :func:`ai_ark_company_claims`, one entity down: ``https://api.ai-ark.com/…`` is
     not a page a human can open, so a person claim carries ``source_url=None`` plus the exact

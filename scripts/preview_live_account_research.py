@@ -34,6 +34,7 @@ from clue_api.arv2.account_research_tools import (
     SearchWebArgs,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.ats_client import fetch_postings, find_board
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.evidence_paths import source_path
@@ -273,8 +274,15 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                     record = json.loads(Path(raw_ref).read_text())
                     raw = json.loads(record["response"]["body_text"])
                     save(out / "responses" / f"{oid}.json", raw)
+                    if operation == "lookup_company":
+                        raw = enrichment_only(raw)
                     acquired.append(
-                        source(oid, "provider_record", json.dumps(raw), "response-body")
+                        source(
+                            oid,
+                            "provider_record",
+                            json.dumps(raw),
+                            "response-body",
+                        )
                     )
                     report = (
                         read_deep_report(raw, text_output=True) if isinstance(raw, dict) else None
@@ -322,7 +330,8 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                         "n_results": result.n_results,
                     }
                 if operation == "lookup_company":
-                    value.pop("raw", None)  # Native typed fields; original response remains above.
+                    value = enrichment_only(value)
+                    value.pop("raw", None)  # Typed fields only; complete response stays in audit.
                 value["source_navigation"] = source_navigation(acquired)
                 review_path = None
                 if args.discovery_trial and raw_ref:
