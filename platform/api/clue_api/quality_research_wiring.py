@@ -93,6 +93,13 @@ from clue_api.arv2.quality_findings import (
     RecordPathResearchFindingTool,
     RecordResearchFindingTool,
 )
+from clue_api.arv2.quality_json_dossier import (
+    FinishDossierTool,
+    SaveDossierSectionTool,
+    ValidateDossierTool,
+    uses_json_dossier,
+    validate_dossier_handoff,
+)
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
@@ -216,6 +223,9 @@ def quality_tools(
         NominateBriefedCommitteeTool,
         NominateBriefedWebCommitteeTool,
         PublishAdvisoryResearchPageTool,
+        SaveDossierSectionTool,
+        ValidateDossierTool,
+        FinishDossierTool,
     ):
         tool = cls(scope, storage, purge_unevidenced=purge)
         registry.register(tool, make_default=tool.version == "1")
@@ -234,6 +244,9 @@ def quality_profiles(
                 "acquire_research_evidence",
                 "nominate_committee_candidate",
                 "nominate_web_committee_candidate",
+                "save_dossier_section",
+                "validate_dossier",
+                "finish_dossier",
             }
             else frozenset({AgentRole.RESEARCH_NARRATIVE})
             if descriptor.name in {"submit_value_narrative", "publish_research_page"}
@@ -270,7 +283,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: ("v15-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v15")
+            role: ("v16-person" if person else "v16")
+            if version >= 16 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v15-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v15")
             if version >= 15
             else ("v14-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v14")
             if version >= 14
@@ -646,6 +661,7 @@ class ResearchUnitRuntime:
                 ),
             )
             if uses_account_dossier(self.scope)
+            and not uses_json_dossier(self.scope)
             and request.constitution.role == AgentRole.ACCOUNT_RESEARCH
             else ()
         )
@@ -854,6 +870,9 @@ class ResearchUnitRuntime:
                     )
                     async with self.connections() as conn:
                         await validate_report(conn, self.scope, self.context_id, report)
+                        await validate_dossier_handoff(
+                            conn, self.storage, self.scope, self.context_id, report.claim_ids
+                        )
 
             governed = GovernedAgentToolFactory(
                 request=request,
@@ -937,6 +956,10 @@ class ResearchUnitRuntime:
             return None
         async with self.connections() as conn:
             await validate_report(conn, self.scope, self.context_id, reports[0])
+            if outcome.status is AgentExecutionStatus.COMPLETED:
+                await validate_dossier_handoff(
+                    conn, self.storage, self.scope, self.context_id, reports[0].claim_ids
+                )
         return reports[0]
 
 

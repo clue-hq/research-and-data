@@ -98,6 +98,10 @@ class ResearchViewMount(EvidenceWorkspace):
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
     ) -> dict[str, Any]:
         scope = authority.scope
+        if path == "/dossier/latest.json":
+            from clue_api.arv2.quality_json_dossier import read_json_dossier
+
+            return await read_json_dossier(conn, self._storage, scope, authority.context_id)
         dossier = re.fullmatch(r"/account-dossier/(latest|[1-9][0-9]*)\.json", path)
         if dossier:
             from clue_api.arv2.quality_dossier import read_dossier
@@ -245,7 +249,11 @@ class ResearchViewMount(EvidenceWorkspace):
             result["committee_path"] = "/research/committee.json"
             result["generation_path"] = "/research/generation.json"
             result["evidence_path"] = "/evidence/index.json"
-            if not scope.person_subject_id:
+            from clue_api.arv2.quality_json_dossier import uses_json_dossier
+
+            if uses_json_dossier(scope):
+                result["dossier_path"] = "/research/dossier/latest.json"
+            elif not scope.person_subject_id:
                 result["account_dossier_path"] = "/research/account-dossier/latest.json"
             if scope.person_subject_id:
                 result["selected_person"] = {
@@ -406,20 +414,27 @@ class ResearchViewMount(EvidenceWorkspace):
                 )
             except (ValueError, StorageError):
                 return LsResult(error="Evidence authority unavailable; request an authorized task.")
-        if path not in ("/", ""):
+        if path not in ("/", "", "/dossier", "/dossier/"):
             return LsResult(error="Open /research/context.json or /evidence/index.json.")
         try:
             async with self._connections() as conn:
                 await resolve_authority(conn, self._scope, self._execution_id)
         except (ValueError, StorageError):
             return LsResult(error="Research authority unavailable.")
+        if path.rstrip("/") == "/dossier":
+            return LsResult(entries=[FileInfo(path="/dossier/latest.json", is_dir=False)])
         return LsResult(
             entries=[
                 FileInfo(path=p, is_dir=False)
                 for p in (
                     ("/index/0.json",)
                     if self._evidence
-                    else ("/context.json", "/catalog/0.json", "/claims/0.json")
+                    else (
+                        "/context.json",
+                        "/catalog/0.json",
+                        "/claims/0.json",
+                        "/dossier/latest.json",
+                    )
                 )
             ]
         )

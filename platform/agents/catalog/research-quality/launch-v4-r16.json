@@ -1,0 +1,28 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 16,
+  "resources": {
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "skills/person-dossier/v2/SKILL.md": "5a67fc08bdd5fa9d6d485b1f05bddaad75f0cc77216103d3804cd6a76076db2f",
+    "skills/person-depth-charter/v1/SKILL.md": "6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "skills/governed-evidence/v3/SKILL.md": "8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22",
+    "skills/account-dossier/v6/SKILL.md": "34f2fc74b75db18df0d2ea10122a7bc7c0f51f78fe1754991529a46816186eb8",
+    "skills/person-research-briefing/v3/SKILL.md": "75c1250c28373c715e00f5f17f41c4c4889c3f32e0cae3986f4c70d8882f7aa1",
+    "prompts/quality-account-research/v16/SYSTEM.md": "78c1a58b84e7ed58d4def41430728d721e5aca884940e75bb1160a332d6c69d5",
+    "profiles/quality-account-research/v16/profile.yaml": "a3b75466530c35b712fbfac216807c48f3e281a7b5e144dc707c96600df85593",
+    "prompts/quality-person-research/v16-person/SYSTEM.md": "96914c29b02ccea2fe1bc9669bf79f0a5299b8e7e8288b8ea4f86d3aef01896d",
+    "profiles/quality-person-research/v16-person/profile.yaml": "679f75be4f9f4be909869d5b3213c25d764a4c29642b6cff4319ccbde8ac1dcb",
+    "prompts/quality-research-claims/v15/SYSTEM.md": "0bddd7b35e4f75db4d07e26c05e4b9a0bd69fd8870468f31633a40579cc05294",
+    "profiles/quality-research-claims/v15/profile.yaml": "9d2f3eeff4d00c20daecad35dc800870745c35a87f168f6dfd77c3cbc90215ac",
+    "prompts/quality-research-narrative/v15/SYSTEM.md": "8932ca816dd726e6a9ce838c2bf74f00c98c2001099823d6eb74bb5f6df6775d",
+    "profiles/quality-research-narrative/v15/profile.yaml": "6f665c539a484b83adc25ee78e1e4c6d7e3d2b71661e2714f13b3b8d3a7e944f",
+    "recipe-v16.json": "be363d6bb4f9ded6356be1bc9463b475aba4a86d05267135616b6c74b671659e",
+    "skills/governed-evidence/v4/SKILL.md": "9480efb23acc4e45fec3b8c5cd0a7a64ddf422fc0acf93b1037a57354d55a706",
+    "skills/claim-ready-account-dossier/v1/SKILL.md": "4156cc3d5d357f1f2db59ba6d304cc598158389e3dd5c130eecf8f69534c3406",
+    "skills/claim-ready-person-dossier/v1/SKILL.md": "d45fbdf1426633eb31c434882add1f577913e9d6ad754101e64a3ec1829dfdd8"
+  },
+  "review_policy": "advisory"
+}

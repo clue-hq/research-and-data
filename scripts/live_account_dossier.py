@@ -16,11 +16,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from account_dossier_trial import DRAFT, Entry, render_dossier
+from account_dossier_trial import DRAFT, render_dossier
 from research_preview_support import save
 
 from clue_api.arv2.dossier_import import import_account_dossier
-from clue_api.arv2.dossier_json import parse_json_dossier
+from clue_api.arv2.dossier_json import parse_json_dossier, replace_section
 
 
 def dossier_workspace_path(out):
@@ -287,26 +287,11 @@ def save_section(out, rows, section, findings):
     if (out / "agent-completion.json").exists():
         return {"saved": False, "error": "Dossier frozen"}
     try:
-        if not section.strip() or "\n" in section or "\r" in section:
-            raise ValueError("Use a nonempty single-line section heading")
-        sources = source_aliases(out / "inputs", rows)
-        entries = [Entry.model_validate(f) for f in findings]
-        for entry in entries:
-            unknown = set(entry.source_paths) - sources.keys()
-            if unknown:
-                raise ValueError(f"Unknown source paths: {sorted(unknown)}")
         path = out / "inputs" / dossier_workspace_path(out).lstrip("/")
         document = json.loads(path.read_text()) if path.exists() else {"sections": []}
-        others = [s for s in document["sections"] if s["section"] != section]
-        ids = [f["id"] for s in others for f in s["findings"]] + [e.id for e in entries]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Finding identifiers must be unique across sections")
-        replacement = {"section": section, "findings": findings}
-        document["sections"] = [
-            replacement if s["section"] == section else s for s in document["sections"]
-        ]
-        if len(others) == len(document["sections"]):
-            document["sections"].append(replacement)
+        document = replace_section(
+            document, section, findings, set(source_aliases(out / "inputs", rows))
+        )
         save(path, document)
         return {
             "saved": True,

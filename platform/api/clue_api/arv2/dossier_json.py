@@ -70,6 +70,31 @@ class ParsedDossier:
     section_count: int
 
 
+def replace_section(
+    document: dict[str, Any],
+    section: str,
+    findings: list[dict[str, Any]],
+    source_paths: set[str],
+) -> dict[str, Any]:
+    """Shared trial/production authoring semantics; links can resolve in later sections."""
+    if not section.strip() or "\n" in section or "\r" in section:
+        raise ValueError("Use a nonempty single-line section heading")
+    entries = [Entry.model_validate(f) for f in findings]
+    unknown = {path for entry in entries for path in entry.source_paths} - source_paths
+    if unknown:
+        raise ValueError(f"Unknown source paths; use the evidence index: {sorted(unknown)}")
+    sections = document["sections"]
+    others = [s for s in sections if s["section"] != section]
+    ids = [f["id"] for s in others for f in s["findings"]] + [e.id for e in entries]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Finding identifiers must be unique across sections")
+    replacement = {"section": section, "findings": findings}
+    updated = [replacement if s["section"] == section else s for s in sections]
+    if len(others) == len(sections):
+        updated.append(replacement)
+    return {"sections": updated}
+
+
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:

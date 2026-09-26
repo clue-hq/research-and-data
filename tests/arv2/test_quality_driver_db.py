@@ -143,17 +143,88 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
                 calls.append(unit_key)
-                assert scope.input_refs["quality_recipe_version"] == 15
+                assert scope.input_refs["quality_recipe_version"] == 16
                 assert (
                     scope.persona_markdown
                     == "---\nkind: audience-persona\nicp_key: clue-abm-buyers\n"
                     "icp_version: 1\n---\nOperations buyer"
                 )
 
+                from langchain_core.messages import ToolMessage
+
+                from clue_api.arv2.evidence_paths import source_path
+                from clue_api.arv2.research_operations import OperationScope
+                from tests.arv2.test_dossier_json import finding
+                from tests.arv2.test_quality_evidence_db import save
+
+                prefix = []
+                if unit_key is None:
+                    source = await save(
+                        conn,
+                        storage,
+                        OperationScope(
+                            scope.workspace_id, scope.run_id, scope.job_id, scope.account_id
+                        ),
+                        "We keep the original public wording.",
+                    )
+                    prefix.append(
+                        call(
+                            "save_dossier_section",
+                            {
+                                "section": "Voice",
+                                "findings": [
+                                    finding(
+                                        source_paths=[source_path(source.model_dump())],
+                                        finding="We keep the original public wording.",
+                                    )
+                                ],
+                            },
+                            "save-json",
+                        )
+                    )
+                prefix.append(call("finish_dossier", {}, "import-json"))
+
+                class ReceiptModel(ScriptedAgentChatModel):
+                    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                        result = super()._generate(
+                            messages, stop=stop, run_manager=run_manager, **kwargs
+                        )
+                        message = result.generations[0].message
+                        if message.tool_calls[0]["id"] == "call-report":
+
+                            def find(value):
+                                if isinstance(value, dict):
+                                    if value.get("finished") and "claim_ids" in value:
+                                        return value["claim_ids"]
+                                    for v in value.values():
+                                        found = find(v)
+                                        if found:
+                                            return found
+                                return None
+
+                            ids = None
+                            for m in reversed(messages):
+                                if not isinstance(m, ToolMessage):
+                                    continue
+                                try:
+                                    payload = json.loads(m.content)
+                                except ValueError:
+                                    continue
+                                ids = find(payload)
+                                if ids:
+                                    break
+                            assert ids
+                            args = message.tool_calls[0]["args"]
+                            report = json.loads(args["content"])
+                            report["claim_ids"] = ids
+                            args["content"] = json.dumps(report)
+                        return result
+
                 class Models:
                     def build(self, **kwargs):
-                        return ScriptedAgentChatModel(
-                            responses=[
+                        return ReceiptModel(
+                            responses=prefix
+                            + [
                                 call(
                                     "read_file", {"file_path": "/research/context.json"}, "context"
                                 ),
@@ -226,7 +297,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             # This scripted worker finalizes a report without publishing pages. Measured
             # completion must retain that gap rather than accepting the model's status.
             assert initial.finalization["coverage"]["missing_pages"] == ["insights", "overview"]
-            assert initial.finalization["spend"]["unpriced_model_calls"] == 3
+            assert initial.finalization["spend"]["unpriced_model_calls"] == 5
             assert initial.finalization["spend"]["cost_complete"] is False
             assert initial.finalization["schema_version"] == "quality-job-v1"
             assert await handler.sweep_quality() == 1
