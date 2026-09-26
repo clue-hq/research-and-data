@@ -8,3 +8,11 @@
 - Target missed: 6m08 initial + 2m10 recovery, 9m33 elapsed including repair coding. Initial summary field page_ready_seconds actually reported settlement even failed pages; future runner now distinguishes those. Do not describe initial failed pages as ready.
 - Content review: useful source-specific detail and seller context retained, but broad packets generate long repetitive pages. 336 selected distinct claims, 297 directly cited, 39 not directly cited (not an omission percentage). 32 missing primary coverage records, 15 nevertheless cited in same section. Coverage/advisory diagnostics are not rejection gates.
 - Next: user reviews pages; improve section selection, repetition and coverage accounting, then measure again. No production activation or frontend changes. Tests: 9 focused pytest passed; ruff check passed. Full application testing not performed.
+
+## Follow-up: remove model-generated claim ledger
+
+- User approved replacing exhaustive model coverage dispositions with programmatic supplied-versus-cited accounting. Updated trial output v2 to section + selectionNotes + contextGaps. Notes are optional in substance (empty array valid); only meaningful selection decisions need explanation. Notes do not count as citations or mutate claim statuses.
+- Updated exact prompt draft and spec; preserved previous prompt bytes in PROMPTS-v1.md. Prior paid artifacts remain unchanged. Manifest output_version prevents an old prepared request from silently running under the new schema.
+- Code computes primary/context supplied, cited and not-directly-cited ID sets from intro/body/sendLine references. Uncited input is advisory, not an omission verdict, a completion gate or an automatic retry trigger.
+- Offline prepared all 19 packets in .artifacts/parallel-narrative-trial-20260926/ledger-free-preview; confirmed inputs unchanged from original trial. Applied accounting to the earlier saved prose in memory only: same 336 supplied / 297 cited / 39 not directly cited. Saved separate offline diagnostic artifacts, not fake new model outputs.
+- Twelve focused tests passed; ruff formatting/check passed. No paid calls, DB/fleet/provider changes or production integration. Model, concurrency, claim selection, context and prose guidance otherwise unchanged; latency improvement remains unmeasured.

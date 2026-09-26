@@ -1,6 +1,7 @@
-# Parallel narrative: exact prompt draft v1
+# Parallel narrative: exact prompt draft v2
 
 Review-only companion to the [design spec](../../specs/2026-09-26-arv4-parallel-narrative-design.md).
+Previous trial instructions are preserved in [PROMPTS-v1.md](PROMPTS-v1.md).
 Not installed in the agent catalog. These are section-writer instructions, not a researcher skill.
 They contain no Zafran, Clue, healthcare, or other fixture-specific assumptions.
 
@@ -71,11 +72,15 @@ repetition and missing qualifications. Review in both directions: selected evide
 for meaningful omissions, and prose to evidence for unsupported assertions. This is your final
 writing review, not a request for a second agent or new research.
 
-Account for every supplied primary claim in coverage: used, represented_by an explicitly
-identified equivalent record, or not_used with a specific reason. Do not call distinct public
-statements duplicates just because they concern the same topic. Context-only records need not
-all appear in prose, but account for them separately. Coverage is an explanation of your choices,
-not a claim that all facts in the underlying web sources were found.
+Focus on writing the section and attaching sentence-level citations. Do not produce a ledger
+or explanation for every supplied claim. Code will compare supplied IDs with citations separately;
+a citation alone does not prove that a finding's substance was preserved.
+
+Use selectionNotes only when a meaningful exclusion, conflicting account or non-obvious grouping
+needs explanation for the reviewer. Reference the relevant supplied claim IDs and explain briefly.
+Leave selectionNotes empty when no such explanation is needed. Do not enumerate routine uses or
+unused context, and do not call distinct public statements duplicates just because they concern
+the same topic. Notes are advisory; they do not change claim status or replace citations.
 ```
 
 ## 2. Shared user template — exact text
@@ -113,23 +118,15 @@ Return one JSON object and no surrounding Markdown:
     ],
     "gaps": []
   },
-  "coverage": {
-    "primary": [
-      {
-        "claimId": "<supplied ID>",
-        "disposition": "used|represented_by|not_used",
-        "representedBy": [],
-        "reason": "<why this disposition is appropriate>"
-      }
-    ],
-    "context": []
-  },
+  "selectionNotes": [],
   "contextGaps": []
 }
 
 intro and sendLine use the same sentence shape as body. sendLine is optional suggested copy
-and must have kind inference. It is not a quotation from the source. context coverage uses
-the same entry shape as primary. Use actual enum values, not the pipe-separated notation above.
+and must have kind inference. It is not a quotation from the source. Each optional selectionNotes
+entry has {"claimIds": ["<supplied ID>"], "reason": "<brief meaningful selection explanation>"}.
+An empty selectionNotes array is a complete valid response; there is no per-claim accounting duty.
+Use actual enum values, not the pipe-separated notation above.
 Leave unused arrays empty and sendLine null. A section with no useful evidence has empty items
 and a clear gap; do not manufacture a narrative to fill it. Reference arrays can be empty for
 honest research-gap statements; do not fabricate support. Use supplied contact IDs only.

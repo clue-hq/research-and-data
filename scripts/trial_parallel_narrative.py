@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ROOT = Path(__file__).resolve().parents[1]
 INPUT = ROOT / ".artifacts/narrative-selection-20260926"
 DRAFT = ROOT / "docs/superpowers/drafts/2026-09-26-parallel-narrative/PROMPTS.md"
+OUTPUT_VERSION = 2
 SECTION_ORDER = {
     "overview": [
         "what-they-do",
@@ -85,22 +86,23 @@ class Section(Strict):
     gaps: list[str] = Field(max_length=30)
 
 
-class CoverageEntry(Strict):
-    claimId: str
-    disposition: Literal["used", "represented_by", "not_used"]
-    representedBy: list[str]
+class SelectionNote(Strict):
+    claimIds: list[str]
     reason: str
-
-
-class Coverage(Strict):
-    primary: list[CoverageEntry]
-    context: list[CoverageEntry]
 
 
 class Output(Strict):
     section: Section
-    coverage: Coverage
+    selectionNotes: list[SelectionNote]
     contextGaps: list[str]
+
+
+def require_current_output(manifest):
+    if manifest.get("output_version") != OUTPUT_VERSION:
+        raise ValueError(
+            "This runner requires output version 2. Prepare a fresh directory; "
+            "use the archived executed runner to inspect/reproduce older contracts."
+        )
 
 
 def save(path, obj):
@@ -226,6 +228,7 @@ def prepare(out, model, concurrency):
     save(
         out / "prepared.json",
         {
+            "output_version": OUTPUT_VERSION,
             "model": model,
             "concurrency": concurrency,
             "structural_retries": 1,
@@ -240,8 +243,9 @@ def prepare(out, model, concurrency):
             "shared_context_sha256": sha(out / "shared-context.json"),
             "repair_prompt_sha256": sha(out / "repair-prompt.txt"),
             "changes": (
-                "Only duplicate dossier original mirrors and unrelated field definitions "
-                "omitted; no findings removed or shortened."
+                "Output v2 replaces the per-claim ledger with optional selection notes; "
+                "citation accounting is computed in code. Inputs omit only duplicate dossier "
+                "original mirrors and unrelated field definitions; no findings shortened."
             ),
         },
     )
@@ -270,8 +274,8 @@ def validate(raw, packet, docs):
         invalid_documents.update(set(sentence["sellerEvidenceIds"]) - docids)
     for item in result["section"]["items"]:
         invalid_contacts.update(set(item["contactIds"]) - set(packet["known_contacts"]))
-    for row in result["coverage"]["primary"] + result["coverage"]["context"]:
-        invalid_claims.update(({row["claimId"]} | set(row["representedBy"])) - ids)
+    for note in result["selectionNotes"]:
+        invalid_claims.update(set(note["claimIds"]) - ids)
     if invalid_claims or invalid_documents or invalid_contacts:
         raise ValueError(
             json.dumps(
@@ -295,8 +299,7 @@ def reference_schema(packet, docs):
     defs["ClaimReference"] = {"type": "string", "enum": [c["claim_id"] for c in packet["claims"]]}
     ref = {"$ref": "#/$defs/ClaimReference"}
     defs["Sentence"]["properties"]["claimIds"]["items"] = ref
-    defs["CoverageEntry"]["properties"]["claimId"] = ref
-    defs["CoverageEntry"]["properties"]["representedBy"]["items"] = ref
+    defs["SelectionNote"]["properties"]["claimIds"]["items"] = ref
     defs["Sentence"]["properties"]["sellerEvidenceIds"]["items"] = {
         "type": "string",
         "enum": [d["document_id"] for d in docs],
@@ -315,6 +318,7 @@ def prepare_recovery(source, out):
         raise ValueError("Recovery output already exists; use a fresh directory.")
     assert (source / "summary.json").exists(), "Wait for the first trial to settle."
     m = json.loads((source / "prepared.json").read_text())
+    require_current_output(m)
     docs = json.loads((source / "shared-context.json").read_text())["seller_documents"]
     repair = (source / "repair-prompt.txt").read_text()
     chosen = []
@@ -368,25 +372,22 @@ def prepare_recovery(source, out):
 
 
 def diagnose(result, packet):
+    """Compute citation accounting; uncited does not mean omitted or unsupported."""
     cited = {cid for s in sentences(result) for cid in s["claimIds"]}
-    diag = {}
+    diag = {
+        "method": "supplied_minus_sentence_citations",
+        "limitation": "Citation presence does not prove semantic coverage or entailment.",
+    }
     for role in ("primary", "context"):
         expected = {c["claim_id"] for c in packet["claims"] if c["role"] == role}
-        returned = result["coverage"][role]
-        counts = Counter(c["claimId"] for c in returned)
         diag[role] = {
-            "expected": len(expected),
-            "returned": len(returned),
-            "missing": sorted(expected - counts.keys()),
-            "wrong_role": sorted(counts.keys() - expected),
-            "repeated": sorted(k for k, n in counts.items() if n > 1),
-            "dispositions": dict(Counter(c["disposition"] for c in returned)),
-            "used_but_uncited": [
-                c["claimId"]
-                for c in returned
-                if c["disposition"] == "used" and c["claimId"] not in cited
-            ],
+            "supplied_count": len(expected),
+            "supplied_claim_ids": sorted(expected),
+            "cited_claim_ids": sorted(expected & cited),
+            "not_directly_cited_claim_ids": sorted(expected - cited),
         }
+    # Notes are advisory explanations, never evidence that a claim appeared in prose.
+    diag["selection_notes"] = result["selectionNotes"]
     diag["cited_claims"] = len(cited)
     diag["uncited_primary_claims"] = sorted(
         {c["claim_id"] for c in packet["claims"] if c["role"] == "primary"} - cited
@@ -488,6 +489,7 @@ async def run(out):
     if (out / "started.json").exists():
         raise ValueError("This paid trial already started; do not automatically buy it again.")
     m = json.loads((out / "prepared.json").read_text())
+    require_current_output(m)
     for item in m["packets"]:
         assert sha(out / "inputs" / item["file"]) == item["input_sha256"]
     assert sha(out / "schema.json") == m["schema_sha256"]

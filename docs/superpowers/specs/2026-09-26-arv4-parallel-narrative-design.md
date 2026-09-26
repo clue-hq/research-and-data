@@ -267,9 +267,10 @@ truncate quotes, or use token-based near-duplicate deletion. If a packet is too 
 and report a capacity failure; separately review segmentation using whole findings. Do not silently
 switch to an unreviewed summarizer. The time objective does not authorize omission.
 
-### Output v1 (trial wrapper)
+### Output v2 (trial wrapper; revised after the first trial)
 
-One object: `section` + `coverage` + `contextGaps`.
+One object: `section` + `selectionNotes` + `contextGaps`. The historical v1 prompts and executed
+trial artifacts retain their original per-claim `coverage` contract.
 
 `section` follows the existing `PageSectionDraft` shape: key, intro, items (h2, body, contactIds,
 optional sendLine), gaps. Each sentence has text, claimIds, kind and qualifications. Proposed
@@ -277,11 +278,16 @@ addition: `sellerEvidenceIds` on relevant sentences, referring only to supplied 
 This addition is trial-only until the Pydantic/Zod/display contract is updated; do not feed it into
 the current strict model and claim it already parses. The full response is stored as an artifact.
 
-`coverage` records each packet claim ID as used, represented_by (with actual related claim IDs),
-or not_used with a reason. Supporting context is assessed separately from primary claims. Coverage
-is a review aid, not proof of entailment or a completion veto. No fixed 2–3 item quota. Focused
-items may connect complementary facts; independently meaningful statements/events retain clear
-attribution and remain separately inspectable.
+Code records supplied IDs, cited IDs and their difference, separately for primary and context
+claims. This is citation accounting, not proof that all meaning was preserved or an omission
+verdict. The writer does not enumerate or justify every supplied claim. Optional `selectionNotes`
+(array of `claimIds` and `reason`, empty when unnecessary) explain only meaningful exclusions,
+conflicts or non-obvious groupings. A note does not count as a narrative citation, establish
+semantic equivalence or change a claim's status. Neither unreferenced inputs nor absent notes
+cause an automatic model retry or block display. Keep these diagnostics in the audit artifact.
+
+No fixed 2–3 item quota. Focused items may connect complementary facts; independently meaningful
+statements/events retain clear attribution and remain separately inspectable.
 
 Citations reference claims and seller documents; the backend resolves display links. Do not let
 the model generate/retarget URLs. Missing sources are visibly qualified; no new requirement that

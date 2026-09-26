@@ -34,7 +34,7 @@ def record():
 def response():
     return {
         "section": {"key": "why-now", "intro": [], "items": [], "gaps": []},
-        "coverage": {"primary": [], "context": []},
+        "selectionNotes": [],
         "contextGaps": [],
     }
 
@@ -81,9 +81,11 @@ def test_unknown_references_are_structural_errors(key, value):
         trial.validate(json.dumps(output), packet(), [])
 
 
-def test_missing_coverage_is_diagnostic_not_automatic_paid_retry():
+def test_uncited_input_is_diagnostic_not_automatic_paid_retry():
     result = trial.validate(json.dumps(response()), packet(), [])
-    assert trial.diagnose(result, packet())["primary"]["missing"] == ["claim-a"]
+    assert trial.diagnose(result, packet())["primary"]["not_directly_cited_claim_ids"] == [
+        "claim-a"
+    ]
 
 
 def test_uncertain_claims_can_be_displayed_without_changing_review():
@@ -100,7 +102,7 @@ def test_uncertain_claims_can_be_displayed_without_changing_review():
     assert trial.validate(json.dumps(output), packet(), []) == output
 
 
-def test_wrong_section_and_coverage_reference_are_rejected():
+def test_wrong_section_is_rejected():
     output = response()
     output["section"]["key"] = "unrequested-section"
     with pytest.raises(ValueError):
@@ -112,7 +114,7 @@ def test_reference_schema_constrains_ids_without_selecting_claims():
     defs = schema["$defs"]
     assert defs["ClaimReference"]["enum"] == ["claim-a"]
     assert defs["Sentence"]["properties"]["claimIds"]["items"] == {"$ref": "#/$defs/ClaimReference"}
-    assert defs["CoverageEntry"]["properties"]["representedBy"]["items"] == {
+    assert defs["SelectionNote"]["properties"]["claimIds"]["items"] == {
         "$ref": "#/$defs/ClaimReference"
     }
     assert defs["Sentence"]["properties"]["sellerEvidenceIds"]["items"]["enum"] == ["seller-a"]
@@ -136,13 +138,61 @@ def test_repair_feedback_names_each_bad_id():
     assert detail["invalid_claim_ids"] == ["bad-a", "bad-b"]
     assert detail["invalid_seller_document_ids"] == ["bad-seller"]
     output = response()
-    output["coverage"]["primary"] = [
-        {
-            "claimId": "other-claim",
-            "disposition": "used",
-            "representedBy": [],
-            "reason": "Incorrect ID.",
-        }
-    ]
+    output["selectionNotes"] = [{"claimIds": ["other-claim"], "reason": "Incorrect ID."}]
     with pytest.raises(ValueError):
         trial.validate(json.dumps(output), packet(), [])
+
+
+def test_accounting_counts_sentence_citations_once_and_notes_never_as_citations():
+    p = packet()
+    context = {**record(), "claim_id": "context-b", "role": "context"}
+    unused = {**record(), "claim_id": "unused-c"}
+    p["claims"] += [context, unused]
+    sentence = {
+        "text": "A qualified finding.",
+        "claimIds": ["claim-a"],
+        "sellerEvidenceIds": [],
+        "kind": "qualified",
+        "qualifications": [],
+    }
+    out = response()
+    out["section"]["intro"] = [sentence, sentence]
+    out["section"]["items"] = [
+        {
+            "h2": "Context",
+            "body": [{**sentence, "claimIds": ["context-b"]}],
+            "contactIds": [],
+            "sendLine": {**sentence, "kind": "inference"},
+        }
+    ]
+    out["selectionNotes"] = [{"claimIds": ["unused-c"], "reason": "Overlapping evidence."}]
+    result = trial.validate(json.dumps(out), p, [])
+    diag = trial.diagnose(result, p)
+    assert diag["cited_claims"] == 2
+    assert diag["primary"]["cited_claim_ids"] == ["claim-a"]
+    assert diag["primary"]["not_directly_cited_claim_ids"] == ["unused-c"]
+    assert diag["context"]["cited_claim_ids"] == ["context-b"]
+    assert diag["context"]["not_directly_cited_claim_ids"] == []
+    assert diag["selection_notes"] == out["selectionNotes"]
+
+
+def test_notes_cannot_silently_replace_legacy_coverage_contract():
+    out = response()
+    out["coverage"] = {"primary": [], "context": []}
+    with pytest.raises(ValueError):
+        trial.validate(json.dumps(out), packet(), [])
+    with pytest.raises(ValueError, match="Prepare a fresh directory"):
+        trial.require_current_output({})
+    trial.require_current_output({"output_version": 2})
+
+
+def test_prompt_and_schema_remove_per_claim_ledger_but_keep_citations():
+    system, user, _, _ = trial.prompts()
+    schema = trial.Output.model_json_schema()
+    assert "coverage" not in schema["properties"]
+    assert "CoverageEntry" not in schema["$defs"]
+    assert "claimIds" in schema["$defs"]["Sentence"]["properties"]
+    assert '"selectionNotes": []' in user
+    assert "Do not produce a ledger" in system
+    assert "Account for every supplied primary claim" not in system
+    assert "coverage" not in user
