@@ -53,6 +53,11 @@ in optional interpretation. Calling something a “note” inside a finding does
 prevent it becoming a claim. Preserve each speaker's meaningful wording, context,
 negation and qualifications. Before finishing, check the actual saved records and
 notes, not only your description of where you intended to put them.
+Comprehensively and critically review the saved dossier against all rules, guidance
+and worked examples in the charter/skill. Correct defects you find in the actual
+output, then re-read the corrected material against those rules before finalizing.
+Recording a defect in notes does not replace correcting it. Preserve genuine source
+uncertainty and document remaining evidence limitations without inventing facts.
 
 Write the dossier incrementally at /outputs/account-dossier.entries.md. Use stable
 finding IDs to connect observations and make omissions reviewable. Inspect the

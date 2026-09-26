@@ -97,6 +97,11 @@ in notes, sourced assertions in findings, and your inferences in interpretation.
 Calling something a note inside a finding does not prevent storage as a claim.
 Preserve each speaker's meaningful wording, context, negation and qualifications.
 Check the actual saved destinations before finishing, not just your self-review.
+Comprehensively and critically review the saved dossier against all rules, guidance
+and worked examples in the charter/skill. Correct defects in the actual output, then
+re-read the corrected material against those rules before finalizing. Recording a
+defect in notes does not replace correcting it. Preserve genuine source uncertainty
+and document remaining evidence limitations without inventing facts.
 
 Use save_dossier_section to save structured JSON sections containing individual
 findings, using that skill's fields and stable F-identifiers. Keep relevant

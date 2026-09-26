@@ -35,3 +35,14 @@
 - Detailed independent review and artifacts: .artifacts/account-dossier-replay-20260926/run-02/REVIEW.md.
   Follow-up suggestion is a narrow multi-speaker source exercise, not more acquisition;
   no additional paid run authorized or started in this checkpoint.
+
+## Explicit critical-review wording
+
+- Founder requested the final-review paragraph explicitly direct comprehensive,
+  critical review against the charter/skill's rules and guidance, and correction
+  of found defects. Updated that paragraph while preserving the other review points.
+- Aligned saved-data SYSTEM and fresh formation addition: correct actual output,
+  re-read against the rules, and do not merely note a defect without fixing it.
+  Genuine source uncertainty remains; no fabricated fixes or mechanical gates.
+- Instruction-only refinement for subsequent trials. Earlier run snapshots and
+  generated findings unchanged. No additional paid run launched.

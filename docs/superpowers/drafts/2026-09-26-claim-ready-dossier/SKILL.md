@@ -330,9 +330,15 @@ Maintain /work/coverage.md: section/source location → finding IDs, plus source
 processed, partially read, unread or unavailable. Explain out-of-scope material
 and boilerplate separately. Do not use coverage tracking as a new completion gate.
 
-Read back the dossier. Check that entries retain useful public wording, independent
-units, correct attribution and relationship targets. Inspect source material for
-omissions, not only the older dossier. Write remaining limitations to /work/review.md.
+Read back the dossier. Comprehensively and critically review the actual saved dossier
+against all the rules, guidance and worked examples in this charter/skill. Check
+that entries retain useful public wording, independent units, correct attribution
+and relationship targets. Inspect source material for omissions, not only the older
+dossier. If you find a defect, correct the affected findings or move the material
+to its proper destination; do not merely describe the defect in review notes while
+leaving it in the dossier. Re-read the corrected output against the same rules before
+finalizing. Preserve genuine source uncertainty and document any remaining evidence
+limitations in /work/review.md; do not invent facts to make the review pass.
 
 Review in both directions: source passages → findings for omitted substance, then
 findings → passages for unsupported additions. Give meaningful source-only product
