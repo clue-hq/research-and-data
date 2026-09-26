@@ -433,6 +433,11 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
                 save_section,
             )
 
+            if json.loads((out / "trial-manifest.json").read_text()).get("classification_trial"):
+                if not replay or person_replay:
+                    raise ValueError("Classification trial requires an isolated account replay")
+                from trial_dossier_classification import finish_live, inspect_live, save_section
+
             async def save_dossier_section(section: str, findings: list[dict]):
                 """Save a complete section's structured findings, replacing its prior version.
 
@@ -466,7 +471,7 @@ claim writing, page synthesis or fleet launch is part of this test. Do not reque
         }
         middleware = PreviewTools(allowed)
         if args.discovery_trial:
-            from continue_person_research import ContinuationTools
+            from research_preview_support import ContinuationTools
 
             middleware = ContinuationTools(allowed | {"write_file", "edit_file", "write_todos"})
         if claim_ready:

@@ -1,6 +1,7 @@
 """Shared local trace capture and tool restriction for isolated research previews."""
 
 import json
+from pathlib import Path
 from time import monotonic
 
 from langchain.agents.middleware import AgentMiddleware
@@ -81,3 +82,15 @@ class PreviewTools(AgentMiddleware):
                 tool_call_id=request.tool_call["id"],
             )
         return await handler(request)
+
+
+class ContinuationTools(PreviewTools):
+    async def awrap_tool_call(self, request, handler):
+        if request.tool_call["name"] in {"write_file", "edit_file"}:
+            path = request.tool_call["args"].get("file_path", "")
+            if not path.startswith("/scratch/") or ".." in Path(path).parts:
+                return ToolMessage(
+                    content="Original inputs are read-only; write notes in /scratch/.",
+                    tool_call_id=request.tool_call["id"],
+                )
+        return await super().awrap_tool_call(request, handler)

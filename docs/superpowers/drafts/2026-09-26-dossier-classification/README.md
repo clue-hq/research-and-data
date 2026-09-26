@@ -49,5 +49,30 @@ usefulness, not how few research_finding records remain. Compare narrative packe
 these classifications before relying on them to generate pages. Preserve fallback findings for
 review rather than omitting them. A passing schema is not semantic-quality acceptance.
 
-Current status: guidance drafted; schema/import wiring, offline contract tests and model-based
-classification replay remain outstanding. No catalog activation, DB changes or paid calls here.
+Current status: the isolated account classification replay is implemented and has completed;
+production schema/import wiring and activation remain outstanding. No application DB writes.
+
+## First completed classification replay
+
+Artifacts: `.artifacts/dossier-classification-trial-20260926/run-02/REVIEW.md`.
+The founder requested a trial using the prior standalone saved research. This replay used
+295 source records from account-dossier-replay-20260926/run-02, with its Clue context and a
+retained r18 field catalog snapshot. It is not a new r18 account/person research run.
+
+The trial-only entry adds `classification` with `field_key`, `field_version`, `projection`,
+`categories` and optional `reason`. A specific registered field carries `projection.value`
+validated through the existing claim-store schema validator. Generic research_finding uses
+null version/projection because that fallback is absent from this retained catalog snapshot;
+no registry version is invented. Full findings and evidence remain in the same entry.
+
+Grok 4.6 produced 144 entries (33 specifically classified, 111 generic with categories).
+Runtime 19m15s; 64 priced model generations cost $4.357908. No research-provider purchases,
+claim import, fleet or publication. All 138 tool calls were confirmed in Langfuse. JSON/value
+shapes and final references passed; this is not semantic acceptance.
+
+Observed next improvements: resolve the provider-description conflict in the supplied catalog;
+attach typed projections to suitable original findings rather than adding overlapping summaries;
+classify assertion substance rather than its source page's broad subject; preserve ambiguous
+role labels without asserting a conflict. The researcher did correct technology usage scope and
+move one speculative passage into interpretation during its own review. Exact inputs, original
+model output and the detailed review remain saved; no manual edits to its final findings.
