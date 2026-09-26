@@ -93,6 +93,7 @@ from clue_api.arv2.ats_client import (
 )
 from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
+from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
 from clue_api.arv2.errors import ProviderHalted, RawParseError
 from clue_api.arv2.exa_client import (
     ExaClient,
@@ -320,6 +321,8 @@ class ProviderClients(Protocol):
 
     def ai_ark(self, caller: ProviderCaller) -> AiArkClient: ...
 
+    def transcription(self, caller: ProviderCaller) -> DeepgramMediaClient: ...
+
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient: ...
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient: ...
@@ -499,6 +502,10 @@ class ToolRuntime:
                 from clue_api.arv2.media_resolution import PublicMediaTransport
 
                 transport = PublicMediaTransport()
+            if provider == "media_youtube" and isinstance(transport, HttpxTransport):
+                from clue_api.arv2.media_recording import YouTubeAudioTransport
+
+                transport = YouTubeAudioTransport()
             caller = ProviderCaller(
                 transport=transport,
                 raw_sink=raw,

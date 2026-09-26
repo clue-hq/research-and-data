@@ -14,6 +14,7 @@ from clue_api.arv2 import media_retrieval as retrieval
 from clue_api.arv2 import media_store as store
 from clue_api.arv2 import media_telemetry as telemetry
 from clue_api.arv2.account_research_refusals import RefusalError
+from clue_api.arv2.deepgram_media_client import DeepgramMediaError
 from clue_api.arv2.gemini_media_client import GeminiMediaError
 from clue_api.arv2.media_resolution import Resolution
 from clue_api.arv2.media_types import Candidate, MediaModel
@@ -265,7 +266,10 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 result["resolution_gaps"] = gaps
                 result["next_action"] = (
                     "Use open_transcript with this version_ref to read the transcript; use "
-                    "search_transcripts for focused passages. Preserve speakers and source timing."
+                    "search_transcripts for focused passages. Preserve speakers and source timing. "
+                    "Deepgram Speaker numbers are voice clusters, not verified names; do not "
+                    "assign the research subject to a cluster from the episode title alone. "
+                    "Confidence and timing are machine estimates, not listening verification."
                 )
                 return result
             gaps.append(result.get("gap", result["state"]))
@@ -281,7 +285,7 @@ async def read_media(runtime: Any, args: ReadMediaArgs) -> dict[str, Any]:
                 }
         except RefusalError:
             raise
-        except GeminiMediaError as exc:
+        except (GeminiMediaError, DeepgramMediaError) as exc:
             # Explicit request rejection may fall through to another public source. An
             # uncertain paid outcome never triggers an automatic second acquisition.
             if exc.http_status not in {400, 404, 413, 415, 422}:

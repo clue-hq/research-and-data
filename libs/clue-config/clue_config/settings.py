@@ -360,6 +360,9 @@ class Settings(BaseSettings):
     # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
     arv2_media_video_model: str = "gemini-3.5-flash-lite"
     arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
+    # Active recording ASR is Deepgram Nova-3; Gemini fields above serve legacy callers.
+    # en matches the trial; auto detects dominant language; multi permits code-switching.
+    arv2_deepgram_language: str = "en"
     # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
     # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.
     arv2_embedding_model: str = "google/gemini-embedding-2"

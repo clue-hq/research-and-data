@@ -42,7 +42,8 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
             wire = ScriptedTransport(
                 [
                     video_metadata(),
-                    native_speech(speech),
+                    offline_audio(),
+                    deepgram_speech(speech),
                     HttpResponse(500, body=b'{"error":"embedding unavailable"}'),
                 ]
             )
@@ -58,7 +59,7 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                     first = json.loads(await tool.ainvoke(args, config=config))
                     assert first["state"] == "available" and first["index"]["state"] == "lexical"
                     replay = json.loads(await tool.ainvoke(args, config=config))
-                    assert replay["reused"] and len(wire.requests) == 3
+                    assert replay["reused"] and len(wire.requests) == 4
                 spans = finished_spans(exporter)
             generations = [
                 s for s in spans if s.attributes.get("langfuse.observation.type") == "generation"
@@ -89,7 +90,7 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                     await conn.execute(
                         text(
                             "SELECT * FROM provider_call_ledger WHERE entity_research_job_id=:job "
-                            "AND phase='result' AND provider='gemini'"
+                            "AND phase='result' AND provider='deepgram'"
                         ),
                         {"job": rt.scope.job_id},
                     )
@@ -122,7 +123,7 @@ def test_media_trace_ledger_logs_fallback_and_reuse_agree():
                 filters=CostFilters(job_id=rt.scope.job_id),
                 conn_factory=rt._conn_factory,
             )
-            video_line = next(p for p in report.providers if p.provider == "gemini")
+            video_line = next(p for p in report.providers if p.provider == "deepgram")
             assert video_line.unpriced_calls == 1 and video_line.free_calls == 0
             logs = [
                 e for e in captured.entries if str(e.get("event", "")).startswith("arv2.media.")
@@ -555,9 +556,19 @@ def test_integrated_publisher_read_index_search_open_and_reuse():
                 offset = opened["next_offset"]
             assert reconstructed == speech
             found = await search(rt, "durable provenance")
-            assert found["mode"] == "lexical" and any(
-                "durable provenance" in r["text"] for r in found["results"]
-            )
+            assert found["mode"] == "lexical" and found["results"]
+            # A rich segment/quality receipt can be paginated before its matching phrase.
+            # Follow the returned range to assert the entire ranked passage remains readable.
+            passages = []
+            for hit in found["results"]:
+                body = hit["text"]
+                while hit["end"] < hit["requested_end"]:
+                    hit = await open_passage(
+                        rt, version_id=version, start=hit["end"], end=hit["requested_end"]
+                    )
+                    body += hit["text"]
+                passages.append(body)
+            assert any("durable provenance" in body for body in passages)
             again = await read_media(
                 rt, ReadMediaArgs(url="https://example.com/episode", purpose="Different question")
             )
@@ -597,6 +608,13 @@ def test_integrated_publisher_read_index_search_open_and_reuse():
 
 
 class MediaClients:
+    def transcription(self, caller):
+        from pydantic import SecretStr
+
+        from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
+
+        return DeepgramMediaClient(caller, SecretStr("fixture"))
+
     def media(self, caller, ledger):
         from pydantic import SecretStr
 
@@ -641,15 +659,41 @@ def video_metadata():
     )
 
 
-def native_speech(value):
+@pytest.fixture(autouse=True)
+def prepared_offline_recording(monkeypatch):
+    import hashlib
+    import json
+
+    from clue_api.arv2 import media_acquisition
+
+    def prepare(path):
+        data = path.read_bytes()
+        return path, {
+            "mime": "audio/mpeg",
+            "duration_s": json.loads(data)["duration"],
+            "preparation": "original_audio_bytes",
+            "audio_sha256": hashlib.sha256(data).hexdigest(),
+        }
+
+    monkeypatch.setattr(media_acquisition, "prepare_audio", prepare)
+
+
+def offline_audio(duration=60):
+    import json
+
+    return HttpResponse(
+        200, {"content-type": "audio/mpeg"}, json.dumps({"duration": duration}).encode()
+    )
+
+
+def deepgram_speech(value):
     return json_response(
         {
-            "candidates": [
-                {
-                    "finishReason": "STOP",
-                    "content": {"parts": [{"text": "## TRANSCRIPT\n[00:01] Guest: " + value}]},
-                }
-            ]
+            "metadata": {"request_id": "fixture-asr", "duration": 60},
+            "results": {
+                "channels": [{"alternatives": [{"transcript": value}]}],
+                "utterances": [{"start": 1.25, "end": 5.75, "speaker": 0, "transcript": value}],
+            },
         }
     )
 
@@ -660,97 +704,51 @@ def embeddings(count=1):
     )
 
 
-@pytest.mark.parametrize("long_audio", [False, True])
-def test_feed_enclosure_audio_and_saved_upload_recovery(monkeypatch, long_audio):
+@pytest.mark.parametrize("duration", [60, 601])
+def test_feed_enclosure_deepgram_whole_recording_and_reuse(duration):
+    import json
+
     from clue_api.arv2.media_tools import ReadMediaArgs, read_media
 
     async def scenario():
         async with rollback_conn() as conn:
             rt = await seeded(conn)
             rt.clients = MediaClients()
-            duration = 601 if long_audio else 60
             feed = f"""<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
               <channel><title>Source show</title><item><guid>ep-1</guid><title>Evidence</title>
               <link>https://example.com/episode-1</link><itunes:duration>{duration}</itunes:duration>
               <enclosure url="https://example.com/source.mp3" type="audio/mpeg"/>
               </item></channel></rss>"""
-            responses = [
-                HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
-                HttpResponse(200, {"content-type": "audio/mpeg"}, b"offline audio bytes"),
-            ]
-            if long_audio:
-                responses.extend(
-                    [
-                        HttpResponse(
-                            200, {"x-goog-upload-url": "https://upload.example.com/session"}
-                        ),
-                        json_response({"file": {"name": "files/offline"}}),
-                        json_response(
-                            {
-                                "name": "files/offline",
-                                "state": "ACTIVE",
-                                "uri": "https://generativelanguage.googleapis.com/v1beta/files/offline",
-                            }
-                        ),
-                        native_speech("We require reliable evidence."),
-                    ]
-                )
-                original = ops.finish
-
-                async def fail_once(runtime, connection, operation, **kwargs):
-                    if operation["stage"] == "upload":
-                        monkeypatch.setattr(ops, "finish", original)
-                        raise RuntimeError("crash after saved upload receipt")
-                    return await original(runtime, connection, operation, **kwargs)
-
-                monkeypatch.setattr(ops, "finish", fail_once)
-            else:
-                responses.append(
-                    json_response(
-                        {
-                            "choices": [
-                                {
-                                    "finish_reason": "stop",
-                                    "message": {
-                                        "content": "## TRANSCRIPT\n[00:01] Guest: "
-                                        "We require reliable evidence."
-                                    },
-                                }
-                            ]
-                        }
-                    )
-                )
-            responses.append(embeddings())
-            wire = ScriptedTransport(responses)
-            rt._transport_factory = lambda: wire
-            first = ReadMediaArgs(
-                url="https://example.com/feed",
-                episode_hint="ep-1",
-                purpose="Find buying requirements",
+            wire = ScriptedTransport(
+                [
+                    HttpResponse(200, {"content-type": "application/rss+xml"}, feed.encode()),
+                    offline_audio(duration),
+                    deepgram_speech("We require reliable evidence."),
+                    embeddings(),
+                ]
             )
-            if long_audio:
-                with pytest.raises(RuntimeError, match="saved upload"):
-                    await read_media(rt, first)
-                # Recovery needs only the already resolved episode alias and saved free-upload
-                # responses. The paid transcription was never dispatched before the crash.
-                first = first.model_copy(update={"url": "https://example.com/episode-1"})
-            result = await read_media(rt, first)
+            rt._transport_factory = lambda: wire
+            result = await read_media(
+                rt,
+                ReadMediaArgs(
+                    url="https://example.com/feed", episode_hint="ep-1", purpose="Find requirements"
+                ),
+            )
             assert result["state"] == "available" and result["index"]["state"] == "ready"
             count = len(wire.requests)
             reused = await read_media(
                 rt, ReadMediaArgs(url="https://example.com/episode-1", purpose="Reuse speech")
             )
             assert reused["reused"] and len(wire.requests) == count
-            generation = [
-                r
-                for r in wire.requests
-                if ":generateContent" in r.url or r.url.endswith("chat/completions")
-            ]
-            assert len(generation) == 1
+            requests = [r for r in wire.requests if "/v1/listen?" in r.url]
+            assert len(requests) == 1
+            assert json.loads(requests[0].body) == {"url": "https://example.com/source.mp3"}
             seconds = (
                 await conn.execute(
-                    text("""SELECT sum(seconds) FROM arv2_media_operation
-                WHERE workspace_id=:ws AND owner_job=:job"""),
+                    text(
+                        "SELECT sum(seconds) FROM arv2_media_operation "
+                        "WHERE workspace_id=:ws AND owner_job=:job"
+                    ),
                     {"ws": rt.scope.workspace_id, "job": rt.scope.job_id},
                 )
             ).scalar_one()
@@ -771,7 +769,8 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
             wire = ScriptedTransport(
                 [
                     video_metadata(),
-                    native_speech("We evaluate vendors by evidence quality."),
+                    offline_audio(),
+                    deepgram_speech("We evaluate vendors by evidence quality."),
                     embeddings(),
                     embeddings(),
                 ]
@@ -784,7 +783,7 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
             found = await search(rt, "criteria for evaluating suppliers")
             assert found["mode"] == "hybrid" and found["results"]
             assert found["results"][0]["rank_components"]["semantic"] == 1
-            assert len(wire.requests) == 4
+            assert len(wire.requests) == 5
             old_job = rt.scope.job_id
             original_run = await job_store.read_run(conn, run_id=rt.scope.run_id)
             run2 = replace(original_run, run_id=uuid4(), request_sha256="d" * 64)
@@ -807,7 +806,7 @@ def test_native_video_hybrid_retrieval_and_cross_job_reuse():
                     url="https://youtube.com/embed/abcdefghijk", purpose="Separate project question"
                 ),
             )
-            assert reused["reused"] and len(wire.requests) == 4
+            assert reused["reused"] and len(wire.requests) == 5
             owner = (
                 await conn.execute(
                     text("SELECT owner_job FROM arv2_media_operation WHERE stage='transcribe'")
@@ -828,7 +827,8 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
             wire = ScriptedTransport(
                 [
                     video_metadata(),
-                    native_speech("Our buying process needs reliable evidence."),
+                    offline_audio(),
+                    deepgram_speech("Our buying process needs reliable evidence."),
                     embeddings(),
                 ]
             )
@@ -844,8 +844,8 @@ def test_saved_paid_response_recovers_after_canonical_persistence_failure(monkey
             with pytest.raises(RuntimeError):
                 await read_media(rt, args)
             recovered = await read_media(rt, args)
-            assert recovered["state"] == "available" and len(wire.requests) == 3
-            assert sum(":generateContent" in r.url for r in wire.requests) == 1
+            assert recovered["state"] == "available" and len(wire.requests) == 4
+            assert sum("/v1/listen?" in r.url for r in wire.requests) == 1
 
     run_async(scenario())
 

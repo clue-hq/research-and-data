@@ -23,6 +23,7 @@ class Segment(MediaModel):
     )
     attribution_evidence: str | None = None
     time_s: float | None = Field(None, ge=0)
+    end_time_s: float | None = Field(None, ge=0)
     timing: Literal["unavailable", "model_estimated", "source_supplied", "aligned"] = "unavailable"
 
     @model_validator(mode="after")
@@ -41,6 +42,7 @@ class Segment(MediaModel):
 class Quality(MediaModel):
     coverage: Literal["full", "partial", "unknown"] = "unknown"
     warnings: list[str] = Field(default_factory=list)
+    diagnostics: dict[str, object] = Field(default_factory=dict)
     finish_reason: str | None = None
     loop_report: dict[str, int | float | bool | None] = Field(default_factory=dict)
 

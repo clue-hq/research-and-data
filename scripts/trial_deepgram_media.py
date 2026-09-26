@@ -14,13 +14,15 @@ import os
 import shutil
 import subprocess
 from datetime import UTC, datetime
-from itertools import groupby
 from pathlib import Path
 from time import monotonic
 from urllib.parse import urlencode
 
 from dotenv import dotenv_values
 
+from clue_api.arv2.deepgram_media_client import parameters, read_cost, speaker_segments
+from clue_api.arv2.media_recording import download_youtube as acquire_youtube
+from clue_api.arv2.media_recording import prepare_audio
 from clue_api.arv2.media_resolution import (
     PublicMediaTransport,
     fetch,
@@ -31,7 +33,7 @@ from clue_api.arv2.media_resolution import (
 from clue_config import Secrets, load_settings
 from clue_obs.langfuse import flush_langfuse, observation, propagate_trace
 from clue_obs.production import install_production_langfuse, install_production_tracing
-from clue_spend.calls import CallSpec, CostReading, ProviderCaller, SpendEstimate
+from clue_spend.calls import CallSpec, ProviderCaller, SpendEstimate
 from clue_spend.sinks import FileRawSink, JsonlLedger
 from clue_spend.transport import HttpRequest, HttpxTransport
 
@@ -84,42 +86,9 @@ def command(args, out, label):
 
 
 def download_youtube(url, out):
-    exe = shutil.which("yt-dlp")
-    if not exe:
-        raise ValueError("Install yt-dlp to acquire public YouTube recordings")
-    # Public single recordings only. No browser sessions, login, playlists or DRM bypass.
-    base = [exe, "--ignore-config", "--no-playlist", "--no-cache-dir"]
-    meta = json.loads(
-        command([*base, "--dump-single-json", "--skip-download", url], out, "yt-info")
-    )
-    if meta.get("availability") not in {None, "public"} or meta.get("is_live"):
-        raise ValueError("Only public, non-live recordings are supported")
-    save(
-        out / "youtube.json",
-        {
-            k: meta.get(k)
-            for k in ("id", "title", "webpage_url", "duration", "uploader", "availability")
-        },
-    )
-    command(
-        [
-            *base,
-            "--no-overwrites",
-            "--max-filesize",
-            "200M",
-            "-f",
-            "bestaudio/best",
-            "-o",
-            str(out / "download.%(ext)s"),
-            url,
-        ],
-        out,
-        "yt-download",
-    )
-    files = [p for p in out.glob("download.*") if p.suffix not in {".part", ".ytdl"}]
-    if len(files) != 1:
-        raise ValueError("Downloader did not produce one complete recording")
-    return files[0], meta.get("title", "")
+    path, metadata = acquire_youtube(url, out)
+    save(out / "youtube.json", metadata)
+    return path, metadata.get("title", "")
 
 
 def prepare(source, out, episode=None):
@@ -172,103 +141,20 @@ def prepare(source, out, episode=None):
                 )
     else:
         raise ValueError("Source must be a local media file or a public HTTP(S) URL")
-    probe = json.loads(
-        command(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_format",
-                "-show_streams",
-                "-of",
-                "json",
-                str(acquired),
-            ],
-            out,
-            "ffprobe",
-        )
-    )
-    save(out / "media-probe.json", probe)
-    audio_streams = [s for s in probe.get("streams", []) if s.get("codec_type") == "audio"]
-    if not audio_streams:
-        raise ValueError("Recording has no audio stream")
-    # Keep common audio-only containers as-is; FLAC conversion can multiply MP3 upload size.
-    # Other containers/video use a lossless first-track extraction without resampling.
-    passthrough = {
-        "mp3": ("mp3", "audio/mpeg"),
-        "flac": ("flac", "audio/flac"),
-        "wav": ("wav", "audio/wav"),
-    }
-    original_format = probe["format"].get("format_name")
-    if original_format in passthrough and len(probe["streams"]) == 1:
-        extension, content_type = passthrough[original_format]
-        audio = out / f"audio.{extension}"
-        shutil.copyfile(acquired, audio)
-        preparation = "original_audio_bytes"
-    else:
-        audio = out / "audio.flac"
-        content_type = "audio/flac"
-        preparation = "lossless_first_audio_track"
-        command(
-            [
-                "ffmpeg",
-                "-nostdin",
-                "-v",
-                "error",
-                "-n",
-                "-i",
-                str(acquired),
-                "-map",
-                "0:a:0",
-                "-vn",
-                "-c:a",
-                "flac",
-                str(audio),
-            ],
-            out,
-            "ffmpeg",
-        )
-    if not audio.stat().st_size or audio.stat().st_size > 2_000_000_000:
-        raise ValueError("Prepared audio is empty or exceeds the 2 GB upload limit")
+    audio, prepared = prepare_audio(acquired)
     info.update(
         {
+            **prepared,
             "audio_file": audio.name,
-            "content_type": content_type,
-            "preparation": preparation,
+            "content_type": prepared["mime"],
             "original_file": acquired.name,
-            "original_sha256": hashlib.sha256(acquired.read_bytes()).hexdigest(),
-            "audio_sha256": hashlib.sha256(audio.read_bytes()).hexdigest(),
             "audio_bytes": audio.stat().st_size,
-            "duration_seconds": float(probe["format"]["duration"]),
+            "duration_seconds": prepared["duration_s"],
             "audio_track": "0:a:0",
-            "audio_stream_count": len(audio_streams),
-            "channels": audio_streams[0].get("channels"),
-            "sample_rate": audio_streams[0].get("sample_rate"),
         }
     )
     save(out / "source.json", info)
     event(out, "prepared", duration_seconds=info["duration_seconds"])
-
-
-def parameters(language="en", keyterms=()):
-    params = {
-        "model": "nova-3",
-        "diarize_model": "v2",
-        "utterances": "true",
-        "utt_split": "0.8",
-        "punctuate": "true",
-        "smart_format": "false",
-        "filler_words": "true",
-        "profanity_filter": "false",
-        "multichannel": "false",
-    }
-    # Auto-detection selects the dominant language; multi is for supported code-switching.
-    params["detect_language" if language == "auto" else "language"] = (
-        "true" if language == "auto" else language
-    )
-    if keyterms:
-        params["keyterm"] = list(keyterms)
-    return params
 
 
 def timestamp(seconds):
@@ -279,32 +165,6 @@ def timestamp(seconds):
     minutes, millis = divmod(millis, 60_000)
     seconds, millis = divmod(millis, 1000)
     return f"{hours:02}:{minutes:02}:{seconds:02}.{millis:03}"
-
-
-def speaker_segments(utterances):
-    """An utterance's majority speaker must not overwrite its individual word speakers."""
-    segments = []
-    for u in utterances:
-        words = u.get("words") or []
-        labels = {w.get("speaker") for w in words}
-        if not words or labels == {u.get("speaker")}:
-            segments.append(u)
-            continue
-        for speaker, group in groupby(words, key=lambda w: w.get("speaker")):
-            group = list(group)
-            segments.append(
-                {
-                    "start": group[0].get("start"),
-                    "end": group[-1].get("end"),
-                    "speaker": speaker,
-                    "words": group,
-                    "transcript": " ".join(
-                        w.get("punctuated_word", w.get("word", "")) for w in group
-                    ),
-                    "derived_from_utterance": u.get("id"),
-                }
-            )
-    return segments
 
 
 def render(out):
@@ -405,15 +265,6 @@ def render(out):
     (out / "transcript.md").write_text("\n".join(lines) + "\n")
     (out / "transcript.vtt").write_text("\n".join(cues) + "\n")
     return quality
-
-
-def read_cost(response):
-    body = json.loads(response.body)
-    metadata = body.get("metadata", {})
-    return CostReading(
-        provider_request_id=metadata.get("request_id") or body.get("request_id"),
-        media_seconds=math.ceil(metadata["duration"]) if metadata.get("duration") else None,
-    )
 
 
 def transcribe(out, language="en", keyterms=(), delivery="upload"):

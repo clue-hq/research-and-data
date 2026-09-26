@@ -77,6 +77,7 @@ from clue_api.arv2.ai_ark_client import AiArkClient
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.committee_step import CommitteeStepResult, run_committee_step
+from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
 from clue_api.arv2.display.fleet_handler import display_page_payload
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.fleet_task import (
@@ -1975,11 +1976,13 @@ class _LiveClients:
         openrouter_api_key: SecretStr,
         openrouter_base_url: str,
         media_budget: MediaBudget | None = None,
+        deepgram_api_key: SecretStr | None = None,
     ) -> None:
         self._settings = settings
         self._exa_api_key = exa_api_key
         self._ai_ark_api_key = ai_ark_api_key
         self._gemini_api_key = gemini_api_key
+        self._deepgram_api_key = deepgram_api_key
         self._openrouter_api_key = openrouter_api_key
         self._openrouter_base_url = openrouter_base_url
         self._media_budget = media_budget or MediaBudget(settings.arv2_media_seconds_ceiling)
@@ -1994,6 +1997,7 @@ class _LiveClients:
             openrouter_api_key=self._openrouter_api_key,
             openrouter_base_url=self._openrouter_base_url,
             media_budget=media_budget,
+            deepgram_api_key=self._deepgram_api_key,
         )
 
     def exa(self, caller: ProviderCaller) -> ExaClient:
@@ -2008,6 +2012,11 @@ class _LiveClients:
     def ai_ark(self, caller: ProviderCaller) -> AiArkClient:
         return AiArkClient(
             caller, self._ai_ark_api_key, min_gap_s=self._settings.arv2_ai_ark_min_gap_s
+        )
+
+    def transcription(self, caller: ProviderCaller) -> DeepgramMediaClient:
+        return DeepgramMediaClient(
+            caller, self._deepgram_api_key, language=self._settings.arv2_deepgram_language
         )
 
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient:
@@ -2094,6 +2103,7 @@ def build_arv2_account_research_handler(
             exa_api_key=_secret(keys["CLUE_EXA_API_KEY"]),
             ai_ark_api_key=_secret(keys["CLUE_AI_ARK_API_KEY"]),
             gemini_api_key=_secret(keys["CLUE_GEMINI_API_KEY"]),
+            deepgram_api_key=secrets.deepgram_api_key,
             openrouter_api_key=_secret(keys["CLUE_OPENROUTER_API_KEY"]),
             # The OpenRouter URL is gateway policy, read from the config's own default rather than
             # spelled again here: the two ARV2 clients that speak to OpenRouter directly (media,

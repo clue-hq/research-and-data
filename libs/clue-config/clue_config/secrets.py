@@ -25,7 +25,7 @@ import re
 from collections.abc import Mapping
 from typing import Final
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The shared database-DSN environment variable. Owned/documented here (M0.4); the db/ package
@@ -111,6 +111,13 @@ class Secrets(BaseSettings):
     # the one ARV2 model call that bypasses OpenRouter (OpenRouter serves neither the transcribe
     # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
     gemini_api_key: SecretStr | None = None
+    # Production recording ASR. DEEPGRAM_API_KEY remains a trial-compatible alias.
+    deepgram_api_key: SecretStr | None = Field(  # type: ignore[pydantic-alias]
+        default=None,
+        validation_alias=AliasChoices(
+            "CLUE_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY", "deepgram_api_key"
+        ),
+    )
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).

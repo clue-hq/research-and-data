@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
-import math
-import subprocess
 import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -16,20 +15,23 @@ from sqlalchemy import text
 
 from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
+from clue_api.arv2.deepgram_media_client import DeepgramTranscript, parameters, parse_response
 from clue_api.arv2.gemini_media_client import (
-    AudioFile,
-    GeminiMediaClient,
-    SpeakerContext,
     Transcript,
     detect_loops,
     sentence_lines,
 )
+from clue_api.arv2.media_recording import fetch_youtube, prepare_audio
 from clue_api.arv2.media_resolution import Resolution, fetch, resolve
 from clue_api.arv2.media_types import Quality, Segment, canonical_text
 from clue_storage import read_verified_artifact
 
 
-def assess_transcript(transcript: Transcript) -> tuple[str, list[Segment], Quality]:
+def assess_transcript(
+    transcript: Transcript | DeepgramTranscript,
+) -> tuple[str, list[Segment], Quality]:
+    if isinstance(transcript, DeepgramTranscript):
+        return transcript.text, list(transcript.segments), transcript.quality
     value = canonical_text(transcript.text)
     loops = detect_loops(
         transcript
@@ -95,7 +97,12 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
         _, raw = await read_verified_artifact(
             conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
         )
-        envelope = json.loads(raw)
+        try:
+            envelope = json.loads(raw)
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if not isinstance(envelope, dict):
+            continue
         record = envelope.get("record", {})
         status = record.get("response", {}).get("status")
         if status and 200 <= status < 300:
@@ -111,69 +118,6 @@ async def raw_responses(runtime: Any, conn: Any, operation: dict[str, Any]) -> l
             if isinstance(body, dict):
                 responses.append(body)
     return responses
-
-
-def duration_of(path: Path) -> int | None:
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "json",
-                str(path),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-            check=True,
-        )
-        duration = float(json.loads(result.stdout)["format"]["duration"])
-        return math.ceil(duration) if math.isfinite(duration) and duration > 0 else None
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
-        return None
-
-
-async def recover_upload(runtime: Any, operation: dict[str, Any]) -> str | None:
-    async with runtime._conn_factory() as conn:
-        bodies = await raw_responses(runtime, conn, operation)
-    for body in reversed(bodies):
-        file = body.get("file", body)
-        if not isinstance(file, dict) or not file.get("name"):
-            continue
-        if file.get("state") == "ACTIVE" and isinstance(file.get("uri"), str):
-            uri = file["uri"]
-        else:
-            async with runtime._conn_factory() as conn:
-                poll, won = await ops.begin(
-                    runtime,
-                    conn,
-                    item_id=operation["item_id"],
-                    stage="upload_readiness",
-                    request={"file_name": file["name"]},
-                )
-            if won:
-                uri = await ops.call(
-                    runtime,
-                    poll,
-                    "gemini",
-                    lambda caller, name=file["name"]: runtime.clients.media(
-                        caller, runtime.ledger_of(caller)
-                    ).resume_uploaded_file(name),
-                )
-                async with runtime._conn_factory() as conn:
-                    await ops.finish(runtime, conn, poll, result={"uri": uri})
-            elif poll["state"] == "succeeded":
-                uri = poll["result"]["uri"]
-            else:
-                return None
-        async with runtime._conn_factory() as conn:
-            await ops.finish(runtime, conn, operation, result={"uri": uri})
-        return str(uri)
-    return None
 
 
 async def resolve_url(runtime: Any, url: str, hint: str | None) -> Resolution:
@@ -263,22 +207,21 @@ async def acquire(
                 raise store.unavailable(
                     "repair reference must be the current version of this recording"
                 )
-    context = SpeakerContext(
-        person_name=runtime.scope.person_name,
-        person_role=runtime.scope.person_title,
-        organisation=runtime.scope.account_name,
-    )
+    language = runtime.settings.arv2_deepgram_language
     request = {
-        "recipe": "transcript-v1",
+        "recipe": "deepgram-transcript-v1"
+        if not resolution.transcript
+        else "publisher-transcript-v1",
         "repair": str(repair_version) if repair_version else None,
-        "model": runtime.settings.arv2_media_video_model
-        if candidate.family in {"youtube", "video"}
-        else runtime.settings.arv2_media_transcribe_model,
+        "parameters": parameters(language) if not resolution.transcript else {},
     }
     duration = candidate.duration_s
     audio = None
+    prepared = None
+    expected_hash = None
+    remote_url = None
     with tempfile.TemporaryDirectory(prefix="arv2-media-") as directory:
-        if candidate.media_url and not resolution.transcript:
+        if not resolution.transcript and (candidate.media_url or candidate.family == "youtube"):
             # Download is independently journalled and retained as an artifact for repairs.
             async with runtime._conn_factory() as conn:
                 download, won = await ops.begin(
@@ -286,14 +229,18 @@ async def acquire(
                     conn,
                     item_id=item["item_id"],
                     stage="download",
-                    request={"url": candidate.media_url},
+                    request={"url": candidate.media_url or candidate.url},
                 )
             if won:
                 response = await ops.call(
                     runtime,
                     download,
-                    "media_public",
-                    lambda caller: fetch(caller, candidate.media_url, binary=True),
+                    "media_youtube" if candidate.family == "youtube" else "media_public",
+                    lambda caller: (
+                        fetch_youtube(caller, candidate.url)
+                        if candidate.family == "youtube"
+                        else fetch(caller, candidate.media_url or candidate.url, binary=True)
+                    ),
                 )
                 mime = response.headers.get("content-type", "").split(";")[0].lower()
                 if not mime.startswith(("audio/", "video/")):
@@ -344,74 +291,28 @@ async def acquire(
                 )
             path = Path(directory) / "recording"
             path.write_bytes(data)
-            duration = duration or duration_of(path)
-            mime = download["result"]["mime"]
-            if duration:
-                audio = AudioFile(
-                    path=path,
-                    duration_s=duration,
-                    mime_type=mime,
-                    audio_format={
-                        "audio/mpeg": "mp3",
-                        "audio/mp4": "m4a",
-                        "audio/wav": "wav",
-                        "audio/ogg": "ogg",
-                        "audio/flac": "flac",
-                    }.get(mime, ""),
-                    display_name="research-recording",
-                )
-        if not resolution.transcript and not duration:
+            audio, prepared = await asyncio.to_thread(prepare_audio, path)
+            duration = prepared["duration_s"]
+            # URL delivery avoids the slow-upload failure seen in the trial, but only when
+            # it sends precisely the retained audio bytes. Extracted tracks use upload.
+            remote_url = (
+                candidate.media_url if prepared["preparation"] == "original_audio_bytes" else None
+            )
+            expected_hash = prepared["audio_sha256"]
+            request.update(input_sha256=expected_hash, delivery="url" if remote_url else "upload")
+            blob = await runtime._artifacts.persist_body(
+                workspace_id=runtime.scope.workspace_id,
+                data=audio.read_bytes(),
+                media_type=prepared["mime"],
+            )
+            async with runtime._conn_factory() as conn:
+                await store.subjects(runtime, conn, blob.artifact_key, [])
+            request["prepared_blob"] = blob.artifact_key
+            request["preparation"] = prepared
+        if not resolution.transcript and (audio is None or not duration):
             async with runtime._conn_factory() as conn:
                 await store.release_item(runtime, conn, item["item_id"])
-                await store.attempt(
-                    runtime,
-                    conn,
-                    kind="read",
-                    outcome="duration_unknown",
-                    item_id=item["item_id"],
-                    purpose=purpose,
-                )
-            return {"state": "unavailable", "gap": "duration_unknown"}
-        short_audio = bool(
-            audio
-            and audio.mime_type.startswith("audio/")
-            and duration <= runtime.settings.arv2_media_short_max_seconds
-            and not repair_version
-            and audio.audio_format
-        )
-        uri = None
-        if short_audio:
-            request["model"] = runtime.settings.arv2_media_short_model
-        if audio is not None and not short_audio:
-            async with runtime._conn_factory() as conn:
-                upload, upload_won = await ops.begin(
-                    runtime,
-                    conn,
-                    item_id=item["item_id"],
-                    stage="upload",
-                    request={"blob": download["result"]["blob"]},
-                )
-            if upload_won:
-                uri = await ops.call(
-                    runtime,
-                    upload,
-                    "gemini",
-                    lambda caller: runtime.clients.media(
-                        caller, runtime.ledger_of(caller)
-                    ).upload_recording(audio),
-                )
-                async with runtime._conn_factory() as conn:
-                    await ops.finish(runtime, conn, upload, result={"uri": uri})
-            elif upload["state"] == "succeeded":
-                uri = upload["result"]["uri"]
-            else:
-                uri = await recover_upload(runtime, upload)
-                if uri is None:
-                    return {
-                        "state": upload["state"],
-                        "gap": "upload_not_ready",
-                        "operation_ref": str(upload["operation_id"]),
-                    }
+            return {"state": "unavailable", "gap": "recording_audio_unavailable"}
         async with runtime._conn_factory() as conn:
             op, won = await ops.begin(
                 runtime,
@@ -421,7 +322,21 @@ async def acquire(
                 request=request,
                 seconds=0 if resolution.transcript else duration or 0,
             )
-        transcript = None
+        if won and request.get("prepared_blob"):
+            async with runtime._conn_factory() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE arv2_media_operation SET "
+                        "artifact_keys=array_append(artifact_keys,:key) "
+                        "WHERE workspace_id=:ws AND operation_id=:id"
+                    ),
+                    {
+                        "ws": runtime.scope.workspace_id,
+                        "id": op["operation_id"],
+                        "key": request["prepared_blob"],
+                    },
+                )
+        transcript: Transcript | DeepgramTranscript | None = None
         if not won:
             if op["result"].get("empty_transcript"):
                 async with runtime._conn_factory() as conn:
@@ -438,18 +353,8 @@ async def acquire(
             async with runtime._conn_factory() as conn:
                 bodies = await raw_responses(runtime, conn, op)
             for body in reversed(bodies):
-                if "candidates" in body:
-                    transcript = GeminiMediaClient.parse_native_recording(
-                        body,
-                        model=request["model"],
-                        structured=candidate.family == "youtube" or candidate.family == "video",
-                    )
-                    break
-                if "choices" in body:
-                    transcript = GeminiMediaClient.parse_openrouter_recording(
-                        body,
-                        model=runtime.settings.arv2_media_short_model,
-                    )
+                if "results" in body:
+                    transcript = parse_response(body, expected_hash=expected_hash)
                     break
             if transcript is None:
                 return {
@@ -463,42 +368,19 @@ async def acquire(
                 text=resolution.transcript,
                 lines=sentence_lines(resolution.transcript),
             )
-        elif candidate.family == "youtube":
+        elif audio is not None and prepared is not None:
             transcript = await ops.call(
                 runtime,
                 op,
-                "gemini",
-                lambda caller: runtime.clients.media(
-                    caller, runtime.ledger_of(caller)
-                ).transcribe_video(candidate.url, duration_s=duration, context=context),
+                "deepgram",
+                lambda caller: runtime.clients.transcription(caller).transcribe(
+                    audio=b"" if remote_url else audio.read_bytes(),
+                    mime=prepared["mime"],
+                    duration_s=duration,
+                    expected_hash=expected_hash,
+                    media_url=remote_url,
+                ),
             )
-        elif audio is not None:
-            if short_audio:
-                transcript = await ops.call(
-                    runtime,
-                    op,
-                    "openrouter",
-                    lambda caller: runtime.clients.media(
-                        caller, runtime.ledger_of(caller)
-                    ).transcribe_short(
-                        audio, context=context, max_attempts=1, require_transcript_section=True
-                    ),
-                )
-            else:
-                transcript = await ops.call(
-                    runtime,
-                    op,
-                    "gemini",
-                    lambda caller: runtime.clients.media(
-                        caller, runtime.ledger_of(caller)
-                    ).transcribe_uploaded(
-                        uri,
-                        mime_type=audio.mime_type,
-                        duration_s=duration,
-                        context=context,
-                        video=audio.mime_type.startswith("video/"),
-                    ),
-                )
         if transcript is None:
             raise store.unavailable("unsupported acquisition route")
         value, segments, quality = assess_transcript(transcript)
@@ -508,7 +390,9 @@ async def acquire(
         async with runtime._conn_factory() as conn:
             if not value.strip():
                 # Paid processing still consumed seconds even when no speech was returned.
-                await ops.finish(runtime, conn, op, result={"empty_transcript": True})
+                await ops.finish(
+                    runtime, conn, op, result={"empty_transcript": True, "acquisition": request}
+                )
                 await store.release_item(runtime, conn, item["item_id"])
                 await store.attempt(
                     runtime,
@@ -537,6 +421,7 @@ async def acquire(
                 op,
                 result={
                     "version_ref": str(version),
+                    "acquisition": request,
                     "quotes": [{**asdict(q), "usable": False} for q in transcript.quotes],
                 },
             )

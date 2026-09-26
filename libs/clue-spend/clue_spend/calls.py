@@ -246,7 +246,10 @@ def _observation_type(operation: str) -> ObservationType:
     """What kind of work a provider operation is, for the tree: a model completion, an embedding,
     or a fetch/tool hop (the default — an ATS board, a watch page, a media upload leg)."""
     lowered = operation.lower()
-    if lowered.endswith(("chat/completions", ":generatecontent")) or lowered == "agent_completion":
+    if lowered.endswith(("chat/completions", ":generatecontent")) or lowered in {
+        "agent_completion",
+        "listen/pre-recorded",
+    }:
         return "generation"
     if "embed" in lowered:
         return "embedding"

@@ -4,6 +4,10 @@ This experiment acquires a public recording, submits its audio to Deepgram, and 
 provider transcript with word timing and speaker clusters. It does not change production
 research, write application database records, launch workers, or generate claims/narratives.
 
+The research-media pipeline adopted these shared primitives on 2026-09-26; see
+[production integration](../superpowers/plans/2026-09-26-deepgram-integration.md).
+Running this standalone script still does not launch or mutate application research.
+
 ## Configuration and rationale
 
 Use `.venv/bin/python scripts/trial_deepgram_media.py`. Requirements: repository Python
