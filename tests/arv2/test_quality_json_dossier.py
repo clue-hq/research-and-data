@@ -27,11 +27,11 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert AgentRole.RESEARCH_NARRATIVE in profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 18
+    assert CURRENT_RECIPE_VERSION == 19
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 18
-    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v18.json"))
+    assert manifest["recipe_version"] == 19
+    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v19.json"))
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
     assert all(
         n + "@1" in allowed
@@ -73,3 +73,19 @@ def test_save_schema_preserves_trial_contract_and_refuses_unknown_fields():
     assert parsed.findings[0].finding == entry["finding"]
     with pytest.raises(ValueError):
         SaveSectionInput(section="Voice", findings=[{**entry, "silently_dropped": True}])
+
+
+def test_current_research_roles_can_read_but_not_modify_spilled_receipts():
+    tools = quality_tools(None, None, purge=False)
+    for person in (False, True):
+        registry = quality_profiles(tools, version=19, person=person)
+        for role in (
+            AgentRole.ACCOUNT_RESEARCH,
+            AgentRole.RESEARCH_CLAIMS,
+            AgentRole.RESEARCH_NARRATIVE,
+        ):
+            workspace = registry.resolve(role).profile.workspace
+            assert "reads" in workspace.readable_prefixes
+            assert "reads" not in workspace.writable_prefixes
+    for version in range(2, 20):
+        load_quality_resources("account", version=version)

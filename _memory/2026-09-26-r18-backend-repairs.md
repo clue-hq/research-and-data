@@ -37,3 +37,21 @@ signal deliveries retain one revision; five distinct concurrent events receive c
 revisions with no lost updates. Existing generation, early-person-release, driver and JSON
 import suites pass: 18 focused DB checks in this final group. Changes are limited to nomination
 parent locks and generation writer locks; cap/revision serialization remains exclusive.
+
+## Receipt and tracing checkpoint complete
+
+Real ResearchUnitRuntime scripted revision-19 run saved/imported 82 findings, spilled the complete
+acknowledgement, read it through native read_file, repeated finish without extra claims, and
+finalized COMPLETED. Live/recovered receipts share the spill rule; rehydration runs validation.
+Root and fresh-wake child composition both supply the execution's own workspace sink.
+Older profiles without reads/ retain their pre-existing behavior; existing r18 jobs are not
+repinned or rerun. Revision 19 changes workspace readability only; all prompt/skill hashes stay
+unchanged. Historical manifests 2–18 still validate. No receipt truncation or larger bound.
+
+In-memory Langfuse integration captured section save, both finish calls, native read, report write
+and finalize as tool observations. Concurrent successful/failed tool→provider parentage tests
+passed; Deepgram estimated cost, duration, request and trace IDs agree with ledger/report.
+Cloud export was not exercised; no paid calls or workers started. Prior runtime parent/child and
+repair tests pass. Final offline receipt/callback/profile group: 36 checks; client group: 14.
+Targeted Ruff and mypy pass. Full repository suite and live research acceptance remain separate.
+Efficiency, narrative/reconciliation and historical r18 status repair remain deferred.

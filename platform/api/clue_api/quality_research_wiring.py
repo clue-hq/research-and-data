@@ -48,6 +48,7 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_agents.catalog import FolderProfileCatalog, FolderPromptCatalog, FolderSkillCatalog
+from clue_agents.ports import SpillSink
 from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
     CheckpointerFactory,
@@ -289,7 +290,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: ("v17-person" if person else "v17")
+            role: ("v19-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v19")
+            if version >= 19
+            else ("v17-person" if person else "v17")
             if version >= 17 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v16-person" if person else "v16")
             if version >= 16 and role == AgentRole.ACCOUNT_RESEARCH
@@ -461,6 +464,7 @@ class ResearchUnitRuntime:
         checkpointer_factory: CheckpointerFactory = postgres_agent_checkpointer,
     ):
         self.scope, self.context_id = scope, context_id
+        self._spill_sinks: dict[ExecutionId, SpillSink] = {}
         self.runtime_owner: UUID | None = None
         self.execution_id = ExecutionId(
             uuid5(
@@ -608,7 +612,15 @@ class ResearchUnitRuntime:
         request: AgentTurnRequest,
         resolved: ResolvedAgentProfile,
         delegation: DbAgentDelegationRuntime | None = None,
+        spill_sink: SpillSink | None = None,
     ) -> C5AgentExecutionAdapter:
+        # Older pinned profiles have no reads/ authority; retain their existing behavior
+        # rather than turning a previously valid 12–16 KiB result into a workspace refusal.
+        active_spill_sink = (
+            spill_sink or self._spill_sinks.get(request.constitution.execution_id)
+            if "reads" in resolved.profile.workspace.readable_prefixes
+            else None
+        )
         return C5AgentExecutionAdapter(
             turn_id=request.turn_id,
             constitution=request.constitution,
@@ -630,12 +642,16 @@ class ResearchUnitRuntime:
             checkpointer_factory=self.checkpointer_factory,
             delegation=delegation,
             conn_factory=self.connections,
+            spill_sink=active_spill_sink,
         )
 
     async def bindings(
         self, request: AgentTurnRequest, resolved: ResolvedAgentProfile, lease: AgentWorkspaceLease
     ) -> SpecialistRuntimeBindings:
         execution = request.constitution.execution_id
+        # Fresh-wake bindings precede construction of the child's adapter. Each execution
+        # must spill into its own readable workspace, including after recovery/reacquisition.
+        self._spill_sinks[execution] = lease.backend
         async with self.connections() as conn:
             parent = (
                 await conn.execute(
@@ -860,7 +876,7 @@ class ResearchUnitRuntime:
                 child_runner=_InlineChild(self, child),
                 conn_factory=self.connections,
             )
-            adapter = self.adapter(request, resolved, delegation)
+            adapter = self.adapter(request, resolved, delegation, spill_sink=lease.backend)
             adapter.bind_finalization_authority(
                 AgentFinalizationAuthority(
                     lease=lease,

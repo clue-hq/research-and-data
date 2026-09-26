@@ -2200,7 +2200,11 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         # existed. Anything that is neither did not come from this artifact.
         if receipt.reference_values and receipt.reference_values not in (references, projection):
             raise ValueError("tool receipt reference projection differs from its artifact")
-        return receipt.model_copy(update={"reference_values": projection})
+        # model_copy skips validators; otherwise an oversized recovered result survives
+        # until AgentTurnOutcome validation, failing a job after its writes committed.
+        return GovernedOperationReceipt.model_validate(
+            {**receipt.model_dump(mode="python"), "reference_values": projection}
+        )
 
 
 def _agent_issue(issue: GraphIssue) -> AgentPlanIssue:
