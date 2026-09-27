@@ -17,6 +17,7 @@ from clue_api.arv2.quality_provider_tools import AcquireResearchInput, AcquireRe
 from clue_api.arv2.quality_views import research_backend
 from clue_api.arv2.transport import ScriptedTransport
 from clue_core import ExecutionId, OperationId
+from clue_storage import read_verified_artifact
 from clue_storage.fs import FsStorage
 from clue_toolbelt import ToolContext
 from tests.arv2.test_committee_discovery_v2_db import response, runtime
@@ -115,7 +116,20 @@ def test_company_mapping_reuses_exact_claims_and_tool_results_without_purchase(t
                 for row in json.loads(index.file_data["content"])["sources"]
                 if row.get("available")
             ]
-            assert any("Provider promotional description." in body for body in originals)
+            assert originals
+            assert all("Provider promotional description." not in body for body in originals)
+            # The agent reads a projection; the immutable audit still retains the wire response.
+            original_key = (
+                await conn.execute(
+                    text("""SELECT original_key FROM arv2_evidence_source
+                      WHERE run_id=:run AND normalizer_version='ai_ark:enrichment-v2'"""),
+                    {"run": scope.run_id},
+                )
+            ).scalar_one()
+            _, audit = await read_verified_artifact(
+                conn, storage, workspace_id=scope.workspace_id, storage_key=original_key
+            )
+            assert "Provider promotional description." in audit.decode()
             assert (
                 await conn.execute(
                     text(

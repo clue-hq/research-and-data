@@ -131,6 +131,9 @@ async def ready_account(conn, *, no_linkedin=False, catalog_version="v2"):
     run, account, job_id = await _seed(conn)
     scope = replace(_scope(run, account), job_id=job_id, catalog_version=catalog_version)
     storage = _MemoryStorage()
+    candidate = person(linkedin=not no_linkedin)
+    candidate["profile"]["headline"] = "PROVIDER_PROMO"
+    candidate["company"]["summary"]["description"] = "PROVIDER_PROMO"
     wire = ScriptedTransport(
         [
             response(
@@ -146,7 +149,7 @@ async def ready_account(conn, *, no_linkedin=False, catalog_version="v2"):
             ),
             response(
                 {
-                    "content": [person(linkedin=not no_linkedin), person("p2", "Other Test")],
+                    "content": [candidate, person("p2", "Other Test")],
                     "last": False,
                     "totalPages": 2,
                     "totalElements": 3,
@@ -193,6 +196,7 @@ def test_full_handoff_profile_reuse_channels_and_replay(catalog_version):
                 rt, ReadPeopleResultArgs(result_ref=result["result_ref"])
             )
             assert "birth_date" not in details["people"][0]["profile"]["profile"]
+            assert "PROVIDER_PROMO" not in json.dumps(details)
             candidate = {
                 "evidence_kind": "provider_candidate",
                 "candidate_ref": result["people"][0]["candidate_ref"],
@@ -256,6 +260,7 @@ def test_full_handoff_profile_reuse_channels_and_replay(catalog_version):
             )
             prt = runtime(conn, person_scope, storage, person_wire)
             await load_person_seed(prt)
+            assert "PROVIDER_PROMO" not in json.dumps(prt.person_seed)
             assert not person_wire.requests
             channels = await enrich_contact(prt, EnrichContactArgs())
             assert set(channels) == {"email"}
