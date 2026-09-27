@@ -96,7 +96,7 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
             args = draft(meta)
             out = await call(WriteResearchNarrativeTool, parent, storage, ctx, args)
             assert out["status"] == "published", out
-            assert len(out["block_ids"]) == 10
+            assert len(out["block_ids"]) == 11
             assert len(json.dumps(out).encode()) < 16384
             assert (await call(WriteResearchNarrativeTool, parent, storage, ctx, args)) == out
             # A failure after Overview was saved must roll back that replacement too.
@@ -182,16 +182,40 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
             from pathlib import Path
 
             if export := os.environ.get("NARRATIVE_TEST_EXPORT"):
+                from clue_api.frontend_read.v1_shared import research_evidence_for
+
+                evidence = await research_evidence_for(
+                    conn,
+                    workspace_id=parent.workspace_id,
+                    claim_ids=tuple(
+                        dict.fromkeys((*insight["cited_claim_ids"], *contact["cited_claim_ids"]))
+                    ),
+                )
                 Path(export).write_text(
                     json.dumps(
                         {
                             "overview": overview["display_block"],
                             "insights": insight["display_block"],
                             "contact": contact["display_block"],
+                            "evidence": [
+                                e.model_dump(mode="json", by_alias=True) for e in evidence
+                            ],
                         },
                         default=str,
                     )
                 )
+            # Both owned Miscellaneous sections survive storage with source references,
+            # and remain public, collapsed sections rather than restricted notes.
+            for result in (insight, contact):
+                misc = next(
+                    s for s in result["display_block"]["sections"] if s["key"] == "miscellaneous"
+                )
+                assert not misc["restricted"] and not misc["defaultOpen"]
+                assert misc["items"][0]["body"][0]["claimIds"]
+                assert misc["items"][0]["body"][0]["text"] == "Original words remain intact."
+            assert not any(
+                s["key"] == "miscellaneous" for s in overview["display_block"]["sections"]
+            )
             # No account-authored copy of the person section was stored.
             assert (
                 await conn.execute(
@@ -239,6 +263,64 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
                     WriteNarrativeInput.model_validate(raw),
                 )
             )["status"] == "refused"
+
+    run_async(case())
+
+
+@pytest.mark.parametrize("person", [False, True])
+def test_pre_miscellaneous_narrative_can_publish_without_refresh_loop(tmp_path, person):
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, ctx, gen, path = await initial(conn, tmp_path)
+            parent = replace(parent, input_refs={"quality_recipe_version": 20})
+            child = replace(child, input_refs={**child.input_refs, "quality_recipe_version": 20})
+            await load_display_recipes(conn)
+            await invoke(FinishDossierTool, parent, storage, ctx, DossierInput())
+            job = child if person else parent
+            if person:
+                op = OperationScope(
+                    child.workspace_id, child.run_id, child.job_id, child.account_id
+                )
+                eid = await execution(conn, op, child.project_id)
+                await bind_execution(
+                    conn,
+                    op,
+                    execution_id=eid,
+                    context_id=cid,
+                    role="account_research",
+                    limits=Allowance(100, 100, 10),
+                )
+                ctx = replace(ctx, execution_id=ExecutionId(eid), operation_id=OperationId(uuid4()))
+                await invoke(
+                    SaveDossierSectionTool,
+                    child,
+                    storage,
+                    ctx,
+                    SaveSectionInput(section="Voice", findings=[finding(source_paths=[path])]),
+                )
+                await invoke(FinishDossierTool, child, storage, ctx, DossierInput())
+            meta = await call(ReadNarrativeInputsTool, job, storage, ctx, ReadNarrativeInput())
+            raw = draft(meta, person).model_dump()
+            for page in raw["pages"]:
+                page["sections"] = [s for s in page["sections"] if s["key"] != "miscellaneous"]
+            out = await call(
+                WriteResearchNarrativeTool,
+                job,
+                storage,
+                ctx,
+                WriteNarrativeInput.model_validate(raw),
+            )
+            assert out["status"] == "published", out
+            result = await read_page(
+                conn, job, context_id=cid, page="contact" if person else "insights"
+            )
+            misc = next(
+                s for s in result["display_block"]["sections"] if s["key"] == "miscellaneous"
+            )
+            assert misc["items"] == [] and not misc["restricted"] and not misc["pending"]
+            assert "miscellaneous" not in result["pending"]
+            assert "published yet" in misc["emptyMessage"]
+            assert "miscellaneous" not in result["stale"]
 
     run_async(case())
 
@@ -427,7 +509,7 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
                     {"id": outcome.execution_id},
                 )
             ).all()
-            assert len(rows) == (5 if person else 10)
+            assert len(rows) == (6 if person else 11)
             repeated = await runtime.run(
                 objective="Continue from the imported dossier and write your own narrative."
             )

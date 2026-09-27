@@ -328,7 +328,7 @@ def test_a_contact_page_writes_every_section_that_has_input_and_records_one_even
                 recipe.h1 for recipe in recipes_for("contact")
             ]
             assert all(not section["empty"] for section in block["sections"])
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 0)
 
             # The floor: no unsafe claim is cited anywhere but the restricted section.
             unsafe = {seeded.claims["hobby_unsafe"], seeded.claims["reputation_risk"]}
@@ -345,7 +345,7 @@ def test_a_contact_page_writes_every_section_that_has_input_and_records_one_even
             assert {ref["claimId"] for ref in result.evidence} == set(result.cited_claim_ids)
             assert all("fieldKey" not in ref and "field_key" not in ref for ref in result.evidence)
 
-            assert result.cost_usd == Decimal(str(CALL_COST)) * 5
+            assert result.cost_usd == Decimal(str(CALL_COST)) * 6
 
             events = await _events(conn, seeded.workspace_id)
             assert len(events) == 1
@@ -373,20 +373,19 @@ def test_a_second_call_serves_the_stored_page_without_calling_the_provider() -> 
             assert again.cost_usd == Decimal(0)
             assert again.display_block == first.display_block
             assert again.cited_claim_ids == first.cited_claim_ids
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 0)
             assert len(await _events(conn, seeded.workspace_id)) == 1
 
     run_async(_run())
 
 
-def test_a_new_claim_makes_one_section_stale_and_only_that_section_is_rewritten() -> None:
+def test_a_new_claim_refreshes_both_sections_that_select_it() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
             await _contact_page(conn, seeded, RoutingTransport())
 
-            # ``contact.facet.hobby`` belongs to the openers recipe and to no other contact
-            # section, so exactly one section's research has moved.
+            # Hobby evidence is reusable in Openers and Miscellaneous; both must refresh.
             await write_claim(
                 conn,
                 seeded.claims,
@@ -403,15 +402,15 @@ def test_a_new_claim_makes_one_section_stale_and_only_that_section_is_rewritten(
 
             served = await _contact_page(conn, seeded, RoutingTransport(allowed=False))
             assert served.generated == ()
-            assert served.stale_served == ("openers",)
+            assert served.stale_served == ("openers", "miscellaneous")
 
             transport = RoutingTransport()
             rewritten = await _contact_page(conn, seeded, transport, regenerate_stale=True)
-            assert rewritten.generated == ("openers",)
-            assert rewritten.regenerated == ("openers",)
+            assert rewritten.generated == ("openers", "miscellaneous")
+            assert rewritten.regenerated == ("openers", "miscellaneous")
             assert rewritten.stale_served == ()
-            assert transport.sections == ["openers"]
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 1)
+            assert sorted(transport.sections) == ["miscellaneous", "openers"]
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 2)
 
             events = await _events(conn, seeded.workspace_id)
             assert len(events) == 2
@@ -431,7 +430,7 @@ def test_force_supersedes_every_live_block_and_rewrites_the_whole_page() -> None
             assert forced.generated == CONTACT_SECTIONS
             assert forced.regenerated == CONTACT_SECTIONS
             assert sorted(transport.sections) == sorted(CONTACT_SECTIONS)
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 5)
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 6)
 
             events = await _events(conn, seeded.workspace_id)
             assert [event["action"] for event in events] == [
@@ -524,13 +523,13 @@ def test_a_section_the_model_could_not_write_is_reported_failed_and_never_stored
             assert result.checks["openers"]["reply_invalid"] is True
             assert result.checks["openers"]["reply_retried"] is True
 
-            assert await _block_counts(conn, seeded.workspace_id) == (4, 0)
+            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
             section = next(
                 item for item in result.display_block["sections"] if item["key"] == "openers"
             )
             assert section["empty"] is True and section["items"] == []
 
-            # Four sections were stored, so the page was written and the feed says so once.
+            # Five sections were stored, so the page was written and the feed says so once.
             events = await _events(conn, seeded.workspace_id)
             assert [event["action"] for event in events] == ["contact generated"]
 
@@ -540,7 +539,7 @@ def test_a_section_the_model_could_not_write_is_reported_failed_and_never_stored
             assert retry.generated == ("openers",)
             assert retry.failed == ()
             assert transport.sections == ["openers"]
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 0)
             written = next(
                 item for item in retry.display_block["sections"] if item["key"] == "openers"
             )
@@ -741,7 +740,7 @@ def test_a_fully_stored_read_opens_no_spend_connection_at_all() -> None:
 # -- shared blocks ------------------------------------------------------------------------------
 
 
-def test_the_insights_page_writes_four_sections_and_shares_the_other_two() -> None:
+def test_the_insights_page_considers_five_owned_sections_and_shares_the_other_two() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             seeded = await seed_display_fixture(conn, workspace_id=WORKSPACE)
@@ -753,13 +752,19 @@ def test_the_insights_page_writes_four_sections_and_shares_the_other_two() -> No
 
             result = await _insights_page(conn, seeded, transport)
 
-            # Only the four OWNED recipes are candidates. Two of them match no claim in this
+            # Only the five OWNED recipes are candidates. Two of them match no claim in this
             # fixture (no tech-stack, no resonance rows), so they are skipped rather than
-            # written — the set the page *considered* is still exactly the four.
+            # written — the set the page *considered* is still exactly the five.
             assert sorted(result.generated + result.skipped_empty) == sorted(
-                ["buying-signals", "money-and-momentum", "tools-they-already-use", "how-they-sell"]
+                [
+                    "buying-signals",
+                    "money-and-momentum",
+                    "tools-they-already-use",
+                    "how-they-sell",
+                    "miscellaneous",
+                ]
             )
-            assert result.generated == ("buying-signals", "money-and-momentum")
+            assert result.generated == ("buying-signals", "money-and-momentum", "miscellaneous")
             assert "context-only" not in transport.sections[written_before:]
             assert "contact-insights" not in transport.sections[written_before:]
             block = result.display_block

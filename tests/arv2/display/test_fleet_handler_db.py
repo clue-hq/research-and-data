@@ -84,8 +84,8 @@ def test_a_page_task_writes_the_page_once_and_a_redelivery_writes_nothing() -> N
             assert first.outcome == "completed"
             assert first.requeue is False
             assert sorted(first.references["generated"]) == sorted(transport.sections)
-            assert len(transport.sections) == 5
-            assert await _block_counts(conn, seeded.workspace_id) == (5, 0)
+            assert len(transport.sections) == 6
+            assert await _block_counts(conn, seeded.workspace_id) == (6, 0)
             # The page's spend is stamped with the research job that produced its claims.
             stamped = (
                 await conn.execute(
@@ -96,12 +96,12 @@ def test_a_page_task_writes_the_page_once_and_a_redelivery_writes_nothing() -> N
                     {"job_id": job_id},
                 )
             ).scalar_one()
-            assert stamped == 5
+            assert stamped == 6
 
             second = await handler.handle(_context(payload))
             assert second.outcome == "completed"
             assert second.references["generated"] == []
-            assert len(transport.sections) == 5, "a redelivery costs nothing it already paid for"
+            assert len(transport.sections) == 6, "a redelivery costs nothing it already paid for"
 
     run_async(_run())
 

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.display.blocks import LiveBlock, compose_display_block
-from clue_api.arv2.display.recipes import Page, read_recipes
+from clue_api.arv2.display.recipes import OPTIONAL_SECTION_KEYS, Page, read_recipes
 from clue_api.arv2.quality_page_inputs import PageInputs, page_inputs
 from clue_api.arv2.quality_policy import advisory_research
 from clue_api.arv2.research_operations import fingerprint
@@ -88,7 +88,9 @@ async def _validate_sections(
     given = [s.key for s in draft.sections]
     advisory = advisory_research(scope)
     if not advisory and (
-        len(set(given)) != len(given) or not set(given) <= keys or (complete and set(given) != keys)
+        len(set(given)) != len(given)
+        or not set(given) <= keys
+        or (complete and not keys - OPTIONAL_SECTION_KEYS <= set(given))
     ):
         raise ValueError(
             "a page draft must cover every recipe section once, including explicit gaps"
@@ -488,6 +490,9 @@ async def read_page(
             section["empty"] = not section["intro"] and not section["items"]
             section["gaps"] = stored.body_json.get("gaps", [])
         section["pending"] = stored is None or section["key"] in stale
+        if stored is None and section["key"] in OPTIONAL_SECTION_KEYS:
+            section["pending"] = section["key"] in stale
+            section["emptyMessage"] = "No additional research findings have been published yet."
     shared_ready: set[str] = set()
     shared_cited: list[str] = []
     from clue_api.arv2.quality_owned_narrative import owns_narrative
@@ -499,7 +504,7 @@ async def read_page(
             conn, scope, context_id, inputs.generation.generation_id, block
         )
         stale.extend(sorted(shared_stale))
-    missing = {r.section_key for r in recipes} - live.keys() - shared_ready
+    missing = {r.section_key for r in recipes} - live.keys() - shared_ready - OPTIONAL_SECTION_KEYS
     state = inputs.generation.state
     quality = {
         "projectId": scope.project_id,

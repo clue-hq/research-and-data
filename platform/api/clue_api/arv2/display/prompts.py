@@ -98,6 +98,19 @@ _RESTRICTED = (
 #: the marketer pastes goes.
 SECTION_INSTRUCTIONS: dict[tuple[str, str], str] = {
     # ---- insights -----------------------------------------------------------------------------
+    ("insights", "miscellaneous"): (
+        "Additional source-linked company findings not already explained in the main sections. "
+        "Preserve meaningful details, attribution, dates and qualifications. Group related "
+        "background without repeating the fit argument. "
+        "Do not invent findings to fill this section."
+    ),
+    ("contact", "miscellaneous"): (
+        "Additional source-linked person findings not already explained in the main sections: "
+        "career context, publications, interests or other public contributions. "
+        "Preserve attribution, "
+        "dates and uncertainty; do not repeat the main narrative or manufacture a personal hook. "
+        "Leave sendLine null; this is additional research, not an outreach draft."
+    ),
     ("insights", "buying-signals"): (
         "3–4 items, strongest first, from what they are hiring for, the open requisitions, how "
         "mature their ABM program is, the strategic moves they have made and how they buy. h2 = "

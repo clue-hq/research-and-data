@@ -674,7 +674,7 @@ def test_several_reasons_are_reported_together_in_a_stable_order() -> None:
 # -- composition ---------------------------------------------------------------------------------
 
 
-def test_the_contact_page_composes_five_sections_with_the_recipes_flags() -> None:
+def test_the_contact_page_composes_six_sections_with_the_recipes_flags() -> None:
     async def _run() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             seeded = await _seed(conn)
@@ -689,6 +689,7 @@ def test_the_contact_page_composes_five_sections_with_the_recipes_flags() -> Non
                 "openers",
                 "angles",
                 "do-not-mention",
+                "miscellaneous",
             ]
             by_key = {section["key"]: section for section in sections}
             assert by_key["openers"]["empty"] is False

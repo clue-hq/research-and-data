@@ -214,6 +214,7 @@ function compactDetail(
           .flatMap((section) => section.items).filter((item) => item.contactRefs.some((ref) => ref.contactId === summary.id)),
       },
       { ...zafranSpecContent.overviewDisplay.sections.find((section) => section.key === "watch-outs")!, key: "do-not-mention", h1: "Do not mention" },
+      { ...zafranSpecContent.contactDisplay.sections.find((section) => section.key === "miscellaneous")! },
     ].map((section) => ({ ...section, empty: section.items.length === 0, emptyMessage: `No ${section.h1.toLowerCase()} information found for ${summary.name}.` })),
   };
   return {

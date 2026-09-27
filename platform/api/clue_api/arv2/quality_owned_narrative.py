@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_claims import JobScope
-from clue_api.arv2.display.recipes import read_recipes
+from clue_api.arv2.display.recipes import OPTIONAL_SECTION_KEYS, read_recipes
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_json_dossier import _lock, read_json_dossier
 from clue_api.arv2.quality_page_inputs import page_inputs
@@ -280,7 +280,12 @@ class WriteResearchNarrativeTool(_ResearchWriteTool):
         for page in args.pages:
             recipes = await read_recipes(conn, page.page, workspace_id=scope.workspace_id)
             keys = {r.section_key for r in recipes if r.shared_from is None}
-            if len(page.sections) != len(keys) or {s.key for s in page.sections} != keys:
+            given = [s.key for s in page.sections]
+            if (
+                len(given) != len(set(given))
+                or not set(given) <= keys
+                or not keys - OPTIONAL_SECTION_KEYS <= set(given)
+            ):
                 raise ValueError(
                     f"{page.page}: write each owned section once: {', '.join(sorted(keys))}"
                 )
