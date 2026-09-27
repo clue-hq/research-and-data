@@ -40,3 +40,32 @@ made after the R4 experiment where all 5 gates starved a search.
 Open founder decisions: which top-up mechanism (new webset per search vs append), whether a
 repeat ask is a new run, whether a matching account from another project joins this one, and
 how strictly to treat the website-domain answer.
+
+## Follow-up session (same day) — what was done
+
+Founder rulings: **(1)** each top-up search is a **new webset** that excludes the earlier websets
+(`exclude: [{source: "webset", id}]`); **(2)** "find more" always starts a **new run**, with
+everything earlier runs found excluded. Both are recorded for the three-search rebuild, which
+is **not built yet**.
+
+- **DB:** `clue_dubai` (:55040) cloned from `clue_jerusalem-v1` via pg_dump inside
+  `clue-pg-istanbul`; `.artifacts` cloned with `cp -Rc` (APFS clone) from jerusalem-v1. Every
+  non-test artifact row has its blob; 1738 `ws_test_*` rows lack blobs in jerusalem as well.
+- **Relaxed-search retry (live):** the platform's exact request → 400 "expected import|webset"
+  again (not credits; that would be 402). The corrected form — a NEW webset, `count: 2`, the
+  relaxed criteria, `exclude: [{source: "webset", id: webset_01m2aajkp9266ept9yq3hmdkyd}]` —
+  finished in 41 s with 2 new companies (Tryon Medical Partners, GracePointe Healthcare), neither
+  in the original 8. Probe webset `webset_01m3j5rncn6z8fbkbr2yz323ep`, ≈20 credits (~$0.09),
+  not on the platform ledger.
+- **Money fix, commit `b5eab8961`:** `ExaWebsetsClient.cancel`; the driver cancels a non-idle
+  webset when a run ends early (halt / wall clock / uncaught error) and reads it once more
+  (receipt `webset_stopped`, `rows_priced_at_stop`); recall parsed from `recall.expected.total`
+  and its 5 credits recorded on create; an Exa 4xx records zero instead of the estimate.
+  Offline: 91 tests in the three touched files pass; tests/arv2+fleet offline show only the two
+  failures that also fail on clean HEAD (import guard on quality files; account-research port
+  pins) plus the three known `duration_of` collection errors.
+- **Instructions (uncommitted, inside the turn-budget bundle):** stage0-interview v38 §7b and
+  tool_notes corrected, manual-tools v11 regenerated, v65 pins and registry digest updated.
+  tests/agents: 2 failures in test_runtime.py, identical on clean HEAD.
+- Not done: the 16 tool descriptions still point at `manual-tools/v5` (one at v8), and several
+  tool notes still cite `stage0-interview v33`. Cross-cutting, left for a separate pass.
