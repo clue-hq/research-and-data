@@ -1311,10 +1311,10 @@ class LaunchArv2AccountResearchTool(Tool):
         "explicitly approves this exact account set and ICP. A successful result means the jobs "
         "were enqueued or replayed; it never means research has completed, and it authorizes no "
         "contact research. "
-        "Before launching, read .deepagent/skills/account-research-briefing/v1/SKILL.md and "
+        "Before launching, read .deepagent/skills/account-research-briefing/v2/SKILL.md and "
         "write the project-specific delegation brief it teaches in directive_text, with "
         "account placeholders and references to the complete pinned documents. "
-        "Manual: .deepagent/skills/manual-tools/v10/SKILL.md#launch_arv2_account_research"
+        "Manual: .deepagent/skills/manual-tools/v11/SKILL.md#launch_arv2_account_research"
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput

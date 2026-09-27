@@ -213,7 +213,16 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v63 adds the account-research briefing skill and Stage-0 handoff guidance.
     # Tools, prompt, models and limits are unchanged from v62.
     # v64 adds an explicit account-briefing pointer in prompt v16 and the tool manual.
-    AgentRole.HEAD_OF_ABM: "v64",
+    # v65 (turn limits become operator settings, founder ruling 2026-09-27): v64's surface
+    # exactly. Rounds and wall clock now come from CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS /
+    # CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S, and a turn near either limit is told to wrap up and ends
+    # through finalize_turn, so the manual re-mints at `manual-*@v11` with the limits stated
+    # without numbers (and the repair budget as ten rounds, the rule since 2026-09-25).
+    # `account-research-briefing` moves to v2 ("for seller Clue"); prompt v17 and
+    # `stage0-interview@v38` are v16/v37 with only their briefing and manual paths repointed
+    # (literal paths, not placeholders: a narrowed surface that drops the briefing skill must not
+    # fail to resolve the prompt). No tool address moves; the recipe stays.
+    AgentRole.HEAD_OF_ABM: "v65",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
