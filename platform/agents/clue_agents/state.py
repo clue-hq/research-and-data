@@ -26,3 +26,6 @@ class ClueDeepAgentState(DeepAgentState):
     tool_repair_rounds: NotRequired[int]
     tool_repair_batch: NotRequired[list[str]]
     tool_repair_turn: NotRequired[str]
+
+    turn_budget_turn: NotRequired[str]
+    turn_budget_rounds: NotRequired[int]

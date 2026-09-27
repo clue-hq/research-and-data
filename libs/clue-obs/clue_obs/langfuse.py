@@ -293,6 +293,29 @@ def guardrail(
         pass
 
 
+def flag_trace(
+    name: str,
+    *,
+    tags: Sequence[str],
+    level: Level = "WARNING",
+    status_message: str | None = None,
+    metadata: Mapping[str, object] | None = None,
+) -> None:
+    """Tag the current trace and record one event saying why, so the trace can be filtered on
+    the tag. A no-op when Langfuse is not installed."""
+    if _client is None:
+        return
+    from langfuse import propagate_attributes
+
+    with propagate_attributes(tags=list(tags)):
+        _client.create_event(
+            name=name,
+            level=level,
+            status_message=status_message,
+            metadata=dict(metadata) if metadata else None,
+        )
+
+
 @contextmanager
 def propagate_trace(
     *,

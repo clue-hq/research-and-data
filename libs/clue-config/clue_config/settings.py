@@ -385,14 +385,19 @@ class Settings(BaseSettings):
     arv2_raw_root: str = ".artifacts/arv2"
 
     # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------
-    # Model rounds per account job. A ceiling ends the loop and the driver finalizes with what
-    # was written; it is a safety net, never a budget. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
-    arv2_account_max_model_rounds: int = Field(default=100, ge=1)
+    # Model rounds per research job (account and person), 350 by founder ruling 2026-09-27. The
+    # agent is told to wrap up three rounds before the end and finalizes ``blocked`` with what it
+    # saved; it is a safety net, never a budget. The upper bound is the runtime's own ceiling
+    # (``clue_agents.execution.MAX_RUNTIME_MODEL_ROUNDS``), so a value the runtime would refuse
+    # is refused here, at start-up. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
+    arv2_account_max_model_rounds: int = Field(default=350, ge=1, le=500)
     # Tool calls the model may issue in ONE round; the excess receive a recoverable refusal.
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
     arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
-    # Wall clock per account job, seconds. Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
-    arv2_account_max_runtime_s: int = Field(default=1800, ge=0)
+    # Wall clock per research job, seconds; 0 means no timeout (founder ruling 2026-09-27).
+    # ``agent_long_turn_alert_s`` still warns when a job runs long.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
+    arv2_account_max_runtime_s: int = Field(default=0, ge=0)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
@@ -401,6 +406,20 @@ class Settings(BaseSettings):
     # Largest podcast enclosure the media tool downloads, MiB.
     # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
     arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
+
+    # --- Deep Agent turn limits (founder ruling 2026-09-27) -----------------------------------
+    # Operator settings, not profile content: changing one never mints a profile version.
+    # Model rounds per Head-of-ABM chat turn. As with research, the agent is told to wrap up
+    # three rounds before the end and then finalizes ``awaiting_input`` ("reply continue").
+    # Env: ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``.
+    head_of_abm_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Wall clock per Head-of-ABM chat turn, seconds; 0 means no timeout. When set, the agent is
+    # told to wrap up about three minutes before it. Env: ``CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S``.
+    head_of_abm_turn_timeout_s: float = Field(default=0.0, ge=0)
+    # A Head-of-ABM turn or research job still running after this many seconds logs a warning,
+    # flags its Langfuse trace and sends one Sentry warning (when Sentry is installed); 0 turns
+    # the alert off. It never stops the turn. Env: ``CLUE_AGENT_LONG_TURN_ALERT_S``.
+    agent_long_turn_alert_s: float = Field(default=3600.0, ge=0)
 
     # --- ARV2 R3 person agent (master plan §9 R3) ---------------------------------------------
     # Media items ONE person job may read (podcast episodes, conference talks, YouTube

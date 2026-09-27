@@ -718,8 +718,10 @@ def build_conversation_turn_engine(
         artifacts=components.artifacts,
         tools=tools,
         child_runner=child_runner if child_runner is not None else DelegationWithheld(),
-        max_runtime_s=resolved.profile.turn_timeout_s,
-        max_rounds=resolved.profile.max_model_rounds,
+        # Operator settings, not the profile's own numbers (founder ruling 2026-09-27).
+        max_runtime_s=components.head_of_abm_turn_timeout_s,
+        max_rounds=components.head_of_abm_max_model_rounds,
+        long_turn_alert_s=components.agent_long_turn_alert_s,
         surface=surface,
         conn_factory=conn_factory,
     )
