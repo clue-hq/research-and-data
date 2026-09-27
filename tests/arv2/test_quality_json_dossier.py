@@ -15,7 +15,7 @@ from tests.arv2.test_dossier_json import finding
 @pytest.mark.parametrize("person", [False, True])
 def test_current_profiles_own_formation_without_claim_delegation(person):
     registry = quality_tools(None, None, purge=False)
-    resolved = quality_profiles(registry, version=22, person=person).resolve(
+    resolved = quality_profiles(registry, version=CURRENT_RECIPE_VERSION, person=person).resolve(
         AgentRole.ACCOUNT_RESEARCH
     )
     profile = resolved.profile
@@ -26,11 +26,15 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 22
+    assert CURRENT_RECIPE_VERSION == 23
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 22
-    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v22.json"))
+    assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
+    recipe = next(
+        json.loads(r.body)
+        for r in bundle.skills
+        if r.ref.endswith(f"recipe-v{CURRENT_RECIPE_VERSION}.json")
+    )
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
     assert all(
         n + "@1" in allowed

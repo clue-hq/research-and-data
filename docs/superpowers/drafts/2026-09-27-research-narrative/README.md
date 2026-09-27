@@ -1,6 +1,10 @@
 # Research narrative skills — editorial revision
 
-Status: versioned skill drafts prepared from the founder-approved account and contact previews. **Not selected by production profiles.** Current research revision 22 still selects narrative v1. No model, runtime, research, importer, database or frontend behavior is changed by adding these files.
+Status: **Founder-approved skills selected for new research launches in revision 23.** Account/person profiles v23/v23-person select their narrative v2 plus shared editorial v1. The existing v22 system-prompt templates resolve these paths from the selected profile; their wording is unchanged. Historical run pins remain unchanged. This is local catalog integration, not a deployed-service restart or another live research run.
+
+The founder accepted the latest account and both contact previews in `.artifacts/narrative-editorial-round-02-20260927/REVIEW.md`. No further brevity or content rewrite is included in promotion. The trial's dedicated Miscellaneous page sections remain a **separate application integration**: current page recipes do not offer them, so the approved skills' explicit `/work/narrative-review.md` fallback applies. Promotion does not claim the complete trial UI is live.
+
+Sections below retain the design and trial history; statements describing unselected drafts refer to those earlier checkpoints. See the final promotion record for current verification.
 
 ## Exact instructions
 
@@ -8,7 +12,7 @@ Status: versioned skill drafts prepared from the founder-approved account and co
 - [Account narrative v2](../../../../platform/agents/catalog/research-quality/skills/account-research-narrative/v2/SKILL.md): every account section, complete pinned-ICP assessment, timing, practical engagement directions, five-to-six-signal editorial preference, financial relevance and account Miscellaneous.
 - [Person narrative v2](../../../../platform/agents/catalog/research-quality/skills/person-research-narrative/v2/SKILL.md): distinctive person introduction, priorities without invented pain, sourced openers, separate angles, public projects, cautions and person Miscellaneous.
 
-Both entity skills explicitly direct the researcher to read the shared skill through `{{skills.research_narrative_editorial.path}}`. The shared skill is a passive instruction resource, not another agent or model call. A future selected profile must pin all relevant resources and their exact hashes. System-prompt role openings remain untouched.
+Both entity skills explicitly direct the researcher to read the shared skill through `{{skills.research_narrative_editorial.path}}`. The shared skill is a passive instruction resource, not another agent or model call. Revision 23 pins all three relevant resources and their exact hashes. System-prompt role openings remain untouched.
 
 ## Decisions captured
 
@@ -97,3 +101,12 @@ Review completeness by meaning, not count. No schema or profile-loading test can
 - No live-account names, example-specific tools or fixed Clue/Zafran criteria appear in the new skills. Fictional examples are explicitly marked as teaching material, never research evidence.
 - Initial isolated verification failed because macOS's temporary-directory path included a symlink. Resolving the temporary path to its canonical form fixed the harness setup; no production loader restriction was changed.
 - Local loader evidence: `.artifacts/research-narrative-skills-20260927/catalog-verification.json`. No paid calls, workers, application database writes, frontend changes or promotion. Actual generated quality, completeness and latency remain to be tested with saved dossiers.
+
+
+## Revision 23 promotion — 27 September 2026
+
+- Founder accepted the current trial output and approved proceeding with the skills as reviewed. Exact account/person v2 and shared editorial v1 bodies are unchanged from the approved trial snapshots.
+- New profiles v23/v23-person pin the two narrative skills and shared editorial dependency. New recipe/launch revision 23 selects those profiles; new-launch resource loading defaults to revision 23. Existing pinned revisions still resolve their original resources.
+- No system-prompt rewrite: v22/v22-person prompt templates remain selected, with profile-derived narrative paths automatically resolving to v2. Tools, model configuration, research, dossier/claim import, ownership and pipeline behavior remain unchanged.
+- Miscellaneous production recipe/renderer work remains pending. The skill-defined fallback preserves additional findings in the agent workspace and reports the unavailable surface; it is not equivalent to displaying them in the application.
+- Verification includes default launch hashes, both real profile loads, nested shared-skill references, workspace materialization and cold verification, historical pin recovery, unchanged non-editorial profile fields and existing dossier/narrative checks. No paid call or database migration is required for this catalog-only promotion.

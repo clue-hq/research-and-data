@@ -173,3 +173,57 @@ def test_historical_snapshot_keeps_exact_bytes_and_has_no_rendered_metadata():
     )
     with pytest.raises(WorkspaceSecurityError, match="not mounted"):
         replace(snapshot, manifest=manifest, bodies=tuple(bodies))
+
+
+@pytest.mark.parametrize("person", [False, True])
+def test_approved_editorial_promotion_mounts_shared_skill_without_changing_research(
+    tmp_path, person
+):
+    from clue_api.arv2.account_research_catalog import bundle_pin
+    from clue_api.arv2.quality_catalog import load_quality_resources
+
+    tools = quality_tools(None, None, purge=False)
+    previous = quality_profiles(tools, version=22, person=person).resolve(
+        AgentRole.ACCOUNT_RESEARCH
+    )
+    current = quality_profiles(tools, version=23, person=person).resolve(AgentRole.ACCOUNT_RESEARCH)
+    narrative_name = "person-research-narrative" if person else "account-research-narrative"
+    skills = {s.ref.name: s for s in current.skills}
+    assert skills[narrative_name].ref.version == "v2"
+    assert skills["research-narrative-editorial"].ref.version == "v1"
+    assert next(s for s in previous.skills if s.ref.name == narrative_name).ref.version == "v1"
+    assert "research-narrative-editorial" not in {s.ref.name for s in previous.skills}
+    # The promotion is editorial only: preserve prompt template, grants, model and workspace.
+    assert current.profile.model_dump(exclude={"version", "skills"}) == previous.profile.model_dump(
+        exclude={"version", "skills"}
+    )
+    assert current.prompt_body == previous.prompt_body.replace(
+        f"/{narrative_name}/v1/SKILL.md", f"/{narrative_name}/v2/SKILL.md"
+    )
+    for skill in previous.skills:
+        if skill.ref.name != narrative_name:
+            assert skills[skill.ref.name].ref == skill.ref
+    shared_path = "/.deepagent/skills/research-narrative-editorial/v1/SKILL.md"
+    assert shared_path in current.open_skill(skills[narrative_name].ref.address)
+    old_bundle = load_quality_resources("person" if person else "account", version=22)
+    assert (
+        load_quality_resources(
+            "person" if person else "account", expected_pin=bundle_pin(old_bundle)
+        )
+        == old_bundle
+    )
+    harness = make_workspace(
+        tmp_path,
+        active_policy=policy(max_total_bytes=1048576, max_file_bytes=262144, max_file_count=100),
+    )
+    try:
+        materializer = AgentResourceMaterializer()
+        materializer.materialize(lease=harness.lease, snapshot=current.resource_snapshot)
+        materializer.verify_materialized(lease=harness.lease, snapshot=current.resource_snapshot)
+        for skill in current.profile.skills:
+            text = (harness.thread_path / skill.materialized_path).read_text()
+            assert "{{skills." not in text
+            assert current.open_skill(skill.resource.address) in text
+        assert (harness.thread_path / shared_path.lstrip("/")).is_file()
+    finally:
+        harness.close()
