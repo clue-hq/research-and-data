@@ -1,7 +1,7 @@
 """Detached ARV2 research composed through the shared governed Deep Agent runtime.
 
-The fleet owns the parent slot. Awaited specialists run inline, one at a time, through the
-existing delegation journal and C5 recipe executor. No child waits for a second fleet slot.
+The fleet owns the researcher slot. Current researchers own dossier and narrative writing;
+specialist registration and delegation are retained only for historical pinned profiles.
 Source data stays behind revocable DB/object-storage views; task cards carry references only.
 This composition does not enable a launch profile or change an interactive agent's authority.
 """
@@ -247,6 +247,9 @@ def quality_tools(
 def quality_profiles(
     tools: ToolRegistry, root: Path = CATALOG_ROOT, *, version: int = 5, person: bool = False
 ) -> AgentProfileRegistry:
+    # Revision 20 researchers own both claims and narratives. Do not make dormant
+    # specialist profiles available to these runs; preserve older pinned runtimes.
+    active_roles = frozenset({AgentRole.ACCOUNT_RESEARCH}) if version >= 20 else ROLES
     authority = {
         descriptor.address: (
             frozenset({AgentRole.ACCOUNT_RESEARCH})
@@ -296,7 +299,7 @@ def quality_profiles(
         tools=catalog,
         tool_inventory=inventory,
         engine_tool_ceiling=frozenset(authority),
-        required_roles=ROLES,
+        required_roles=active_roles,
         selected_profile_versions={
             role: ("v20-person" if person else "v20")
             if version >= 20 and role == AgentRole.ACCOUNT_RESEARCH
@@ -323,7 +326,7 @@ def quality_profiles(
             else "v6"
             if version >= 7 and (person or role != AgentRole.ACCOUNT_RESEARCH)
             else f"v{version}"
-            for role in ROLES
+            for role in active_roles
         },
     )
 
@@ -866,26 +869,28 @@ class ResearchUnitRuntime:
                 materializer.materialize(
                     lease=lease, snapshot=resolved.resource_snapshot, seed_files=seeds
                 )
-            child = FreshWakeSpecialistRunner(
-                parent_request=request,
-                profiles=self.profiles,
-                models=self.models,
-                turns=self.turns,
-                artifacts=self.artifacts,
-                tools=self.tools,
-                contexts=self.contexts,
-                workspaces=_Workspaces(self.workspaces, self.artifacts),
-                execution_factory=_ChildFactory(self),
-                spend=self,
-                executions=_ChildExecutions(self),
-                bindings=self.bindings,
-                conn_factory=self.connections,
-            )
-            delegation = DbAgentDelegationRuntime(
-                registry=self.profiles,
-                child_runner=_InlineChild(self, child),
-                conn_factory=self.connections,
-            )
+            delegation = None
+            if resolved.profile.delegation_roles:
+                child = FreshWakeSpecialistRunner(
+                    parent_request=request,
+                    profiles=self.profiles,
+                    models=self.models,
+                    turns=self.turns,
+                    artifacts=self.artifacts,
+                    tools=self.tools,
+                    contexts=self.contexts,
+                    workspaces=_Workspaces(self.workspaces, self.artifacts),
+                    execution_factory=_ChildFactory(self),
+                    spend=self,
+                    executions=_ChildExecutions(self),
+                    bindings=self.bindings,
+                    conn_factory=self.connections,
+                )
+                delegation = DbAgentDelegationRuntime(
+                    registry=self.profiles,
+                    child_runner=_InlineChild(self, child),
+                    conn_factory=self.connections,
+                )
             adapter = self.adapter(request, resolved, delegation, spill_sink=lease.backend)
             adapter.bind_finalization_authority(
                 AgentFinalizationAuthority(

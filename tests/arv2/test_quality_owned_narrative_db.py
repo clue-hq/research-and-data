@@ -244,7 +244,9 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
 
 
 @pytest.mark.parametrize("person", [False, True])
-def test_native_researcher_writes_pages_without_specialist_and_replays(tmp_path, person):
+def test_native_researcher_writes_pages_without_specialist_and_replays(
+    tmp_path, monkeypatch, person
+):
     import asyncio
     from contextlib import asynccontextmanager
 
@@ -262,6 +264,14 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(tmp_path,
     from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
     from clue_config import load_settings
     from tests.arv2.test_quality_runtime_db import call as model_call
+
+    def unexpected_specialist_runtime(*args, **kwargs):
+        pytest.fail("Current research must not construct specialist or delegation runtimes")
+
+    for constructor in ("FreshWakeSpecialistRunner", "DbAgentDelegationRuntime"):
+        monkeypatch.setattr(
+            f"clue_api.quality_research_wiring.{constructor}", unexpected_specialist_runtime
+        )
 
     async def case():
         async with rollback_conn() as conn:

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from clue_agents import AgentRole
+from clue_agents import AgentCatalogError, AgentRole
 from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION, load_quality_resources
 from clue_api.arv2.quality_owned_narrative import NarrativeSentence, finding_map, resolve_sentence
 from clue_api.quality_research_wiring import quality_profiles, quality_tools
@@ -37,8 +37,14 @@ def test_same_finding_name_resolves_separately_and_preserves_exact_text():
 @pytest.mark.parametrize("person", [False, True])
 def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(person):
     tools = quality_tools(None, None, purge=False)
-    new = quality_profiles(tools, version=20, person=person).resolve(AgentRole.ACCOUNT_RESEARCH)
-    old = quality_profiles(tools, version=19, person=person).resolve(AgentRole.ACCOUNT_RESEARCH)
+    current = quality_profiles(tools, version=20, person=person)
+    historical = quality_profiles(tools, version=19, person=person)
+    new = current.resolve(AgentRole.ACCOUNT_RESEARCH)
+    old = historical.resolve(AgentRole.ACCOUNT_RESEARCH)
+    for specialist in (AgentRole.RESEARCH_CLAIMS, AgentRole.RESEARCH_NARRATIVE):
+        with pytest.raises(AgentCatalogError, match="has no active profile"):
+            current.resolve(specialist)
+        historical.resolve(specialist)
     assert not new.profile.delegation_roles
     assert AgentRole.RESEARCH_NARRATIVE in old.profile.delegation_roles
     names = {t.name for t in new.profile.tools}
