@@ -7,7 +7,7 @@ different shape from :mod:`clue_api.arv2.exa_client`'s synchronous calls, and th
 why this is its own client rather than four more methods there: a webset is created, polled and
 *then* read, and only the read is billed.
 
-Three rules this module exists to keep:
+Four rules this module exists to keep:
 
 * **The bill is read on the items page, not guessed at creation.** Websets charges ten credits
   per *all-green* result — a row whose every criterion was satisfied. :func:`websets_items_cost`
@@ -15,9 +15,12 @@ Three rules this module exists to keep:
   cost — **once per row per run**: a webset is read again on every resume and again after a
   widening search, and every read returns every row, so the caller carries the ids it has already
   been charged for (:func:`newly_priced`). Creation reserves the worst case (``count`` × ten
-  credits) as a law-2 pre-spend estimate and records a **zero** cost, because recording the
-  reservation as spend too would double-count every match: once when the search was asked for,
-  once when its results were read.
+  credits) as a law-2 pre-spend estimate and records only the recall estimate's own five credits
+  as its cost, because recording the reservation as spend too would double-count every match:
+  once when the search was asked for, once when its results were read.
+* **Exa bills a row when it finds it, not when we read it.** A run that stops reading before its
+  webset is ``idle`` must :meth:`ExaWebsetsClient.cancel` it and read it once more, or Exa keeps
+  finding — and charging for — companies the ledger never sees.
 * **A GET carries no body.** ``json_request(..., json_body=None)`` would serialise the literal
   ``null`` onto the wire; the read paths build their :class:`~clue_api.arv2.transport.HttpRequest`
   directly instead.
@@ -59,6 +62,9 @@ WEBSETS_BASE_PATH = "/websets/v0/websets"
 #: failed a criterion are returned and are **not** charged.
 CREDITS_PER_MATCH = 10
 
+#: Websets' price for the recall estimate a search is created with (``recall: true``), per search.
+RECALL_CREDITS = 5
+
 #: The items endpoint's page size. 100 is its documented maximum, and a webset the lane creates
 #: asks for tens of results, so this is normally one page.
 ITEMS_PAGE_LIMIT = 100
@@ -76,22 +82,13 @@ WEBSETS_TIMEOUT_S = 60.0
 #: biggest and the slowest body this client reads.
 ITEMS_TIMEOUT_S = 180.0
 
-#: Keys Exa has used, or may yet use, for its recall estimate on a search. The estimate is newer
-#: than any response shape recorded in ``.context/arv2-websets-experiment`` (where it comes back
-#: ``null``), so it is looked for by name rather than at one pinned path — see
-#: :func:`_recall_estimate`.
-RECALL_KEYS: tuple[str, ...] = ("recall", "recallEstimate", "estimate")
-
-#: How deep :func:`_recall_estimate` follows recall-named keys into each other.
-_RECALL_MAX_DEPTH = 3
-
 __all__ = [
     "CREDITS_PER_MATCH",
     "ITEMS_PAGE_LIMIT",
     "ITEMS_TIMEOUT_S",
     "MAX_ITEM_PAGES",
     "PROVIDER",
-    "RECALL_KEYS",
+    "RECALL_CREDITS",
     "WEBSETS_BASE_PATH",
     "WEBSETS_TIMEOUT_S",
     "ExaWebsetsClient",
@@ -224,26 +221,16 @@ def _float(value: object) -> float | None:
     return float(value) if isinstance(value, int | float) else None
 
 
-def _recall_estimate(node: object, *, depth: int = 0) -> int | None:
-    """The recall estimate Exa reported on a search, wherever it put it.
+def _recall_estimate(search: Mapping[str, Any]) -> int | None:
+    """Exa's estimate of how many companies in total match this search: ``recall.expected.total``.
 
-    Read defensively on purpose: the estimate is documented but every response recorded from the
-    live API carries ``"recall": null``, so its populated shape (a bare integer? an object with
-    an ``estimate``?) is not something this module can pin without inventing it. Only keys named
-    in :data:`RECALL_KEYS` are followed, and only three levels deep, so this can never wander off
-    into an unrelated number elsewhere in the search object.
+    ``recall`` is ``null`` until Exa has computed it and absent when the search did not ask for
+    it; both read as ``None``. Recorded from the live API (webset of run ``f1549f76``,
+    2026-09-16): ``{"expected": {"total": 300, "confidence": "medium", "bounds": {"min": 160,
+    "max": 650}}, "reasoning": "..."}``.
     """
-    if depth > _RECALL_MAX_DEPTH or not isinstance(node, Mapping):
-        return None
-    for key in RECALL_KEYS:
-        value = node.get(key)
-        found = _int(value)
-        if found is not None:
-            return found
-        nested = _recall_estimate(value, depth=depth + 1)
-        if nested is not None:
-            return nested
-    return None
+    expected = _mapping(_mapping(search.get("recall")).get("expected"))
+    return _int(expected.get("total"))
 
 
 def _search_view(search: Mapping[str, Any]) -> WebsetSearchView:
@@ -411,8 +398,28 @@ def _items_cost_reader(
     return read
 
 
+def _create_cost_reader(
+    usd_per_credit: Decimal, *, recall: bool
+) -> Callable[[HttpResponse], CostReading]:
+    """The cost of creating a webset: the recall estimate's credits when it was asked for.
+
+    Only a webset Exa actually created is charged — a refused create sold nothing.
+    """
+
+    def read(response: HttpResponse) -> CostReading:
+        if not recall or not 200 <= response.status < 300:
+            return _zero_cost_reader(response)
+        return CostReading(
+            cost_usd=Decimal(RECALL_CREDITS) * usd_per_credit,
+            credits=Decimal(RECALL_CREDITS),
+            extras={"recall_credits": RECALL_CREDITS},
+        )
+
+    return read
+
+
 def _zero_cost_reader(response: HttpResponse) -> CostReading:
-    """Creating, reading or extending a webset is free; only its results are charged.
+    """Reading, extending or cancelling a webset is free; only its results are charged.
 
     A reader that returns an explicit zero rather than no reader at all is the difference between
     "this call cost nothing" and "we never asked" — and, crucially, it stops the wrapper falling
@@ -451,7 +458,7 @@ def websets_halt_rule(response: HttpResponse) -> str | None:
 
 
 class ExaWebsetsClient:
-    """Websets' four operations, each one :class:`CallSpec` through the caller it was given."""
+    """Websets' five operations, each one :class:`CallSpec` through the caller it was given."""
 
     def __init__(
         self,
@@ -488,20 +495,45 @@ class ExaWebsetsClient:
             "criteria": [{"description": description} for description in criteria],
         }
         if recall:
-            # Absent unless asked for: ``recall`` makes Exa estimate how much of the addressable
-            # universe this search reached, and it is a request the caller opts into.
+            # Absent unless asked for: ``recall`` makes Exa estimate how many companies match the
+            # search in total, and it costs :data:`RECALL_CREDITS`, so the caller opts into it.
             search["recall"] = True
+        estimate = self._search_estimate(count)
+        if recall:
+            recall_credits = Decimal(RECALL_CREDITS)
+            estimate = SpendEstimate(
+                usd=estimate.usd + recall_credits * self._usd_per_credit,
+                credits=estimate.credits + recall_credits,
+            )
         result = self._call(
             operation="create",
             label="websets-create",
             method="POST",
             path=WEBSETS_BASE_PATH,
             body={"title": title, "externalId": external_id, "search": search},
-            estimate=self._search_estimate(count),
-            cost_reader=_zero_cost_reader,
+            estimate=estimate,
+            cost_reader=_create_cost_reader(self._usd_per_credit, recall=recall),
             timeout_s=WEBSETS_TIMEOUT_S,
         )
         return _webset_view(result)
+
+    def cancel(self, webset_id: str) -> WebsetView:
+        """Stop every search still running on a webset. Free; Exa marks the webset ``idle``.
+
+        What Exa had already found before the cancel is still billed, so the caller reads the
+        webset once more afterwards to put those rows on the ledger.
+        """
+        result = self._call(
+            operation="cancel",
+            label="websets-cancel",
+            method="POST",
+            path=f"{WEBSETS_BASE_PATH}/{webset_id}/cancel",
+            body=None,
+            estimate=SpendEstimate(),
+            cost_reader=_zero_cost_reader,
+            timeout_s=WEBSETS_TIMEOUT_S,
+        )
+        return _webset_view(result, fallback_id=webset_id)
 
     def get(self, webset_id: str) -> WebsetView:
         """Read a webset's current state — the poll surface, free and body-less."""

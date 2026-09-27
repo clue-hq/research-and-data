@@ -577,8 +577,21 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
     Stateless on purpose: a reader reports what it read by returning it. A body that is not JSON,
     or carries no ``costDollars`` at all, yields an empty reading — "Exa did not tell us" is a
     real answer and the wrapper records it as such, never as zero.
+
+    The exception is a 4xx. Exa refused the request before doing any work — out of credits, a key
+    it does not accept, a body it could not validate — so nothing was sold, and the reading says
+    so with an explicit zero. Left empty, the wrapper would fall back to the estimate and record a
+    charge that never happened (seven refused Answer calls at a cent each on run ``ee79d837``).
+    A 5xx keeps the empty reading: whether a failed call did billable work is not something this
+    module can know.
     """
     body = _body_json(response)
+    if 400 <= response.status < 500:
+        request_id = body.get("requestId")
+        return CostReading(
+            cost_usd=Decimal(0),
+            provider_request_id=request_id if isinstance(request_id, str) else None,
+        )
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     request_id = body.get("requestId")

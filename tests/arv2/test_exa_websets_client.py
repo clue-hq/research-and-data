@@ -21,6 +21,7 @@ from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_websets_client import (
     CREDITS_PER_MATCH,
+    RECALL_CREDITS,
     WEBSETS_BASE_PATH,
     ExaWebsetsClient,
     websets_halt_rule,
@@ -143,28 +144,67 @@ def test_create_posts_company_entity_criteria_and_recall() -> None:
     assert transport.requests[0].url.endswith(WEBSETS_BASE_PATH)
 
 
-def test_create_reserves_ten_credits_per_requested_result_and_records_no_cost_of_its_own() -> None:
-    """Law 2's reservation is the whole webset; the bill itself is read on the items page.
-
-    Recording the estimate as spend here as well would double-count every match — once when the
-    search was asked for and once when its results were read.
-    """
+def _ledgered_client(responses: list[HttpResponse]) -> tuple[ExaWebsetsClient, BufferedLedger]:
     ledger = BufferedLedger()
-    transport = ScriptedTransport([_response({"id": "webset_1", "status": "running"})])
     caller = ProviderCaller(
-        transport=transport,
+        transport=ScriptedTransport(list(responses)),
         raw_sink=BufferedRawSink(),
         ledger=ledger,
         now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
     )
-    client = ExaWebsetsClient(caller, SecretStr("k"), usd_per_credit=USD_PER_CREDIT)
+    return ExaWebsetsClient(caller, SecretStr("k"), usd_per_credit=USD_PER_CREDIT), ledger
+
+
+def test_create_reserves_the_whole_webset_and_records_only_the_recall_estimate_as_its_cost() -> (
+    None
+):
+    """Law 2's reservation is the whole webset; the bill for its results is read on the items page.
+
+    Recording the reservation as spend here as well would double-count every match — once when the
+    search was asked for and once when its results were read. The recall estimate is different:
+    Exa charges five credits for it when the search is created, and no later read shows it.
+    """
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "running"})])
 
     client.create(query="ICP", count=25, criteria=["US"], external_id="run-1", title="t")
 
     rows = ledger.drain()
     assert [row.phase for row in rows] == ["estimate", "result"]
+    assert rows[0].estimate_usd == Decimal(25 * CREDITS_PER_MATCH + RECALL_CREDITS) * USD_PER_CREDIT
+    assert rows[1].cost_usd == Decimal(RECALL_CREDITS) * USD_PER_CREDIT
+    assert rows[1].credits == Decimal(RECALL_CREDITS)
+
+
+def test_create_without_a_recall_estimate_records_no_cost_of_its_own() -> None:
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "running"})])
+
+    client.create(
+        query="ICP", count=25, criteria=["US"], external_id="run-1", title="t", recall=False
+    )
+
+    rows = ledger.drain()
     assert rows[0].estimate_usd == Decimal(25 * CREDITS_PER_MATCH) * USD_PER_CREDIT
     assert rows[1].cost_usd == Decimal(0)
+
+
+def test_cancel_posts_without_a_body_costs_nothing_and_reads_the_idle_webset() -> None:
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "idle"})])
+
+    view = client.cancel("webset_1")
+
+    rows = ledger.drain()
+    assert rows[1].cost_usd == Decimal(0)
+    assert view.webset_id == "webset_1" and view.status == "idle"
+
+
+def test_cancel_goes_to_the_webset_cancel_path() -> None:
+    client, transport = _client([_response({"id": "webset_1", "status": "idle"})])
+
+    client.cancel("webset_1")
+
+    request = transport.requests[0]
+    assert request.method == "POST" and request.body is None
+    assert request.url.endswith(f"{WEBSETS_BASE_PATH}/webset_1/cancel")
 
 
 def test_recall_is_absent_from_the_wire_when_it_was_not_asked_for() -> None:
@@ -212,8 +252,8 @@ def test_get_sends_no_body_and_reads_the_search_progress() -> None:
     assert search.criteria_success_rates == (("US", 83.39), ("Series A", 8.31))
 
 
-def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
-    """The estimate is newer than any shape we recorded, so it is read defensively."""
+def test_the_recall_estimate_is_the_expected_total_exa_reports() -> None:
+    """The shape recorded from the live API on run ``f1549f76`` (2026-09-16)."""
     client, _ = _client(
         [
             _response(
@@ -221,13 +261,20 @@ def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
                     "id": "webset_1",
                     "status": "idle",
                     "searches": [
-                        {"id": "ws_1", "status": "completed", "count": 35, "recall": 1200},
                         {
-                            "id": "ws_2",
+                            "id": "ws_1",
                             "status": "completed",
                             "count": 35,
-                            "recall": {"estimate": 480, "confidence": "medium"},
+                            "recall": {
+                                "expected": {
+                                    "total": 300,
+                                    "confidence": "medium",
+                                    "bounds": {"min": 160, "max": 650},
+                                },
+                                "reasoning": "We estimated the number of U.S. GI practices...",
+                            },
                         },
+                        {"id": "ws_2", "status": "running", "count": 35},
                     ],
                 }
             )
@@ -236,7 +283,8 @@ def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
 
     view = client.get("webset_1")
 
-    assert [search.recall_estimate for search in view.searches] == [1200, 480]
+    # A search that did not ask for the estimate, or whose estimate is not computed yet, has none.
+    assert [search.recall_estimate for search in view.searches] == [300, None]
 
 
 # -- the items page -----------------------------------------------------------------------------

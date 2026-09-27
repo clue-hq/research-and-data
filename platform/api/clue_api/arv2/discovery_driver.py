@@ -222,6 +222,13 @@ class _RunState:
     #: which is nobody's owner and no FK target, so it is resolved once here rather than trusted.
     owner_user_id: str | None = None
     webset_id: str | None = None
+    #: The webset's status as Exa last reported it. Anything but ``idle`` means Exa may still be
+    #: finding — and charging for — companies, which is what :meth:`_stop_webset` is for.
+    webset_status: str | None = None
+    #: This run cancelled its webset because it stopped reading before Exa was done, and how many
+    #: rows the read after the cancel put on the ledger that no earlier read had.
+    webset_stopped: bool = False
+    rows_priced_at_stop: int = 0
     strict_search_id: str | None = None
     #: Set once the widening search has been bought — the relaxed pass then READS it rather than
     #: buying a second one (which would exclude only the strict search and re-charge for the first
@@ -360,6 +367,12 @@ class Arv2DiscoveryWorkHandler:
                 reason=halted.reason_code,
             )
             status, failure = "needs_review", (PROVIDER_HALTED, str(halted))
+        except Exception:
+            # ``handle`` contains this and lands the run; the webset must stop first.
+            await self._stop_webset(state)
+            raise
+        if failure is not None:
+            await self._stop_webset(state)
         if status == "completed" and state.candidate_failures:
             # Every other candidate landed and every counter is kept; the run still asks for a
             # human, because a company that was on the list and has no verdict is not a finished
@@ -554,11 +567,7 @@ class Arv2DiscoveryWorkHandler:
 
         async def _tick(final: bool) -> None:
             items = await self._read_items(state, webset_id)
-            # What the list HOLDS, not what this attempt happened to verify — and monotonic, so a
-            # tick that lists fewer rows than the one before it cannot walk a counter backwards.
-            strict = [item for item in items if self._is_strict_item(state, item)]
-            state.found_strict = max(state.found_strict, len(strict))
-            state.found_relaxed = max(state.found_relaxed, len(items) - len(strict))
+            self._count_found(state, items)
             for item in items:
                 domain = registrable_domain(item.url) or ""
                 if item.item_id in state.claimed:
@@ -633,8 +642,56 @@ class Arv2DiscoveryWorkHandler:
         await asyncio.gather(*tasks)
         tasks.clear()
 
+    def _count_found(self, state: _RunState, items: Sequence[WebsetItem]) -> None:
+        """What the list HOLDS, not what this attempt happened to verify — and monotonic, so a read
+        that lists fewer rows than the one before it cannot walk a counter backwards."""
+        strict = [item for item in items if self._is_strict_item(state, item)]
+        state.found_strict = max(state.found_strict, len(strict))
+        state.found_relaxed = max(state.found_relaxed, len(items) - len(strict))
+
+    async def _stop_webset(self, state: _RunState) -> None:
+        """Cancel a webset this run stopped reading before Exa was done, then read it once more.
+
+        Exa charges for a company when it finds it; the ledger prices a company when this run
+        reads it. A run that ends early — a provider halt, the wall clock, an uncontained error —
+        would otherwise leave its webset finding (and billing) up to ``count`` companies nobody
+        ever reads: run ``ee79d837`` stopped at 7 of 35 and Exa went on to find all 35. The cancel
+        stops the finding; the read puts on the ledger every row Exa had already found.
+
+        A webset already ``idle`` has nothing to stop, and its last read priced every row. A
+        suspended run is not stopped either: its resume reads the same webset. Never raises — the
+        run is already ending, and a failure here is logged rather than replacing its reason.
+        """
+        if state.webset_id is None or state.webset_status == "idle":
+            return
+        webset_id = state.webset_id
+        try:
+            view = await self._hop(
+                state, lambda caller: self._clients.websets(caller).cancel(webset_id)
+            )
+            state.webset_status = view.status
+            state.webset_stopped = True
+        except Exception:  # noqa: BLE001 — the run's own failure stays the reason on its receipt
+            log.exception("arv2.discovery_webset_cancel_failed", run_id=str(state.run.run_id))
+        try:
+            already = len(state.priced_item_ids)
+            items = await self._read_items(state, webset_id)
+            state.rows_priced_at_stop += len(state.priced_item_ids) - already
+            self._count_found(state, items)
+        except Exception:  # noqa: BLE001 — as above
+            log.exception("arv2.discovery_webset_final_read_failed", run_id=str(state.run.run_id))
+        log.info(
+            "arv2.discovery_webset_stopped",
+            run_id=str(state.run.run_id),
+            webset_id=webset_id,
+            cancelled=state.webset_stopped,
+            rows_priced_at_stop=state.rows_priced_at_stop,
+        )
+
     def _read_searches(self, state: _RunState, view: WebsetView) -> None:
-        """Keep the strict search's id, rates and counters from the view that last reported them."""
+        """Keep the webset's status, and the strict search's id, rates and counters, from the view
+        that last reported them."""
+        state.webset_status = view.status
         if not view.searches:
             return
         strict = _strict_search(view, state.strict_search_id)
@@ -1086,6 +1143,8 @@ class Arv2DiscoveryWorkHandler:
                 exclude_search_ids=[strict_search_id],
             ),
         )
+        # The webset is searching again, so it is no longer ``idle`` until a poll says it is.
+        state.webset_status = view.status
         relaxed_search_id = _relaxed_search_id(view, strict_search_id)
         if relaxed_search_id is None:
             # The purchase happened; only its id is missing, so the read below still runs. What is
@@ -1126,6 +1185,10 @@ class Arv2DiscoveryWorkHandler:
             # States the assumption behind the number above: a webset row is priced once per run,
             # not once per read, so a resumed or widened run does not over-report its own spend.
             "credits_priced_once": True,
+            # The run ended before its webset did, so it cancelled it (see ``_stop_webset``), and
+            # this many rows reached the ledger only through the read after the cancel.
+            "webset_stopped": state.webset_stopped,
+            "rows_priced_at_stop": state.rows_priced_at_stop,
             "duplicates": state.duplicates,
             "not_chosen_before": state.not_chosen_before,
             "unresolvable_domain": state.unresolvable,

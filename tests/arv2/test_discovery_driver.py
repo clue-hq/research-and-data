@@ -369,12 +369,16 @@ class _FakeWebsets:
         items_results: Sequence[WebsetItemsResult] = (),
         add_search_view: WebsetView | None = None,
         create_error: Exception | None = None,
+        items_after_cancel: WebsetItemsResult | None = None,
     ) -> None:
         self._create_view = create_view or _view(status="running")
         self._get_views = list(get_views) or [_view()]
         self._items = list(items_results) or [_items()]
         self._add_search_view = add_search_view
         self._create_error = create_error
+        #: What Exa holds once the webset is cancelled — the rows it found after the run stopped
+        #: reading, which only the read after the cancel can put on the ledger.
+        self._items_after_cancel = items_after_cancel
         self.calls: list[tuple[str, dict[str, Any]]] = []
         #: What each ``items`` read actually priced, in order — the fake's money trail.
         self.returned_items: list[WebsetItemsResult] = []
@@ -398,9 +402,12 @@ class _FakeWebsets:
         self.calls.append(
             ("items", {"webset_id": webset_id, "priced_item_ids": frozenset(priced_item_ids)})
         )
-        result = self._items[0]
-        if len(self._items) > 1:
-            self._items.pop(0)
+        if self._items_after_cancel is not None and self.named("cancel"):
+            result = self._items_after_cancel
+        else:
+            result = self._items[0]
+            if len(self._items) > 1:
+                self._items.pop(0)
         repriced = _repriced(result, frozenset(priced_item_ids))
         self.returned_items.append(repriced)
         return repriced
@@ -410,6 +417,10 @@ class _FakeWebsets:
         if self._add_search_view is None:
             raise AssertionError("add_search was not scripted for this test")
         return self._add_search_view
+
+    def cancel(self, webset_id: str) -> WebsetView:
+        self.calls.append(("cancel", {"webset_id": webset_id}))
+        return _view(webset_id=webset_id, status="idle")
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for call, payload in self.calls if call == name]
@@ -1038,6 +1049,86 @@ def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
     finished = store.named("finish_discovery_run")[0]
     assert finished["status"] == "needs_review"
     assert finished["receipt"]["failure"] == "webset_wall_exceeded"
+
+
+def test_a_run_out_of_time_cancels_its_webset_and_prices_what_exa_had_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exa bills a company when it finds it, the ledger when the run reads it. A webset left
+    running after the run gave up would go on finding — and billing — companies nobody reads."""
+    run = _run_row()
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        get_views=[_view(status="running")],
+        items_after_cancel=_items(
+            _item("Acme", "https://acme.com"), _item("Globex", "https://globex.com")
+        ),
+    )
+    handler, _, _, _, _ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_wall_s=60),
+        clock=_clock(step_s=45.0),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("cancel") == [{"webset_id": "ws-1"}]
+    order = [name for name, _ in websets.calls]
+    assert order[-2:] == ["cancel", "items"]
+    # The read after the cancel is the one that put both rows on the ledger.
+    assert websets.returned_items[-1].priced_item_ids == ("itm-acme", "itm-globex")
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["failure"] == "webset_wall_exceeded"
+    assert finished["receipt"]["webset_stopped"] is True
+    assert finished["receipt"]["rows_priced_at_stop"] == 2
+    assert finished["found_strict"] == 2
+    # Found and paid for, never verified: no gate was asked about either company.
+    assert exa.gate_queries() == []
+
+
+def test_a_halt_while_the_webset_is_still_running_cancels_it_before_the_run_lands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run ``ee79d837``: Exa Answer ran out of credit after 7 companies and the webset went on to
+    find all 35. The halt now stops the webset, and the rows found after it reach the ledger."""
+    run = _run_row()
+    store = _Store(run)
+
+    def out_of_credit(query: str) -> ExaAnswerResult:
+        raise ProviderHalted("exa", "payment_required", http_status=402)
+
+    exa = _FakeExa(out_of_credit)
+    acme = _item("Acme", "https://acme.com")
+    websets = _FakeWebsets(
+        get_views=[_view(status="running")],
+        items_results=[_items(acme)],
+        items_after_cancel=_items(
+            acme, _item("Globex", "https://globex.com"), _item("Initech", "https://initech.com")
+        ),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+    drain = _WatchingDrain(events=store.events)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    assert len(websets.named("cancel")) == 1
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["failure"] == "provider_halted"
+    assert finished["receipt"]["webset_stopped"] is True
+    # Acme was priced on the first read; Globex and Initech only by the read after the cancel.
+    assert finished["receipt"]["rows_priced_at_stop"] == 2
+    assert finished["found_strict"] == 3
+    # Every drain, the cancel and the last read included, lands before the receipt does.
+    order = [name for name, _ in store.events]
+    assert order.index("finish_discovery_run") > max(
+        index for index, name in enumerate(order) if name == "drain"
+    )
 
 
 def test_a_provider_failure_is_contained_as_needs_review_and_the_ledger_is_still_drained(
@@ -2008,6 +2099,9 @@ def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
     # — those five, plus the webset's create/poll/read — drained.
     assert len(exa.queries) == 5
     assert len(drain.stamps) == len(websets.calls) + len(exa.queries)
+    # The webset had already gone idle and its last read priced every row: nothing to cancel.
+    assert websets.named("cancel") == []
+    assert finished["receipt"]["webset_stopped"] is False
     # And every drain is recorded before the run is landed — no money arrives after the receipt.
     order = [name for name, _ in store.events]
     assert order.index("finish_discovery_run") > max(
