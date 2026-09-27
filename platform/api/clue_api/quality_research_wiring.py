@@ -106,6 +106,10 @@ from clue_api.arv2.quality_json_dossier import (
 from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_media_tool import SubmitTranscriptClaimTool
 from clue_api.arv2.quality_narrative import SubmitValueNarrativeTool
+from clue_api.arv2.quality_owned_narrative import (
+    ReadNarrativeInputsTool,
+    WriteResearchNarrativeTool,
+)
 from clue_api.arv2.quality_page_tools import (
     PublishAdvisoryResearchPageTool,
     PublishResearchPageTool,
@@ -215,6 +219,8 @@ def quality_tools(
         NominateWebCommitteeTool,
         SubmitValueNarrativeTool,
         ReadPageInputsTool,
+        ReadNarrativeInputsTool,
+        WriteResearchNarrativeTool,
         PublishResearchPageTool,
         RecordResearchFindingTool,
         RecordPathResearchFindingTool,
@@ -254,6 +260,8 @@ def quality_profiles(
                 "save_dossier_section",
                 "validate_dossier",
                 "finish_dossier",
+                "read_narrative_inputs",
+                "write_research_narrative",
             }
             else frozenset({AgentRole.RESEARCH_NARRATIVE})
             if descriptor.name in {"submit_value_narrative", "publish_research_page"}
@@ -290,7 +298,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=ROLES,
         selected_profile_versions={
-            role: ("v19-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v19")
+            role: ("v20-person" if person else "v20")
+            if version >= 20 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v19-person" if person and role == AgentRole.ACCOUNT_RESEARCH else "v19")
             if version >= 19
             else ("v17-person" if person else "v17")
             if version >= 17 and role == AgentRole.ACCOUNT_RESEARCH

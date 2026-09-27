@@ -488,7 +488,18 @@ async def read_page(
             section["empty"] = not section["intro"] and not section["items"]
             section["gaps"] = stored.body_json.get("gaps", [])
         section["pending"] = stored is None or section["key"] in stale
-    missing = {r.section_key for r in recipes} - live.keys()
+    shared_ready: set[str] = set()
+    shared_cited: list[str] = []
+    from clue_api.arv2.quality_owned_narrative import owns_narrative
+
+    if owns_narrative(scope) and page == "insights" and not scope.person_subject_id:
+        from clue_api.arv2.quality_shared_narrative import shared_sections
+
+        shared_ready, shared_stale, shared_cited = await shared_sections(
+            conn, scope, context_id, inputs.generation.generation_id, block
+        )
+        stale.extend(sorted(shared_stale))
+    missing = {r.section_key for r in recipes} - live.keys() - shared_ready
     state = inputs.generation.state
     quality = {
         "projectId": scope.project_id,
@@ -530,7 +541,13 @@ async def read_page(
         "display_block": block,
         "research_quality": quality,
         "cited_claim_ids": tuple(
-            dict.fromkeys([*(id for b in live.values() for id in b.cited_claim_ids), *finding_ids])
+            dict.fromkeys(
+                [
+                    *(id for b in live.values() for id in b.cited_claim_ids),
+                    *shared_cited,
+                    *finding_ids,
+                ]
+            )
         ),
         "stale": tuple(stale),
         "pending": tuple(sorted(missing)),

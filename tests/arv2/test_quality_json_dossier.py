@@ -16,7 +16,7 @@ from tests.arv2.test_dossier_json import finding
 def test_current_profiles_own_formation_without_claim_delegation(person):
     registry = quality_tools(None, None, purge=False)
     profile = (
-        quality_profiles(registry, version=17, person=person)
+        quality_profiles(registry, version=20, person=person)
         .resolve(AgentRole.ACCOUNT_RESEARCH)
         .profile
     )
@@ -25,13 +25,13 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert {"begin_dossier_revision", "discard_dossier_revision"} <= names
     assert "record_research_finding" not in names
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
-    assert AgentRole.RESEARCH_NARRATIVE in profile.delegation_roles
+    assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 19
+    assert CURRENT_RECIPE_VERSION == 20
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 19
-    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v19.json"))
+    assert manifest["recipe_version"] == 20
+    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v20.json"))
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
     assert all(
         n + "@1" in allowed
