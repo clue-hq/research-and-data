@@ -37,7 +37,7 @@ def test_same_finding_name_resolves_separately_and_preserves_exact_text():
 @pytest.mark.parametrize("person", [False, True])
 def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(person):
     tools = quality_tools(None, None, purge=False)
-    current = quality_profiles(tools, version=20, person=person)
+    current = quality_profiles(tools, version=21, person=person)
     historical = quality_profiles(tools, version=19, person=person)
     new = current.resolve(AgentRole.ACCOUNT_RESEARCH)
     old = historical.resolve(AgentRole.ACCOUNT_RESEARCH)
@@ -51,8 +51,8 @@ def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(per
     assert {"finish_dossier", "read_narrative_inputs", "write_research_narrative"} <= names
     assert "record_research_finding" not in names
     assert "publish_research_page" not in names
-    assert CURRENT_RECIPE_VERSION == 20
+    assert CURRENT_RECIPE_VERSION == 21
     manifest = json.loads(load_quality_resources("person" if person else "account").profile.body)
-    assert manifest["recipe_version"] == 20
-    for version in range(2, 21):
+    assert manifest["recipe_version"] == 21
+    for version in range(2, 22):
         load_quality_resources("account", version=version)

@@ -33,6 +33,7 @@ from clue_agents.resources import (
     AgentResourceSnapshot,
     ResourceBody,
     build_agent_resource_manifest,
+    render_skill_references,
 )
 
 __all__ = [
@@ -233,7 +234,7 @@ class ResolvedAgentProfile:
 
         for skill in self.skills:
             if skill.ref.address == address:
-                return skill.body
+                return render_skill_references(skill.body, self.resource_manifest.skills)
         raise AgentCatalogError(f"skill {address!r} is not disclosed by this profile")
 
     @property
@@ -666,7 +667,7 @@ class AgentProfileRegistry:
         return ResolvedAgentProfile(
             profile=profile,
             profile_ref=resource.ref,
-            prompt_body=prompt.body,
+            prompt_body=render_skill_references(prompt.body, manifest.skills),
             resource_manifest=manifest,
             resource_snapshot=snapshot,
             memory_policy=definition.memory_policy,

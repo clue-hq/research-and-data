@@ -15,11 +15,10 @@ from tests.arv2.test_dossier_json import finding
 @pytest.mark.parametrize("person", [False, True])
 def test_current_profiles_own_formation_without_claim_delegation(person):
     registry = quality_tools(None, None, purge=False)
-    profile = (
-        quality_profiles(registry, version=20, person=person)
-        .resolve(AgentRole.ACCOUNT_RESEARCH)
-        .profile
+    resolved = quality_profiles(registry, version=21, person=person).resolve(
+        AgentRole.ACCOUNT_RESEARCH
     )
+    profile = resolved.profile
     names = {t.name for t in profile.tools}
     assert {"save_dossier_section", "validate_dossier", "finish_dossier"} <= names
     assert {"begin_dossier_revision", "discard_dossier_revision"} <= names
@@ -27,11 +26,11 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 20
+    assert CURRENT_RECIPE_VERSION == 21
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 20
-    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v20.json"))
+    assert manifest["recipe_version"] == 21
+    recipe = next(json.loads(r.body) for r in bundle.skills if r.ref.endswith("recipe-v21.json"))
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
     assert all(
         n + "@1" in allowed
@@ -45,7 +44,10 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     )
     # All explicitly named skill paths must be mounted by the selected profile.
     mounted = {skill.materialized_path.removeprefix(".deepagent/") for skill in profile.skills}
-    resources = {r.ref.removeprefix("research-quality:"): r.body for r in bundle.skills}
+    resources = {
+        path.removeprefix(".deepagent/"): content.decode()
+        for path, content in resolved.resource_snapshot.materialized_entries()
+    }
     for path, body in resources.items():
         if path in mounted or path.startswith(
             f"prompts/quality-{'person' if person else 'account'}-research/"
