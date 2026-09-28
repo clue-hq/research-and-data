@@ -4,6 +4,36 @@ Master plan §9 Track R. Two rules bind every module here: it **imports nothing 
 (Global Constraint 7, enforced by `tests/arv2/test_import_guard.py`), and **every provider call
 goes through `ProviderCaller`** — no module opens a socket of its own.
 
+## Current researcher-owned flow (local revision 24)
+
+The selected quality account/person profiles own acquisition, structured JSON formation,
+claim import and narrative in the same agent conversation. Specialists are not registered
+for these profiles. New-launch selection is defined by `quality_catalog.py` and
+`research-quality/launch-v4-r24.json`; an existing job retains its launch pins.
+
+- Account acquisition uses account-dossier v9; person acquisition uses person-dossier v5.
+  Person-research-briefing v4 names the read-only parent account dossier alongside claims,
+  sources and pinned seller/project context. Person jobs start after the account import is ready.
+- Both claim-ready formation skills v3 use existing research context, independent findings,
+  faithful public statements, concise reasons and a substantive correction review. Use
+  `save_dossier_section` initially and `update_dossier_findings` for specific F-ID changes.
+  Code reports reference counts; no model-maintained source disposition ledger is requested
+  or exposed by these profiles. Counts do not certify completeness.
+- `finish_dossier` imports through the shared claim writer. Forward/reciprocal conflict links
+  resolve to preallocated durable claim IDs. Mutually dependent findings share a savepoint;
+  a failed member rolls back that group, while independent groups can survive and replay.
+  `begin_dossier_revision` supports corrections after import, preserving audit history and
+  remapping dependent links. Neither parsing nor import judges the truth of a quotation.
+- The researcher uses `read_narrative_inputs` and `write_research_narrative` after import.
+  Built-in account/contact Miscellaneous sections are implemented. Runtime recipes determine
+  the exact available page sections; deployment/seeding must be checked separately.
+- AI Ark research views contain permitted typed enrichment, not descriptive prose. Typed facts
+  are mapped directly; Exa and source pages supply substantive research. Original provider
+  responses remain audit artifacts. Seeded person lookups reuse their profile; unseeded
+  lookups perform the existing identity/employer matching. Work email remains; paid phones do not.
+
+The sections below record earlier integration checkpoints, not the current selected profile.
+
 ## Company-scoped committee discovery (v2, 2026-09-22)
 
 Implemented behind `CLUE_ARV2_RESEARCH_CATALOG_VERSION`, default **v2** by founder instruction
@@ -48,7 +78,7 @@ Missing research is reported as a gap, not filled with AI Ark promotional prose.
 
 Both web search and AI Ark SMART are people-discovery options chosen by the agent; neither is
 restricted to fallback use. Existing profile reuse and work-email enrichment remain in place.
-Runtime policy supersedes older pinned catalog guidance and accompanies specialist delegation.
+Provider-use guidance accompanies the researcher’s tool capabilities and selected skills.
 This is an instruction-level research boundary plus narrower automatic mappings, not a new
 claim-write or display gate. Agent adherence and raw research quality still require founder
 review. Runtime-brief expansion, research charters, claim classification and presentation changes

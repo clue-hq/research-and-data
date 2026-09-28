@@ -68,7 +68,7 @@ skills:
   sha256: a5b7c1872087a1d5e6691db73dce3edb7abdd273bf33a4f1c67ef07cb561a033
 - name: manual-limits
   version: v12
-  sha256: e3be8aad08365146324f56e1f3924db21e3136c1aca690709464990fd2597d79
+  sha256: 4dbec5a3665d6934b7cea584d71aefd9ddc44d570d046bf967afac2b05331d30
 - name: manual-glossary
   version: v12
   sha256: 9289906b0cfea54c1554d5b29bc343a6bb37103fbc802bcc0033ed2150d18b1e

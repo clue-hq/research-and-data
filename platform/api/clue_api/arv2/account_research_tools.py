@@ -2837,7 +2837,7 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
                 "legal name, founding year, industry, headcount and band, revenue band, HQ, "
                 "LinkedIn, socials, languages, technologies and funding. Basic typed facts are "
                 "mapped with their record paths. AI Ark descriptions are not mapped; "
-                "synthesize core.company_about from Exa and company pages, "
+                "use Exa and company pages for substantive company findings, "
                 "using typed facts as context."
             ),
             model=LookupCompanyArgs,
@@ -3019,10 +3019,11 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             description=(
                 "Confirm this person's identity and pull their deterministic fields plus their "
                 "professional email, by their LinkedIn URL. The name and the account are the "
-                "job's, so this is never a roster pull. The record is accepted only if its "
-                "LinkedIn URL matches and its current employer is exactly this account; every "
-                "registered field it carries is written as a claim in code, and no email is ever "
-                "synthesised."
+                "job's, so this is never a roster pull. Reuses an acquired candidate profile "
+                "when available; a new lookup checks the supplied LinkedIn identity and "
+                "employer. Permitted typed enrichment is mapped to claims in code. "
+                "Biographies, headlines and promotional prose are excluded from research "
+                "inputs. Work email is provider-reported, never synthesized; no paid phones."
             ),
             model=LookupPersonArgs,
             body=_lookup_person,

@@ -36,7 +36,7 @@ leaves everything you found.
 | Rounds with a refused governed call | 10 per turn. A round counts once, however many of its calls were refused, and it is counted only after every call in that round has returned. | The next such round ends the turn, and the human sees nothing. |
 | Refused finalizations | 2 per turn, counted separately | The last refusal ends the turn with nothing committed. |
 
-Once the finalize budget is spent the runtime appends: "Nothing was committed and no further finalize attempt will be accepted for this turn."
+Once the finalize budget is spent the runtime appends: "Execution finalization was not accepted and its repair allowance is exhausted. Previously saved tool outputs remain stored for recovery."
 
 ## What one answer may carry
 

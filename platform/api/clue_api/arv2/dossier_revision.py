@@ -55,7 +55,7 @@ async def claim_versions(
 
 
 def revision_plan(saved: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any], set[str]]:
-    """Dependency order propagates changed targets to unchanged duplicate/conflict entries."""
+    """Propagate changed targets through references, including reciprocal conflicts."""
     revision = saved["revision"]
     base = parse_json_dossier(json.dumps(revision["base_document"]).encode())
     current = parse_json_dossier(json.dumps(saved["document"]).encode())
@@ -72,13 +72,18 @@ def revision_plan(saved: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]
     reusable: dict[str, Any] = {}
     for record in current.records:
         old = originals.get(record.entry.id)
-        if (
-            old
-            and old.original == record.original
-            and old.section == record.section
-            and record.entry.dependencies() <= reusable.keys()
-        ):
+        if old and old.original == record.original and old.section == record.section:
             reusable[record.entry.id] = receipts[record.entry.id]
+    while True:
+        invalid = [
+            r.entry.id
+            for r in current.records
+            if r.entry.id in reusable and not r.entry.dependencies() <= reusable.keys()
+        ]
+        if not invalid:
+            break
+        for identifier in invalid:
+            del reusable[identifier]
     return reusable, receipts, removed
 
 

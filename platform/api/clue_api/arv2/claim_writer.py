@@ -125,6 +125,7 @@ class LenientClaimWriter:
         draft: ClaimDraft,
         *,
         derivation: DerivedClaimInput | None = None,
+        claim_id: ClaimId | None = None,
     ) -> WriteReceipt:
         if draft.entity_type is EntityType.CONTACT:
             from sqlalchemy import text
@@ -281,6 +282,8 @@ class LenientClaimWriter:
             write_markers=markers or None,
             claim_flavor=ClaimFlavor.DERIVED if derivation else ClaimFlavor.FIELD_CLAIM,
         )
+        if claim_id is not None:
+            claim = claim.model_copy(update={"id": claim_id})
         if derivation:
             from clue_research.claimstore import DerivationStore, WorkspaceScope
 

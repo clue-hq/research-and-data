@@ -1,5 +1,10 @@
 # Claim-ready account dossier — isolated trial
 
+> Historical trial instructions and results. These files are not the platform's mounted
+> skills. Current account/person formation uses the selected `claim-ready-*-dossier/v3`
+> catalog skills and shared production tools; see the research lane README. Statements
+> below that production integration is pending describe the original trial checkpoint.
+
 **Fresh-research extension (26 September):** the live account trial now uses JSON
 sections/findings through `save_dossier_section`, rather than asking the agent to
 edit record lines. The saved-data format described below remains preserved for

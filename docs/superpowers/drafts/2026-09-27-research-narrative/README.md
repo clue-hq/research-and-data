@@ -2,9 +2,9 @@
 
 Status: **Founder-approved skills selected for new research launches in revision 23.** Account/person profiles v23/v23-person select their narrative v2 plus shared editorial v1. The existing v22 system-prompt templates resolve these paths from the selected profile; their wording is unchanged. Historical run pins remain unchanged. This is local catalog integration, not a deployed-service restart or another live research run.
 
-The founder accepted the latest account and both contact previews in `.artifacts/narrative-editorial-round-02-20260927/REVIEW.md`. No further brevity or content rewrite is included in promotion. The trial's dedicated Miscellaneous page sections remain a **separate application integration**: current page recipes do not offer them, so the approved skills' explicit `/work/narrative-review.md` fallback applies. Promotion does not claim the complete trial UI is live.
+The founder accepted the latest account and both contact previews in `.artifacts/narrative-editorial-round-02-20260927/REVIEW.md`. No further brevity or content rewrite is included in promotion. Account/contact Miscellaneous page sections were subsequently integrated in commit `296922df1`, including recipes, persistence and frontend support. The skill fallback applies only when a supplied runtime recipe lacks that section. Loaded deployment/seed state requires separate verification.
 
-Sections below retain the design and trial history; statements describing unselected drafts refer to those earlier checkpoints. See the final promotion record for current verification.
+Sections below retain the design and trial history, including the earlier pending Miscellaneous work; statements describing unselected drafts refer to those earlier checkpoints. See the final promotion record for current verification.
 
 ## Exact instructions
 

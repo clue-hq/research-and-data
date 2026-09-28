@@ -1268,6 +1268,7 @@ _ARV2_RESEARCH_STATUS = text(
     """
     SELECT DISTINCT ON (j.account_entity_id)
         j.account_entity_id,
+        j.job_id,
         j.status,
         EXISTS (
             SELECT 1
@@ -1295,17 +1296,14 @@ _ARV2_RESEARCH_STATUS = text(
 async def arv2_research_status_for(
     conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
 ) -> dict[EntityId, tuple[ResearchStatus, bool]]:
-    """``{account: (status, refreshing)}`` from the R2 rows — ARV2's own truth, nothing else.
+    """``{account: (status, refreshing)}`` from jobs and their persisted publications.
 
     Only ``subject_type = 'account'`` rows count: R3's person jobs share the table and the account
     column, and a person still being researched is not an account being re-researched.
 
-    The status is served **verbatim**. ``arv2_research_job.status`` is the seam-1 vocabulary
-    (``not_started``/``in_progress``/``needs_review``/``completed``/``suspended``), which is
-    character-for-character the contract's
-    :data:`~clue_api.frontend_read.contract_v1.ResearchStatus` — so there is no mapping here to
-    drift, and no lifecycle to reinterpret. The two vocabularies are pinned equal by a test rather
-    than by this comment.
+    Researcher-owned jobs display completed once required pages are published, even when
+    execution bookkeeping needs review. Durable execution status remains untouched. Older
+    flows retain their original status projection.
 
     An account with **no** job is simply absent from the result: "never researched" is a fact
     about a missing row, and the callers spell it ``("not_started", False)`` at the one place they
@@ -1320,10 +1318,23 @@ async def arv2_research_status_for(
             {"workspace_id": workspace_id, "account_ids": list(account_ids)},
         )
     ).all()
-    return {
-        EntityId(uuid.UUID(str(account_id))): (cast(ResearchStatus, str(status)), bool(refreshing))
-        for account_id, status, refreshing in rows
-    }
+    from clue_api.arv2.quality_progress import delivery_progress
+
+    deliveries = await delivery_progress(
+        conn, workspace_id=workspace_id, job_ids=[row.job_id for row in rows]
+    )
+    result: dict[EntityId, tuple[ResearchStatus, bool]] = {}
+    for row in rows:
+        delivery = deliveries.get(row.job_id)
+        status = cast(ResearchStatus, str(row.status))
+        refreshing = bool(row.refreshing)
+        if delivery is not None:
+            if delivery.ready:
+                status, refreshing = "completed", False
+            elif status == "completed":
+                status = "needs_review"
+        result[EntityId(uuid.UUID(str(row.account_entity_id)))] = (status, refreshing)
+    return result
 
 
 # --- research evidence ----------------------------------------------------------------------------

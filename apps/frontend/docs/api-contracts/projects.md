@@ -2613,12 +2613,25 @@ Spec `docs/superpowers/specs/2026-09-12-research-progress-card-design.md`. One p
 project above the composer, rendered from `GET /frontend/v1/projects/:projectId/research/progress`
 (BFF `GET /api/projects/:projectId/research-progress`): `{ requested_accounts, queued, running,
 finished, progress_pct, pill, last_finished_at, agents[{account_name, stage, subject}],
-attention[{account_name, reason}] } | null`. Backend: the account driver stamps
-`arv2_research_job.stage` (deep_research → synthesis → committee → member_research); the fold is
-`clue_api.arv2.research_progress` (four quarters per account, member research fractional; 100
-only when every job is terminal; Completed lingers 60 s). Frontend polls every 5 s while a card
-is served and rotates the status line every 4 s (`model/research-progress-line.ts`). No chevron,
-no dismiss, no per-account detail (founder rulings 2026-09-12).
+attention[{account_name, reason}] } | null`.
+
+**Researcher-owned flow (2026-09-28).** Agent rows optionally carry `subject_name` for a contact.
+Stages are `researching` → `compiling_findings` → `storing_claims` → `writing_narrative` →
+`completed`, derived from recorded tool activity, committed JSON dossier snapshots and published
+page pointers. Older flows retain `deep_research` → `synthesis` → `committee` → `member_research`.
+New-flow percentages represent completed milestones (0/25/50/75/100), not elapsed-time estimates;
+an account's share averages its own work and all nominated person jobs.
+
+Product completion means required outputs are published: both account Overview and Insights,
+or the person's Contact page, in the same workspace/project/context/run, with available artifacts
+and a completed latest dossier where indexed. A `needs_review` execution with these outputs shows
+**Completed**; execution status and diagnostic records are unchanged. Missing required pages do
+not qualify. Account list/detail status uses the same publication projection; people still running
+remain visible in the project progress card. Reads are batched, not one query per account.
+
+Completed cards linger 60 seconds from delivery. Frontend polls every 5 seconds while a card is
+served and rotates the status line every 4 seconds (`model/research-progress-line.ts`). No chevron,
+no dismiss, no per-account detail. Field mapping and multiple-project navigation are unchanged.
 
 **Provider incidents on the card (2026-09-16).** Spec
 `docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. The payload carries one more

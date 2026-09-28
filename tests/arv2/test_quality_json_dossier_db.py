@@ -18,6 +18,7 @@ from clue_api.arv2.quality_json_dossier import (
     FinishDossierTool,
     SaveDossierSectionTool,
     SaveSectionInput,
+    UpdateDossierFindingsTool,
     ValidateDossierTool,
     read_json_dossier,
     validate_dossier_handoff,
@@ -97,6 +98,36 @@ async def invoke(tool_type, job, storage, ctx, args):
     result = await tool_type(job, storage, purge_unevidenced=False).invoke(args, ctx)
     # The actual C5 output contract must accept all nested receipts/IDs.
     return DossierReceipt.model_validate(result.references).result
+
+
+@pytest.mark.parametrize("person", [False, True])
+def test_targeted_updates_preserve_omissions_import_exactly_and_freeze(tmp_path, person):
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path, person)
+            job = replace(job, input_refs={"quality_recipe_version": 24})
+            first, second = finding(source_paths=[path]), finding("F002", source_paths=[path])
+            args = SaveSectionInput(section="Voice", findings=[first, second])
+            await invoke(SaveDossierSectionTool, job, storage, ctx, args)
+            corrected = {**first, "finding": "Corrected quotation, unchanged attribution."}
+            patch = SaveSectionInput(section="Voice", findings=[corrected])
+            receipt = await invoke(UpdateDossierFindingsTool, job, storage, ctx, patch)
+            repeated = await invoke(UpdateDossierFindingsTool, job, storage, ctx, patch)
+            assert repeated["version"] == receipt["version"]
+            saved = await read_json_dossier(conn, storage, job, cid)
+            entries = saved["document"]["sections"][0]["findings"]
+            assert entries[0]["finding"] == corrected["finding"]
+            assert entries[1] == args.findings[1].model_dump(mode="json")
+            check = await invoke(ValidateDossierTool, job, storage, ctx, DossierInput())
+            assert check["valid"] and check["coverage"]["findings"] == 2
+            assert check["coverage"]["referenced_source_records"] == 1
+            await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            saved = await read_json_dossier(conn, storage, job, cid)
+            assert saved["receipt"]["complete"] and saved["receipt"]["stored"] == 2
+            refused = await invoke(UpdateDossierFindingsTool, job, storage, ctx, patch)
+            assert not refused["saved"] and "frozen" in refused["error"].lower()
+
+    run_async(case())
 
 
 @pytest.mark.parametrize("person", [False, True])
@@ -765,5 +796,86 @@ def test_revision_refuses_out_of_band_claim_change(tmp_path):
             result = await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
             assert not result["finished"] and not result["claim_ids"]
             assert "changed since revision began" in str(result["errors"])
+
+    run_async(case())
+
+
+@pytest.mark.parametrize("person", [False, True])
+def test_reciprocal_conflicts_survive_revision_reuse_and_targeted_correction(tmp_path, person):
+    from clue_api.arv2.quality_json_dossier import BeginDossierRevisionTool, BeginRevisionInput
+
+    async def case():
+        async with rollback_conn() as conn:
+            job, cid, storage, ctx, backend, path = await prepare(conn, tmp_path, person)
+            job = replace(job, input_refs={"quality_recipe_version": 24})
+            a = finding(
+                source_paths=[path],
+                review={
+                    "status": "potential_conflict",
+                    "reason": "Sources disagree",
+                    "conflicts_with": ["F002"],
+                },
+            )
+            b = finding(
+                "F002",
+                source_paths=[path],
+                review={
+                    "status": "potential_conflict",
+                    "reason": "Sources disagree",
+                    "conflicts_with": ["F001"],
+                },
+            )
+            await invoke(
+                SaveDossierSectionTool,
+                job,
+                storage,
+                ctx,
+                SaveSectionInput(section="Voice", findings=[a, b]),
+            )
+            await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+            baseline = await read_json_dossier(conn, storage, job, cid)
+            old_ids = {e["id"]: str(e["claim_id"]) for e in baseline["receipt"]["entries"]}
+            for change in (False, True):
+                saved = await read_json_dossier(conn, storage, job, cid)
+                await invoke(
+                    BeginDossierRevisionTool,
+                    job,
+                    storage,
+                    ctx,
+                    BeginRevisionInput(expected_version=saved["version"], reason="Review"),
+                )
+                if change:
+                    await invoke(
+                        UpdateDossierFindingsTool,
+                        job,
+                        storage,
+                        ctx,
+                        SaveSectionInput(
+                            section="Voice", findings=[{**a, "finding": "Corrected statement"}]
+                        ),
+                    )
+                await invoke(FinishDossierTool, job, storage, ctx, DossierInput())
+                current = await read_json_dossier(conn, storage, job, cid)
+                assert current["receipt"]["complete"], current["receipt"]
+                ids = {e["id"]: str(e["claim_id"]) for e in current["receipt"]["entries"]}
+                if not change:
+                    assert ids == old_ids and current["receipt"]["reused"] == 2
+                else:
+                    assert all(ids[k] != old_ids[k] for k in ids)
+                    for key, other in (("F001", "F002"), ("F002", "F001")):
+                        value = (
+                            await conn.execute(
+                                text("SELECT value_json FROM claim WHERE id=CAST(:id AS uuid)"),
+                                {"id": ids[key]},
+                            )
+                        ).scalar_one()
+                        assert value["review"]["conflicts_with"] == [ids[other]]
+                        retired = (
+                            await conn.execute(
+                                text("SELECT superseded_by FROM claim WHERE id=CAST(:id AS uuid)"),
+                                {"id": old_ids[key]},
+                            )
+                        ).scalar_one()
+                        assert str(retired) == ids[key]
 
     run_async(case())

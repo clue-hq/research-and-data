@@ -336,8 +336,11 @@ class ResolvedAgentProfile:
             f"max_retries={self.profile.model.max_retries}; "
             f"max_output_tokens={self.profile.model.max_output_tokens}; "
             f"temperature={self.profile.model.temperature}\n"
-            f"- turn_timeout_s={self.profile.turn_timeout_s}; "
-            f"max_model_rounds={self.profile.max_model_rounds}\n\n"
+            # The turn's round and time limits are operator settings for the conversation and
+            # research agents (founder ruling 2026-09-27), so the profile's own numbers are not
+            # the ones that apply; the wrap-up notice is what tells the agent it is near either.
+            "- turn limits (model rounds, wall clock): set by the deployment; a platform notice "
+            "tells you when you are near one, and then only finalize_turn is offered\n\n"
             "## End resolved resource and capability map"
         )
 

@@ -165,7 +165,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `manual-*@v11` bodies that state the turn limits without numbers.
         # Digest measured off this tree.
         # v66 (discovery rebuild, 2026-09-28): stage0-interview@v39 and manual-*@v12.
-        AgentRole.HEAD_OF_ABM: ("fb50edbe346e313cfe167278f7667aae6a61fc4d018348a59e1bb297719cf5fa"),
+        AgentRole.HEAD_OF_ABM: ("1faebe0e73b1d73e9662bf4667af4c3e9dcaaeeaca3846778a097741f85a14cb"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -571,6 +571,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert "delegate_specialist: available" in head.generated_resource_map
     assert "execute/shell/process: unavailable" in head.generated_resource_map
     assert "/Users/" not in head.generated_resource_map
+    # Turn limits are operator settings (ruling 2026-09-27): the map never quotes the profile's
+    # own round or timeout numbers, which are not the ones the runtime applies.
+    assert "set by the deployment" in head.generated_resource_map
+    assert "max_model_rounds=" not in head.generated_resource_map
+    assert "turn_timeout_s=" not in head.generated_resource_map
     assert head.system_prompt.endswith("## End resolved resource and capability map")
 
 

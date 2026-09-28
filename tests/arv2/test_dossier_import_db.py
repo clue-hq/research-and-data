@@ -243,3 +243,62 @@ def test_person_dossier_stays_on_contact_and_cannot_be_retargeted_to_account(tmp
                 )
 
     run_async(case())
+
+
+def test_reciprocal_conflicts_rollback_together_then_retry_with_exact_links(tmp_path, monkeypatch):
+    async def case():
+        async with rollback_conn() as conn:
+            ctx = await context(conn, tmp_path)
+            original = dossier_import.submit_proposal
+
+            async def fail_second(*args, **kwargs):
+                receipt = await original(*args, **kwargs)
+                if args[4].value["dossier_entry"]["id"] == "F002":
+                    raise RuntimeError("Injected second linked write failure")
+                return receipt
+
+            a = finding(
+                review={
+                    "status": "potential_conflict",
+                    "reason": "Unclear",
+                    "conflicts_with": ["F002"],
+                }
+            )
+            b = finding(
+                "F002",
+                review={
+                    "status": "potential_conflict",
+                    "reason": "Unclear",
+                    "conflicts_with": ["F001"],
+                },
+            )
+            dependent = finding(
+                "F004", review={"status": "duplicate", "reason": "Same", "duplicate_of": "F001"}
+            )
+            body = document(dependent, a, b, finding("F003"))
+            before = (await conn.execute(text("SELECT count(*) FROM claim"))).scalar_one()
+            monkeypatch.setattr(dossier_import, "submit_proposal", fail_second)
+            partial = await invoke(conn, ctx, body)
+            assert not partial["complete"] and partial["stored"] == 1, partial
+            assert [e["id"] for e in partial["entries"]] == ["F003"]
+            assert {e["id"] for e in partial["errors"]} == {"F001", "F002", "F004"}
+            assert (
+                await conn.execute(text("SELECT count(*) FROM claim"))
+            ).scalar_one() == before + 1
+            monkeypatch.setattr(dossier_import, "submit_proposal", original)
+            repaired = await invoke(conn, ctx, body)
+            assert repaired["complete"] and repaired["stored"] == 4, repaired
+            ids = {e["id"]: e["claim_id"] for e in repaired["entries"]}
+            for key, other in (("F001", "F002"), ("F002", "F001")):
+                value = (
+                    await conn.execute(
+                        text("SELECT value_json FROM claim WHERE id=:id"), {"id": ids[key]}
+                    )
+                ).scalar_one()
+                assert value["review"]["conflicts_with"] == [str(ids[other])]
+                assert value["review"]["status"] == "potential_conflict"
+            replay = await invoke(conn, ctx, body)
+            assert replay["complete"] and all(e["replayed"] for e in replay["entries"])
+            assert ids == {e["id"]: e["claim_id"] for e in replay["entries"]}
+
+    run_async(case())
