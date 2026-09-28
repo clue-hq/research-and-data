@@ -13,6 +13,7 @@ from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.auth_tool_context import require_human_authority
 from clue_api.conversation_capture import project_client_entity_id
 from clue_api.project_execution_router import ProjectExecutionRouter
@@ -999,7 +1000,7 @@ class RecordInterviewAnswerTool(_Stage0Tool):
     # What the tool actually does, route by route, is the chapter this points at.
     model_description = (
         "Invoke exact governed platform tool record_interview_answer@1. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#record_interview_answer"
+        + tool_manual_link("record_interview_answer")
     )
     input_model = RecordInterviewAnswerInput
     output_model = InterviewAnswerOutput

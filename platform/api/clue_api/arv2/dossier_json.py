@@ -104,6 +104,40 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def update_findings(
+    document: dict[str, Any],
+    section: str,
+    findings: list[dict[str, Any]],
+    source_paths: set[str],
+) -> dict[str, Any]:
+    """Replace supplied F-IDs or append new ones, preserving all omitted findings."""
+    ids = [f["id"] for f in findings]
+    if len(ids) != len(set(ids)):
+        raise ValueError("Finding identifiers must be unique in an update")
+    supplied = {f["id"]: f for f in findings}
+    existing: list[dict[str, Any]] = next(
+        (s["findings"] for s in document["sections"] if s["section"] == section), []
+    )
+    existing_ids = {f["id"] for f in existing}
+    merged = [supplied.get(f["id"], f) for f in existing]
+    merged.extend(f for f in findings if f["id"] not in existing_ids)
+    return replace_section(document, section, merged, source_paths)
+
+
+def dossier_coverage(document: dict[str, Any], source_paths: set[str]) -> dict[str, Any]:
+    """Count stored references, not source reading or semantic completeness."""
+    findings = [f for section in document["sections"] for f in section["findings"]]
+    cited = {p for f in findings for p in f.get("source_paths", [])}
+    return {
+        "findings": len(findings),
+        "sections": len(document["sections"]),
+        "available_source_records": len(source_paths),
+        "referenced_source_records": len(cited & source_paths),
+        "unreferenced_source_records": len(source_paths - cited),
+        "note": "Reference counts only; unreferenced does not mean unread or omitted facts.",
+    }
+
+
 def _invalid_constant(value: str) -> Any:
     raise ValueError(f"Not a JSON value: {value}")
 
@@ -112,8 +146,8 @@ def parse_json_dossier(body: bytes) -> ParsedDossier:
     """Report every malformed record; retain valid independent records and original values.
 
     Duplicate object keys and invalid top-level shapes reject the document rather
-    than silently accepting the last value. Forward links are ordered for the
-    existing append-only claim writer. No semantic classification is performed.
+    than silently accepting the last value. Forward links and reciprocal conflicts
+    are grouped for the append-only claim writer. No semantic classification is performed.
     """
     digest = hashlib.sha256(body).hexdigest()
     errors: list[dict[str, Any]] = []
@@ -180,22 +214,60 @@ def parse_json_dossier(body: bytes) -> ParsedDossier:
             )
         else:
             pending.append(record)
-    ordered: list[DossierRecord] = []
-    available: set[str] = set()
-    while pending:
-        ready = [r for r in pending if r.entry.dependencies() <= available]
-        if not ready:
+    # Invalid targets propagate to their dependants. Mutual conflicts are valid
+    # relationships, not cycles that the author must remove to make import pass.
+    while True:
+        available = {r.entry.id for r in pending}
+        invalid = [r for r in pending if not r.entry.dependencies() <= available]
+        if not invalid:
             break
-        for record in ready:
-            ordered.append(record)
-            available.add(record.entry.id)
+        for record in invalid:
+            errors.append(
+                {
+                    "location": record.location,
+                    "id": record.entry.id,
+                    "error": "Referenced finding is invalid or unavailable",
+                }
+            )
             pending.remove(record)
-    errors.extend(
-        {
-            "location": r.location,
-            "id": r.entry.id,
-            "error": "Unresolved or cyclic finding reference; original judgment retained",
-        }
-        for r in pending
-    )
+    ordered = [r for group in import_groups(tuple(pending)) for r in group]
+
     return ParsedDossier(digest, tuple(ordered), tuple(errors), count, len(sections))
+
+
+def import_groups(records: tuple[DossierRecord, ...]) -> tuple[tuple[DossierRecord, ...], ...]:
+    """Dependency-first strongly connected groups; each group imports atomically.
+
+    A conflict may point both ways. Allocate IDs before writing and keep that
+    component in one savepoint, so failed writes never leave dangling links.
+    This groups references only; it makes no judgment about claim meaning.
+    """
+    pending = {r.entry.id: r for r in records}
+    groups: list[tuple[DossierRecord, ...]] = []
+
+    def reachable(start: str) -> set[str]:
+        seen: set[str] = set()
+        todo = [start]
+        while todo:
+            key = todo.pop()
+            if key in seen or key not in pending:
+                continue
+            seen.add(key)
+            todo.extend(pending[key].entry.dependencies() - seen)
+        return seen
+
+    # Follow dependencies to a sink component. Intersection of forward and
+    # reverse reachability identifies its mutually dependent records.
+    reach = {key: reachable(key) for key in pending}
+    while pending:
+        for key in pending:
+            component = {other for other in reach[key] & pending.keys() if key in reach[other]}
+            if any(
+                (pending[k].entry.dependencies() & pending.keys()) - component for k in component
+            ):
+                continue
+            groups.append(tuple(r for k, r in pending.items() if k in component))
+            for member in component:
+                del pending[member]
+            break
+    return tuple(groups)

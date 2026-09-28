@@ -177,6 +177,9 @@ _PAGE_THREADS = text(
     FROM agent_thread
     WHERE workspace_id = :workspace_id
       AND project_id = :project_id
+      -- Only conversations a person started. Machine threads (research runs, onboarding
+      -- synthesis) are created with no user and are never a chat in any listing.
+      AND created_by_user_id IS NOT NULL
       AND (CAST(:status AS text) IS NULL OR status = :status)
       AND (
           CAST(:cursor_created_at AS timestamptz) IS NULL
@@ -258,6 +261,7 @@ _PROJECT_SIDEBAR_PAGE = text(
                MAX(t.updated_at) FILTER (WHERE t.status = 'active') AS last_thread_at
         FROM agent_thread t
         WHERE t.workspace_id = :workspace_id
+          AND t.created_by_user_id IS NOT NULL
         GROUP BY t.project_id
     ),
     selected_projects AS MATERIALIZED (
@@ -303,6 +307,7 @@ _PROJECT_SIDEBAR_PAGE = text(
     LEFT JOIN agent_thread t
       ON t.workspace_id = :workspace_id
      AND t.project_id = p.project_id
+     AND t.created_by_user_id IS NOT NULL
     ORDER BY
         p.pinned DESC,
         p.updated_at DESC,

@@ -30,6 +30,7 @@ from clue_agents.manual.build import (
     materialized_links,
     render_skill,
     run,
+    tool_manual_link,
 )
 
 __all__ = [
@@ -52,4 +53,5 @@ __all__ = [
     "materialized_links",
     "render_skill",
     "run",
+    "tool_manual_link",
 ]

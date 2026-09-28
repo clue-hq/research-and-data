@@ -48,14 +48,16 @@ format, mypy (changed modules) clean; import-linter 28 kept / 0 broken. No DB, n
   builder now reads `MAX_TOOL_REPAIR_ROUNDS`, and `GovernedToolFailure.governed_repair_budgeted`
   got its field note). `make manual-check`: 4 chapters current.
 - Tests: catalog inventory, registry digest (9b961077…), tamper target v17, s4e/comprehensive
-  pins. Live-tree offline run: 3138 tests, 15 failures = the 13 pre-existing HEAD failures + 3
+  pins. Live-tree offline run: 3138 tests, 15 failures = 12 pre-existing HEAD failures + 3
   Langfuse tests that fail only in a full run on a tree whose .env has real Langfuse keys (a
   tests/api test installs the real client and even exports spans); each passes alone.
 
+## Capability map (closed same day, founder go)
+- `ResolvedAgentProfile.generated_resource_map` (every agent's system prompt) no longer prints
+  the profile's `turn_timeout_s` / `max_model_rounds`; it says the limits are set by the
+  deployment and that a notice arrives near one. Asserted in test_agent_registry_wiring.
+
 ## Open
-- The system prompt's generated capability map still prints the profile's
-  `turn_timeout_s=1800; max_model_rounds=100` ("Model policy" line) although Head-of-ABM now
-  runs on the env values — decision pending (all profiles share that renderer).
 - Pre-existing: three person trial tests import removed `media_acquisition.duration_of`.
 - Research allowance still counts ExactAgentToolSurface's plain-text recovery call; a turn that
   needs it at the very end could hit the allowance before finalizing (rare).

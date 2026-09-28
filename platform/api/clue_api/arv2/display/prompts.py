@@ -137,14 +137,6 @@ SECTION_INSTRUCTIONS: dict[tuple[str, str], str] = {
         "figure verbatim from the claims — never round it, never recompute it. Body 2–4 "
         "sentences, then " + _WHAT_IT_MEANS + ". contactRefs for anyone a claim names."
     ),
-    ("insights", "contact-insights"): (
-        "One item per committee member the claims cover, built only from that person's own "
-        "claims — never mix two people into one item. Set `subject` to that person on every item "
-        "and put the same person in contactRefs. h2 = the single most useful thing that person "
-        "said or did. Body 2–4 sentences in their own words where the claims give them, then "
-        + _WHAT_IT_MEANS
-        + ". No sendLine on this page."
-    ),
     ("insights", "context-only"): _RESTRICTED,
     # ---- overview -----------------------------------------------------------------------------
     ("overview", "what-they-do"): (

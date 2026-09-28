@@ -46,6 +46,8 @@ from clue_api.arv2.calls import (
     SpendEstimate,
 )
 from clue_api.arv2.transport import HttpRequest, HttpResponse, json_request
+from clue_obs import get_logger
+from clue_obs.langfuse import observation
 
 #: Exa's API root. A parameter on the client rather than a constant in a body builder, so a
 #: proxy or a regional endpoint is a call-site decision.
@@ -1096,7 +1098,20 @@ class ExaClient:
         ):
             return first
 
-        retry = self._deep_call(body, label=f"{label}-retry", timeout_s=timeout_s)
+        metadata = {
+            "provider": PROVIDER,
+            "operation": "deep-reasoning",
+            "label": label,
+            "next_label": f"{label}-retry",
+            "reason": "thin_response",
+            "first_ledger_row_id": first.ledger_row_id,
+            "result_count": first.n_results,
+            "report_chars": report_chars,
+            "cost_usd": str(first.cost_usd),
+        }
+        with observation("exa.thin_response_retry", as_type="span", metadata=metadata):
+            get_logger(__name__).info("provider.retry.scheduled", **metadata)
+            retry = self._deep_call(body, label=f"{label}-retry", timeout_s=timeout_s)
         kept = retry if _is_richer(retry, first) else first
         return replace(kept, retried=True)
 

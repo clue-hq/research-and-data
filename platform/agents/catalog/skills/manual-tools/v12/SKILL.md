@@ -336,7 +336,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## launch_arv2_person_research@1
 
-**What it does.** Launch (or exactly replay) ARV2 person research on named contacts of this workspace: one governed research job per person on the shared fleet, under a run of its own pinned to the project's currently confirmed ICP and product selection. Call only when the current user action explicitly approves researching these exact people. It researches existing contacts and never creates a person; a successful result means the jobs were enqueued or replayed, never that research has completed. `persona` is the committee seat each named person is given if they do not already hold one — it is what puts them on the account's contact list — and defaults to `user`. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#launch_arv2_person_research
+**What it does.** Launch (or exactly replay) ARV2 person research on named contacts of this workspace: one governed research job per person on the shared fleet, under a run of its own pinned to the project's currently confirmed ICP and product selection. Call only when the current user action explicitly approves researching these exact people. It researches existing contacts and never creates a person; a successful result means the jobs were enqueued or replayed, never that research has completed. `persona` is the committee seat each named person is given if they do not already hold one — it is what puts them on the account's contact list — and defaults to `user`. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#launch_arv2_person_research
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -615,7 +615,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_account_research@2
 
-**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research
+**What it does.** Read what research found about one account. section='overview' returns the written overview sections (prose citing claim ids); when the overview is not written yet the read refuses with overview_not_written — then read section='claims'. section='claims' returns the claims the account pages show, one page at a time: set limit for how many you want (default 40), follow next_offset until it is null, or narrow with field_prefix to one of the families listed in 'prefixes' (e.g. 'account.resonance', 'core'). A page can come back shorter than limit and still name a next_offset. Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this before saying anything specific about an account. Effect-free. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_account_research
 
 - Effect class: `read`.
 - Spends: no.
@@ -695,7 +695,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_artifact@1
 
-**What it does.** Read one artifact from this project's gallery (a landing page or an ad) by its id: section=summary gives what it is, what it is called, its status, its version and the thread it was made on; section=content adds the document's page JSON as text, capped, with body_truncated saying whether there is more. Read this before describing an artifact or what it says. Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_artifact
+**What it does.** Read one artifact from this project's gallery (a landing page or an ad) by its id: section=summary gives what it is, what it is called, its status, its version and the thread it was made on; section=content adds the document's page JSON as text, capped, with body_truncated saying whether there is more. Read this before describing an artifact or what it says. Effect-free. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_artifact
 
 - Effect class: `read`.
 - Spends: no.
@@ -741,7 +741,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_arv2_account_research_run@1
 
-**What it does.** Read one ARV2 account-research run: what it was pinned to, its status, and the state of each account's job (including the failure code of anything that needs review). Effect-free; it never starts, resumes or changes research. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_arv2_account_research_run
+**What it does.** Read one ARV2 account-research run: what it was pinned to, its status, and the state of each account's job (including the failure code of anything that needs review). Effect-free; it never starts, resumes or changes research. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_arv2_account_research_run
 
 - Effect class: `read`.
 - Spends: no.
@@ -784,7 +784,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_claims@1
 
-**What it does.** Query the live claims about one account or contact: by field family (field_prefix), source tier, verification status, or collected since a date; paged; the same display gate as the account pages. Use read_account_research for the written overview. Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_claims
+**What it does.** Query the live claims about one account or contact: by field family (field_prefix), source tier, verification status, or collected since a date; paged; the same display gate as the account pages. Use read_account_research for the written overview. Effect-free. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_claims
 
 - Effect class: `read`.
 - Spends: no.
@@ -851,7 +851,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_discovery_run@2
 
-**What it does.** Read the project's latest discovery run (or one by id): status, what was asked for and found, how many candidates the verifier judged against the ICP, how many were shown and approved, and the candidates with their verdict, best first. Page with offset and limit (default 25) and follow next_offset until it is null to see every candidate; candidate_total is the whole run on every page. Read this before proposing another discovery, and to answer what discovery found. It approves nothing. Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run
+**What it does.** Read the project's latest discovery run (or one by id): status, what was asked for and found, how many candidates the verifier judged against the ICP, how many were shown and approved, and the candidates with their verdict, best first. Page with offset and limit (default 25) and follow next_offset until it is null to see every candidate; candidate_total is the whole run on every page. Read this before proposing another discovery, and to answer what discovery found. It approves nothing. Effect-free. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_discovery_run
 
 - Effect class: `read`.
 - Spends: no.
@@ -920,7 +920,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## read_project_accounts@1
 
-**What it does.** List the accounts in one project with each account's research status (not_started, in_progress, needs_review, completed, suspended) and how it joined the project. Filter by name or domain to find one account; page with limit and offset when total is larger than the page you received. Read this before saying how many accounts there are, which are researched, or before proposing more discovery. Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_project_accounts
+**What it does.** List the accounts in one project with each account's research status (not_started, in_progress, needs_review, completed, suspended) and how it joined the project. Filter by name or domain to find one account; page with limit and offset when total is larger than the page you received. Read this before saying how many accounts there are, which are researched, or before proposing more discovery. Effect-free. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#read_project_accounts
 
 - Effect class: `read`.
 - Spends: no.
@@ -974,7 +974,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## record_interview_answer@1
 
-**What it does.** Invoke exact governed platform tool record_interview_answer@1. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#record_interview_answer
+**What it does.** Invoke exact governed platform tool record_interview_answer@1. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#record_interview_answer
 
 - Effect class: `spend`.
 - Spends: yes. This call costs money against the project's providers.
@@ -1030,7 +1030,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## run_python@1
 
-**What it does.** Run a short Python script in a locked-down container over this turn's workspace. Use it to read files that plain text tools cannot open — PDFs, Word documents, slide decks, spreadsheets — and to do arithmetic or produce a CSV, a chart or a report. The script's working directory holds the same folders your file tools use: `attachments/` (read-only) holds every file anyone has attached in this project, `project/` and `brand/` are read-only too, and `scratch/`, `work/` and `outputs/` are yours to write. Write a file if you want to keep it; print what you want to read back. There is no network, so do not try to download anything, and nothing outside those folders exists. Output longer than 16 KB is written to a file and the result tells you its path. You get a few runs per turn, and the result says how many are left, so plan the script before you call. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#run_python
+**What it does.** Run a short Python script in a locked-down container over this turn's workspace. Use it to read files that plain text tools cannot open — PDFs, Word documents, slide decks, spreadsheets — and to do arithmetic or produce a CSV, a chart or a report. The script's working directory holds the same folders your file tools use: `attachments/` (read-only) holds every file anyone has attached in this project, `project/` and `brand/` are read-only too, and `scratch/`, `work/` and `outputs/` are yours to write. Write a file if you want to keep it; print what you want to read back. There is no network, so do not try to download anything, and nothing outside those folders exists. Output longer than 16 KB is written to a file and the result tells you its path. You get a few runs per turn, and the result says how many are left, so plan the script before you call. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#run_python
 
 - Effect class: `write`.
 - Spends: no.
@@ -1125,7 +1125,7 @@ Error shapes and the budget that stops a repair loop are in `.deepagent/skills/m
 
 ## configure_project_targeting@1
 
-**What it does.** Apply this project's ICP and product set automatically, without asking for approval. Read the ICP first and supply its icp_key. Optional product_ids override its product set; otherwise use its products, the existing project set, or the brand's active products. Returns the confirmed artifact and product-selection version for use in the same turn. No gate opens and no research launches. Continue the user's task after this succeeds. Manual: .deepagent/skills/manual-tools/v8/SKILL.md#configure_project_targeting
+**What it does.** Apply this project's ICP and product set automatically, without asking for approval. Read the ICP first and supply its icp_key. Optional product_ids override its product set; otherwise use its products, the existing project set, or the brand's active products. Returns the confirmed artifact and product-selection version for use in the same turn. No gate opens and no research launches. Continue the user's task after this succeeds. Manual: .deepagent/skills/manual-tools/v12/SKILL.md#configure_project_targeting
 
 - Effect class: `write`.
 - Spends: no.

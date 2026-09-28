@@ -681,3 +681,96 @@ def test_a_transport_error_row_is_a_timeout_failure_and_a_success_row_carries_no
     caller.call(_spec(max_attempts=1))
     (ok,) = [r for r in ledger.rows if r.phase == "result"]
     assert "provider_failure" not in ok.extras
+
+
+@pytest.mark.parametrize(
+    ("first", "reason", "delay"),
+    [
+        (HttpResponse(429, {"retry-after": "7"}, b"{}"), "http_429", 7.0),
+        (TransportFailure("private URL or credential"), "transport_error", 2.0),
+    ],
+)
+def test_attempt_logs_correlate_retries_without_request_or_error_secrets(first, reason, delay):
+    from structlog.testing import capture_logs
+
+    caller, transport, _raw, _ledger, clock = _caller([first, HttpResponse(200, {}, b"{}")])
+    with capture_logs() as logs:
+        caller.call(_spec(provider="exa", max_attempts=2))
+    events = [r for r in logs if r["event"].startswith("provider.")]
+    assert [r["event"] for r in events] == [
+        "provider.attempt.started",
+        "provider.attempt.finished",
+        "provider.retry.scheduled",
+        "provider.attempt.started",
+        "provider.attempt.finished",
+    ]
+    assert len({r["call_id"] for r in events}) == 1
+    assert [r["attempt"] for r in events] == [1, 1, 1, 2, 2]
+    assert events[2]["reason"] == reason
+    assert events[2]["delay_s"] == delay
+    assert events[1]["elapsed_ms"] > 0 and events[4]["http_status"] == 200
+    assert clock.sleeps == [delay] and len(transport.requests) == 2
+    assert "private URL or credential" not in str(events)
+    assert all("request" not in r and "body" not in r for r in events)
+
+
+def test_exhausted_attempt_is_logged_without_scheduling_another_retry():
+    from structlog.testing import capture_logs
+
+    caller, _transport, _raw, _ledger, clock = _caller([TransportFailure("secret")])
+    with capture_logs() as logs, pytest.raises(ProviderTransportError):
+        caller.call(_spec(max_attempts=1))
+    assert [r["event"] for r in logs if r["event"].startswith("provider.")] == [
+        "provider.attempt.started",
+        "provider.attempt.finished",
+    ]
+    assert logs[-1]["error_type"] == "TransportFailure"
+    assert not clock.sleeps
+
+
+def test_attempt_and_backoff_have_langfuse_spans(monkeypatch):
+    from contextlib import contextmanager
+
+    import clue_spend.calls as calls
+    from clue_obs.langfuse import NullObservation
+
+    spans = []
+
+    @contextmanager
+    def record(name, **fields):
+        spans.append((name, fields))
+        yield NullObservation(id="observation-id", trace_id="trace-id")
+
+    monkeypatch.setattr(calls, "observation", record)
+    caller, _transport, _raw, _ledger, _clock = _caller(
+        [
+            HttpResponse(503, {}, b"{}"),
+            HttpResponse(200, {}, b"{}"),
+        ]
+    )
+    caller.call(_spec(max_attempts=2))
+    assert [name for name, _ in spans] == [
+        "prov.v1/thing",
+        "provider.http_attempt",
+        "provider.retry_wait",
+        "provider.http_attempt",
+    ]
+    assert spans[2][1]["metadata"]["reason"] == "http_503"
+
+
+def test_attempt_start_is_visible_before_transport_and_interruption_is_recorded(monkeypatch):
+    from structlog.testing import capture_logs
+
+    caller, transport, _raw, _ledger, clock = _caller([])
+    with capture_logs() as logs:
+
+        def interrupt(_request):
+            assert logs[-1]["event"] == "provider.attempt.started"
+            raise KeyboardInterrupt()
+
+        monkeypatch.setattr(transport, "send", interrupt)
+        with pytest.raises(KeyboardInterrupt):
+            caller.call(_spec())
+    assert logs[-1]["event"] == "provider.attempt.finished"
+    assert logs[-1]["outcome"] == "interrupted"
+    assert not clock.sleeps

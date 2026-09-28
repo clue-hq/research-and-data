@@ -556,3 +556,36 @@ def test_a_5xx_answer_keeps_the_estimate_because_exa_did_not_say_what_it_did() -
 
     result_row = ledger.drain()[-1]
     assert result_row.cost_usd == ANSWER_ESTIMATE_USD
+
+
+def test_thin_response_retry_is_logged_separately_from_http_attempts():
+    from structlog.testing import capture_logs
+
+    responses = [
+        HttpResponse(
+            200,
+            {},
+            json.dumps(
+                {
+                    "output": {"content": text},
+                    "results": [],
+                    "costDollars": {"total": 0.05},
+                }
+            ).encode(),
+        )
+        for text in ["short", "full report " * 400]
+    ]
+    caller, transport = _caller(responses)
+    client = ExaClient(api_key=SecretStr("test-secret"), caller=caller)
+    with capture_logs() as logs:
+        result = client.deep_reasoning(
+            system_prompt="private system",
+            query="private query",
+            output_schema={"type": "text"},
+            label="person-depth",
+        )
+    assert result.retried and len(transport.requests) == 2
+    retry = next(r for r in logs if r.get("reason") == "thin_response")
+    assert retry["label"] == "person-depth" and retry["next_label"] == "person-depth-retry"
+    assert retry["report_chars"] == 5 and retry["first_ledger_row_id"]
+    assert "private query" not in str(logs) and "test-secret" not in str(logs)

@@ -112,13 +112,23 @@ def employment_check(person: AiArkPerson, scope: JobScope) -> None:
         )
 
 
-def reference_data(op: operations.Operation, subject: str, parent_job_id: UUID) -> dict[str, Any]:
+def provider_reference_data(
+    op: operations.Operation, subject: str, provider_job_id: UUID
+) -> dict[str, Any]:
+    """Provider provenance is independent of the job that delegated this investigation."""
     return {
         "version": 1,
         "candidate_ref": candidate_ref(op.operation_id, subject),
         "operation_id": str(op.operation_id),
         "provider_subject_id": subject,
         "artifact_key": op.artifact_key,
+        "provider_job_id": str(provider_job_id),
+    }
+
+
+def reference_data(op: operations.Operation, subject: str, parent_job_id: UUID) -> dict[str, Any]:
+    return {
+        **provider_reference_data(op, subject, parent_job_id),
         "parent_job_id": str(parent_job_id),
     }
 
@@ -550,8 +560,8 @@ async def load_person_seed(runtime: ToolRuntime) -> dict[str, Any] | None:
     assert runtime.storage is not None
     if refs.get("version") != 1:
         raise RefusalError("subject_lock_failed", "unsupported person seed version")
-    parent_id = UUID(refs["parent_job_id"])
-    parent = replace(runtime.operation_scope, job_id=parent_id)
+    provider_job_id = UUID(refs.get("provider_job_id") or refs["parent_job_id"])
+    provider_scope = replace(runtime.operation_scope, job_id=provider_job_id)
     async with runtime._conn_factory() as conn:
         # Stored job references, not model arguments, grant access to the parent selection.
         job = (
@@ -567,9 +577,13 @@ async def load_person_seed(runtime: ToolRuntime) -> dict[str, Any] | None:
                 },
             )
         ).scalar_one()
-        if job.get("candidate_ref") != refs["candidate_ref"]:
+        if job.get("candidate_ref") != refs["candidate_ref"] or (
+            job.get("provider_job_id") or job.get("parent_job_id")
+        ) != str(provider_job_id):
             raise RefusalError("subject_lock_failed", "person seed does not match the job")
-        op, person = await read_candidate(conn, runtime.storage, parent, refs["candidate_ref"])
+        op, person = await read_candidate(
+            conn, runtime.storage, provider_scope, refs["candidate_ref"]
+        )
         employment_check(person, runtime.scope)
         bound, _ = await resolve_provider_contact(
             conn,
@@ -587,7 +601,8 @@ async def load_person_seed(runtime: ToolRuntime) -> dict[str, Any] | None:
                 "subject_lock_failed", "source profile belongs to a different contact"
             )
     seed = {
-        **reference_data(op, person.ark_id or "", parent_id),
+        **job,
+        **provider_reference_data(op, person.ark_id or "", provider_job_id),
         "profile": enrichment_only(person.raw),
     }
     runtime.person_seed = seed
@@ -728,18 +743,26 @@ async def lookup_bound_person(runtime: ToolRuntime, args: Any) -> dict[str, Any]
         )
         if bound != runtime.scope.contact_id:
             raise RefusalError("subject_lock_failed", "provider anchor belongs to another contact")
-        refs = reference_data(op, person.ark_id, runtime.scope.job_id)
-        await conn.execute(
-            text(
-                "UPDATE arv2_research_job SET input_refs=CAST(:refs AS jsonb) WHERE "
-                "job_id=:job AND workspace_id=:ws"
-            ),
-            {
-                "refs": json.dumps(refs),
-                "job": runtime.scope.job_id,
-                "ws": runtime.scope.workspace_id,
-            },
-        )
+        provider_refs = provider_reference_data(op, person.ark_id, runtime.scope.job_id)
+        # Merge only provider-owned keys atomically. Never replace the delegation, parent,
+        # generation, brief, recipe pin, or a concurrent privacy/lifecycle update.
+        refs = (
+            await conn.execute(
+                text("""UPDATE arv2_research_job
+                SET input_refs=COALESCE(input_refs,'{}'::jsonb) || CAST(:refs AS jsonb)
+                WHERE job_id=:job AND workspace_id=:ws AND run_id=:run
+                  AND account_entity_id=:account AND subject_type='person'
+                  AND subject_entity_id=:contact RETURNING input_refs"""),
+                {
+                    "refs": json.dumps(provider_refs),
+                    "job": runtime.scope.job_id,
+                    "ws": runtime.scope.workspace_id,
+                    "run": runtime.scope.run_id,
+                    "account": runtime.scope.account_id,
+                    "contact": runtime.scope.contact_id,
+                },
+            )
+        ).scalar_one()
     runtime.person_seed = {**refs, "profile": enrichment_only(person.raw)}
     await runtime.write(
         [provider_evidence(d, refs) for d in ai_ark_person_claims(person, runtime.scope)]

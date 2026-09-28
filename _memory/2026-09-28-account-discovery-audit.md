@@ -108,3 +108,78 @@ project IS verified against this ICP and added here. Website-domain check unchan
   tests/api/test_frontend_bulk_actions_discovery_db.py (401), plus the earlier offline ones.
 - Owed: the live acceptance run (founder-triggered, spends money); the 16 stale `manual-tools/v5`
   pointers in other tools' descriptions.
+
+## Fifth round — stale manual pointers (UNCOMMITTED by founder instruction)
+
+Founder: fix the stale `Manual:` pointers, do not commit; live run next; commit once it passes.
+- `clue_agents.manual.tool_manual_link(name)` builds each governed tool's closing pointer from
+  `MANUAL_VERSION`; all 16 hard-coded pointers (15 at v5, 1 at v8, plus the two set to v12 by hand)
+  now call it, so a manual re-mint moves every pointer. New guard
+  `tests/agents/test_manual_drift.py::test_every_tool_description_points_at_its_own_entry_in_the_current_tools_chapter`
+  (red-proved with a v5 pointer on run_python).
+- manual-tools v12 regenerated (10 granted tools' pointers only); v66 pin `64518b15…`, registry
+  digest `fb50edbe…`. v12/v66 amended in place: committed in bec02ba77 but never run anywhere.
+- `tests/api/test_arv2_read_tools.py` read_claims pointer assertion now uses the helper.
+
+## BLOCKER found 2026-09-28 ~19:05 IST — the 55040 Postgres is gone
+
+`clue-pg-istanbul` (port 55040; clue_dubai, clue_jerusalem-v1, clue_san-salvador and ~40 lane
+DBs) no longer exists — not in `docker ps -a`, nothing listens on 55040, no named volume left.
+Also gone: clue-pg-{san-salvador,trenton,damascus,fredericton,addis-ababa}; clue-redis (6379) is
+Exited. Not done by this session (it last used the server ~2 h earlier, successfully). Docker
+kept no destroy events. Dangling volumes are three small PG16 dirs (46–125 MB) — not istanbul.
+Only backup found: ~/clue-db-backups/clue_colombo-demo-success-2026-08-29.sql.gz. The live run is
+blocked on a database; nothing was recreated pending the founder's call.
+- Correction (founder, same evening): the founder deleted clue-pg-istanbul themselves.
+- Full container/volume inventory (checked, not assumed; stopped volumes read via throwaway
+  copies, since removed): papeete (55040) and san-diego (55050) never started, volumes empty;
+  clue-postgres (dar-es-salaam volume) = 27 DBs, all 0 tables; dangling volumes 77b0/fd69 empty,
+  7a76 (`clue`, a1c5b9842f0e) and e4df (`clue`, 44039cb83844) old schemas with no ICP-pin table;
+  narrative-owner-test = 4c916b02ed9b, 0 pins; lome / jerusalem-v1 = empty `clue`. Only DBs with a
+  pinned ICP: the zafran/premier research DBs. The single-DB zafran containers and
+  finalization-repair are at f3eb43c7808f (another branch's revision, not on this branch).
+  Branch-compatible with pins: clue-zafran-quality-live → clue_premier_r24_20260928
+  (4c916b02ed9b, gi-specialty-ambulatory-groups), clue_zafran_r18_20260926 (4c916b02ed9b,
+  clue-abm-buyers), plus older-revision ones that migrate forward.
+
+## Sixth round — fresh-DB attempt, then stopped (founder: test after merging instead)
+
+- Started clue-pg-papeete (:55040), created + migrated `clue_dubai` (fresh, 376 tables), moved
+  this workspace's stack to 3025/8015/8025/8035 in .env + apps/frontend/.env.local (jerusalem's
+  stack holds 3028-series; backups /tmp/dubai.env.bak, /tmp/dubai.env.local.bak), copied lome's
+  lumen-api-helper (identical Rust source, built after the last crates change), `npm ci`, added
+  untracked `scripts/dev_stack_dubai.sh`. Founder then said not to make the DB (testing after the
+  merge to research-streaming): papeete stopped again; `clue_dubai` still exists inside it.
+- Real bug found on the way (UNCOMMITTED fix): fresh-DB fleet workers cannot boot — recipe0-stage0
+  v19 and v22-v28 pin the retired `open_design_leg@4` and fail promotion (`unknown_tool`,
+  `version_mismatch`); all eight confirmed by running the worker's real startup with a
+  collect-all seed on a scratch DB. Moved them to HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES (the
+  v16-v18 precedent); scratch re-run: 0 failures. test_recipe_contracts' eight adjacency checks now
+  assert replay-only membership (the v29 pattern); recipe tests green.
+- Still uncommitted: the manual-pointer fix and this recipe fix. The live discovery run is owed
+  on the merged branch.
+
+## Seventh round — merged the research line, resumed the fresh-DB setup (deployment day)
+
+- Founder: merge `codex/ai-ark-committee-discovery` (+ local) and continue the setup to find what
+  breaks. No such branch; the match is `codex/ai-ark-committee-discovery-spec` (local a08daceb9 =
+  remote 3918e1215 + 1). Pointer fix (5d9db9ffb) and fresh-DB recipe fix (d850ab23a) committed
+  first; the other session's dirty `account_research_catalog.py` edit was set aside
+  (/tmp/account_research_catalog.py.dirty-backup) and is byte-identical to the merged file.
+- Merge `541268994`: 12 conflicts. v66/v39/manual v12 + tool_manual_link kept; their
+  continuation_config plumbing, thin-response retry test and turn-budget note closure kept;
+  manual-limits v12 regenerated (their reworded finalize message), v66 re-pinned, registry digest
+  `1faebe0e…`; alembic join `d9f29ca9ca66` (97427f8eb3d6 + f3eb43c7808f). The v65 bundle was
+  byte-identical on both sides. Their 8 `.artifacts/**/*.py` eval scripts fail ruff (not product
+  code). `.env` given the 5 missing LUMEN_INGESTION_* keys.
+- clue_dubai (papeete :55040) migrated to d9f29ca9ca66; stack started via
+  scripts/dev_stack_dubai.sh on 3025/8015/8025/8035.
+- Post-merge breakage found by the full offline run (48 failures; 19 pre-existing, 29 new):
+  28 were ONE merge defect — both branches inserted `TurnBudgetMiddleware` into the Deep Agent
+  middleware tuple and git kept both; LangChain refuses duplicate middleware, so every agent turn
+  would fail at graph build. Fixed in e684d1c87 (runtime.py now == the research line's). The 29th:
+  the research line set `CLUE_ARV2_DISPLAY_MODEL=meta/muse-spark-1.3` in .env.example without
+  moving the Settings default; default now follows (founder's Muse request). All 29 green. The
+  other 33 turn-budget files were checked byte-equal to the research line (no other doubling).
+- This workspace's .env model keys aligned to Muse Spark 1.3 (was Grok/Luna, copied from jerusalem
+  before the switch); backup /tmp/dubai.env.bak2. APIs + workers restarted to load the fixes.

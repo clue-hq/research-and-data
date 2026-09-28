@@ -42,6 +42,7 @@ only by the fleet-plane reads, never bolted onto the shipped job DTO.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -151,15 +152,27 @@ async def update_request(
 
 
 async def list_recent(
-    conn: AsyncConnection, *, workspace_id: str, limit: int = 50
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    limit: int = 50,
+    kinds: Sequence[str] | None = None,
 ) -> list[JsonObject]:
-    """Most-recent jobs first (created_at DESC, job_id DESC as the ported tiebreak)."""
+    """Most-recent jobs first (created_at DESC, job_id DESC as the ported tiebreak).
+
+    ``kinds`` narrows the read to those ingestion kinds; ``None`` is every kind.
+    """
+    kind_clause = " AND kind::text = ANY(:kinds)" if kinds is not None else ""
+    params: dict[str, Any] = {"w": workspace_id, "limit": limit}
+    if kinds is not None:
+        params["kinds"] = list(kinds)
     rows = await conn.execute(
         text(
             "SELECT * FROM design_ingestion_job WHERE workspace_id = :w"
-            " ORDER BY created_at DESC, job_id DESC LIMIT :limit"
+            + kind_clause
+            + " ORDER BY created_at DESC, job_id DESC LIMIT :limit"
         ),
-        {"w": workspace_id, "limit": limit},
+        params,
     )
     return [_job_from_row(row) for row in rows]
 

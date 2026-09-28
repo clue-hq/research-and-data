@@ -34,6 +34,7 @@ from pydantic import Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.account_research_catalog import (
     arv2_account_profile_sha256,
     arv2_person_profile_sha256,
@@ -1311,10 +1312,10 @@ class LaunchArv2AccountResearchTool(Tool):
         "explicitly approves this exact account set and ICP. A successful result means the jobs "
         "were enqueued or replayed; it never means research has completed, and it authorizes no "
         "contact research. "
-        "Before launching, read .deepagent/skills/account-research-briefing/v2/SKILL.md and "
+        "Before launching, read .deepagent/skills/account-research-briefing/v3/SKILL.md and "
         "write the project-specific delegation brief it teaches in directive_text, with "
         "account placeholders and references to the complete pinned documents. "
-        "Manual: .deepagent/skills/manual-tools/v12/SKILL.md#launch_arv2_account_research"
+        + tool_manual_link("launch_arv2_account_research")
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput
@@ -1407,7 +1408,7 @@ class LaunchArv2PersonResearchTool(Tool):
         "replayed, never that research has completed. ``persona`` is the committee seat each "
         "named person is given if they do not already hold one — it is what puts them on the "
         "account's contact list — and defaults to ``user``. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#launch_arv2_person_research"
+        + tool_manual_link("launch_arv2_person_research")
     )
     input_model = LaunchArv2PersonResearchInput
     output_model = LaunchArv2PersonResearchOutput
@@ -1482,7 +1483,7 @@ class ReadArv2AccountResearchRunTool(Tool):
         "Read one ARV2 account-research run: what it was pinned to, its status, and the state of "
         "each account's job (including the failure code of anything that needs review). Effect-"
         "free; it never starts, resumes or changes research. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_arv2_account_research_run"
+        + tool_manual_link("read_arv2_account_research_run")
     )
     input_model = ReadArv2AccountResearchRunInput
     output_model = ReadArv2AccountResearchRunOutput

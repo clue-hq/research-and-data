@@ -256,9 +256,12 @@ def _body(
             if id in people
         ]
         if item.send_line:
+            # Exactly the served ``ResearchSendLine`` fields: the read validates strictly, and the
+            # sentence's ``kind``/``qualifications`` (already checked above) are not part of it.
             body["sendLine"] = {
                 "channel": "email",
-                **item.send_line.model_dump(mode="json", by_alias=True),
+                "text": item.send_line.text,
+                "claimIds": [str(claim_id) for claim_id in item.send_line.claim_ids],
             }
         items.append(body)
     return {
@@ -279,13 +282,14 @@ async def publish_page(
     execution_id: UUID,
     model: str,
     draft: PageDraft,
+    complete: bool = True,
 ) -> tuple[UUID, ...]:
     inputs = await page_inputs(conn, scope, context_id=context_id, page=draft.page, lock=True)
     if not advisory_research(scope) and inputs.sha256 != draft.expected_dependency_sha256:
         raise ValueError(
             "stale_page_inputs: reread page inputs and correct the draft before publishing"
         )
-    claims, people = await _validate_sections(conn, scope, inputs, draft)
+    claims, people = await _validate_sections(conn, scope, inputs, draft, complete=complete)
     raw = draft.model_dump_json(by_alias=True).encode()
     sha = content_address(raw)
     key = artifact_key(scope.workspace_id, sha)
@@ -381,7 +385,9 @@ async def publish_page(
                 "body": json.dumps(_body(section, people, draft.gaps, scope.account_id)),
                 "claims": sorted({id for s in section.sentences() for id in s.claim_ids}),
                 "model": model,
-                "manifest": json.dumps(inputs.manifest, default=str),
+                "manifest": json.dumps(
+                    section_dependencies(inputs.manifest, section, scope), default=str
+                ),
                 "key": key,
                 "execution": execution_id,
             },
@@ -455,17 +461,24 @@ async def read_page(
             draft = PageDraft(
                 page=page, expected_dependency_sha256=inputs.sha256, sections=(section,)
             )
-            claims, _ = await _validate_sections(conn, scope, inputs, draft, complete=False)
-            if advisory_research(scope):
-                from clue_api.arv2.quality_presentation import annotate_sentences
-
-                annotate_sentences(body, claims)
+            await _validate_sections(conn, scope, inputs, draft, complete=False)
         except (KeyError, ValueError):
             stale.append(row["section_key"])
             title = section_titles.get(row["section_key"], "Research")
             gaps.append(f"{title}: supporting evidence needs review; refresh pending")
             continue
-        if fingerprint(row["dependency_manifest"]) != inputs.sha256:
+        stored_manifest = row["dependency_manifest"]
+        expected_manifest = section_dependencies(
+            inputs.manifest,
+            section,
+            scope,
+            force=stored_manifest.get("contract") == "research-section-dependencies-v1",
+        )
+        # Older owner pages stored the full input inventory. Compare their actual citations
+        # using the same projection; an unrelated new claim does not invalidate this section.
+        if stored_manifest.get("contract") == "research-quality-pages-v1":
+            stored_manifest = section_dependencies(stored_manifest, section, scope)
+        if fingerprint(stored_manifest) != fingerprint(expected_manifest):
             stale.append(row["section_key"])
         gaps.extend(body.get("gaps", []))
         live[row["section_key"]] = LiveBlock(
@@ -515,32 +528,47 @@ async def read_page(
         "gaps": list(dict.fromkeys(gaps)),
         "contexts": [],
     }
+    # Founder ruling 2026-09-29: only the designed sections are served, restricted as their
+    # recipes say. A research finding no section cites goes into this page's Miscellaneous.
     finding_ids: tuple[str, ...] = ()
-    if advisory_research(scope):
-        from clue_api.arv2.quality_presentation import finding_section
+    miscellaneous = next((s for s in block["sections"] if s["key"] == "miscellaneous"), None)
+    if miscellaneous is not None:
+        from clue_api.arv2.quality_presentation import uncovered_findings
 
-        for section in block["sections"]:
-            section["restricted"] = False
-            if section["key"] == "watch-outs":
-                section["key"] = "research-notes"
-                section["h1"] = "Research notes"
-        known_keys = {r.section_key for r in recipes}
-        for key, stored in live.items():
-            if key not in known_keys:
-                block["sections"].append(
-                    {
-                        "key": key,
-                        "h1": key.replace("-", " ").title(),
-                        "intro": stored.body_json.get("intro", []),
-                        "items": stored.body_json.get("items", []),
-                        "empty": False,
-                        "restricted": False,
-                        "pending": False,
-                        "gaps": stored.body_json.get("gaps", []),
-                    }
-                )
-        findings, finding_ids = await finding_section(conn, scope, inputs)
-        block["sections"].append(findings)
+        # A finding cited on any of this subject's pages (the overview too) is already shown.
+        cited_elsewhere = (
+            await conn.execute(
+                text("""SELECT DISTINCT unnest(b.cited_claim_ids)::text FROM display_block b
+        WHERE b.workspace_id=:ws AND b.project_id=:project AND b.context_id=:context
+          AND b.generation_id=:generation AND b.subject_id=:subject
+          AND b.superseded_at IS NULL"""),
+                {
+                    "ws": scope.workspace_id,
+                    "project": scope.project_id,
+                    "context": context_id,
+                    "generation": inputs.generation.generation_id,
+                    "subject": scope.person_subject_id or scope.account_id,
+                },
+            )
+        ).scalars()
+        cited = (
+            {str(id) for b in live.values() for id in b.cited_claim_ids}
+            | {str(id) for id in shared_cited}
+            | set(cited_elsewhere)
+        )
+        extra = await uncovered_findings(
+            conn,
+            scope,
+            inputs,
+            subject_id=scope.person_subject_id or scope.account_id,
+            cited=cited,
+        )
+        if extra:
+            miscellaneous["items"] = [*miscellaneous.get("items", []), *extra]
+            miscellaneous["empty"] = False
+            miscellaneous["pending"] = False
+            miscellaneous.pop("emptyMessage", None)
+            finding_ids = tuple(item["body"][0]["claimIds"][0] for item in extra)
     block["researchQuality"] = quality
     return {
         "display_block": block,
@@ -558,4 +586,27 @@ async def read_page(
         "pending": tuple(sorted(missing)),
         "generated": (),
         "degraded_reason": None,
+    }
+
+
+def section_dependencies(
+    manifest: dict[str, Any], section: PageSectionDraft, scope: JobScope, *, force: bool = False
+) -> dict[str, Any]:
+    """Owner narratives depend on cited evidence, not every concurrent generation output."""
+    from clue_api.arv2.quality_owned_narrative import owns_narrative
+
+    if not force and not owns_narrative(scope):
+        return manifest
+    cited = {str(id) for s in section.sentences() for id in s.claim_ids}
+    people = {str(id) for i in section.items for id in i.contact_ids}
+    return {
+        **{
+            k: v
+            for k, v in manifest.items()
+            if k not in ("input_revision", "claim_versions", "membership", "recipes", "contract")
+        },
+        "contract": "research-section-dependencies-v1",
+        "claim_versions": [v for v in manifest["claim_versions"] if v[0] in cited],
+        "membership": [m for m in manifest["membership"] if str(m["contact_id"]) in people],
+        "recipes": [r for r in manifest["recipes"] if r["section_key"] == section.key],
     }

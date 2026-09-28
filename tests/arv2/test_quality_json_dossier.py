@@ -23,10 +23,11 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert {"save_dossier_section", "validate_dossier", "finish_dossier"} <= names
     assert {"begin_dossier_revision", "discard_dossier_revision"} <= names
     assert "record_research_finding" not in names
+    assert "record_research_disposition" not in names
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 23
+    assert CURRENT_RECIPE_VERSION == 24
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
@@ -40,12 +41,14 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
         n + "@1" in allowed
         for n in (
             "save_dossier_section",
+            "update_dossier_findings",
             "validate_dossier",
             "finish_dossier",
             "begin_dossier_revision",
             "discard_dossier_revision",
         )
     )
+    assert "record_research_disposition" not in json.dumps(recipe)
     # All explicitly named skill paths must be mounted by the selected profile.
     mounted = {skill.materialized_path.removeprefix(".deepagent/") for skill in profile.skills}
     resources = {
@@ -57,6 +60,13 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
             f"prompts/quality-{'person' if person else 'account'}-research/"
         ):
             assert set(re.findall(r"/\.deepagent/(skills/[^\s`]+?/SKILL\.md)", body)) <= mounted
+    selected = {skill.resource.name: skill.resource.version for skill in profile.skills}
+    assert selected["person-dossier" if person else "account-dossier"] == ("v5" if person else "v9")
+    assert (
+        selected["claim-ready-person-dossier" if person else "claim-ready-account-dossier"] == "v3"
+    )
+    if not person:
+        assert selected["person-research-briefing"] == "v4"
     old_parent = (
         quality_profiles(registry, version=16, person=person)
         .resolve(AgentRole.ACCOUNT_RESEARCH)

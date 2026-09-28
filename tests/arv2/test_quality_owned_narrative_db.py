@@ -130,10 +130,11 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
                 s for s in insight["display_block"]["sections"] if s["key"] == "context-only"
             )
             notes = next(
-                s for s in overview["display_block"]["sections"] if s["key"] == "research-notes"
+                s for s in overview["display_block"]["sections"] if s["key"] == "watch-outs"
             )
             assert shared["items"] == notes["items"]
-            assert "contact-insights" in insight["stale"]
+            assert shared["restricted"] and notes["restricted"]
+            assert "contact-insights" not in insight["stale"]
             op = OperationScope(child.workspace_id, child.run_id, child.job_id, child.account_id)
             eid = await execution(conn, op, child.project_id)
             await bind_execution(
@@ -173,11 +174,10 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
             assert opener["sendLine"]["channel"] == "email"
             assert opener["sendLine"]["text"] == "A proposed question, not a quote."
             insight = await read_page(conn, parent, context_id=cid, page="insights")
-            shared = next(
-                s for s in insight["display_block"]["sections"] if s["key"] == "contact-insights"
+            # The person's insights live on the contact page only (ruling 2026-09-29).
+            assert not any(
+                s["key"] == "contact-insights" for s in insight["display_block"]["sections"]
             )
-            assert not shared["pending"] and shared["items"][0]["body"] == sentences
-            assert shared["items"][0]["subject"]["contactId"] == str(child.contact_id)
             import os
             from pathlib import Path
 
@@ -325,9 +325,11 @@ def test_pre_miscellaneous_narrative_can_publish_without_refresh_loop(tmp_path, 
     run_async(case())
 
 
+@pytest.mark.parametrize("version", [20, 24])
 @pytest.mark.parametrize("person", [False, True])
+@pytest.mark.parametrize("report_mode", ["legacy", "notes", "none"])
 def test_native_researcher_writes_pages_without_specialist_and_replays(
-    tmp_path, monkeypatch, person
+    tmp_path, monkeypatch, person, version, report_mode
 ):
     import asyncio
     from contextlib import asynccontextmanager
@@ -358,12 +360,14 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
     async def case():
         async with rollback_conn() as conn:
             parent, child, cid, storage, ctx, gen, path = await initial(conn, tmp_path / "blobs")
-            parent = replace(parent, input_refs={"quality_recipe_version": 20})
+            parent = replace(parent, input_refs={"quality_recipe_version": version})
             await load_display_recipes(conn)
             await invoke(FinishDossierTool, parent, storage, ctx, DossierInput())
             job = parent
             if person:
-                job = replace(child, input_refs={**child.input_refs, "quality_recipe_version": 20})
+                job = replace(
+                    child, input_refs={**child.input_refs, "quality_recipe_version": version}
+                )
                 op = OperationScope(job.workspace_id, job.run_id, job.job_id, job.account_id)
                 eid = await execution(conn, op, job.project_id)
                 await bind_execution(
@@ -447,34 +451,43 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
                 def build(self, **kwargs):
                     builds.append(kwargs["role"])
                     assert kwargs["role"] == "account_research"
-                    return Writer(
-                        responses=[
-                            model_call("read_narrative_inputs", {}, "inputs"),
-                            model_call("write_research_narrative", {}, "write"),
-                            model_call(
-                                "write_file",
-                                {
-                                    "file_path": "/outputs/research.json",
-                                    "content": json.dumps(
-                                        {
-                                            "schema_version": "research-unit-v1",
-                                            "context_id": str(cid),
-                                            "job_id": str(job.job_id),
-                                            "summary": "Own narrative saved after existing import.",
-                                            "claim_ids": claimids,
-                                            "gaps": ["Scripted contract test, not live research."],
-                                        }
-                                    ),
-                                },
-                                "report",
-                            ),
-                            model_call(
-                                "finalize_turn",
-                                {"status": "completed", "user_message": "Saved owned pages."},
-                                "finish",
-                            ),
-                        ]
-                    )
+                    responses = [
+                        model_call("read_narrative_inputs", {}, "inputs"),
+                        model_call("write_research_narrative", {}, "write"),
+                        model_call(
+                            "write_file",
+                            {
+                                "file_path": "/outputs/research.json",
+                                "content": json.dumps(
+                                    {
+                                        "schema_version": "research-unit-v1",
+                                        "context_id": str(cid),
+                                        "job_id": str(job.job_id),
+                                        "summary": "Own narrative saved after existing import.",
+                                        "claim_ids": claimids,
+                                        "gaps": ["Scripted contract test, not live research."],
+                                    }
+                                ),
+                            },
+                            "report",
+                        ),
+                        model_call(
+                            "finalize_turn",
+                            {"status": "completed", "user_message": "Saved owned pages."},
+                            "finish",
+                        ),
+                    ]
+                    if report_mode == "none":
+                        responses.pop(2)
+                    elif report_mode == "notes":
+                        responses[2].tool_calls[0]["args"]["content"] = json.dumps(
+                            {
+                                "summary": "Own narrative saved after existing import.",
+                                "gaps": ["Scripted contract test, not live research."],
+                                "claim_ids": ["obsolete bookkeeping is ignored"],
+                            }
+                        )
+                    return Writer(responses=responses)
 
             runtime = ResearchUnitRuntime(
                 scope=job,
@@ -492,6 +505,11 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
                 objective="Continue from the imported dossier and write your own narrative."
             )
             assert outcome.status is AgentExecutionStatus.COMPLETED, outcome
+            report = await runtime.report(outcome)
+            assert {str(i) for i in report.claim_ids} == set(claimids)
+            assert report.delivery["claims_imported"]
+            assert report.delivery["narrative_published"]
+            assert report.delivery["narrative_pages"]
             assert builds == ["account_research"]
             nodes = set(
                 (

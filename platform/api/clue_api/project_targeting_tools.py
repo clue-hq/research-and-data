@@ -15,6 +15,7 @@ from pydantic import Field, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.icp_confirmation import (
     IcpDocumentSubject,
     confirm_icp_document,
@@ -91,7 +92,7 @@ class ConfigureProjectTargetingTool(Tool):
         "otherwise use its products, the existing project set, or the brand's active products. "
         "Returns the confirmed artifact and product-selection version for use in the same turn. "
         "No gate opens and no research launches. Continue the user's task after this succeeds. "
-        "Manual: .deepagent/skills/manual-tools/v8/SKILL.md#configure_project_targeting"
+        + tool_manual_link("configure_project_targeting")
     )
     input_model: ClassVar[type[ToolInput]] = ConfigureProjectTargetingInput
     output_model: ClassVar[type[ToolOutput]] = ConfigureProjectTargetingOutput

@@ -15,8 +15,8 @@ const base: ResearchProgress = {
 };
 
 test("the headline counts agents and queued accounts", () => {
-  assert.equal(researchProgressHeadline(base), "7 account research agents running, 3 accounts queued");
-  assert.equal(researchProgressHeadline({ ...base, running: 1, queued: 1 }), "1 account research agent running, 1 account queued");
+  assert.equal(researchProgressHeadline(base), "7 research agents running, 3 accounts queued");
+  assert.equal(researchProgressHeadline({ ...base, running: 1, queued: 1 }), "1 research agent running, 1 account queued");
 });
 
 test("the line rotates round-robin over the running agents, worded by stage", () => {
@@ -55,4 +55,26 @@ test("a card from a backend that does not send an incident still parses", () => 
     pill: "running", last_finished_at: null, agents: [], attention: [],
   });
   assert.equal(card.incident, null);
+});
+
+
+test("researcher milestones name the person and survive schema parsing", () => {
+  const labels = {
+    researching: "researching and reviewing evidence",
+    compiling_findings: "compiling research findings",
+    storing_claims: "storing claims",
+    writing_narrative: "writing the research narrative",
+  };
+  for (const [stage, label] of Object.entries(labels)) {
+    const card = ResearchProgressSchema.parse({ ...base, agents: [{
+      account_name: "Acme", subject: "person", subject_name: "Jane Doe", stage,
+    }] });
+    assert.equal(researchProgressLine(card, 0), `Jane Doe at Acme: ${label}`);
+  }
+});
+
+
+test("queued work does not claim research is complete", () => {
+  assert.equal(researchProgressLine({ ...base, running: 0, queued: 1, agents: [] }, 0),
+    "Research queued for an available agent");
 });

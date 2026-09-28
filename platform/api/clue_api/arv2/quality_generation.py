@@ -9,7 +9,7 @@ initial paid research.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -38,6 +38,15 @@ class Generation:
     input_revision: int
     reconciled_revision: int
     state: str
+
+
+def continuation_work_id(generation: Generation) -> UUID:
+    """One fleet lease across generations of the same contextual account."""
+    return uuid5(
+        NAMESPACE_URL,
+        f"research-editorial:{generation.workspace_id}:"
+        f"{generation.project_id}:{generation.context_id}:{generation.account_id}",
+    )
 
 
 def _generation(row: Mapping[str, Any]) -> Generation:
@@ -312,27 +321,50 @@ async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) ->
 
 
 async def pending_continuations(
-    conn: AsyncConnection, *, limit: int = 100
+    conn: AsyncConnection, *, limit: int = 100, generation_id: UUID | None = None
 ) -> tuple[Generation, ...]:
     if not 1 <= limit <= 1000:
         raise ValueError("invalid continuation batch size")
     rows = (
         (
             await conn.execute(
-                text("""SELECT g.* FROM arv2_account_research_generation g
+                text("""SELECT g.*, (SELECT min(r.input_revision)
+          FROM arv2_narrative_reconciliation r WHERE r.generation_id=g.generation_id
+            AND r.state IN ('prepared','generated') AND r.input_revision>g.reconciled_revision
+          ) AS pending_snapshot FROM arv2_account_research_generation g
         JOIN arv2_research_job j ON j.job_id=g.initial_job_id AND j.workspace_id=g.workspace_id
         WHERE g.input_revision>g.reconciled_revision AND g.initial_settled_at IS NOT NULL
+          AND (CAST(:generation AS uuid) IS NULL OR g.generation_id=:generation)
           AND g.state NOT IN ('suspended','privacy_stopped')
           AND j.status IN ('completed','needs_review')
           AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
+          AND (COALESCE((j.input_refs->>'quality_recipe_version')::int,0)<20 OR (
+            j.subject_type='account' AND NOT EXISTS (SELECT 1 FROM arv2_generation_child c
+              JOIN arv2_research_job child ON child.job_id=c.job_id
+              WHERE c.generation_id=g.generation_id
+                AND child.status NOT IN ('completed','needs_review','failed')
+                AND NOT EXISTS (SELECT 1 FROM arv2_research_import_ready i
+                  WHERE i.job_id=child.job_id AND i.workspace_id=g.workspace_id))
+            AND NOT EXISTS (SELECT 1 FROM arv2_account_research_generation newer
+              JOIN arv2_research_job newer_job ON newer_job.job_id=newer.initial_job_id
+              WHERE newer_job.subject_type='account' AND newer.workspace_id=g.workspace_id
+                AND newer.project_id=g.project_id
+                AND newer.account_id=g.account_id AND newer.context_id=g.context_id
+                AND (newer.created_at,newer.generation_id)>(g.created_at,g.generation_id))
+          ))
         ORDER BY g.updated_at,g.generation_id LIMIT :limit"""),
-                {"limit": limit},
+                {"limit": limit, "generation": generation_id},
             )
         )
         .mappings()
         .all()
     )
-    return tuple(_generation(dict(row)) for row in rows)
+    return tuple(
+        replace(_generation(dict(row)), input_revision=row["pending_snapshot"])
+        if row["pending_snapshot"] is not None
+        else _generation(dict(row))
+        for row in rows
+    )
 
 
 async def reconcile_generation(
@@ -342,15 +374,21 @@ async def reconcile_generation(
     generation_id: UUID,
     expected_revision: int,
     needs_review: bool = False,
+    processed_snapshot: bool = False,
 ) -> bool:
     current = await read_generation(
         conn, workspace_id=workspace_id, generation_id=generation_id, lock=True
     )
-    if current.input_revision != expected_revision or current.state in (
+    if (
+        current.input_revision < expected_revision
+        or (not processed_snapshot and current.input_revision != expected_revision)
+    ) or current.state in (
         "suspended",
         "privacy_stopped",
     ):
         return False
+    if current.reconciled_revision >= expected_revision:
+        return True
     statuses = (
         (
             await conn.execute(
@@ -364,7 +402,9 @@ async def reconcile_generation(
         .all()
     )
     state = (
-        "needs_review"
+        "provisional"
+        if current.input_revision > expected_revision
+        else "needs_review"
         if needs_review
         else "partial"
         if any(s in ("failed", "needs_review") for s in statuses)

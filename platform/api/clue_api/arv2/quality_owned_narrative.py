@@ -71,8 +71,18 @@ class NarrativePage(BaseModel):
 
 class WriteNarrativeInput(ToolInput):
     dossier_version: int = Field(ge=1)
+    # The pinned v1 schema serves both subjects. Person-only requiredness is checked
+    # against the authorized job scope below, not inferred from caller-supplied pages.
     account_dossier_version: int | None = None
     pages: tuple[NarrativePage, ...]
+
+
+class NarrativeVersionError(ValueError):
+    """Actionable version refusal, distinct from citation or page-shape errors."""
+
+    def __init__(self, code: str, recovery: str):
+        super().__init__(recovery)
+        self.code = code
 
 
 def finding_map(saved: dict[str, Any]) -> dict[str, UUID]:
@@ -154,7 +164,9 @@ class ReadNarrativeInputsTool(_ResearchWriteTool):
     model_description = (
         "After finish_dossier, get current dossier versions, canonical paths and exact owned "
         "page sections. Existing claims include provider enrichment. Write your own narrative; "
-        "reuse your investigation and seller context, rather than repeating all source reads."
+        "reuse your investigation and seller context, rather than repeating all source reads. "
+        "Pass dossier_version to write_research_narrative; person/contact writers must also "
+        "pass the separate account_dossier_version returned here."
     )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
@@ -193,7 +205,10 @@ class WriteResearchNarrativeTool(_ResearchWriteTool):
     output_model: ClassVar[type[ToolOutput]] = PublishPageOutput
     model_description = (
         "Save your complete account (overview + insights) or person (contact) narrative after "
-        "claim import. Use the versions and sections from read_narrative_inputs. finding_ids "
+        "claim import. Copy dossier_version and sections from read_narrative_inputs. For a "
+        "person/contact narrative, account_dossier_version is REQUIRED, even if no account "
+        "findings are cited; copy that separate field from the same receipt. Account writers "
+        "omit it or use null. finding_ids "
         "refer to your dossier; account_finding_ids only to a person's parent account dossier. "
         "claim_ids may cite additional scoped stored claims. Code maps references to existing "
         "display blocks without rewriting prose. Shared sections are projected, not authored. "
@@ -217,7 +232,9 @@ class WriteResearchNarrativeTool(_ResearchWriteTool):
             except ValueError as exc:
                 result = PublishPageOutput(
                     status="refused",
-                    error_code="narrative_reference_or_shape",
+                    error_code=exc.code
+                    if isinstance(exc, NarrativeVersionError)
+                    else "narrative_reference_or_shape",
                     recovery=str(exc)[:400],
                 )
         return ToolResult(
@@ -229,17 +246,48 @@ class WriteResearchNarrativeTool(_ResearchWriteTool):
     ) -> tuple[UUID, ...]:
         scope = self.scope
         saved = await read_json_dossier(conn, self.storage, scope, authority.context_id)
-        if saved.get("state") != "complete" or saved["version"] != args.dossier_version:
-            raise ValueError("Dossier changed or import incomplete; read_narrative_inputs again")
+        if saved.get("state") != "complete":
+            raise NarrativeVersionError(
+                "narrative_import_incomplete",
+                "Your dossier import is incomplete. Complete finish_dossier, then call "
+                "read_narrative_inputs before writing the narrative.",
+            )
+        if saved["version"] != args.dossier_version:
+            raise NarrativeVersionError(
+                "narrative_dossier_version_stale",
+                f"dossier_version={args.dossier_version} does not match current version "
+                f"{saved['version']}. Call read_narrative_inputs, review the changed dossier "
+                "and refresh affected prose/references before retrying with its version.",
+            )
         own = finding_map(saved)
         account = {}
         if scope.person_subject_id:
+            if args.account_dossier_version is None:
+                raise NarrativeVersionError(
+                    "narrative_account_dossier_version_missing",
+                    "Missing account_dossier_version: person/contact narratives require it, "
+                    "even without account citations. Copy account_dossier_version from your "
+                    "read_narrative_inputs receipt (not dossier_version) into the write request. "
+                    "If unavailable, call read_narrative_inputs. Preserve your draft; no new "
+                    "research or claim import is needed for this missing argument.",
+                )
             parent = await read_parent_dossier(conn, self.storage, scope, authority.context_id)
             if parent["version"] != args.account_dossier_version:
-                raise ValueError("Parent dossier changed; read_narrative_inputs again")
+                raise NarrativeVersionError(
+                    "narrative_account_dossier_version_stale",
+                    f"account_dossier_version={args.account_dossier_version} does not match "
+                    f"current parent version {parent['version']}. Call read_narrative_inputs, "
+                    "review the changed parent dossier and refresh affected prose/references "
+                    "before retrying with its account_dossier_version.",
+                )
             account = finding_map(parent)
         elif args.account_dossier_version is not None:
-            raise ValueError("Account writers have no separate parent account dossier")
+            raise NarrativeVersionError(
+                "narrative_account_dossier_version_unexpected",
+                "Account overview/insights writers have no separate parent account dossier. "
+                "Omit account_dossier_version or set it to null; keep dossier_version from "
+                "read_narrative_inputs.",
+            )
         expected = {"contact"} if scope.person_subject_id else {"overview", "insights"}
         if len(args.pages) != len(expected) or {p.page for p in args.pages} != expected:
             raise ValueError(f"Write exactly these owned pages: {', '.join(sorted(expected))}")

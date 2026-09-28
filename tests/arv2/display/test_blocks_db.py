@@ -826,5 +826,5 @@ def test_a_shared_section_composes_the_owner_body_under_its_own_chrome() -> None
 
 def test_a_shared_section_whose_owner_is_unwritten_is_empty_and_never_pending_here() -> None:
     composed = compose_display_block("insights", recipes_for("insights"), {}, shared={})
-    section = next(s for s in composed["sections"] if s["key"] == "contact-insights")
+    section = next(s for s in composed["sections"] if s["key"] == "context-only")
     assert section["empty"] is True and section["items"] == []

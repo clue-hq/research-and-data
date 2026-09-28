@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Literal
 from uuid import UUID
@@ -78,6 +78,10 @@ class ProgressJob:
     #: ``provider_refused:<provider>:<reason>`` / ``provider_failed:…`` when the job died on a
     #: provider that stopped serving us; anything else (or ``None``) leaves the prose alone.
     failure_code: str | None = None
+    delivery_stage: str | None = None
+    deliverables_ready: bool = False
+    delivered_at: datetime | None = None
+    subject_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,7 @@ class ProgressAgent:
     account_name: str
     stage: str
     subject: Literal["account", "person"]
+    subject_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +122,9 @@ def account_score(account_job: ProgressJob, person_jobs: Sequence[ProgressJob]) 
     "Finished" is :data:`FINISHED`, never :data:`SETTLED`: a suspended job is paused mid-stage and
     earns the quarters it actually walked, nothing more.
     """
+    if account_job.delivery_stage is not None:
+        group = [account_job, *person_jobs]
+        return sum(delivery_score(j) for j in group) / len(group)
     if account_job.stage is None:
         return 0.0
     index = _STAGE_INDEX.get(account_job.stage, 0)
@@ -138,7 +146,35 @@ def person_group_score(person_jobs: Sequence[ProgressJob]) -> float:
     """
     if not person_jobs:
         return 0.0
-    return sum(1 for p in person_jobs if p.status in FINISHED) / len(person_jobs)
+    return sum(
+        delivery_score(p) if p.delivery_stage is not None else float(p.status in FINISHED)
+        for p in person_jobs
+    ) / len(person_jobs)
+
+
+def delivery_score(job: ProgressJob) -> float:
+    """Completed milestone fractions, not time estimates or claims about coverage."""
+    if job.deliverables_ready:
+        return 1.0
+    return {
+        "researching": 0.0,
+        "compiling_findings": 0.25,
+        "storing_claims": 0.5,
+        "writing_narrative": 0.75,
+    }.get(job.delivery_stage or "", 0.0)
+
+
+def presentation_job(job: ProgressJob) -> ProgressJob:
+    if job.delivery_stage is None:
+        return job
+    if job.deliverables_ready:
+        return replace(job, status="completed", finished_at=job.delivered_at or job.finished_at)
+    # A terminal execution alone does not establish a usable publication.
+    if job.status == "completed":
+        return replace(
+            job, status="needs_review", failure_message="Research pages are not yet available"
+        )
+    return job
 
 
 def _clip(text: str, limit: int = _REASON_MAX) -> str:
@@ -196,6 +232,7 @@ def fold_progress(
     """
     if not jobs:
         return None
+    jobs = [presentation_job(j) for j in jobs]
     accounts = [j for j in jobs if j.subject_type == "account"]
     # Keyed by the RUN as well as the account: the same account researched twice is two separate
     # pieces of work, and one run's people must never be counted against another run's job.
@@ -219,7 +256,9 @@ def fold_progress(
         + tuple(
             ProgressAttention(account_name=j.account_name, reason="run suspended")
             for j in accounts
-            if run_statuses.get(j.run_id) == "suspended" and j.status not in ATTENTION
+            if run_statuses.get(j.run_id) == "suspended"
+            and j.status not in ATTENTION
+            and not j.deliverables_ready
         )
     )
     lingered_out = last_finished is None or now - last_finished > timedelta(seconds=linger_s)
@@ -247,15 +286,35 @@ def fold_progress(
         queued=sum(1 for a in accounts if a.status == "not_started")
         + sum(1 for people in person_only if all(p.status == "not_started" for p in people)),
         running=len(running_jobs),
-        finished=sum(1 for a in accounts if a.status in FINISHED)
-        + sum(1 for people in person_only if all(p.status in FINISHED for p in people)),
+        finished=sum(
+            1
+            for a in accounts
+            if (
+                a.deliverables_ready
+                and all(
+                    p.deliverables_ready
+                    for p in people_by_account.get((a.run_id, a.account_entity_id), ())
+                )
+                if a.delivery_stage is not None
+                else a.status in FINISHED
+            )
+        )
+        + sum(
+            1
+            for people in person_only
+            if all(
+                p.deliverables_ready if p.delivery_stage is not None else p.status in FINISHED
+                for p in people
+            )
+        ),
         progress_pct=100 if all_settled and not attention else min(pct, 99),
         pill=pill,
         last_finished_at=last_finished,
         agents=tuple(
             ProgressAgent(
                 account_name=j.account_name,
-                stage=j.stage or "deep_research",
+                stage=j.delivery_stage or j.stage or "deep_research",
+                subject_name=j.subject_name,
                 subject=j.subject_type,
             )
             for j in running_jobs

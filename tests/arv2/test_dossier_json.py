@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from clue_api.arv2.dossier_json import parse_json_dossier
+from clue_api.arv2.dossier_json import import_groups, parse_json_dossier
 
 
 def finding(identifier="F001", **updates):
@@ -87,7 +87,7 @@ def test_bad_entry_duplicate_ids_and_dependent_records_do_not_hide_independent_f
     assert len(parsed.errors) == 4
 
 
-def test_cycles_report_both_records_without_changing_their_judgment():
+def test_reciprocal_conflicts_preserve_judgment_and_import_as_one_group():
     a = finding(
         review={"status": "potential_conflict", "reason": "Unclear", "conflicts_with": ["F002"]}
     )
@@ -96,6 +96,26 @@ def test_cycles_report_both_records_without_changing_their_judgment():
         review={"status": "potential_conflict", "reason": "Unclear", "conflicts_with": ["F001"]},
     )
     parsed = parse_json_dossier(document(a, b, finding("F003")))
-    assert [r.entry.id for r in parsed.records] == ["F003"]
-    assert {error["id"] for error in parsed.errors} == {"F001", "F002"}
+    assert not parsed.errors
+    assert [{r.entry.id for r in group} for group in import_groups(parsed.records)] == [
+        {"F001", "F002"},
+        {"F003"},
+    ]
     assert a["review"]["status"] == b["review"]["status"] == "potential_conflict"
+
+
+def test_invalid_reference_propagates_through_conflict_component():
+    a = finding(
+        review={"status": "potential_conflict", "reason": "Unclear", "conflicts_with": ["F002"]}
+    )
+    b = finding(
+        "F002",
+        review={
+            "status": "potential_conflict",
+            "reason": "Unclear",
+            "conflicts_with": ["F001", "F999"],
+        },
+    )
+    parsed = parse_json_dossier(document(a, b, finding("F003")))
+    assert [r.entry.id for r in parsed.records] == ["F003"]
+    assert {e["id"] for e in parsed.errors} == {"F001", "F002"}

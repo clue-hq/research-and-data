@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import time
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from typing import Any, Literal, cast
 
 from deepagents import create_deep_agent
@@ -14,8 +15,10 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
+from langgraph.types import Command
+from pydantic import BaseModel
 
-from clue_agents.contracts import AgentTurnRequest
+from clue_agents.contracts import AgentConstitution, AgentTurnRequest
 from clue_agents.execution import (
     MAX_RUNTIME_MODEL_ROUNDS,
     AgentExecutionStatus,
@@ -58,8 +61,9 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 # — and a turn can legitimately trip both once each while converging: the model fixes the shape,
 # then learns from the guard that it must route the human's input first. With a single shared
 # repair the second, honest attempt never happened and the turn died ``missing_finalize`` mid-
-# repair. A model that proposes a dishonest terminal shape a *third* time has not misread the
-# schema; it is refusing the contract, and the turn must die rather than loop.
+# repair. A model that repeatedly proposes an invalid terminal shape may still be receiving
+# incomplete feedback. Bound retries to prevent a loop;
+# exhausting this allowance is not evidence of model intent or of failed research.
 _MAX_FINALIZE_REPAIRS = 2
 
 
@@ -85,13 +89,15 @@ def superstep_ceiling(max_rounds: int) -> int:
 # The status contract itself is stated once, on the finalize tool's own description, which the
 # model is holding when it reads this. Restating it here would be a second copy free to drift.
 _FINALIZE_CONTRACT_HELP = (
-    "Nothing was committed and this turn is not finished. Call finalize_turn again with a "
-    "terminal shape that satisfies the status contract in its description. Keep the content "
-    "you already wrote; change only what the error above names."
+    "Execution finalization was not accepted; previously saved tool outputs remain stored. "
+    "Correct the specific file, field, or unfinished stage named above, using other tools "
+    "if needed, then retry finalize_turn. Changing user_message cannot repair a saved file. "
+    "Do not repeat already successful research or writes."
 )
 
 _FINALIZE_REPAIRS_EXHAUSTED = (
-    "Nothing was committed and no further finalize attempt will be accepted for this turn."
+    "Execution finalization was not accepted and its repair allowance is exhausted. "
+    "Previously saved tool outputs remain stored for recovery."
 )
 
 
@@ -122,7 +128,9 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         *,
         profile: ResolvedAgentProfile,
         effective_governed_tool_names: Collection[str] | None = None,
+        max_finalize_repairs: int = _MAX_FINALIZE_REPAIRS,
     ) -> None:
+        self._max_finalize_repairs = max_finalize_repairs
         self._profile = profile
         declared = frozenset(
             {
@@ -214,7 +222,7 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         return await self._bounded_finalize(request, handler)
 
     async def _bounded_finalize(self, request: Any, handler: Any) -> Any:
-        """Give a refused finalization back to the model once, then fail the turn closed.
+        """Return refused finalizations for bounded correction, then fail the turn closed.
 
         ``finalize_turn`` is ``return_direct``: the agent graph ends as soon as the tool node
         produces its message, which is exactly right for a *committed* finalization and exactly
@@ -277,7 +285,7 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
             return result
 
         self._finalize_rejections += 1
-        exhausted = self._finalize_rejections > _MAX_FINALIZE_REPAIRS
+        exhausted = self._finalize_rejections > self._max_finalize_repairs
         if not exhausted and isinstance(tool, BaseTool):
             tool.return_direct = False
         guidance = _FINALIZE_REPAIRS_EXHAUSTED if exhausted else _FINALIZE_CONTRACT_HELP
@@ -480,6 +488,7 @@ class DeepAgentTurnRuntime:
         middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
         wrap_up_status: WrapUpStatus = "blocked",
         long_turn_alert_s: float | None = None,
+        continuation_config: Mapping[str, Any] | None = None,
     ) -> None:
         if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
@@ -489,6 +498,7 @@ class DeepAgentTurnRuntime:
             )
         if long_turn_alert_s is not None and long_turn_alert_s <= 0:
             raise ValueError("a long-turn alert threshold must be positive (None disables it)")
+        self._continuation_config = continuation_config
         self._models = models
         self._middleware = tuple(middleware)
         self._execution = execution
@@ -603,6 +613,9 @@ class DeepAgentTurnRuntime:
                         # not incorrectly require every capability listed by the reusable role
                         # profile.
                         effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
+                        max_finalize_repairs=10
+                        if self._continuation_config
+                        else _MAX_FINALIZE_REPAIRS,
                     ),
                     # Inside the exact-surface check, which insists every granted tool is present:
                     # only after it may the last rounds be narrowed to finalize_turn.
@@ -618,12 +631,60 @@ class DeepAgentTurnRuntime:
                 state_schema=ClueDeepAgentState,
                 name=f"clue-{profile.role.value}",
             )
-            state: ClueDeepAgentState = {
+            state: Any = {
                 "messages": cast(Any, list(context.messages)),
                 "constitution": constitution,
                 "context_manifest": context.manifest,
                 "turn_id": request.turn_id,
             }
+            # A trusted caller may continue a settled research conversation in a new,
+            # independently journaled turn. Never copy terminal authority or repair counters.
+            # Read through the graph so DeltaChannel and native compaction are reconstructed.
+            if self._continuation_config is not None:
+                destination = {
+                    "configurable": {
+                        "thread_id": str(constitution.execution_id),
+                        "checkpoint_ns": "",
+                    }
+                }
+                current = await graph.aget_state(cast(RunnableConfig, destination))
+                if current.values:
+                    # Redelivery continues the existing turn, without reinserting its history.
+                    state = None
+                else:
+                    previous = await graph.aget_state(
+                        cast(RunnableConfig, dict(self._continuation_config))
+                    )
+                    if not previous.values.get("messages") or previous.next:
+                        raise ValueError(
+                            "Research continuation requires a settled saved conversation"
+                        )
+                    saved_constitution = previous.values.get("constitution")
+                    if isinstance(saved_constitution, BaseModel):
+                        saved_constitution = saved_constitution.model_dump(warnings=False)
+                    source = AgentConstitution.model_validate_json(
+                        json.dumps(saved_constitution, default=str)
+                    )
+                    if (source.workspace_id, source.project_id, source.profile_ref) != (
+                        constitution.workspace_id,
+                        constitution.project_id,
+                        constitution.profile_ref,
+                    ):
+                        raise ValueError(
+                            "Continuation crosses workspace, project or pinned profile"
+                        )
+                    assert state is not None
+                    state["messages"] = [*previous.values["messages"], *state["messages"]]
+                    if "_summarization_event" in previous.values:
+                        state["_summarization_event"] = previous.values["_summarization_event"]
+                    # Native private compaction state is excluded from graph input. Seed it
+                    # with the public state-update API, then resume the new checkpoint.
+                    await graph.aupdate_state(
+                        cast(RunnableConfig, destination), state, as_node="__start__"
+                    )
+                    state = Command(
+                        update={"_summarization_event": previous.values.get("_summarization_event")}
+                    )
             try:
                 result = await asyncio.wait_for(
                     graph.ainvoke(

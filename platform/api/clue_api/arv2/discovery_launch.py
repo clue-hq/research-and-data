@@ -39,6 +39,7 @@ from pydantic import Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.discovery_brief import BriefError, compile_brief
 from clue_api.arv2.discovery_store import (
     DiscoveryRunRow,
@@ -715,8 +716,7 @@ class LaunchArv2DiscoveryTool(Tool):
         "only when the current user action explicitly approves searching for new accounts for "
         "this project. The ICP and the gates come from the pinned document, never from this call, "
         "and a successful result means the run was created or replayed, never that companies "
-        "have been found. It researches nothing. "
-        "Manual: .deepagent/skills/manual-tools/v12/SKILL.md#launch_arv2_discovery"
+        "have been found. It researches nothing. " + tool_manual_link("launch_arv2_discovery")
     )
     input_model = LaunchArv2DiscoveryInput
     output_model = LaunchArv2DiscoveryOutput

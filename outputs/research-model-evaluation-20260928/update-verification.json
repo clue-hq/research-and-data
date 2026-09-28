@@ -1,0 +1,20 @@
+{
+  "original_cells_preserved": 4181,
+  "original_native_links_preserved": 361,
+  "native_links": 442,
+  "sheets": [
+    "Runs",
+    "Costs",
+    "Jobs",
+    "Quality",
+    "Failures",
+    "Outputs",
+    "Trace metrics",
+    "Method"
+  ],
+  "known_total_usd": 86.98428216759999,
+  "ai_ark_credits": 32.300000000000004,
+  "formula_errors": [],
+  "column_widths_merges_and_freeze_panes": "preserved",
+  "local_links": "all targets exist"
+}

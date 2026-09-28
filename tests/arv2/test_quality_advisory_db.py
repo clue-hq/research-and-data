@@ -126,10 +126,18 @@ def test_unverified_finding_reaches_specialist_and_page_without_relationship_or_
             # No employment/value-narrative proof, complete-section form, or digest required.
             page = await read_page(conn, scope, context_id=cid, page="overview")
             ResearchDisplayBlock.model_validate(page["display_block"])
-            assert all(not s["restricted"] for s in page["display_block"]["sections"])
-            assert any(s["key"] == "research-notes" for s in page["display_block"]["sections"])
-            assert "professional@example.test" in json.dumps(page["display_block"])
+            # Only the designed sections, restricted as their recipes say (ruling 2026-09-29).
+            sections = {s["key"]: s for s in page["display_block"]["sections"]}
+            assert sections["watch-outs"]["restricted"]
+            assert not {"research-notes", "research-findings"} & sections.keys()
             assert str(claim_id) in page["cited_claim_ids"]
+            # A finding the overview cites is not repeated in Insights' Miscellaneous; the
+            # overview carries no findings list of its own.
+            insights = await read_page(conn, scope, context_id=cid, page="insights")
+            misc = next(
+                s for s in insights["display_block"]["sections"] if s["key"] == "miscellaneous"
+            )
+            assert all(str(claim_id) not in json.dumps(i) for i in misc["items"])
 
             # The frontend read selects the pinned policy; it must not silently revert to v5.
             from clue_api.arv2.account_research_catalog import bundle_pin
@@ -158,7 +166,7 @@ def test_unverified_finding_reaches_specialist_and_page_without_relationship_or_
             projected = await read_page(
                 conn, selected.scope, context_id=selected.context_id, page="overview"
             )
-            assert "professional@example.test" in json.dumps(projected["display_block"])
+            assert str(claim_id) in projected["cited_claim_ids"]
 
             row = (
                 await conn.execute(
@@ -180,8 +188,10 @@ def test_unverified_finding_reaches_specialist_and_page_without_relationship_or_
                 kind="withdrawal",
             )
             after = await read_page(conn, scope, context_id=cid, page="overview")
-            assert "Expansion reported; timing unclear" in json.dumps(after["display_block"])
-            assert "Disputed or withdrawn" in json.dumps(after["display_block"])
+            assert "Disputed or withdrawn" not in json.dumps(after["display_block"])
+            # A withdrawn finding never reaches Miscellaneous either.
+            withdrawn = await read_page(conn, scope, context_id=cid, page="insights")
+            assert "Expansion reported" not in json.dumps(withdrawn["display_block"])
             # A stopped evidence grant still prevents reading another execution's originals.
             from clue_api.arv2.quality_authority import resolve_authority
             from clue_api.arv2.quality_evidence import revoke_grant

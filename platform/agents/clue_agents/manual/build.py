@@ -65,17 +65,18 @@ __all__ = [
     "materialized_links",
     "render_skill",
     "run",
+    "tool_manual_link",
 ]
 
 #: ``platform/agents/catalog`` resolved the way the composition root resolves it: relative to the
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v12"
+MANUAL_VERSION = "v13"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v66"
+PROFILE_VERSION = "v67"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -915,6 +916,14 @@ def build_limits_chapter(
 # =================================================================================================
 # rendering and the CLI
 # =================================================================================================
+
+
+def tool_manual_link(tool_name: str) -> str:
+    """The closing pointer a governed tool's description gives the model: this tool's entry in the
+    CURRENT tools chapter. Built from :data:`MANUAL_VERSION` so a manual re-mint moves every
+    pointer with it — hard-coded versions were left naming ``v5`` for six re-mints."""
+
+    return f"Manual: .deepagent/skills/manual-tools/{MANUAL_VERSION}/SKILL.md#{tool_name}"
 
 
 def materialized_links(version: str) -> dict[str, str]:

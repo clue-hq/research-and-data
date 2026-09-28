@@ -31,6 +31,7 @@ from uuid import UUID
 
 from pydantic import Field, StringConstraints
 
+from clue_agents.manual import tool_manual_link
 from clue_api.agent_gate import (
     KIND_ICP_CONFIRMATION,
     get_gate,
@@ -134,7 +135,7 @@ class OpenIcpArtifactGateTool(Tool):
         "confirmation. Supply the icp_key of the document you have read; the platform derives and "
         "persists the exact document, digest, permitted decisions, project and addressee. This "
         "call confirms nothing. Then end the turn awaiting input with the returned gate_ref. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#open_icp_confirmation_gate"
+        + tool_manual_link("open_icp_confirmation_gate")
     )
     input_model: ClassVar[type[ToolInput]] = OpenIcpArtifactGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenIcpArtifactGateOutput

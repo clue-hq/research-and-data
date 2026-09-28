@@ -276,11 +276,10 @@ def test_o6_head_of_abm_mints_recipe_v22_without_rewriting_v19() -> None:
         "read_arv2_account_research_run@1",
     }
 
-    v19_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v19.json")
-    assert SYSTEM_RECIPE_FILENAMES[v19_index : v19_index + 2] == (
-        "recipe0-stage0-v19.json",
-        "recipe0-stage0-v22.json",
-    )
+    # v19 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v19.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v19.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v19["graph"]["tool_allowlist"])
     assert added <= set(v22["graph"]["tool_allowlist"])
     slot = next(node for node in v22["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -333,11 +332,10 @@ def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
     # same lane and behind the same confirmations as the two launches already in this slot.
     added = {"launch_arv2_discovery@1"}
 
-    v22_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v22.json")
-    assert SYSTEM_RECIPE_FILENAMES[v22_index : v22_index + 2] == (
-        "recipe0-stage0-v22.json",
-        "recipe0-stage0-v23.json",
-    )
+    # v22 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v22.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v22.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v22["graph"]["tool_allowlist"])
     assert added <= set(v23["graph"]["tool_allowlist"])
     slot = next(node for node in v23["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -374,11 +372,10 @@ def test_icp_authoring_mints_recipe_v24_without_rewriting_v23() -> None:
     # may write, and the personas it may request for a profile the human already confirmed.
     added = {"author_icp_document@1", "request_persona_synthesis@1"}
 
-    v23_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v23.json")
-    assert SYSTEM_RECIPE_FILENAMES[v23_index : v23_index + 2] == (
-        "recipe0-stage0-v23.json",
-        "recipe0-stage0-v24.json",
-    )
+    # v23 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v23.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v23.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v23["graph"]["tool_allowlist"])
     assert added <= set(v24["graph"]["tool_allowlist"])
     slot = next(node for node in v24["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -420,11 +417,10 @@ def test_project_plan_mints_recipe_v25_without_rewriting_v24() -> None:
     # version-checked against the human's own edits in the Plan tab.
     added = {"write_project_document@1"}
 
-    v24_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v24.json")
-    assert SYSTEM_RECIPE_FILENAMES[v24_index : v24_index + 2] == (
-        "recipe0-stage0-v24.json",
-        "recipe0-stage0-v25.json",
-    )
+    # v24 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v24.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v24.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v24["graph"]["tool_allowlist"])
     assert added <= set(v25["graph"]["tool_allowlist"])
     slot = next(node for node in v25["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -465,11 +461,10 @@ def test_read_tools_mint_recipe_v26_without_rewriting_v25() -> None:
     # and the discovery run — effect-free reads over rows that already exist.
     added = {"read_project_accounts@1", "read_account_research@1", "read_discovery_run@1"}
 
-    v25_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v25.json")
-    assert SYSTEM_RECIPE_FILENAMES[v25_index : v25_index + 2] == (
-        "recipe0-stage0-v25.json",
-        "recipe0-stage0-v26.json",
-    )
+    # v25 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v25.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v25.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v25["graph"]["tool_allowlist"])
     assert added <= set(v26["graph"]["tool_allowlist"])
     slot = next(node for node in v26["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -512,11 +507,10 @@ def test_document_skills_mint_recipe_v27_without_rewriting_v26() -> None:
     # saying the conversation may still call them.
     removed = {"author_icp_document@1", "request_persona_synthesis@1", "write_project_document@1"}
 
-    v26_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v26.json")
-    assert SYSTEM_RECIPE_FILENAMES[v26_index : v26_index + 2] == (
-        "recipe0-stage0-v26.json",
-        "recipe0-stage0-v27.json",
-    )
+    # v26 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v26.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v26.json" not in SYSTEM_RECIPE_FILENAMES
     assert removed <= set(v26["graph"]["tool_allowlist"])
     assert removed.isdisjoint(v27["graph"]["tool_allowlist"])
     slot = next(node for node in v27["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
@@ -574,11 +568,10 @@ def test_paged_and_new_reads_mint_recipe_v28_without_rewriting_v27() -> None:
     }
     removed = {"read_account_research@1", "read_discovery_run@1"}
 
-    v27_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v27.json")
-    assert SYSTEM_RECIPE_FILENAMES[v27_index : v27_index + 2] == (
-        "recipe0-stage0-v27.json",
-        "recipe0-stage0-v28.json",
-    )
+    # v27 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v27.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v27.json" not in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v27["graph"]["tool_allowlist"])
     assert added <= set(v28["graph"]["tool_allowlist"])
     assert removed <= set(v27["graph"]["tool_allowlist"])
@@ -702,11 +695,11 @@ def test_multi_artifact_legs_mint_recipe_v30_without_rewriting_v29() -> None:
     added = {"open_design_leg@5"}
     removed = {"open_design_leg@4"}
 
-    v28_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v28.json")
-    assert SYSTEM_RECIPE_FILENAMES[v28_index : v28_index + 2] == (
-        "recipe0-stage0-v28.json",
-        "recipe0-stage0-v30.json",
-    )
+    # v28 pins the retired `open_design_leg@4`: replay-only since 2026-09-28, so a fresh
+    # database never re-validates it against today's registry. Its bytes are what is pinned.
+    assert "recipe0-stage0-v28.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
+    assert "recipe0-stage0-v28.json" not in SYSTEM_RECIPE_FILENAMES
+    assert "recipe0-stage0-v30.json" in SYSTEM_RECIPE_FILENAMES
     assert added.isdisjoint(v29["graph"]["tool_allowlist"])
     assert added <= set(v30["graph"]["tool_allowlist"])
     assert removed <= set(v29["graph"]["tool_allowlist"])

@@ -372,3 +372,61 @@ def test_an_unparsable_failure_code_still_shows_the_provider_prose() -> None:
     card = fold_progress([bad], run_statuses={RUN: "needs_review"}, now=finished)
     assert card is not None
     assert card.attention[0].reason == "the model errored"
+
+
+def test_viewable_outputs_complete_despite_execution_review_without_mutating_job():
+    from dataclasses import replace
+
+    original = replace(
+        job("A", status="needs_review", failure="completion reference rejected"),
+        delivery_stage="completed",
+        deliverables_ready=True,
+        delivered_at=NOW,
+    )
+    card = fold_progress([original], run_statuses={RUN: "in_progress"}, now=NOW)
+    assert card.pill == "completed" and card.progress_pct == 100
+    assert not card.attention and card.running == 0 and card.finished == 1
+    assert original.status == "needs_review"
+
+
+def test_account_publication_does_not_complete_pending_person_work():
+    from dataclasses import replace
+
+    acc = uuid4()
+    parent = replace(
+        job("A", status="needs_review", account_id=acc),
+        delivery_stage="completed",
+        deliverables_ready=True,
+        delivered_at=NOW,
+    )
+    person = replace(
+        job("A", subject="person", account_id=acc),
+        delivery_stage="compiling_findings",
+        subject_name="Jane Doe",
+    )
+    card = fold_progress([parent, person], run_statuses={}, now=NOW)
+    assert card.pill == "running" and card.finished == 0 and card.running == 1
+    assert card.progress_pct == 63  # average of 100% and 25% milestones, not elapsed time
+    assert card.agents[0].stage == "compiling_findings"
+    assert card.agents[0].subject_name == "Jane Doe"
+
+
+def test_missing_pages_do_not_become_completed_by_ignoring_review():
+    from dataclasses import replace
+
+    for status in ("completed", "needs_review"):
+        missing = replace(job("A", status=status), delivery_stage="writing_narrative")
+        card = fold_progress([missing], run_statuses={}, now=NOW)
+        assert card.pill == "needs_attention" and card.progress_pct < 100
+
+
+def test_delivered_review_job_uses_normal_completed_linger():
+    from dataclasses import replace
+
+    done = replace(
+        job("A", status="needs_review"),
+        delivery_stage="completed",
+        deliverables_ready=True,
+        delivered_at=NOW - timedelta(minutes=2),
+    )
+    assert fold_progress([done], run_statuses={}, now=NOW) is None

@@ -79,6 +79,11 @@ from clue_api.arv2.quality_committee_tool import (
     NominateSourceWebCommitteeTool,
     NominateWebCommitteeTool,
 )
+from clue_api.arv2.quality_completion import (
+    COMPLETION_INSTRUCTIONS,
+    build_completion_report,
+    completion_notes,
+)
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
@@ -99,6 +104,7 @@ from clue_api.arv2.quality_json_dossier import (
     DiscardDossierRevisionTool,
     FinishDossierTool,
     SaveDossierSectionTool,
+    UpdateDossierFindingsTool,
     ValidateDossierTool,
     uses_json_dossier,
     validate_dossier_handoff,
@@ -235,6 +241,7 @@ def quality_tools(
         DiscardDossierRevisionTool,
         BeginDossierRevisionTool,
         SaveDossierSectionTool,
+        UpdateDossierFindingsTool,
         ValidateDossierTool,
         FinishDossierTool,
     ):
@@ -261,6 +268,7 @@ def quality_profiles(
                 "discard_dossier_revision",
                 "begin_dossier_revision",
                 "save_dossier_section",
+                "update_dossier_findings",
                 "validate_dossier",
                 "finish_dossier",
                 "read_narrative_inputs",
@@ -301,7 +309,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v23-person" if person else "v23")
+            role: ("v24-person" if person else "v24")
+            if version >= 24 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v23-person" if person else "v23")
             if version >= 23 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v22-person" if person else "v22")
             if version >= 22 and role == AgentRole.ACCOUNT_RESEARCH
@@ -346,6 +356,12 @@ class _Contexts:
     ) -> AssembledAgentContext:
         runtime = self.runtime
         resolved = runtime.profiles.resolve(profile.role)
+        # Model selection is runtime configuration, not a new prompt/skill revision.
+        # Keep the identity layer consistent with the exact configured turn profile.
+        configured = resolved.profile.model_copy(update={"model": profile.model})
+        if configured != profile:
+            raise ValueError("Research context profile differs beyond model configuration")
+        resolved = replace(resolved, profile=configured)
         return await build_agent_context_assembler(
             resolved_profile=resolved,
             artifacts=runtime.artifacts,
@@ -481,8 +497,10 @@ class ResearchUnitRuntime:
         limits: Allowance,
         unit_key: str | None = None,
         checkpointer_factory: CheckpointerFactory = postgres_agent_checkpointer,
+        reconciliation: dict[str, Any] | None = None,
     ):
         self.scope, self.context_id = scope, context_id
+        self.reconciliation = reconciliation
         self._spill_sinks: dict[ExecutionId, SpillSink] = {}
         self.runtime_owner: UUID | None = None
         self.execution_id = ExecutionId(
@@ -771,6 +789,33 @@ class ResearchUnitRuntime:
                     }
                 ),
             )
+        continuation_config = None
+        if self.reconciliation is not None:
+            # The source identity is derived from the authorized parent job, never model input.
+            source_execution = ExecutionId(
+                uuid5(NAMESPACE_URL, f"research-quality:{self.scope.job_id}")
+            )
+            async with self.connections() as conn:
+                await resolve_authority(conn, self.scope, source_execution)
+                from clue_api.arv2.quality_reconciliation import account_research_model
+
+                recorded_model = await account_research_model(conn, self.scope)
+            resolved = replace(
+                resolved,
+                profile=resolved.profile.model_copy(
+                    update={
+                        "model": resolved.profile.model.model_copy(
+                            update={"model_id": recorded_model}
+                        )
+                    }
+                ),
+            )
+            continuation_config = {
+                "configurable": {
+                    "thread_id": str(source_execution),
+                    "checkpoint_ns": "",
+                }
+            }
         thread = f"research-quality-{execution}"
         lease = self.workspaces.acquire(
             workspace_id=self.scope.workspace_id,
@@ -819,6 +864,11 @@ class ResearchUnitRuntime:
             task = await self.artifact(
                 {
                     "objective": objective,
+                    **(
+                        {"completion_contract": COMPLETION_INSTRUCTIONS}
+                        if uses_json_dossier(self.scope)
+                        else {}
+                    ),
                     "context_id": str(self.context_id),
                     "job_id": str(self.scope.job_id),
                 },
@@ -853,6 +903,55 @@ class ResearchUnitRuntime:
                 if prior.status is AgentExecutionStatus.COMPLETED:
                     await self.complete(execution)
                 return prior
+            if self.reconciliation is not None:
+                from clue_api.arv2.quality_reconciliation import ReconciliationReply
+
+                # Preserve the original workspace notes and native compaction archive.
+                # Current evidence remains a live, authorized research_backend view.
+                source_lease = self.workspaces.acquire(
+                    workspace_id=self.scope.workspace_id,
+                    project_id=self.scope.project_id,
+                    thread_id=f"research-quality-{source_execution}",
+                    execution_id=source_execution,
+                    policy=resolved.profile.workspace,
+                    artifact_sink=self.artifacts,
+                )
+                try:
+                    existing = {e.path for e in await lease.backend.list_entries()}
+                    for prefix in ("work", "scratch", "reads"):
+                        if prefix not in resolved.profile.workspace.readable_prefixes:
+                            continue
+                        for entry in await source_lease.backend.list_entries(prefix):
+                            if entry.path not in existing:
+                                content = await source_lease.backend.read_text(entry.path)
+                                if prefix == "reads":
+                                    await asyncio.to_thread(
+                                        lease.backend.write_spill,
+                                        Path(entry.path).stem,
+                                        content.encode(),
+                                    )
+                                else:
+                                    await lease.backend.write_text(entry.path, content)
+                finally:
+                    source_lease.release()
+                for path, value in (
+                    (
+                        "work/reconciliation/input.json",
+                        {k: v for k, v in self.reconciliation.items() if not k.startswith("_")},
+                    ),
+                    ("work/reconciliation/schema.json", ReconciliationReply.model_json_schema()),
+                ):
+                    content = json.dumps(value, ensure_ascii=False)
+                    entries = {e.path for e in await lease.backend.list_entries("work")}
+                    if path not in entries:
+                        await lease.backend.write_text(path, content)
+                instructions_path = "work/reconciliation/instructions.md"
+                if instructions_path not in {
+                    e.path for e in await lease.backend.list_entries("work")
+                }:
+                    await lease.backend.write_text(
+                        instructions_path, self.reconciliation["_editorial_system"]
+                    )
             owner = uuid4()
             async with self.connections() as conn:
                 remaining_runtime = await begin_runtime(conn, self.operation_scope, owner=owner)
@@ -910,6 +1009,46 @@ class ResearchUnitRuntime:
 
             async def completion_guard(model_input: Any) -> None:
                 if model_input.status is FinalizeStatus.COMPLETED:
+                    if self.reconciliation is not None:
+                        from clue_api.arv2.quality_reconciliation import parse_updates
+
+                        try:
+                            reply = json.loads(
+                                await lease.backend.read_text("outputs/reconciliation.json")
+                            )
+                            parse_updates(reply, self.reconciliation["_validation_packet"])
+                        except (ValueError, OSError) as exc:
+                            raise ValueError(
+                                "Invalid /outputs/reconciliation.json: "
+                                + str(exc)
+                                + ". Read /work/reconciliation/schema.json. Correct those fields "
+                                "or citations and retry finalize_turn. No sections were changed. "
+                                "Updates accept page and section only. "
+                                "Headings belong in section.items[].h2."
+                            ) from exc
+                        return
+                    if uses_json_dossier(self.scope):
+                        # The researcher supplies judgment; storage supplies bookkeeping.
+                        entries = await lease.backend.list_entries("outputs")
+                        raw = (
+                            await lease.backend.read_text("outputs/research.json")
+                            if any(e.path == "outputs/research.json" for e in entries)
+                            else None
+                        )
+                        notes = completion_notes(raw, model_input.user_message)
+                        async with self.connections() as conn:
+                            report = await build_completion_report(
+                                conn, self.storage, self.scope, self.context_id, notes
+                            )
+                        if raw is None:
+                            await lease.backend.write_text(
+                                "outputs/research.json", report.model_dump_json()
+                            )
+                        else:
+                            await lease.backend.edit_text(
+                                "outputs/research.json", old=raw, new=report.model_dump_json()
+                            )
+                        return
                     report = ResearchUnitReport.model_validate_json(
                         await lease.backend.read_text("outputs/research.json")
                     )
@@ -927,9 +1066,22 @@ class ResearchUnitRuntime:
                 lease=lease,
                 artifacts=self.artifacts,
                 before_work=bindings.before_work,
-                required_output_path="outputs/research.json",
+                required_output_path="outputs/reconciliation.json"
+                if self.reconciliation is not None
+                else None
+                if uses_json_dossier(self.scope)
+                else "outputs/research.json",
                 completion_guard=completion_guard,
             ).build()
+            if self.reconciliation is not None:
+                # The resumed researcher may inspect its workspace and submit a validated
+                # artifact. It cannot acquire evidence, launch jobs, import claims or publish
+                # pages outside the reconciliation transaction.
+                governed = tuple(tool for tool in governed if tool.name == "finalize_turn")
+            elif uses_json_dossier(self.scope):
+                for tool in governed:
+                    if tool.name == "finalize_turn":
+                        tool.description += "\n\n" + COMPLETION_INSTRUCTIONS
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
                     models=self.models,
@@ -946,6 +1098,7 @@ class ResearchUnitRuntime:
                     max_rounds=self.limits.model_calls,
                     middleware=bindings.middleware,
                     long_turn_alert_s=self.settings.agent_long_turn_alert_s or None,
+                    continuation_config=continuation_config,
                 ),
                 turns=self.turns,
                 artifacts=self.artifacts,
@@ -981,6 +1134,30 @@ class ResearchUnitRuntime:
                 await asyncio.shield(settle_runtime())
                 self.runtime_owner = None
             lease.release()
+
+    async def reconciliation_output(self, outcome: AgentTurnOutcome) -> dict[str, Any]:
+        if outcome.status is not AgentExecutionStatus.COMPLETED or outcome.finalization_ref is None:
+            raise ValueError(
+                f"Account reconciliation continuation did not complete: {outcome.failure_code}"
+            )
+        envelope = AgentFinalizeEnvelope.model_validate_json(
+            await self.artifacts.read(outcome.finalization_ref)
+        )
+        replies = []
+        assert self.reconciliation is not None
+        from clue_api.arv2.quality_reconciliation import parse_updates
+
+        for ref in envelope.output_refs:
+            try:
+                body = json.loads(await self.artifacts.read(ref))
+            except (ValueError, UnicodeError):
+                continue
+            if isinstance(body, dict) and "updates" in body:
+                parse_updates(body, self.reconciliation["_validation_packet"])
+                replies.append(body)
+        if len(replies) != 1:
+            raise ValueError("Reconciliation requires exactly one validated output artifact")
+        return replies[0]
 
     async def report(self, outcome: AgentTurnOutcome) -> ResearchUnitReport | None:
         if outcome.finalization_ref is None:
@@ -1029,6 +1206,7 @@ def build_quality_job_runner(
         objective: str,
         model_id: str,
         unit_key: str | None = None,
+        reconciliation: dict[str, Any] | None = None,
     ) -> QualityJobOutcome:
         active_workspaces = workspaces or build_agent_workspace_factory(
             storage=storage, settings=settings
@@ -1056,9 +1234,13 @@ def build_quality_job_runner(
                     settings.arv2_account_max_runtime_s * 1000,
                 ),
                 unit_key=unit_key,
+                reconciliation=reconciliation,
             )
             result = await owner.run(objective=objective, model_id=model_id)
-            report = await owner.report(result)
+            reply = (
+                await owner.reconciliation_output(result) if reconciliation is not None else None
+            )
+            report = None if reconciliation is not None else await owner.report(result)
             return QualityJobOutcome(
                 execution_id=result.execution_id,
                 status=result.status.value,
@@ -1067,6 +1249,7 @@ def build_quality_job_runner(
                 else None,
                 report=report,
                 failure_code=result.failure_code,
+                reconciliation_reply=reply,
             )
         finally:
             if workspaces is None:

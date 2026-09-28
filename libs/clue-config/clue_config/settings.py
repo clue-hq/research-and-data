@@ -517,9 +517,10 @@ class Settings(BaseSettings):
     sensitivity_floor_enabled: bool = True
 
     # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
-    # OpenRouter model id for the section writer. The control test (2026-09-04) rejected every
-    # cheaper model on the two non-negotiables. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
-    arv2_display_model: str = "openai/gpt-5.6-luna"
+    # OpenRouter model id for focused account reconciliation and the legacy section writer. Grok
+    # 4.6 since 2026-09-29 (founder request; Muse Spark 1.3 from 2026-09-28, Luna before). Env:
+    # ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "x-ai/grok-4.6"
     # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
     # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
     arv2_display_timeout_s: float = 240.0
@@ -582,6 +583,16 @@ class Settings(BaseSettings):
     # unconfigured and does nothing, which is a posture, not an error. Env:
     # ``CLUE_DESIGN_API_BASE_URL``.
     design_api_base_url: str | None = None
+    # Onboarding also offers ONE ad-assets harvest for the company's own LinkedIn ads, beside the
+    # website ingestion and through the same trigger (auto ad ingestion, 2026-09-28): the most
+    # recent static ads, up to ``brand_ad_assets_auto_max_creatives``, reading at most
+    # ``brand_ad_assets_auto_max_pages`` ad-library pages (~25 ads and ~1 vendor credit each).
+    # The design API must also run the ad lane (``LUMEN_BRAND_AD_ASSETS``); when it does not, the
+    # route 404s and the offer is a logged, fail-soft skip. Env:
+    # ``CLUE_BRAND_AD_ASSETS_AUTO_ONBOARD`` / ``_AUTO_MAX_CREATIVES`` / ``_AUTO_MAX_PAGES``.
+    brand_ad_assets_auto_onboard: bool = True
+    brand_ad_assets_auto_max_creatives: int = Field(default=50, ge=1)
+    brand_ad_assets_auto_max_pages: int = Field(default=8, ge=1)
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
@@ -813,7 +824,7 @@ class Settings(BaseSettings):
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
-    self_serve_provisioning_enabled: bool = False
+    self_serve_provisioning_enabled: bool = True
 
     # --- Public pages: hostnames and delivery (custom-domain publishing spec 2026-09-17 §9) ---
     # The suffix every workspace's permanent system hostname ends in (`<label>.<suffix>`). The

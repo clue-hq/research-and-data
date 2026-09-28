@@ -1114,9 +1114,19 @@ def test_unseeded_person_uses_bound_lookup_then_same_channels_without_second_loo
         async with rollback_conn(seed_pack=True) as conn:
             wire = Wire()
             seeded = await seeded_person_runtime(conn, wire)
+            parent = seeded.scope.input_refs["parent_job_id"]
+            delegation = {
+                "parent_job_id": parent,
+                "generation_id": "durable-generation",
+                "quality_recipe_version": 24,
+                "person_research_brief": {"artifact_key": "retained-brief", "sha256": "a" * 64},
+                "privacy_stopped": False,
+            }
             await conn.execute(
-                text("UPDATE arv2_research_job SET input_refs='{}'::jsonb WHERE job_id=:id"),
-                {"id": seeded.scope.job_id},
+                text(
+                    "UPDATE arv2_research_job SET input_refs=CAST(:refs AS jsonb) WHERE job_id=:id"
+                ),
+                {"id": seeded.scope.job_id, "refs": json.dumps(delegation)},
             )
             unseeded = runtime(conn, replace(seeded.scope, input_refs={}), seeded.storage, wire)
             args = LookupPersonArgs(linkedin_url="https://linkedin.com/in/p1")
@@ -1129,6 +1139,24 @@ def test_unseeded_person_uses_bound_lookup_then_same_channels_without_second_loo
             assert sum(r.url.endswith("/v1/people") for r in wire.requests) == 1
             refs = (await store.read_job(conn, job_id=seeded.scope.job_id)).input_refs
             assert "profile" not in refs and refs["candidate_ref"]
+            assert all(refs[k] == v for k, v in delegation.items())
+            assert refs["provider_job_id"] == str(seeded.scope.job_id)
+            assert refs["parent_job_id"] != refs["provider_job_id"]
+            # A fresh runtime must reopen its own lookup, not search the account's operations.
+            restarted = runtime(conn, replace(seeded.scope, input_refs=refs), seeded.storage, wire)
+            await lookup_bound_person(restarted, args)
+            assert len(wire.requests) == 2
+            await conn.execute(
+                text(
+                    "UPDATE arv2_research_job SET input_refs=input_refs || "
+                    '\'{"provider_job_id":"00000000-0000-0000-0000-000000000000"}\'::jsonb '
+                    "WHERE job_id=:id"
+                ),
+                {"id": seeded.scope.job_id},
+            )
+            stale = runtime(conn, replace(seeded.scope, input_refs=refs), seeded.storage, wire)
+            with pytest.raises(RefusalError, match="person seed does not match"):
+                await load_person_seed(stale)
 
     run_async(scenario())
 

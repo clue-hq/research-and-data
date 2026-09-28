@@ -10,7 +10,6 @@ import readability from "./account-readability.module.css";
 import { insightHeaderSummary } from "../model/account-workspace-presentation";
 import research from "./account-research.module.css";
 import { AccountWorkspaceShell } from "./account-workspace-shell";
-import { ResearchQualityNotice } from "./research-quality-notice";
 import { ResearchDocument } from "./research-content";
 
 function InsightIcon({ source }: { source: WorkspaceInsight["source"] }) {
@@ -48,7 +47,6 @@ export function AccountInsightsScreen({
                 ))}
               </ul>
             </header>
-            <ResearchQualityNotice quality={workspace.insightsDisplay.researchQuality} path={`/accounts/${account.id}/insights`} />
             <ResearchDocument
               accountId={account.id}
               evidence={workspace.researchEvidence}

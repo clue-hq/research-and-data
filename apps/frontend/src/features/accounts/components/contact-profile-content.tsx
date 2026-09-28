@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "./research-link";
-import { ResearchQualityNotice } from "./research-quality-notice";
 import {
   AtSign,
   BookOpen,
@@ -129,15 +128,19 @@ export function ContactDetailsList({
           {contact.title ?? "—"}
         </ProfileRow>
         <ProfileRow icon={Gauge} label="Influence">
-          <span
-            className={`${readability.pillMedium} ${components.badge} ${
-              contact.influence === "High"
-                ? components.badgePositive
-                : components.badgeNeutral
-            }`}
-          >
-            {contact.influence ?? "Unverified"}
-          </span>
+          {contact.influence ? (
+            <span
+              className={`${readability.pillMedium} ${components.badge} ${
+                contact.influence === "High"
+                  ? components.badgePositive
+                  : components.badgeNeutral
+              }`}
+            >
+              {contact.influence}
+            </span>
+          ) : (
+            "—"
+          )}
         </ProfileRow>
         <ProfileRow icon={RadioTower} label={contact.contactDisplay ? "Research" : "Recent signals"}>
           <span className={`${readability.pillMedium} ${components.badge} ${components.badgeNeutral}`}>
@@ -261,9 +264,7 @@ export function ContactProfileContent({
 
   return (
     <div>
-      <ResearchQualityNotice quality={contact.contactDisplay?.researchQuality} path={`/accounts/${contact.accountId}/contacts/${contact.id}`} />
       <ContactIdentity contact={contact} />
-      {contact.membershipState && contact.membershipState !== "supported" ? <p>{contact.membershipState === "candidate" ? "Committee candidate" : "Committee membership needs verification"}. {contact.membershipGaps?.join(" ")}</p> : null}
       {showDetails ? (
         <div className="mt-9">
           <ContactDetailsList contact={contact} />
