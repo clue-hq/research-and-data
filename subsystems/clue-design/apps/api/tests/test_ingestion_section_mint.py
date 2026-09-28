@@ -222,6 +222,41 @@ def test_the_dominant_heading_becomes_the_headline_slot() -> None:
     assert _keys(HERO_HTML)["headline"] == "text"
 
 
+def test_card_headings_are_independently_editable_without_consuming_ctas_or_images() -> None:
+    html = (
+        '<section><h2>Source features</h2><article><h3>First feature</h3><p>First copy</p>'
+        '<a class="button" href="/one"><span>First action</span></a></article>'
+        '<article><h3>Second feature</h3><p>Second copy</p>'
+        '<a class="button" href="/two"><span>Second action</span></a></article></section>'
+    )
+    annotated = annotate_fragment_slots(html, detect_slots(html).specs)
+    values = {key: spec["fallback"] for key, spec in annotated.slot_manifest.items()}
+    assert values["headline"] == "Source features"
+    assert values["headline_2"] == "First feature"
+    assert values["headline_3"] == "Second feature"
+    assert values["cta_href"] == "/one"
+    assert values["cta_href_2"] == "/two"
+    assert values["cta_label_2"] == "Second action"
+    assert values["body_2"] == "Second copy"
+
+
+@pytest.mark.parametrize("contents", [
+    'Book a demo<svg><title>Arrow</title></svg>',
+    '<span>Book a demo<svg><title>Arrow</title></svg></span>',
+    'Book <span>a demo</span>',
+])
+def test_cta_label_detection_does_not_consume_an_icon_or_a_partial_label(contents) -> None:
+    html = f'<section><a class="button" href="/demo">{contents}</a></section>'
+    assert "cta_href" in _keys(html)
+    assert "cta_label" not in _keys(html)
+
+
+def test_cta_label_detection_ignores_icon_titles_beside_a_real_label() -> None:
+    html = '<section><a class="button" href="/demo"><svg><title>Arrow</title></svg><span>Book a demo</span></a></section>'
+    annotated = annotate_fragment_slots(html, detect_slots(html).specs)
+    assert annotated.slot_manifest["cta_label"]["fallback"] == "Book a demo"
+
+
 def test_a_section_with_no_h1_falls_back_to_its_strongest_heading() -> None:
     keys = _keys('<section><h2 class="t">Proof</h2><p>Copy</p></section>')
     assert keys["headline"] == "text"

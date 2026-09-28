@@ -1,11 +1,11 @@
-"""Derive a captured payload by changing only exact anchor targets and its CSS namespace."""
+"""Derive captured anchor targets/labels without rebuilding their markup or styling."""
 
 from __future__ import annotations
 
 import copy
 import hashlib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import tinycss2
@@ -25,6 +25,7 @@ MAX_HREF_CHARS = 2048
 class HrefRepair:
     artifact: FragmentArtifact
     match_counts: dict[str, int]
+    label_match_counts: dict[str, int] = field(default_factory=dict)
 
 
 def validate_href_replacements(replacements: Any) -> dict[str, str]:
@@ -46,13 +47,33 @@ def validate_href_replacements(replacements: Any) -> dict[str, str]:
     return dict(replacements)
 
 
-def build_href_repair(source: Mapping[str, Any], replacements: Any) -> HrefRepair:
+def validate_label_replacements(replacements: Any) -> dict[str, str]:
+    if not isinstance(replacements, Mapping) or not 1 <= len(replacements) <= 8:
+        raise FragmentRefused("repair.bad_label_map", "label replacements require 1 to 8 entries")
+    for old, new in replacements.items():
+        if any(
+            not isinstance(value, str) or not value.strip() or len(value) > 2048
+            or any(ord(char) < 32 for char in value)
+            for value in (old, new)
+        ):
+            raise FragmentRefused("repair.bad_label_map", "labels must be nonempty plain text <=2048 chars")
+        if old != " ".join(old.split()) or old == new:
+            raise FragmentRefused("repair.bad_label_map", "old labels must be normalized and replacements different")
+    return dict(replacements)
+
+
+def build_href_repair(
+    source: Mapping[str, Any], replacements: Any = None, *, label_replacements: Any = None,
+) -> HrefRepair:
     """Accept only a stored, sanitized payload; no arbitrary markup/CSS input or re-sanitization.
 
     The source's identity plus the exact resulting HTML/manifest define this derivative's id.
     Its CSS has already passed custody/scoping: only its parsed wrapper/keyframe names move.
     """
-    mapping = validate_href_replacements(replacements)
+    mapping = validate_href_replacements(replacements) if replacements is not None else {}
+    labels = validate_label_replacements(label_replacements) if label_replacements is not None else {}
+    if not mapping and not labels:
+        raise FragmentRefused("repair.bad_href_map", "provide href or label replacements")
     tree = LexborHTMLParser(source["html"])
     body = tree.body
     if body is None or _inner_html(body) != source["html"]:
@@ -69,6 +90,7 @@ def build_href_repair(source: Mapping[str, Any], replacements: Any) -> HrefRepai
             changed_slots.add(anchor.attributes.get(SLOT_MARKER_ATTR))
     if not all(counts.values()):
         raise FragmentRefused("repair.href_unmatched", "every old href must match an anchor")
+    label_counts = _replace_labels(body, labels, source["slot_manifest"])
     payload = copy.deepcopy(dict(source))
     payload["html"] = _inner_html(body)
     for key, spec in payload["slot_manifest"].items():
@@ -80,6 +102,8 @@ def build_href_repair(source: Mapping[str, Any], replacements: Any) -> HrefRepai
         "html": payload["html"],
         "slot_manifest": payload["slot_manifest"],
     }
+    if labels:
+        identity["anchor_label_derivative_version"] = 1
     fragment_id = "frag_" + hashlib.sha256(canonical_bytes(identity)).hexdigest()[:16]
     payload["css"] = _rebase_css(source["css"], source["fragment_id"], fragment_id)
     payload["fragment_id"] = fragment_id
@@ -87,8 +111,57 @@ def build_href_repair(source: Mapping[str, Any], replacements: Any) -> HrefRepai
     encoded = canonical_bytes(payload)
     return HrefRepair(
         FragmentArtifact(fragment_id, payload, encoded, hashlib.sha256(encoded).hexdigest(), ()),
-        counts,
+        counts, label_counts,
     )
+
+
+def _replace_labels(body: Any, mapping: dict[str, str], manifest: Mapping[str, Any]) -> dict[str, int]:
+    """Only replace a single text leaf; never flatten styled runs or an icon subtree."""
+    counts = dict.fromkeys(mapping, 0)
+    if not mapping:
+        return counts
+
+    def leaves(node: Any) -> list:
+        if node.tag in {"svg", "math", "style", "script"} or node.attributes.get("aria-hidden") == "true":
+            return []
+        if node.tag == "-text":
+            return [node] if node.text().strip() else []
+        return [leaf for child in node.iter(include_text=True) for leaf in leaves(child)]
+
+    for anchor in body.css("a[href]"):
+        text_nodes = leaves(anchor)
+        label = " ".join("".join(node.text() for node in text_nodes).split())
+        if label not in mapping:
+            continue
+        accessible_name = anchor.attributes.get("aria-label")
+        if anchor.attributes.get("aria-labelledby") or (
+            accessible_name is not None and " ".join(accessible_name.split()) != label
+        ):
+            raise FragmentRefused(
+                "repair.label_accessible_conflict",
+                "anchor has a separate accessible name; use a reviewed raw variant",
+            )
+        if len(text_nodes) != 1:
+            raise FragmentRefused("repair.label_ambiguous", "label must occupy a single text node; use a reviewed raw variant for styled runs")
+        current = text_nodes[0].parent
+        while current is not None:
+            key = current.attributes.get(SLOT_MARKER_ATTR)
+            if manifest.get(key, {}).get("kind") == "text":
+                raise FragmentRefused("repair.label_has_slot", "label has an existing text slot; bind that slot instead")
+            current = current.parent
+        text = text_nodes[0].text()
+        prefix = text[:len(text) - len(text.lstrip())]
+        suffix = text[len(text.rstrip()):]
+        # Lexbor replaces a string as escaped TEXT, not HTML. No new element or wrapper.
+        text_nodes[0].replace_with(prefix + mapping[label] + suffix)
+        if accessible_name is not None:
+            anchor.attrs["aria-label"] = mapping[label]
+        if " ".join((anchor.attributes.get("title") or "").split()) == label:
+            anchor.attrs["title"] = mapping[label]
+        counts[label] += 1
+    if not all(counts.values()):
+        raise FragmentRefused("repair.label_unmatched", "every old label must match an anchor's visible text")
+    return counts
 
 
 def _inner_html(body: Any) -> str:

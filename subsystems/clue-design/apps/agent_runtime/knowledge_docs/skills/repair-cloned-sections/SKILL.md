@@ -33,7 +33,7 @@ fallback and release consequences, read the
    at most 12,000 per call. A null next offset means finished. Pass that stream's
    total (`html_chars` / `css_chars`) to skip it while continuing the other.
    Read only what the diagnosis needs; a full-source remix requires all original
-   bytes. For inherited anchor destinations, use the exact-link lane below;
+   bytes. For inherited anchor destinations or baked-in labels, use the exact-anchor lane below;
    full source stays in the registry, so no HTML/CSS transcription is needed.
    Other raw repairs still need complete HTML/CSS. Never reconstruct unseen
    bytes or rebuild visuals to work around an unsupported edit.
@@ -60,7 +60,7 @@ no repair is needed. Account markers work in raw slot values.
 
 For a pinned band, the real signature is
 `repair_cloned_section(fragment_id, html=None, rung=1, note="", css=None,
-href_replacements_json=None)`.
+href_replacements_json=None, cta_label_replacements_json=None)`.
 
 For exact inherited link changes, omit `html` and `css`, provide a precise
 `note`, and pass `href_replacements_json='{"/old":"https://client.example/new"}'`.
@@ -71,6 +71,25 @@ survive; captured CSS/assets stay intact with only the fragment namespace
 rebased. Matching href-slot fallbacks follow the new targets. Existing capture
 degradation remains. This uses the released repair lineage: report its effect
 on future pins, and report any minted-but-unreleased or failed-swap state.
+
+For a baked-in CTA label without a text slot, use
+`cta_label_replacements_json='{"Book a demo":"Explore the workflow"}'`, alone
+or with the href map. Omit `html` and `css`; no full-source transcription is
+needed. Each old label must exactly match normalized visible anchor text;
+all matching anchors change. The same 1–8 entry / 2048 character bounds apply.
+Only a single text node changes: nested icons, wrappers, source CSS, assets and
+other bindings survive. Matching `aria-label`/`title` text follows the label.
+Split styled labels, a separate accessible name, an existing text slot or human
+text overrides refuse; use the existing binding/override or a reviewed raw
+variant as appropriate. A label-only repair retains its href. Check destination
+and action together; a missing CTA label slot is not a reason to keep an unwanted
+demo action or rebuild the section.
+
+Campaign-specific anchor changes use `note="campaign variant: ..."` so the
+derivative starts its own lineage. Otherwise this is a canonical released repair
+that future original pins may resolve to. Check returned convergence/lineage:
+previously stored birth facts win. Inspect current href bindings too: an explicit
+slot value can override the repaired fallback and must be rebound if necessary.
 
 | Intent / lane | Inputs and consequences |
 |---|---|

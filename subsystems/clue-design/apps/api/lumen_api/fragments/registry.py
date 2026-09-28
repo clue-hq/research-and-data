@@ -180,12 +180,12 @@ def create_web_fragment(
 
 def create_href_repaired_fragment(
     storage: StorageBackend, *, workspace_id: str, replaces: str,
-    replacements: Mapping[str, str], label: str, derived_reason: str,
-    provenance: Mapping[str, Any],
+    replacements: Mapping[str, str] | None = None, label: str, derived_reason: str,
+    provenance: Mapping[str, Any], label_replacements: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], HrefRepair, bool]:
     """Derive only from this workspace's stored sanitized source, then use ordinary custody."""
     source = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=replaces)
-    repair = build_href_repair(source.payload, replacements)
+    repair = build_href_repair(source.payload, replacements, label_replacements=label_replacements)
     converged = web_fragment_exists(
         workspace_id=workspace_id, fragment_id=repair.artifact.fragment_id
     )

@@ -157,6 +157,39 @@ def _fragment(workspace_id: str, fragment_id: str) -> dict:
 # --------------------------------------------------------------------------- #
 
 
+def test_anchor_copy_variant_retains_source_styles_and_does_not_replace_original(
+    tmp_path, monkeypatch, _isolated_design_workspace,
+) -> None:
+    from lumen_api.fragments.registry import read_web_fragment
+
+    workspace_id = _isolated_design_workspace
+    storage = FsStorage(tmp_path / "blobs")
+    source, _ = create_web_fragment(
+        storage, workspace_id=workspace_id,
+        html='<section class="hero"><h1>Source title</h1><a class="button" href="/demo">Book a demo<svg><path d="M0 0"></path></svg></a></section>',
+        css='.hero{font-size:48px}@media(max-width:600px){.hero{font-size:32px}}',
+        source_url=PAGE, section_role="hero", label="Source hero", rehosted={},
+        slots=[SlotSpec(selector="h1", key="headline", kind="text")],
+    )
+    original_id = source["fragment_id"]
+    set_web_fragment_status(workspace_id=workspace_id, fragment_id=original_id, status="approved")
+    registry = _registry(workspace_id, storage, tmp_path / "cache")
+    before = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=original_id).payload
+    result = registry.mint_href_repair(
+        replaces=original_id, replacements={"/demo": "#workflow"},
+        label_replacements={"Book a demo": "Explore the workflow"}, rung=1,
+        note="campaign variant: link this page to its workflow explanation",
+    )
+    changed = read_web_fragment(storage, workspace_id=workspace_id, fragment_id=result["fragment_id"]).payload
+    assert result["status"] == "approved"
+    assert result["label_match_counts"] == {"Book a demo": 1}
+    assert 'Explore the workflow<svg>' in changed["html"]
+    assert 'href="#workflow"' in changed["html"]
+    assert changed["slot_manifest"] == before["slot_manifest"]
+    assert registry.resolve_insertable(original_id)["superseded_by"] is None
+    assert read_web_fragment(storage, workspace_id=workspace_id, fragment_id=original_id).payload == before
+
+
 def test_a_repair_is_a_new_fragment_that_names_the_clone_it_replaces(
     workspace_id: str, design_storage: FsStorage, tmp_path
 ) -> None:

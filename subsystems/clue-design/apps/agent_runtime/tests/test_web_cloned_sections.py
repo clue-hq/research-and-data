@@ -1544,14 +1544,15 @@ class HrefRegistry(FakeRegistry):
                  css=payload["css"], slots=[{"key": key, "kind": spec["kind"]}
                                           for key, spec in payload["slot_manifest"].items()])
 
-    def mint_href_repair(self, *, replaces, replacements, rung, note):
+    def mint_href_repair(self, *, replaces, replacements=None, label_replacements=None, rung, note):
         from lumen_api.fragments.href_repair import build_href_repair
 
         self.mint_calls.append(replacements)
-        repair = build_href_repair(self.payloads[replaces], replacements)
+        repair = build_href_repair(self.payloads[replaces], replacements, label_replacements=label_replacements)
         self.install(repair.artifact)
         return {"fragment_id": repair.artifact.fragment_id, "status": "approved",
-                "match_counts": repair.match_counts, "lineage_kept": True, "converged": False}
+                "match_counts": repair.match_counts, "label_match_counts": repair.label_match_counts,
+                "lineage_kept": True, "converged": False}
 
 
 class RawRepairRegistry(HrefRegistry):
@@ -1741,4 +1742,54 @@ def test_exact_href_tool_reports_released_artifact_when_swap_fails(tmp_path, mon
     assert result["error_code"] == "repair.swap_rejected"
     assert result["released"] is True and result["pinned"] is False
     assert result["fragment_id"] in registry.payloads
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_exact_label_tool_changes_rendered_cta_without_losing_personalized_copy(tmp_path):
+    from langchain_core.tools import StructuredTool
+    from selectolax.lexbor import LexborHTMLParser
+
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(
+        registry.original, slot_values_json=json.dumps({"headline": "A relevant account argument"})
+    ))
+    before = json.loads(json.dumps(tools.web_doc))
+    exposed = StructuredTool.from_function(tools.repair_cloned_section)
+    assert "cta_label_replacements_json" in exposed.args_schema.model_json_schema()["properties"]
+    result = json.loads(exposed.invoke({
+        "fragment_id": registry.original, "note": "Match the page's primary action",
+        "cta_label_replacements_json": '{"Book a demo":"Explore the workflow"}',
+    }))
+    assert result["status"] == "ok", result
+    assert result["label_match_counts"] == {"Book a demo": 1}
+    expected = before
+    expected["pages"][0]["nodes"][pin["node_id"]]["fragment_id"] = result["repair_fragment_id"]
+    assert tools.web_doc == expected
+    for mode in ("editor", "delivery"):
+        html = tools.core.web_render(
+            tools.web_doc, "home", mode=mode,
+            fragments=tools._fragment_render_map(), fragment_css=tools._fragment_css(),
+        )["html"]
+        tree = LexborHTMLParser(html)
+        assert tree.css_first(".clone-hero h1").text() == "A relevant account argument"
+        assert tree.css_first(".clone-hero a").text() == "Explore the workflow"
+        assert tree.css_first(".clone-hero a").attributes["href"] == "https://insight.example/demo"
+
+
+def test_label_tool_cannot_silently_mask_existing_human_text_overrides(tmp_path):
+    registry = HrefRegistry(tmp_path)
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(registry.original))
+    tools.web_ops(json.dumps([{
+        "kind": "set_fragment_text_override", "page_id": "home", "id": pin["node_id"],
+        "path": ":nth-child(1) > :nth-child(2)", "override": {"text": "Human CTA"},
+    }]))
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(tools.repair_cloned_section(
+        registry.original, note="Match action",
+        cta_label_replacements_json='{"Book a demo":"Explore"}',
+    ))
+    assert result["error_code"] == "repair.label_override_conflict"
+    assert not registry.mint_calls
     assert json.dumps(tools.web_doc, sort_keys=True) == before

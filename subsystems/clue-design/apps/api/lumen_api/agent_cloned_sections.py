@@ -1090,19 +1090,22 @@ class DurableAgentClonedSectionRegistry:
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
 
     def mint_href_repair(
-        self, *, replaces: str, replacements: Mapping[str, str], rung: int, note: str,
+        self, *, replaces: str, replacements: Mapping[str, str] | None = None,
+        label_replacements: Mapping[str, str] | None = None, rung: int, note: str,
     ) -> JsonObject:
-        """Repair exact anchor targets from held source; preserve its slots, assets and CSS."""
+        """Repair exact anchor targets/labels from held source; preserve markup, assets and CSS."""
         original = self._repository().find_web_fragment(replaces)
         if original is None:
             raise FragmentRefused("fragment.unresolved", "this workspace holds no such fragment")
         reason = repair_reason(rung=rung, trigger=original.get("degraded_reason"), note=note)
         provenance = _repair_provenance(original, rung=rung, note=note, replaces=replaces)
-        provenance["repair"]["source"] = "captured_href_repair"
+        provenance["repair"]["source"] = (
+            "captured_anchor_repair" if label_replacements is not None else "captured_href_repair"
+        )
         row, repair, converged = create_href_repaired_fragment(
             self.blobs.storage, workspace_id=self.workspace_id, replaces=replaces,
             replacements=replacements, label=_repair_label(original), derived_reason=reason,
-            provenance=provenance,
+            provenance=provenance, label_replacements=label_replacements,
         )
         fragment_id = repair.artifact.fragment_id
         if row.get("status") == "draft":
@@ -1120,6 +1123,7 @@ class DurableAgentClonedSectionRegistry:
         return {
             "fragment_id": fragment_id, "status": row.get("status"),
             "derived_from": row.get("derived_from"), "match_counts": repair.match_counts,
+            "label_match_counts": repair.label_match_counts,
             "derived_reason": row.get("derived_reason"), "requested_derived_reason": reason,
             "converged": converged,
             "lineage_kept": (

@@ -55,6 +55,84 @@ def test_href_derivative_preserves_everything_except_vetted_links_and_namespace(
     assert build_href_repair(original, {"/demo": "https://client.example/demo?a=1&b=2"}) == repair
 
 
+def test_exact_anchor_label_repair_preserves_icons_markup_and_existing_slots(captured):
+    source = copy.deepcopy(captured.payload)
+    source["html"] = source["html"].replace(
+        "Bound CTA</a>", '  Bound CTA <svg><title>Arrow</title><path d="M0 0"></path></svg></a>'
+    ).replace('>First</a>', '><span class="button-label">First</span></a>')
+    before = copy.deepcopy(source)
+    repaired = build_href_repair(
+        source, {"/demo": "#request-path"},
+        label_replacements={"Bound CTA": "Explore requests", "First": "Read the approach"},
+    )
+    expected = before["html"].replace('href="/demo"', 'href="#request-path"').replace(
+        "  Bound CTA ", "  Explore requests "
+    ).replace('>First</span>', '>Read the approach</span>')
+    assert repaired.artifact.payload["html"] == expected
+    assert repaired.label_match_counts == {"Bound CTA": 1, "First": 1}
+    assert repaired.artifact.payload["slot_manifest"]["cta_href"]["fallback"] == "#request-path"
+    assert repaired.artifact.payload["asset_digests"] == before["asset_digests"]
+    old, new = fragment_wrapper_class(captured.fragment_id), repaired.artifact.wrapper_class
+    assert repaired.artifact.payload["css"].replace(new, old) == before["css"]
+    assert source == before
+
+
+def test_label_only_repair_escapes_copy_and_keeps_href_and_non_anchor_copy(captured):
+    repair = build_href_repair(captured.payload, label_replacements={"First": '<Demo> & details'})
+    tree = LexborHTMLParser(repair.artifact.payload["html"])
+    assert tree.css("a")[1].text() == '<Demo> & details'
+    assert tree.css("a")[1].attributes["href"] == "/demo"
+    assert tree.css_first("demo") is None
+    assert tree.css_first("p").text() == "/demo stays copy"
+    assert repair.artifact.payload["slot_manifest"] == captured.payload["slot_manifest"]
+    assert repair.match_counts == {}
+
+
+def test_label_repair_updates_matching_accessible_name_without_stale_copy(captured):
+    source = copy.deepcopy(captured.payload)
+    source["html"] = source["html"].replace(
+        '>First</a>', ' aria-label="First" title="First">First</a>'
+    )
+    repair = build_href_repair(source, label_replacements={"First": "Explore"})
+    anchor = LexborHTMLParser(repair.artifact.payload["html"]).css("a")[1]
+    assert anchor.text() == anchor.attributes["aria-label"] == anchor.attributes["title"] == "Explore"
+
+
+@pytest.mark.parametrize("attribute", ['aria-label="Other action"', 'aria-labelledby="elsewhere"'])
+def test_label_repair_refuses_a_different_accessible_name(captured, attribute):
+    source = copy.deepcopy(captured.payload)
+    source["html"] = source["html"].replace('>First</a>', f' {attribute}>First</a>')
+    with pytest.raises(FragmentRefused, match="accessible"):
+        build_href_repair(source, label_replacements={"First": "Explore"})
+
+
+@pytest.mark.parametrize("labels", [
+    {}, [], {"First": "First"}, {"Absent": "New"}, {"First": ""},
+    {"First": None}, {"First": "x" * 2049}, {"First": "unsafe\x00copy"},
+])
+def test_invalid_label_repair_cannot_partially_change_hrefs(captured, labels):
+    before = copy.deepcopy(captured.payload)
+    with pytest.raises(FragmentRefused):
+        build_href_repair(captured.payload, {"/demo": "/changed"}, label_replacements=labels)
+    assert captured.payload == before
+
+
+def test_label_repair_refuses_split_styled_text_instead_of_destroying_markup(captured):
+    source = copy.deepcopy(captured.payload)
+    source["html"] = source["html"].replace('>First</a>', '><em>First</em> choice</a>')
+    with pytest.raises(FragmentRefused, match="single text"):
+        build_href_repair(source, label_replacements={"First choice": "Different"})
+
+
+def test_label_repair_requires_using_existing_text_slot_instead_of_masking_a_binding():
+    captured = build_fragment_artifact(
+        html='<a href="/demo"><span>Book a demo</span></a>', css="", rehosted={},
+        slots=[SlotSpec(selector="a > span", key="cta_label", kind="text")],
+    )
+    with pytest.raises(FragmentRefused, match="text slot"):
+        build_href_repair(captured.payload, label_replacements={"Book a demo": "Explore"})
+
+
 def test_href_map_is_simultaneous_and_only_touches_anchor_href(captured):
     source = copy.deepcopy(captured.payload)
     source["html"] += '<a href="/next">Next</a><svg><use href="#icon"></use></svg>'
@@ -207,6 +285,22 @@ def test_href_registry_preserves_capture_quality_and_reports_convergence(custody
     assert second["derived_reason"] == first["derived_reason"]
     assert second["requested_derived_reason"] != second["derived_reason"]
     assert len(custody.released) == 1
+
+
+def test_label_registry_derives_from_held_source_without_reauthoring(custody, captured):
+    result = custody.registry.mint_href_repair(
+        replaces=captured.fragment_id, label_replacements={"Bound CTA": "Explore the workflow"},
+        rung=1, note="Campaign variant: use the page's primary action",
+    )
+    assert result["status"] == "approved"
+    assert result["label_match_counts"] == {"Bound CTA": 1}
+    assert result["match_counts"] == {}
+    stored = custody.persisted[0]
+    assert stored["derived_from"] == captured.fragment_id
+    assert stored["degraded"] is True
+    assert stored["artifact"].payload["html"] == captured.payload["html"].replace(
+        "Bound CTA", "Explore the workflow"
+    )
 
 
 @pytest.mark.parametrize("mapping", [{"/absent": "/fixed"}, {"/demo": "javascript:x"}, {}])

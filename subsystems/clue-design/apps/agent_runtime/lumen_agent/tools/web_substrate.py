@@ -89,7 +89,7 @@ from lumen_api.fragments.render import (
     web_doc_page_section_count,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
-from lumen_api.fragments.href_repair import validate_href_replacements
+from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -6723,7 +6723,8 @@ class LumenWebTools:
         return json.dumps(result, indent=2)
 
     def _repair_cloned_hrefs(
-        self, fragment_id: str, mapping_json: str, rung: int, note: str,
+        self, fragment_id: str, mapping_json: str | None, rung: int, note: str,
+        label_mapping_json: str | None = None,
     ) -> str:
         """Source-preserving, one-pin lane; the registry alone reads and derives the payload."""
         pins = [
@@ -6733,27 +6734,38 @@ class LumenWebTools:
         ]
         if len(pins) != 1:
             return self._tool_error("repair.ambiguous_pin", "exact href repair requires one pin")
+        if label_mapping_json is not None and pins[0].get("text_overrides"):
+            return self._tool_error(
+                "repair.label_override_conflict",
+                "this pin has human text overrides; edit the existing text override instead "
+                "of deriving a label that may be masked by it. Nothing changed.",
+            )
 
         def unique_pairs(pairs: list) -> dict:
             result = {}
             for key, value in pairs:
                 if key in result:
-                    raise ValueError("duplicate href map key")
+                    raise ValueError("duplicate replacement map key")
                 result[key] = value
             return result
 
-        try:
-            if not isinstance(mapping_json, str) or len(mapping_json) > 40_000:
-                raise ValueError("href map JSON must be at most 40000 characters")
-            replacements = validate_href_replacements(
-                json.loads(mapping_json, object_pairs_hook=unique_pairs)
-            )
-        except (ValueError, FragmentRefused) as error:
-            return self._tool_error("repair.bad_href_map", str(error))
+        maps = {}
+        for key, encoded, validator, code in (
+            ("replacements", mapping_json, validate_href_replacements, "repair.bad_href_map"),
+            ("label_replacements", label_mapping_json, validate_label_replacements, "repair.bad_label_map"),
+        ):
+            if encoded is None:
+                continue
+            try:
+                if not isinstance(encoded, str) or len(encoded) > 40_000:
+                    raise ValueError("replacement map JSON must be at most 40000 characters")
+                maps[key] = validator(json.loads(encoded, object_pairs_hook=unique_pairs))
+            except (ValueError, FragmentRefused) as error:
+                return self._tool_error(code, str(error))
         registry = self._cloned_section_registry()
         try:
             minted = registry.mint_href_repair(
-                replaces=fragment_id, replacements=replacements, rung=rung, note=note,
+                replaces=fragment_id, **maps, rung=rung, note=note,
             )
         except FragmentRefused as error:
             return self._tool_error(
@@ -6808,12 +6820,14 @@ class LumenWebTools:
             "label": resolved.get("label"), "section_role": resolved.get("section_role"),
             "composed": resolved.get("composed"),
         }
-        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact hrefs",
+        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact anchors",
                     output_summary=f"{new_id} released; existing pin preserved", payload=minted)
         return json.dumps({
             "status": "ok", "repaired": fragment_id, "repair_fragment_id": new_id,
-            "released": True, "pinned": True, "node_id": pin["id"], "href_only": True,
+            "released": True, "pinned": True, "node_id": pin["id"],
+            "href_only": label_mapping_json is None,
             "match_counts": minted.get("match_counts"), "converged": minted.get("converged"),
+            "label_match_counts": minted.get("label_match_counts", {}),
             "lineage_kept": minted.get("lineage_kept"), "note": note,
             "report": "released repair; future pins follow stored lineage; existing pin preserved",
         }, indent=2)
@@ -6821,6 +6835,7 @@ class LumenWebTools:
     def repair_cloned_section(
         self, fragment_id: str, html: str | None = None, rung: int = 1, note: str = "",
         css: str | None = None, href_replacements_json: str | None = None,
+        cta_label_replacements_json: str | None = None,
     ) -> str:
         """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
 
@@ -6843,6 +6858,19 @@ class LumenWebTools:
         and human text overrides. Multiple pins refuse as ambiguous. It uses the same released
         repair lineage as raw repair, so report its effect on future pins. This is not a general
         markup edit. Provide a precise `note`; `rung` defaults to 1 for restoring navigation.
+
+        EXACT LABEL REPAIR: for baked-in anchor labels with no text slot, pass
+        `cta_label_replacements_json` as exact old visible label -> new plain text (1-8 entries,
+        <=2048 characters each). Whitespace in old labels is normalized to single spaces.
+        This replaces only a single text node, preserving icons, wrappers, typography and CSS.
+        Matching aria-label/title text follows the label. It refuses separate accessible names,
+        split styled labels, existing text slots and pins with human text overrides;
+        use their existing binding/override or a reviewed raw variant instead. It can run alone
+        or with `href_replacements_json`, never with raw html/css. All matches change; each old
+        label must match. A label-only change keeps the destination: inspect that it still fits
+        the action. For a campaign-specific change use note="campaign variant: ..." to start
+        its own lineage. Otherwise this is a canonical released repair; state that future
+        original pins may resolve to it. Existing explicit href bindings still win over fallback.
 
         TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
         RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
@@ -6930,16 +6958,17 @@ class LumenWebTools:
             )
         instances = pinned[clean_id]
 
-        if href_replacements_json is not None:
+        if href_replacements_json is not None or cta_label_replacements_json is not None:
             if html is not None or css is not None:
                 return self._tool_error(
-                    "repair.bad_href_map", "exact href repair cannot also supply html or css"
+                    "repair.bad_href_map", "exact anchor repair cannot also supply html or css"
                 )
             return self._repair_cloned_hrefs(
                 clean_id, href_replacements_json, int(rung), cleaned_note,
+                label_mapping_json=cta_label_replacements_json,
             )
         if html is None:
-            return self._tool_error("repair.html_missing", "provide html or href_replacements_json")
+            return self._tool_error("repair.html_missing", "provide html, href_replacements_json or cta_label_replacements_json")
 
         if css is not None:
             # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------
