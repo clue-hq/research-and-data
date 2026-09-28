@@ -941,7 +941,7 @@ def run_website_ingestion(
             brief_agent=brief_agent,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
 
 
 def _ingest(
@@ -1464,7 +1464,7 @@ def run_pdf_ingestion(
             apply_descriptions=apply_descriptions,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
 
 
 def _ingest_pdf(
@@ -1714,7 +1714,14 @@ def run_asset_ingestion(
             apply_descriptions=apply_descriptions,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
+
+
+def _card_offer(workspace_id: str, tools: Any) -> Callable[[], Any]:
+    """A kit ingestion that finishes second offers the ad-DNA card (``ad_library.auto_card``)."""
+    from .ad_library.auto_card import card_offer_hook
+
+    return card_offer_hook(workspace_id, tools=tools)
 
 
 def _ingest_assets(
