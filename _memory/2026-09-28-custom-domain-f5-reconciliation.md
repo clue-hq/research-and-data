@@ -135,3 +135,18 @@ asset-enrichment lane; five Zafran account-research frontend fixture tests
 - The plan's Task 6 exit gate runs after this record.
 - Done today, not owed: the helper binary `subsystems/clue-design/target/release/lumen-api-helper`
   was rebuilt from the merged Rust source (`cargo build --release -p lumen-api-helper`).
+
+## Addendum 2026-09-29 — second pull of the LOCAL `codex/ai-ark-committee-discovery-spec-v1` (`658b7becb`)
+- 40 local commits (research-model evaluation, Head-of-ABM v66/v67 + research at 350 rounds, ad-harvest
+  auto-onboarding, self-serve provisioning ON by default, focused account reconciliation migrations)
+  merged in; one conflict (`settings.py`: theirs `self_serve_provisioning_enabled = True` + our pages
+  block). None of the reconciled hosting files changed on their side except `lumen_api/main.py`
+  (ad-library onboarding; auto-merged).
+- Alembic: their `d9f29ca9ca66` / `5e1c0a9d7b24` + our `770bf20802e1` → join `6eb27d45f570` (one head);
+  lane DB upgraded to it.
+- Gates: imports ok; ruff clean on the touched files; lint-imports 29 kept; mypy 6 errors — the 5 new
+  ones are in files that arrived with this merge (`openrouter_chat.py`, `arv2/quality_*`), inherited;
+  custom-domain Python suites green (59); npm test 3259 pass / 5 inherited Zafran fails; lint 0 errors.
+- **Owed:** the lane `.env` is far from key parity with `.env.example` (~110 keys arrived with the two
+  merges; left untouched because several — the `DEV_STACK_*` block, `CLUE_SANDBOX_ENABLED=true` — would
+  change this lane's runtime; the founder decides the values). Everything owed before stays owed.
