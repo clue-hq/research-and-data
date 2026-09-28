@@ -61,6 +61,8 @@ _ITEM_SELECT = """
                              FILTER (WHERE t.status = 'active')      AS thread_ids
         FROM agent_thread t
         WHERE t.workspace_id = :workspace_id
+          -- Only conversations a person started (the rail read applies the same rule).
+          AND t.created_by_user_id IS NOT NULL
         GROUP BY t.project_id
     )
     SELECT p.project_id, p.name AS title, p.description, p.status, p.pinned, p.brand_id,
