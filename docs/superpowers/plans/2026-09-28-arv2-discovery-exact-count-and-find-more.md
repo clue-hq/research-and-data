@@ -1,6 +1,9 @@
 # ARV2 discovery — exact count, top-up websets, "find more" (plan, 2026-09-28)
 
-Status: **drafted, awaiting founder sign-off on the design choices in §4** before any code.
+Status: **built 2026-09-28** on the founder's go ("proceed with the implementation"), taking the
+recommended answer to every §4 choice: (1) search 2 only when Exa filled search 1 and our checks
+removed some; (2) the turn-budget bundle committed first (`e431744b7`), v66 built on v65; (3) the
+§3 deletions made; (4) the wall clock per search. The live acceptance run is owed (§5).
 Context: `_memory/2026-09-28-account-discovery-audit.md`.
 
 ## 1. Founder rulings this plan implements
@@ -57,9 +60,9 @@ Context: `_memory/2026-09-28-account-discovery-audit.md`.
   of this project recorded".
 - Reads: `read_discovery_run@2` output unchanged (`relaxed_requested` now means "the run used the
   relaxed search"); frontend status unchanged (`asked` = total asked across searches).
-- Instructions (new versions only): stage0-interview v39, manual-* v12, prompt v18,
-  head-of-abm v66 (built on v65), tool notes, `launch_arv2_discovery@1` description and replay
-  identity text.
+- Instructions (new versions only): stage0-interview v39, manual-* v12, head-of-abm v66 (built on
+  v65), tool notes, `launch_arv2_discovery@1` description and replay identity text. (As built: no
+  prompt v18 — the prompt names no manual path, so v17 stands.)
 
 ## 4. Design choices needing founder sign-off
 

@@ -80,3 +80,31 @@ to the turn-budget session's bytes; digests `0db35b21…`, `d76c280e…`, `9b961
 Build plan written: `docs/superpowers/plans/2026-09-28-arv2-discovery-exact-count-and-find-more.md`;
 §4 holds four design choices awaiting founder sign-off before code (standing rule: design
 decisions inside an approved goal are surfaced first). No code written for the rebuild yet.
+
+## Fourth round — the rebuild (same day)
+
+Founder go: "proceed with the implementation" — recommended answer taken on all four plan §4
+choices (search 2 only when Exa filled search 1; turn-budget bundle committed first as
+`e431744b7`; the deletions; wall clock per search). Cross-project ruling: an account of another
+project IS verified against this ICP and added here. Website-domain check unchanged.
+
+- Engine: migration `97427f8eb3d6` (`arv2_discovery_search`, run loses webset_id / strict_search_id /
+  relaxed_search_id / strict_count / relaxed_requested, `not_chosen_before` → `found_before`);
+  store search transitions + `project_found_domains` / `project_webset_ids`; Websets client
+  `create(exclude_webset_ids)`, `find(external_id)`, `error` on every view/items result, message-
+  first error text, `add_search` deleted; driver = three sequential searches, per-search wall clock,
+  cross-project account reuse; launch identity = `request_key` (tool: `action_ref`; CLI:
+  `--request-key`, default fresh); `CLUE_ARV2_DISCOVERY_STRICT_COUNT` removed (settings, .env,
+  .env.example); CLI `--relaxed-pass` removed; `read_discovery_run` schema unchanged
+  (`relaxed_requested` = the run made the relaxed search).
+- Agent: `head-of-abm@v66` = v65 + `stage0-interview@v39` (§7b as approved) + `manual-*@v12`
+  (discovery + glossary chapters rewritten; tools regenerated); tool notes updated; builder
+  MANUAL_VERSION v12 / PROFILE_VERSION v66; registry digest `51aaa4de…`.
+- DBs: `clue_dubai` upgraded to `97427f8eb3d6` (4 legacy runs backfilled as search 1). Throwaway
+  `clue_dubai_disctest` holds the DB test runs. Migration up→down→up proven on an empty DB and on a
+  copy of clue_dubai (webset ids + asks survive).
+- Pre-existing reds confirmed on clean HEAD: tests/api/test_project_context_files_db.py::
+  test_status_facts_are_workspace_scoped_and_keep_person_only_accounts (research-job FK) and
+  tests/api/test_frontend_bulk_actions_discovery_db.py (401), plus the earlier offline ones.
+- Owed: the live acceptance run (founder-triggered, spends money); the 16 stale `manual-tools/v5`
+  pointers in other tools' descriptions.
