@@ -222,7 +222,15 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `stage0-interview@v38` are v16/v37 with only their briefing and manual paths repointed
     # (literal paths, not placeholders: a narrowed surface that drops the briefing skill must not
     # fail to resolve the prompt). No tool address moves; the recipe stays.
-    AgentRole.HEAD_OF_ABM: "v65",
+    # v66 (discovery rebuild, founder rulings 2026-09-28): v65's surface exactly. Discovery now
+    # asks the provider for exactly the number the human wants, tops a shortfall up with new
+    # websets that skip everything found before, and treats every new ask as a new run; a company
+    # another project has is verified against this project's ICP and added here.
+    # `stage0-interview@v39` §7b teaches that (no relaxed pass to offer, nothing to approve by
+    # adding), and the manual re-mints at `manual-*@v12` (discovery and glossary chapters
+    # rewritten; the generated tools chapter carries the new launch description and notes). No
+    # tool address moves; the recipe stays.
+    AgentRole.HEAD_OF_ABM: "v66",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

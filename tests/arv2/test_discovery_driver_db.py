@@ -6,10 +6,12 @@ one permitted one — so the **real** Exa and Websets clients build the real req
 real store, the real claim gate and the real account writer land everything below them.
 
 The scenario is the one the proof of concept produced: the long list gives two companies, one of
-which the workspace already owns under the domain the long list got *wrong* (``probook.com`` for
+which this project already holds under the domain the long list got *wrong* (``probook.com`` for
 ``probook.ai``) — so it costs the one website answer that identified it and not a single gate —
 and the other passes every gate and becomes a ``candidate`` account whose fit reads High 100 on
-the accounts list.
+the accounts list. Exa filled the first search, so the duplicate leaves the run one short and a
+strict top-up — a second webset, excluding the first — asks for the one missing (rulings
+2026-09-28); the market has no more, and the run lands honestly short.
 """
 
 from __future__ import annotations
@@ -39,7 +41,7 @@ from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRequest,
     launch_arv2_discovery,
 )
-from clue_api.arv2.discovery_store import list_candidates, read_discovery_run
+from clue_api.arv2.discovery_store import list_candidates, list_searches, read_discovery_run
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.exa_websets_client import ExaWebsetsClient
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
@@ -49,6 +51,7 @@ from clue_fleet import FleetTaskKind
 from clue_fleet.lease import LeaseGeneration
 from clue_fleet.work_worker import WorkContext
 from clue_research.claimstore import load_core_pack
+from clue_research.membership import ensure_project_accounts
 from clue_storage.fs import FsStorage
 from tests.arv2.icp_fixture import USER_ID, IcpFixture, seed_icp_fixture, settings_for
 from tests.arv2.test_discovery_driver import (
@@ -90,13 +93,24 @@ def _json(payload: dict[str, Any]) -> HttpResponse:
     )
 
 
-def _search_body(*, status: str, found: int, analyzed: int) -> dict[str, Any]:
+def _not_found() -> HttpResponse:
+    """Exa's answer to a lookup by an external id it has never seen."""
+    return HttpResponse(
+        status=404,
+        headers={"content-type": "application/json"},
+        body=b'{"message": "Webset not found", "statusCode": 404}',
+    )
+
+
+def _search_body(
+    *, status: str, found: int, analyzed: int, search_id: str = "srch-strict"
+) -> dict[str, Any]:
     return {
-        "id": "srch-strict",
+        "id": search_id,
         "object": "webset_search",
         "status": status,
-        "count": 35,
-        "recall": {"estimate": 240},
+        "count": 2,
+        "recall": {"expected": {"total": 240, "confidence": "medium"}},
         "progress": {"found": found, "analyzed": analyzed},
         "criteria": [
             {"description": GEOGRAPHY_RULE, "successRate": 0.78},
@@ -105,9 +119,11 @@ def _search_body(*, status: str, found: int, analyzed: int) -> dict[str, Any]:
     }
 
 
-def _webset_body(*, status: str, found: int, analyzed: int) -> dict[str, Any]:
+def _webset_body(
+    *, status: str, found: int, analyzed: int, webset_id: str = "ws-db-1"
+) -> dict[str, Any]:
     return {
-        "id": "ws-db-1",
+        "id": webset_id,
         "status": status,
         "searches": [_search_body(status=status, found=found, analyzed=analyzed)],
     }
@@ -167,12 +183,15 @@ def _gate_answer(rule_quote: str, url: str) -> dict[str, Any]:
     )
 
 
-#: The nine requests this run makes, in the order it makes them. Written out rather than routed by
-#: URL on purpose: the ORDER is part of the contract — the website answer comes before the dedupe,
-#: and the duplicate never reaches a gate — so a step that moves fails this test loudly.
+#: The fourteen requests this run makes, in the order it makes them. Written out rather than routed
+#: by URL on purpose: the ORDER is part of the contract — every webset is looked up by its external
+#: id before it is bought, the website answer comes before the dedupe, the duplicate never reaches
+#: a gate, and the top-up is bought only after the first search is done — so a step that moves
+#: fails this test loudly.
 def _script() -> list[HttpResponse]:
     patientdesk = "https://patientdesk.com/news"
     return [
+        _not_found(),
         _json(_webset_body(status="running", found=0, analyzed=0)),
         _json(_webset_body(status="idle", found=2, analyzed=311)),
         _json(
@@ -196,8 +215,8 @@ def _script() -> list[HttpResponse]:
                 "hasMore": False,
             }
         ),
-        # Probook's own site is probook.ai — the long list's probook.com was wrong, and the
-        # workspace already owns probook.ai, so this candidate ends here.
+        # Probook's own site is probook.ai — the long list's probook.com was wrong, and this
+        # project already holds probook.ai, so this candidate ends here.
         _json(
             _answer_body(
                 {"website_domain": "probook.ai", "evidence_url": "https://probook.ai/news"},
@@ -216,6 +235,12 @@ def _script() -> list[HttpResponse]:
         _json(_gate_answer(PATIENTDESK_QUOTE, patientdesk)),
         _json(_gate_answer(PATIENTDESK_QUOTE, patientdesk)),
         _json(_gate_answer(PATIENTDESK_QUOTE, patientdesk)),
+        # Exa filled search 1 (2 of 2) and the duplicate left the run one short: the strict
+        # top-up, a new webset for the one missing, which finds nothing more.
+        _not_found(),
+        _json(_webset_body(status="running", found=0, analyzed=0, webset_id="ws-db-2")),
+        _json(_webset_body(status="idle", found=0, analyzed=40, webset_id="ws-db-2")),
+        _json({"data": [], "hasMore": False}),
     ]
 
 
@@ -269,6 +294,7 @@ async def _launch(conn: AsyncConnection, storage: FsStorage, fixture: IcpFixture
             workspace_id=fixture.workspace_id,
             project_id=fixture.project_id,
             requested_by_user_id=USER_ID,
+            request_key="turn-action:db-ask",
             target_count=2,
             # The relaxed pass is its own scenario; this one is the strict pass end to end.
             relaxed_enabled=False,
@@ -288,6 +314,14 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             await load_core_pack(conn)
             await load_arv2_pack(conn)
             fixture = await seed_icp_fixture(conn, storage)
+            # Probook is already one of THIS project's accounts: the duplicate that costs no gate.
+            await ensure_project_accounts(
+                conn,
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                account_entity_ids=[UUID(str(fixture.accounts[0]))],
+                added_via="manual",
+            )
             run_id = await _launch(conn, storage, fixture)
 
             transports = _OneCallPerHop(_script())
@@ -332,14 +366,27 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             run = await read_discovery_run(conn, run_id=run_id)
             assert run is not None
             assert run.status == "completed"
-            assert run.webset_id == "ws-db-1"
-            assert (run.asked, run.found_strict, run.found_relaxed, run.analyzed) == (35, 2, 0, 311)
+            first, topup = await list_searches(conn, run_id=run_id)
+            assert (first.kind, first.webset_id, first.asked, first.found) == (
+                "strict",
+                "ws-db-1",
+                2,
+                2,
+            )
+            assert (topup.kind, topup.webset_id, topup.asked, topup.found) == (
+                "strict_topup",
+                "ws-db-2",
+                1,
+                0,
+            )
+            assert topup.exclude_webset_ids == ("ws-db-1",)
+            assert first.finished_at is not None and topup.finished_at is not None
+            assert (run.asked, run.found_strict, run.found_relaxed, run.analyzed) == (3, 2, 0, 351)
             assert run.recall_estimate == 240
             assert run.receipt is not None
             assert run.receipt["duplicates"] == 1
             assert run.receipt["shown"] == 1
             assert run.receipt["guards"] == {"ok": 4}
-            assert run.receipt["criteria_relaxed"] is None
 
             candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
             assert set(candidates) == {"probook.ai", "patientdesk.com"}
@@ -598,6 +645,9 @@ def test_two_candidates_verify_concurrently_each_landing_its_own_verdicts(tmp_pa
             run_id = await _launch(conn, storage, fixture)
 
             routes: list[tuple[str, str, HttpResponse]] = [
+                # The lookup by external id (its colon escaped in the URL, which the create's body
+                # never is) finds nothing, so the webset is bought.
+                ("", "arv2-discovery%3A", _not_found()),
                 # The poll sequence, in the order the driver makes it — and the one part of this
                 # script that is still ordered, because it is one call at a time: the created
                 # webset, a first poll that is still running, the empty list that tick reads, the

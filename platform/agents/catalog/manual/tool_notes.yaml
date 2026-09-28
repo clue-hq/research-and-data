@@ -104,10 +104,11 @@ launch_arv2_account_research:
 
 launch_arv2_discovery:
   afterwards: >-
-    A discovery run is queued against the ICP version the project pinned. It approves nothing: the
-    candidates land on the accounts table with a verdict each, and a human adds the ones they
-    want. Read it back with read_discovery_run before proposing another.
-  skill_section: stage0-interview v33 section 7b, "Discover accounts for this project".
+    A discovery run is queued against the ICP version the project pinned. It searches for exactly
+    target_count companies, and every company it checks joins this project's accounts with its fit
+    and its gate verdicts. Each new ask is a new run that skips every company this project's
+    earlier discoveries found. Read it back with read_discovery_run before proposing another.
+  skill_section: stage0-interview v39 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
@@ -295,10 +296,10 @@ read_claims:
 
 read_discovery_run:
   afterwards: >-
-    Nothing changes. You hold what the last discovery asked for, found, verified and had
-    approved. Say that before proposing another run; do not launch one to answer a question this
-    read already answers.
-  skill_section: stage0-interview v33 sections 7b and 7c.
+    Nothing changes. You hold what the last discovery asked for, found, verified and showed. Say
+    that before proposing another run; do not launch one to answer a question this read already
+    answers.
+  skill_section: stage0-interview v39 sections 7b and 7c.
   see_also: [discovery, accounts-research]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.

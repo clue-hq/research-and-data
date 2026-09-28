@@ -425,37 +425,79 @@ def test_the_items_cost_is_ten_credits_for_each_row_that_satisfied_every_criteri
 # -- adding a search to a live webset -----------------------------------------------------------
 
 
-def test_add_search_excludes_the_searches_that_already_ran() -> None:
-    """A second pass must not be charged again for the companies the first pass already found."""
+def test_a_top_up_webset_excludes_the_websets_before_it_by_whole_webset() -> None:
+    """``exclude`` accepts ``webset`` or ``import`` — never a single search (a live 400,
+    2026-09-12 and again 2026-09-28) — so a top-up is a new webset that skips the earlier ones."""
+    client, transport = _client([_response({"id": "webset_2", "status": "running"}, status=201)])
+
+    client.create(
+        query="ICP",
+        count=2,
+        criteria=["US"],
+        external_id="run-1:2",
+        title="t",
+        exclude_webset_ids=["webset_1", "webset_0"],
+        recall=False,
+    )
+
+    sent = json.loads(transport.requests[0].body)["search"]
+    assert sent["exclude"] == [
+        {"source": "webset", "id": "webset_1"},
+        {"source": "webset", "id": "webset_0"},
+    ]
+    assert "recall" not in sent
+
+
+def test_a_webset_with_nothing_to_skip_sends_no_exclude() -> None:
+    client, transport = _client([_response({"id": "webset_1", "status": "running"}, status=201)])
+
+    client.create(query="ICP", count=2, criteria=["US"], external_id="run-1:1", title="t")
+
+    assert "exclude" not in json.loads(transport.requests[0].body)["search"]
+
+
+def test_find_reads_a_webset_by_external_id_and_answers_none_when_exa_has_none() -> None:
     client, transport = _client(
         [
-            _response(
-                {
-                    "id": "wsearch_2",
-                    "object": "webset_search",
-                    "websetId": "webset_1",
-                    "status": "running",
-                    "count": 20,
-                },
-                status=201,
-            )
+            _response({"id": "webset_1", "externalId": "arv2-discovery:r:1", "status": "idle"}),
+            _response({"message": "Webset arv2-discovery:r:2 not found"}, status=404),
         ]
     )
 
-    view = client.add_search(
-        "webset_1", query="ICP again", count=20, criteria=["US"], exclude_search_ids=["ws_1"]
-    )
+    found = client.find("arv2-discovery:r:1")
+    missing = client.find("arv2-discovery:r:2")
 
-    sent = json.loads(transport.requests[0].body)
-    assert sent == {
-        "query": "ICP again",
-        "count": 20,
-        "entity": {"type": "company"},
-        "criteria": [{"description": "US"}],
-        "exclude": [{"source": "search", "id": "ws_1"}],
+    assert found is not None and found.webset_id == "webset_1" and found.error is None
+    assert missing is None
+    # The external id is one path segment, its colons escaped.
+    assert transport.requests[0].url.endswith(f"{WEBSETS_BASE_PATH}/arv2-discovery%3Ar%3A1")
+    assert transport.requests[0].body is None
+
+
+def test_a_refused_call_is_reported_on_the_view_not_read_as_an_empty_webset() -> None:
+    """The old widening search was refused with a 400 on every run and read as a search that
+    found nobody. The view now says it was refused, in Exa's own words."""
+    body = {"statusCode": 400, "message": "exclude.0.source: Invalid option", "error": "Bad"}
+    client, _ = _client([_response(body, status=400)])
+
+    view = client.create(query="ICP", count=2, criteria=["US"], external_id="r:1", title="t")
+
+    assert view.error is not None
+    assert "400" in view.error and "Invalid option" in view.error
+
+
+def test_a_refused_items_page_ends_the_walk_and_says_so() -> None:
+    page1 = {
+        "data": [_item("witem_1", "https://probook.com", "Probook", yes=True)],
+        "hasMore": True,
+        "nextCursor": "c2",
     }
-    assert transport.requests[0].url.endswith(f"{WEBSETS_BASE_PATH}/webset_1/searches")
-    assert view.webset_id == "webset_1" and view.searches[0].search_id == "wsearch_2"
+    client, _ = _client([_response(page1), _response({"message": "boom"}, status=400)])
+
+    result = client.items("webset_1")
+
+    assert [item.name for item in result.items] == ["Probook"]
+    assert result.error is not None and "boom" in result.error
 
 
 # -- money truth --------------------------------------------------------------------------------

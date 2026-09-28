@@ -7,17 +7,22 @@ different shape from :mod:`clue_api.arv2.exa_client`'s synchronous calls, and th
 why this is its own client rather than four more methods there: a webset is created, polled and
 *then* read, and only the read is billed.
 
-Four rules this module exists to keep:
+Five rules this module exists to keep:
 
+* **A refusal is reported, never read as an empty answer.** Every view carries ``error`` — Exa's
+  own words — when the call was not a 2xx, so a caller cannot mistake "Exa rejected this request"
+  for "Exa found nothing" (the old widening search was rejected with a 400 on every run and read as
+  a search that found nobody). Raising is the caller's business: a client never invents a failure
+  type (``clue_spend.errors``).
 * **The bill is read on the items page, not guessed at creation.** Websets charges ten credits
   per *all-green* result — a row whose every criterion was satisfied. :func:`websets_items_cost`
   is that arithmetic in one place, and :meth:`ExaWebsetsClient.items` records it as the call's
-  cost — **once per row per run**: a webset is read again on every resume and again after a
-  widening search, and every read returns every row, so the caller carries the ids it has already
-  been charged for (:func:`newly_priced`). Creation reserves the worst case (``count`` × ten
-  credits) as a law-2 pre-spend estimate and records only the recall estimate's own five credits
-  as its cost, because recording the reservation as spend too would double-count every match:
-  once when the search was asked for, once when its results were read.
+  cost — **once per row per run**: a webset is read on every poll and again on every resume, and
+  every read returns every row, so the caller carries the ids it has already been charged for
+  (:func:`newly_priced`). Creation reserves the worst case (``count`` × ten credits) as a law-2
+  pre-spend estimate and records only the recall estimate's own five credits as its cost, because
+  recording the reservation as spend too would double-count every match: once when the search
+  was asked for, once when its results were read.
 * **Exa bills a row when it finds it, not when we read it.** A run that stops reading before its
   webset is ``idle`` must :meth:`ExaWebsetsClient.cancel` it and read it once more, or Exa keeps
   finding — and charging for — companies the ledger never sees.
@@ -135,6 +140,9 @@ class WebsetView:
     searches: tuple[WebsetSearchView, ...]
     raw_ref: str | None
     ledger_row_id: str
+    #: Exa's reason when the call was not a 2xx, else ``None``. A view with an error describes
+    #: nothing: its id, status and searches are whatever an error body happened to contain.
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -182,6 +190,9 @@ class WebsetItemsResult:
     cost_usd: Decimal
     raw_refs: tuple[str, ...]
     ledger_row_ids: tuple[str, ...]
+    #: Exa's reason when a page was not a 2xx; the walk stops there and ``items`` holds only the
+    #: pages before it.
+    error: str | None = None
     #: The ids of the all-green rows THIS read paid for — every id not already in the caller's
     #: ``priced_item_ids``. The caller adds them to that set so the next read of the same webset
     #: prices only what is new; ``all_green``/``credits_est``/``cost_usd`` count exactly these.
@@ -254,40 +265,32 @@ def _search_view(search: Mapping[str, Any]) -> WebsetSearchView:
     )
 
 
-def _is_search_object(body: Mapping[str, Any]) -> bool:
-    """Is this the bare ``webset_search`` object, rather than a whole webset?
-
-    ``POST /websets/{id}/searches`` answers with the search it created, not with the webset it
-    belongs to. Telling the two apart matters for one reason above all: on a search object ``id``
-    is the *search's* id, so reading a webset id out of it would hand the caller a wrong key.
-    """
-    return "searches" not in body and (body.get("object") == "webset_search" or "websetId" in body)
-
-
 def _searches(body: Mapping[str, Any]) -> tuple[WebsetSearchView, ...]:
-    """Every search on a webset body — or the single search a create-search call returned.
-
-    Both shapes map into the same view instead of giving that one call a return type of its own.
-    """
+    """Every search on a webset body."""
     searches = body.get("searches")
     if isinstance(searches, list):
         return tuple(_search_view(_mapping(search)) for search in searches)
-    if _is_search_object(body):
-        return (_search_view(body),)
     return ()
 
 
 def _webset_view(result: CallResult, *, fallback_id: str | None = None) -> WebsetView:
-    """Map a webset (or a create-search) response into the one view the driver reads."""
+    """Map a webset response into the one view the driver reads."""
     body = _body_json(result.response)
-    identifier = _str(body.get("websetId")) if _is_search_object(body) else _str(body.get("id"))
     return WebsetView(
-        webset_id=identifier or fallback_id or "",
+        webset_id=_str(body.get("id")) or fallback_id or "",
         status=_str(body.get("status")) or "unknown",
         searches=_searches(body),
         raw_ref=result.raw_ref,
         ledger_row_id=result.ledger_row_id,
+        error=_refusal(result.response),
     )
+
+
+def _refusal(response: HttpResponse) -> str | None:
+    """Exa's own words for a non-2xx answer, or ``None`` for a 2xx."""
+    if 200 <= response.status < 300:
+        return None
+    return f"http {response.status}: {_error_message(response)}"
 
 
 def _evaluations(item: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
@@ -355,8 +358,8 @@ def newly_priced(
     """The all-green rows of one page that have not been paid for yet, and their ids.
 
     Websets charges when a *search produces a result*, not when a page is read — but the page is
-    the only place the bill is visible, so reading the same webset again (a plain resume, or the
-    read that follows a widening search) shows every row a second time. Pricing those rows twice
+    the only place the bill is visible, so reading the same webset again (every poll, every resume)
+    shows every row a second time. Pricing those rows twice
     would over-report real spend on the exact number §8's exit gate divides by. A row Exa gave no
     id for cannot be recognised on a later read, so it is priced every time: over-reporting one
     unidentifiable row is the safe direction, silently dropping it is not.
@@ -429,9 +432,13 @@ def _zero_cost_reader(response: HttpResponse) -> CostReading:
 
 
 def _error_message(response: HttpResponse) -> str:
-    """The provider's own words for why it refused, or the bare status when it gave none."""
+    """The provider's own words for why it refused, or the bare status when it gave none.
+
+    ``message`` first: Exa's validation refusals carry a generic ``error`` ("Validation Error")
+    beside the ``message`` that says what was wrong.
+    """
     body = _body_json(response)
-    for key in ("error", "message", "detail"):
+    for key in ("message", "error", "detail"):
         value = body.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -458,7 +465,7 @@ def websets_halt_rule(response: HttpResponse) -> str | None:
 
 
 class ExaWebsetsClient:
-    """Websets' five operations, each one :class:`CallSpec` through the caller it was given."""
+    """Websets' operations, each one :class:`CallSpec` through the caller it was given."""
 
     def __init__(
         self,
@@ -481,12 +488,17 @@ class ExaWebsetsClient:
         criteria: Sequence[str],
         external_id: str,
         title: str,
+        exclude_webset_ids: Sequence[str] = (),
         recall: bool = True,
     ) -> WebsetView:
         """Create a webset with one search. Returns immediately; the work happens after.
 
-        ``externalId`` is the caller's own key for this webset (a discovery run id), which is what
-        makes a re-read after a crash a lookup rather than a second, separately billed webset.
+        ``externalId`` is the caller's own key for this webset, which is what makes a re-read after
+        a crash a lookup (:meth:`find`) rather than a second, separately billed webset.
+
+        ``exclude_webset_ids`` are earlier websets whose companies this search must not find again
+        — and so must not charge for again. A whole webset is the smallest thing Exa's ``exclude``
+        accepts (``webset`` or ``import``; a single search was refused with a 400).
         """
         search: dict[str, Any] = {
             "query": query,
@@ -494,6 +506,10 @@ class ExaWebsetsClient:
             "entity": {"type": "company"},
             "criteria": [{"description": description} for description in criteria],
         }
+        if exclude_webset_ids:
+            search["exclude"] = [
+                {"source": "webset", "id": webset_id} for webset_id in exclude_webset_ids
+            ]
         if recall:
             # Absent unless asked for: ``recall`` makes Exa estimate how many companies match the
             # search in total, and it costs :data:`RECALL_CREDITS`, so the caller opts into it.
@@ -535,6 +551,26 @@ class ExaWebsetsClient:
         )
         return _webset_view(result, fallback_id=webset_id)
 
+    def find(self, external_id: str) -> WebsetView | None:
+        """The webset created under this ``externalId``, or ``None`` when Exa has none (a 404).
+
+        Exa reads a webset by its id or its external id, so an attempt that died between asking
+        Exa for a webset and recording its id finds it again here instead of buying another.
+        """
+        result = self._call(
+            operation="get",
+            label="websets-find",
+            method="GET",
+            path=f"{WEBSETS_BASE_PATH}/{quote(external_id, safe='')}",
+            body=None,
+            estimate=SpendEstimate(),
+            cost_reader=_zero_cost_reader,
+            timeout_s=WEBSETS_TIMEOUT_S,
+        )
+        if result.response.status == 404:
+            return None
+        return _webset_view(result)
+
     def get(self, webset_id: str) -> WebsetView:
         """Read a webset's current state — the poll surface, free and body-less."""
         result = self._call(
@@ -559,9 +595,8 @@ class ExaWebsetsClient:
         already holds rather than a number computed twice.
 
         ``priced_item_ids`` is what the caller has already been charged for on this webset. A
-        webset is read more than once per run — a resumed attempt polls and reads it again, and
-        the widening pass reads the WHOLE webset, strict rows included — and every read returns
-        every row. Rows named here are still returned; they are simply not priced a second time.
+        webset is read on every poll and again by a resumed attempt, and every read returns every
+        row. Rows named here are still returned; they are simply not priced a second time.
         The rows this read did pay for come back on
         :attr:`WebsetItemsResult.priced_item_ids` for the caller to carry forward.
         """
@@ -594,6 +629,18 @@ class ExaWebsetsClient:
                 raw_refs.append(result.raw_ref)
             ledger_row_ids.append(result.ledger_row_id)
             cost += result.call_cost.cost_usd or Decimal(0)
+            error = _refusal(result.response)
+            if error is not None:
+                return WebsetItemsResult(
+                    items=tuple(items),
+                    all_green=all_green,
+                    credits_est=all_green * CREDITS_PER_MATCH,
+                    cost_usd=cost,
+                    raw_refs=tuple(raw_refs),
+                    ledger_row_ids=tuple(ledger_row_ids),
+                    error=error,
+                    priced_item_ids=tuple(priced),
+                )
             body = _body_json(result.response)
             page = _page_items(body)
             # The same arithmetic the cost reader just ran on this page, against the same
@@ -617,39 +664,6 @@ class ExaWebsetsClient:
             ledger_row_ids=tuple(ledger_row_ids),
             priced_item_ids=tuple(priced),
         )
-
-    def add_search(
-        self,
-        webset_id: str,
-        *,
-        query: str,
-        count: int,
-        criteria: Sequence[str],
-        exclude_search_ids: Sequence[str],
-    ) -> WebsetView:
-        """Run a second search over the same webset, excluding what earlier searches found.
-
-        ``exclude`` is what keeps a widening pass cheap: without it Exa re-finds — and re-charges
-        for — every company the first search already returned.
-        """
-        body: dict[str, Any] = {
-            "query": query,
-            "count": count,
-            "entity": {"type": "company"},
-            "criteria": [{"description": description} for description in criteria],
-            "exclude": [{"source": "search", "id": search_id} for search_id in exclude_search_ids],
-        }
-        result = self._call(
-            operation="add-search",
-            label="websets-add-search",
-            method="POST",
-            path=f"{WEBSETS_BASE_PATH}/{webset_id}/searches",
-            body=body,
-            estimate=self._search_estimate(count),
-            cost_reader=_zero_cost_reader,
-            timeout_s=WEBSETS_TIMEOUT_S,
-        )
-        return _webset_view(result, fallback_id=webset_id)
 
     # -- internals -----------------------------------------------------------------------------
 

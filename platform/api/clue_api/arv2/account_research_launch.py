@@ -1314,7 +1314,7 @@ class LaunchArv2AccountResearchTool(Tool):
         "Before launching, read .deepagent/skills/account-research-briefing/v2/SKILL.md and "
         "write the project-specific delegation brief it teaches in directive_text, with "
         "account placeholders and references to the complete pinned documents. "
-        "Manual: .deepagent/skills/manual-tools/v11/SKILL.md#launch_arv2_account_research"
+        "Manual: .deepagent/skills/manual-tools/v12/SKILL.md#launch_arv2_account_research"
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput

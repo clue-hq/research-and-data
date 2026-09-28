@@ -1421,19 +1421,53 @@ companies (Exa `/search` on prose queries returns content *about* an ICP, not me
 **Exa Answer** with a system prompt and an `outputSchema` *verifies* them (Websets' own criteria
 verdicts were wrong six times in fifteen). The hand-written regex probe of rev 4 was dropped.
 
+### 2026-09-28: exact count, one webset per search, "find more" is a new run
+
+Founder rulings 2026-09-28 (plan `docs/superpowers/plans/2026-09-28-arv2-discovery-exact-count-and-find-more.md`,
+audit `_memory/2026-09-28-account-discovery-audit.md`) replace the one-webset run described in the
+steps below wherever the two disagree:
+
+- **Search 1 asks Exa for exactly `target_count`.** The fixed ask of 35 (`strict_count`,
+  `CLUE_ARV2_DISCOVERY_STRICT_COUNT`) is gone. Exa lists a company only once it matches every
+  criterion, and each later search asks only for the shortfall, so a run never shows more companies
+  than were asked for.
+- **Up to three searches, each a webset of its own** (`arv2_discovery_search`, migration
+  `97427f8eb3d6`): `strict`; `strict_topup` — the same criteria for the missing number, only when Exa
+  filled search 1 and our own checks removed some; `relaxed` — search 1's least-satisfied criterion
+  dropped, only when still short and `relaxed_enabled`. Every search sends
+  `exclude: [{source: "webset", id}]` for every webset before it, this run's and every earlier run's
+  of the project. The old widening (`add_search` on the same webset, excluding `{source: "search"}`)
+  was refused by Exa with a 400 on every run and read as "found nobody"; a refused Websets call now
+  lands the run `needs_review` as `websets_request_refused`.
+- **A search row is written before its webset is bought**, under the `externalId`
+  `arv2-discovery:<run>:<ordinal>`; a resumed attempt looks the webset up by that id (Exa reads a
+  webset by id or external id) before it creates anything.
+- **A run's identity includes the approving user action** (`request_key`: the tool's `action_ref`,
+  the CLI's `--request-key`), so every new ask is a new run and the same ask retried is the same run.
+  The reopen-for-relaxed path (`request_relaxed_pass`, the CLI's `--relaxed-pass`,
+  `relaxed_requested`) is gone.
+- **Skips:** a company already among this project's accounts is `duplicate_of_existing`; one any
+  earlier discovery run of this project found is `found_before` (was `not_chosen_before`). An account
+  of **another** project is verified against this project's ICP and joins this project on its own row.
+- **Money:** a run that ends early cancels its running webset and reads it once more so everything
+  Exa charged for reaches the ledger (`webset_stopped`, `rows_priced_at_stop`); the recall estimate is
+  read from `recall.expected.total`, and its 5 credits are recorded on the create. The wall clock
+  applies per search.
+- **Agent:** `head-of-abm@v66` — `stage0-interview@v39` §7b and `manual-*@v12` teach the above.
+
 ### The module map (nine modules)
 
 | module | what it owns |
 | --- | --- |
-| `discovery_store.py` | the only module that speaks SQL to `arv2_discovery_run` / `arv2_discovery_candidate`: one function per run transition (`create_discovery_run`, `begin_discovery_run`, `record_webset`, `record_relaxed_search`, `request_relaxed`, `suspend_discovery_run`, `finish_discovery_run`), the candidate writers (`upsert_candidate`, `record_verdicts`, `mark_candidates_approved`) and the readers (`list_candidates`, `unapproved_domains`) |
-| `exa_websets_client.py` | the thin Websets client — `create` / `get` / `items` / `add_search` through one private `_call` on the injected `ProviderCaller`, `is_all_green`, `newly_priced` (a webset row is billed once per run: `items(…, priced_item_ids=…)` returns every row and prices only the new ones), `websets_items_cost`, `websets_halt_rule` |
+| `discovery_store.py` | the only module that speaks SQL to `arv2_discovery_run` / `arv2_discovery_search` / `arv2_discovery_candidate`: one function per run transition (`create_discovery_run`, `begin_discovery_run`, `suspend_discovery_run`, `finish_discovery_run`), the search transitions (`create_search`, `record_search_webset`, `finish_search`), the candidate writers (`upsert_candidate`, `record_verdicts`, `mark_candidates_approved`) and the readers (`list_candidates`, `list_searches`, `project_found_domains`, `project_webset_ids`) |
+| `exa_websets_client.py` | the thin Websets client — `create` (with `exclude_webset_ids`) / `find` (by external id) / `get` / `items` / `cancel` through one private `_call` on the injected `ProviderCaller`; every view carries Exa's refusal as `error`; `is_all_green`, `newly_priced` (a webset row is billed once per run: `items(…, priced_item_ids=…)` returns every row and prices only the new ones), `websets_items_cost`, `websets_halt_rule` |
 | `exa_client.py` (`answer`) | R4's addition to the R1 client: `answer_body`, `ExaCitation`, `ExaAnswerResult`, `ANSWER_ESTIMATE_USD`, and `ExaClient.answer` — one `/answer` hop inheriting the module's existing cost reader and halt rule |
 | `discovery_brief.py` | the ICP document compiled into the brief one run executes — `Gate`, `DiscoveryBrief`, `compile_brief`, `buyer_sentence`, `parse_window_months`, and the typed `BriefError` |
 | `discovery_verifier.py` | what we send and what we trust — `system_prompt(today)`, `gate_question`, `website_question`, `OUTPUT_SCHEMA` / `WEBSITE_SCHEMA`, `apply_guards` (the three guards), `fit_score`, `disposition`; pure, with no clock, no settings, no database and no provider |
-| `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp` (the project's *current* pin, for the launch) and `read_icp_document` (a run's *own* pinned bytes, by key and sha, for the driver), `launch_arv2_discovery` (replay + lineage, rows only), `request_relaxed_pass`, `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
-| `discovery_driver.py` | the fleet handler: claim, compile, buy the long list, verify every candidate, land the run — plus `relaxed_criteria` and `revenue_band`, the two pure helpers its arithmetic lives in |
+| `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp` (the project's *current* pin, for the launch) and `read_icp_document` (a run's *own* pinned bytes, by key and sha, for the driver), `launch_arv2_discovery` (replay + lineage, rows only), `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
+| `discovery_driver.py` | the fleet handler: claim, compile, run up to three searches (each a webset), verify every candidate, land the run — plus `relaxed_criteria` and `revenue_band`, the two pure helpers its arithmetic lives in |
 | `fleet_task.py` | R4's three names beside R2's — `ARV2_DISCOVERY_DEDUP_PREFIX = "arv2-discovery:"`, `ARV2_DISCOVERY_TASK_PRIORITY = -90`, `arv2_discovery_work_id(run_id)` (the run id **is** the work id) — so the enqueuer and the handler never import each other |
-| `scripts/launch_arv2_discovery.py` | the operator CLI: launch, `--relaxed-pass <run>`, `--report <run>` |
+| `scripts/launch_arv2_discovery.py` | the operator CLI: launch (`--request-key` to replay an ask), `--report <run>` |
 
 `FleetTaskKind.ARV2_DISCOVERY` is its **own** fleet kind (unlike R3's people, which ride the account
 kind) because a discovery run takes minutes, spends money and must survive a worker restart. Its
@@ -1599,10 +1633,9 @@ Eight keys, all in `.env.example` at parity:
   only when `CLUE_EXA_API_KEY` is configured too (otherwise the composition warns
   `arv2.discovery_handler_not_composed` and stays `None`). The tool registers on every deployment
   and refuses `arv2_discovery_not_composed` where the lane is off.
-- `CLUE_ARV2_DISCOVERY_STRICT_COUNT` (default `35`) — the strict pass's ask for a target of 20,
-  while precision is being measured (ruling 4).
-- `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — run the relaxed pass automatically when the
-  strict pass falls short.
+- ~~`CLUE_ARV2_DISCOVERY_STRICT_COUNT`~~ — removed 2026-09-28: search 1 asks for exactly the target.
+- `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — allow the relaxed search when the caller did
+  not say (the agent's tool always says).
 - `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default **empty**) — operator override only. Empty means
   the pinned ICP decides its own webset criteria (below); a comma-separated list of that document's
   hard-gate keys forces those instead. At most three either way; a fourth is refused, not dropped.
@@ -1611,7 +1644,7 @@ Eight keys, all in `.env.example` at parity:
   Clue ICP's keys and a synthesised ICP names its own.
 - `CLUE_ARV2_DISCOVERY_ANSWER_MODEL` (default `exa`) — the Answer model the verifier asks.
 - `CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S` (default `15`) / `CLUE_ARV2_DISCOVERY_WALL_S` (default
-  `1800`) — the webset poll cadence and the run's wall clock.
+  `1800`) — the webset poll cadence and each search's wall clock.
 - `CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT` (default `0.00449`) — Websets bill 10 credits per
   all-green result; this is the plan's dollar rate for the pre-spend estimate and the ledger.
 
@@ -1624,8 +1657,9 @@ set -a; source .env; set +a
 uv run python scripts/launch_arv2_discovery.py \
     --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
 
-# a relaxed pass on a run that already finished, and reading what a run found
-uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --relaxed-pass <run-id>
+# replaying an ask (a repeated --request-key), and reading what a run found
+uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
+    --project prj_arv2_answer_key --target 20 --request-key <key>
 uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --report <run-id>
 ```
 
@@ -1646,7 +1680,9 @@ discovery run against real providers.
 - **The Websets exclusion import.** Local dedupe by verified domain runs *always*; importing the
   workspace's existing account websites into the webset's own `exclude` waits until Exa confirms the
   per-plan cap on that list (ruling 1′). Nothing is lost meanwhile — the local dedupe catches the
-  same companies, it just catches them after the long list rather than before it.
+  same companies, it just catches them after the long list rather than before it. (Since
+  2026-09-28 every search does exclude the project's own earlier *websets*; that list grows with
+  every run and counts toward the same per-plan cap.)
 - **A per-run concurrency cap.** O6's per-process worker slots stand as they are; how workers are
   shared across job kinds — and whether the AI Ark spacing rule becomes a shared limiter — is a
   scheduling discussion of its own, taken up separately (ruling 3′). Inventing a cap here would
