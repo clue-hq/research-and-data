@@ -19,7 +19,6 @@ from clue_agents.manual.build import CodeFacts, run
 from clue_api.agent_execution_wiring import _FAILURE_MESSAGE_LIMIT
 from clue_api.agent_runtime_wiring import (
     _GOVERNED_TOOL_REPAIR_HELP,
-    _MAX_GOVERNED_TOOL_FAILURES,
     GovernedToolFailure,
     ModelFinalizeRequest,
 )
@@ -35,6 +34,8 @@ __all__ = ["build_facts", "load_toolbelt", "main"]
 #: One line per field of the refusal object the model reads. The shapes are the code's; the words
 #: are what the field means to the agent holding it.
 _GOVERNED_FAILURE_FIELD_NOTES = {
+    "governed_repair_budgeted": "Whether this refusal spends a repair round. False only for a "
+    "precondition refusal from an effect-free read.",
     "error": "`plan_rejected` (nothing ran) or `operation_failed` (it ran and did not complete).",
     "address": "The exact `name@version` you called.",
     "node_key": "The call's identity. The same provider call id addresses the same operation.",
@@ -63,7 +64,6 @@ def build_facts(settings: Settings | None = None) -> CodeFacts:
     return CodeFacts(
         settings=settings or Settings(),
         trusted_turn_field_key=TRUSTED_TURN_FIELD,
-        max_governed_tool_failures=_MAX_GOVERNED_TOOL_FAILURES,
         failure_message_limit=_FAILURE_MESSAGE_LIMIT,
         governed_tool_repair_help=_GOVERNED_TOOL_REPAIR_HELP,
         governed_failure_fields=tuple(

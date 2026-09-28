@@ -153,8 +153,9 @@ class HeadOfAbmStage0Runtime:
         tools: ToolRegistry,
         child_runner: FreshWakeChildRunner,
         materializer: AgentResourceMaterializer | None = None,
-        max_runtime_s: float = 300.0,
+        max_runtime_s: float | None = 300.0,
         max_rounds: int = 24,
+        long_turn_alert_s: float | None = None,
         surface: str | None = None,
         crash_hook: AgentExecutionCrashHook = _no_crash,
         conn_factory: ConnFactory = transaction,
@@ -168,6 +169,7 @@ class HeadOfAbmStage0Runtime:
         self._materializer = materializer or AgentResourceMaterializer()
         self._max_runtime_s = max_runtime_s
         self._max_rounds = max_rounds
+        self._long_turn_alert_s = long_turn_alert_s
         self._surface = surface
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
@@ -291,6 +293,10 @@ class HeadOfAbmStage0Runtime:
             execution=execution,
             max_runtime_s=self._max_runtime_s,
             max_rounds=self._max_rounds,
+            # A chat turn that hits its limit asks the human to reply "continue" (ruling
+            # 2026-09-27) rather than reporting itself blocked.
+            wrap_up_status="awaiting_input",
+            long_turn_alert_s=self._long_turn_alert_s,
         )
         return await DurableDeepAgentTurnRunner(
             before_work=before_work,

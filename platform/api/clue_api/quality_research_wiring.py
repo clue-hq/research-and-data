@@ -945,6 +945,7 @@ class ResearchUnitRuntime:
                     ),
                     max_rounds=self.limits.model_calls,
                     middleware=bindings.middleware,
+                    long_turn_alert_s=self.settings.agent_long_turn_alert_s or None,
                 ),
                 turns=self.turns,
                 artifacts=self.artifacts,

@@ -56,8 +56,10 @@ RECEIPT_REFERENCE_VALUES_MAX_BYTES = 16_384
 #: still leaves the receipt's envelope room and a spilled read is the honestly-oversized one.
 SPILL_THRESHOLD_BYTES = 12 * 1024
 
-# A trusted composition root may authorize a larger per-run budget than a profile default.
-MAX_RUNTIME_MODEL_ROUNDS = 200
+# A trusted composition root may authorize a larger per-run budget than a profile default. The
+# operator settings (``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``, ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``)
+# carry the same upper bound, so a value this refuses is refused at start-up instead.
+MAX_RUNTIME_MODEL_ROUNDS = 500
 
 #: How much of a spilled result's prose the stub is allowed to keep.  Enough for the model to
 #: recognise what it asked for; far too little to be mistaken for the result itself.
