@@ -67,6 +67,53 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     "recipe0-stage0-v14.json",
     # Plan-safe research directives retain the frozen v2 contract while new turns use @3.
     "recipe0-stage0-v15.json",
+    # v19 and v22-v28 pin `open_design_leg@4`, retired when `@5` shipped (v30); they are
+    # replay-only now — see HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES for why and for their history.
+    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
+    # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
+    # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
+    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
+    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
+    # one version per (kind, key), so @4 and @5 in one slot is a `conflicting_requirement` that
+    # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
+    # stays); v29 stays the exact replay input for turns pinned to it.
+    "recipe0-stage0-v30.json",
+    "recipe0-stage0-v31.json",
+    # web_search@1 joins the interaction slot, granted at `head-of-abm@v62`. One address ADDED,
+    # nothing leaves: v32 is v31 plus that address; v31 stays the exact replay input for turns
+    # pinned to it.
+    "recipe0-stage0-v32.json",
+    "recipe1-classic-v1.json",
+    "recipe1-classic-v2.json",
+    # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
+    # ``exa_search_evidence@1`` and pins the ``audience-persona`` skill that tool requires.
+    "onboarding-synthesis-unit-v1.json",
+)
+
+# Kept on disk solely so already-pinned executions can resolve their exact historical definition.
+# R1 never seeds or promotes these recipes for new executions.
+HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
+    "account-research-unit-v1.json",
+    # The sandbox and multi-artifact branches both shipped a different recipe0@29.
+    # Version 30 combines them. Keep the checked-in sandbox @29 for replay, and preserve
+    # any stored multi-artifact @29 without proposing conflicting bytes during worker boot.
+    "recipe0-stage0-v29.json",
+    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
+    # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
+    # their pins were live, so the idempotent seed skips them; on a FRESH database the
+    # seeder re-validates every active revision against TODAY's registry and v16 failed
+    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
+    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
+    # this shape: already-pinned executions still resolve them; new seeds skip them.
+    "recipe0-stage0-v16.json",
+    "recipe0-stage0-v17.json",
+    "recipe0-stage0-v18.json",
+    # recipe0 v19 and v22-v28 went the same way on 2026-09-28: each pins `open_design_leg@4`,
+    # retired when multi-artifact design legs promoted `@5` (v30). A fresh database re-validates
+    # them against today's registry, and every one failed promotion (`unknown_tool`,
+    # `open_design_leg:version_mismatch`), so no fresh checkout's fleet worker could boot. The
+    # long-lived lane databases promoted them while `@4` was live and never noticed. Their history,
+    # as it was recorded where they were seeded:
     # PD-part3 P3.4's design delegation entry (``open_design_leg@1``), re-versioned onto the v15
     # lineage at the part-iii integration merge. Same rule as v6: the C5 slot is a second,
     # independent ceiling, so a profile grant alone would show the model a tool that plan
@@ -128,45 +175,6 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # those four; v27 stays the exact replay input for turns pinned to it, which is what keeps an
     # already-pinned execution able to resolve the unpaged reads.
     "recipe0-stage0-v28.json",
-    # Multi-artifact design legs (spec 2026-09-19): the delegation entry is RE-PINNED to
-    # `open_design_leg@5`, the contract `head-of-abm@v59` grants — its input carries an
-    # `artifacts` list, so one open births one document per item. The slot pins EXACT addresses
-    # and would refuse the very tool the profile grants without its own revision, and @4 leaves
-    # rather than stand beside @5 for the reason v22 recorded above: a requirement set resolves
-    # one version per (kind, key), so @4 and @5 in one slot is a `conflicting_requirement` that
-    # refuses promotion. v30 is v29 with that one address moved and nothing else (`run_python@1`
-    # stays); v29 stays the exact replay input for turns pinned to it.
-    "recipe0-stage0-v30.json",
-    "recipe0-stage0-v31.json",
-    # web_search@1 joins the interaction slot, granted at `head-of-abm@v62`. One address ADDED,
-    # nothing leaves: v32 is v31 plus that address; v31 stays the exact replay input for turns
-    # pinned to it.
-    "recipe0-stage0-v32.json",
-    "recipe1-classic-v1.json",
-    "recipe1-classic-v2.json",
-    # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
-    # ``exa_search_evidence@1`` and pins the ``audience-persona`` skill that tool requires.
-    "onboarding-synthesis-unit-v1.json",
-)
-
-# Kept on disk solely so already-pinned executions can resolve their exact historical definition.
-# R1 never seeds or promotes these recipes for new executions.
-HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES: tuple[str, ...] = (
-    "account-research-unit-v1.json",
-    # The sandbox and multi-artifact branches both shipped a different recipe0@29.
-    # Version 30 combines them. Keep the checked-in sandbox @29 for replay, and preserve
-    # any stored multi-artifact @29 without proposing conflicting bytes during worker boot.
-    "recipe0-stage0-v29.json",
-    # recipe0 v16-v18 pin open_design_leg@1/@2/@3, all retired by later slices (@4 is the
-    # live version, pinned by v19). On the long-lived shared dev DB they were promoted when
-    # their pins were live, so the idempotent seed skips them; on a FRESH database the
-    # seeder re-validates every active revision against TODAY's registry and v16 failed
-    # promotion, wedging every fresh-checkout worker boot (found live 2026-08-29 setting up
-    # the founder's browser walk). Replay-only is this file's own mechanism for exactly
-    # this shape: already-pinned executions still resolve them; new seeds skip them.
-    "recipe0-stage0-v16.json",
-    "recipe0-stage0-v17.json",
-    "recipe0-stage0-v18.json",
     # recipe0 v20/v21 arrive from the comprehensive-account-contact-research line, where they were
     # the promoted head (v20 = v16 plus ``draft_account_research_directive@4``, the
     # comprehensive-profile directive contract; v21 = v20 with @5, the same contract behind a
