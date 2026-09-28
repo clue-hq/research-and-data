@@ -212,6 +212,9 @@ def build_web_pdf(
         workspace_id=workspace_id,
         node_bin=node_bin,
         noindex=False,
+        # The custom-component runtimes ride INSIDE the html: `set_content` gives the page no
+        # origin, so a root-relative `/p-assets/<digest>` reference would resolve nowhere.
+        embed_runtime_assets=True,
     )
     pages = list(package.pages) or [
         web_export.PublishedPage(

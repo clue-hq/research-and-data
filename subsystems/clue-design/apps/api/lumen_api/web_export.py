@@ -1848,6 +1848,7 @@ def build_publish_package(
     default_social_preview_sha256: Optional[str] = None,
     node_bin: str = "node",
     noindex: bool = False,
+    embed_runtime_assets: bool = False,
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
 
@@ -1876,6 +1877,11 @@ def build_publish_package(
     description applies only when the page derives an empty one, and the social preview only
     when the site carries no image node, so a page that says something for itself keeps saying
     it after a workspace default is set.
+
+    ``embed_runtime_assets`` inlines the custom-component runtime assets as ``data:`` URLs
+    instead of referencing ``/p-assets/{digest}.{ext}``. Publishing leaves it off (the page
+    origin serves those assets); the PDF export turns it on, because a document rendered with
+    ``set_content`` has no origin for a root-relative ``/p-assets`` URL to resolve against.
 
     ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
     ``<meta name="robots" content="noindex">``. It is a per-page option and it
@@ -1918,7 +1924,7 @@ def build_publish_package(
                     lambda digest, extension: f"/p-assets/{digest}.{extension}"
                 ),
                 deterministic_seed=deterministic_seed,
-                embed_runtime_assets=False,
+                embed_runtime_assets=embed_runtime_assets,
                 brand_kit=brand_kit,
                 page_id=page.page_id,
             )
