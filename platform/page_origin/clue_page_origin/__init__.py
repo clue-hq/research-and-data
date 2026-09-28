@@ -10,6 +10,13 @@ publish package. It imports the spine, the design DAL and storage — never ``lu
 
 from clue_page_origin.app import create_page_origin_app
 from clue_page_origin.edge import EdgeGate
-from clue_page_origin.reads import DbPageReads, PageReads, ServedPublish
+from clue_page_origin.reads import DbPageReads, PageReads, ServedPage, ServedPublish
 
-__all__ = ["create_page_origin_app", "EdgeGate", "DbPageReads", "PageReads", "ServedPublish"]
+__all__ = [
+    "create_page_origin_app",
+    "EdgeGate",
+    "DbPageReads",
+    "PageReads",
+    "ServedPage",
+    "ServedPublish",
+]

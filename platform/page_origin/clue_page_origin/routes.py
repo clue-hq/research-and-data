@@ -151,4 +151,22 @@ def build_router(reads: PageReads, gate: EdgeGate) -> APIRouter:
             publish.html, headers=_page_headers(publish.html_digest, noindex=publish.noindex)
         )
 
+    # F5 multipage: published pages link to each other root-relatively as ``/{slug}{route}``.
+    # Declared after ``/{slug}/manifest.json`` so the manifest keeps winning (first match).
+    @router.api_route("/{slug}/{route:path}", methods=_GET_HEAD)
+    async def route_page(
+        slug: str, route: str, workspace_id: str | None = Depends(workspace)
+    ) -> Response:
+        normalised = "/" + route.strip("/")
+        if normalised == "/":
+            return await page(slug, workspace_id)
+        if workspace_id is None or not SLUG.fullmatch(slug):
+            return _not_found()
+        served = await reads.active_page(workspace_id, slug, normalised)
+        if served is None:
+            return await _miss(workspace_id)
+        return HTMLResponse(
+            served.html, headers=_page_headers(served.html_digest, noindex=served.noindex)
+        )
+
     return router

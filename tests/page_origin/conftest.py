@@ -8,7 +8,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from clue_page_origin import EdgeGate, ServedPublish, create_page_origin_app
+from clue_page_origin import EdgeGate, ServedPage, ServedPublish, create_page_origin_app
 
 SECRET = "edge-secret-for-tests"
 HOST = "acme.pages.test"
@@ -24,14 +24,22 @@ class FakePageReads:
     def __init__(self) -> None:
         self.hostnames: dict[str, str] = {HOST: WS}
         self.publishes: dict[tuple[str, str], ServedPublish] = {}
+        self.pages: dict[tuple[str, str, str], str] = {}
         self.fallbacks: dict[str, str] = {}
         self.favicons: dict[str, tuple[str, bytes]] = {}
         self.assets: dict[tuple[str, str], tuple[str, bytes]] = {}
         self.public: dict[str, tuple[str, bytes]] = {}
 
     def publish(
-        self, slug: str, html: str, *, noindex: bool = False, workspace_id: str = WS
+        self,
+        slug: str,
+        html: str,
+        *,
+        noindex: bool = False,
+        routes: dict[str, str] | None = None,
+        workspace_id: str = WS,
     ) -> None:
+        """Publish a site; ``routes`` are its F5 page rows (none = a pre-F5 publish)."""
         manifest = {"slug": slug, **({"robots": "noindex"} if noindex else {})}
         manifest_json = json.dumps(
             manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=True
@@ -43,12 +51,29 @@ class FakePageReads:
             manifest_digest=_sha(manifest_json),
             noindex=noindex,
         )
+        for route, page_html in (routes or {}).items():
+            self.pages[(workspace_id, slug, route)] = page_html
 
     async def workspace_for_hostname(self, hostname: str) -> str | None:
         return self.hostnames.get(hostname)
 
     async def active_publish(self, workspace_id: str, slug: str) -> ServedPublish | None:
         return self.publishes.get((workspace_id, slug))
+
+    async def active_page(self, workspace_id: str, slug: str, route: str) -> ServedPage | None:
+        # Mirrors DbPageReads: the publish must be live; then its page row, else ``/`` falls
+        # back to the publish's own html (a pre-F5 publish), else nothing.
+        publish = self.publishes.get((workspace_id, slug))
+        if publish is None:
+            return None
+        html = self.pages.get((workspace_id, slug, route))
+        if html is not None:
+            return ServedPage(html=html, html_digest=_sha(html), noindex=publish.noindex)
+        if route == "/":
+            return ServedPage(
+                html=publish.html, html_digest=publish.html_digest, noindex=publish.noindex
+            )
+        return None
 
     async def fallback_url(self, workspace_id: str) -> str | None:
         return self.fallbacks.get(workspace_id)

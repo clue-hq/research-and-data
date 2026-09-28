@@ -114,3 +114,101 @@ def test_only_get_and_head(client: TestClient, reads: FakePageReads) -> None:
     assert client.post("/annual-report", headers=edge()).status_code == 405
     head = client.head("/annual-report", headers=edge())
     assert head.status_code == 200 and head.content == b""
+
+
+def test_serves_an_f5_route_with_the_exact_headers(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish(
+        "annual-report",
+        "<html>home</html>",
+        routes={"/": "<html>home</html>", "/pricing": "<html>pricing</html>"},
+    )
+    response = client.get("/annual-report/pricing", headers=edge())
+    assert response.status_code == 200
+    assert response.text == "<html>pricing</html>"
+    digest = hashlib.sha256(b"<html>pricing</html>").hexdigest()
+    assert response.headers["cache-control"] == "public, max-age=60, must-revalidate"
+    assert response.headers["etag"] == f'"sha256-{digest}"'
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+    assert response.headers["content-security-policy"] == DELIVERY_CSP_HEADER
+    assert "x-robots-tag" not in response.headers
+    # A trailing slash names the same route.
+    assert client.get("/annual-report/pricing/", headers=edge()).text == "<html>pricing</html>"
+
+
+def test_nested_routes_and_noindex_on_a_route(client: TestClient, reads: FakePageReads) -> None:
+    reads.publish(
+        "abm-acme",
+        "<html>home</html>",
+        noindex=True,
+        routes={"/": "<html>home</html>", "/docs/intro": "<html>intro</html>"},
+    )
+    response = client.get("/abm-acme/docs/intro", headers=edge())
+    assert response.status_code == 200 and response.text == "<html>intro</html>"
+    assert response.headers["x-robots-tag"] == "noindex"
+
+
+def test_unknown_route_on_a_live_site_is_a_miss(client: TestClient, reads: FakePageReads) -> None:
+    reads.publish("annual-report", "<html>home</html>", routes={"/": "<html>home</html>"})
+    missing = client.get("/annual-report/nope", headers=edge())
+    assert missing.status_code == 404
+    assert "<title>Not found</title>" in missing.text
+    assert missing.headers["x-robots-tag"] == "noindex"
+    reads.fallbacks[WS] = "https://www.acme.com"
+    redirect = client.get("/annual-report/nope", headers=edge(), follow_redirects=False)
+    assert redirect.status_code == 302
+    assert redirect.headers["location"] == "https://www.acme.com"
+
+
+def test_a_pre_f5_publish_serves_root_from_its_own_html_and_nothing_else(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish("annual-report", "<html>legacy</html>")
+    assert client.get("/annual-report", headers=edge()).text == "<html>legacy</html>"
+    trailing = client.get("/annual-report/", headers=edge())
+    assert trailing.status_code == 200 and trailing.text == "<html>legacy</html>"
+    assert client.get("/annual-report/anything", headers=edge()).status_code == 404
+
+
+def test_manifest_wins_over_the_route_catch_all(client: TestClient, reads: FakePageReads) -> None:
+    reads.publish(
+        "annual-report",
+        "<html>home</html>",
+        routes={"/": "<html>home</html>", "/manifest.json": "<html>shadow</html>"},
+    )
+    response = client.get("/annual-report/manifest.json", headers=edge())
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["slug"] == "annual-report"
+
+
+def test_route_catch_all_enforces_the_slug_and_the_hostname_before_any_lookup(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish("annual-report", "<html>home</html>", routes={"/pricing": "<html>p</html>"})
+    reads.fallbacks[WS] = "https://www.acme.com"
+    lookups: list[tuple[str, str, str]] = []
+    real = reads.active_page
+
+    async def spy(workspace_id: str, slug: str, route: str) -> object:
+        lookups.append((workspace_id, slug, route))
+        return await real(workspace_id, slug, route)
+
+    reads.active_page = spy  # type: ignore[method-assign]
+    for bad in ("/Annual-Report/pricing", "/-lead/pricing", "/annual_report/pricing"):
+        response = client.get(bad, headers=edge(), follow_redirects=False)
+        assert response.status_code == 404
+    unknown_host = client.get("/annual-report/pricing", headers=edge("nobody.example"))
+    assert unknown_host.status_code == 404
+    assert lookups == []
+
+
+def test_route_catch_all_answers_head_and_refuses_post(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish("annual-report", "<html>home</html>", routes={"/pricing": "<html>p</html>"})
+    head = client.head("/annual-report/pricing", headers=edge())
+    assert head.status_code == 200 and head.content == b""
+    assert client.post("/annual-report/pricing", headers=edge()).status_code == 405
