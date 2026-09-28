@@ -24,8 +24,11 @@ budget authority, personal frustration or private/sensitive facets from their ro
 
 ## Produce the copy brief
 
-1. **Proposition:** what the product lets this reader do, with documented capability
-   and supported account context. State the useful idea in plain language.
+1. **Proposition + source check:** pair each material factual sentence in the
+   opening and each outcome claim with its supporting excerpt in the plan. Preserve
+   terminology, subject, units, eligibility and timeframe. Retrieve missing detail
+   or narrow the claim; never complete it from memory. State what the product lets
+   this reader do in the seller's voice. The decision map is not public headings.
 2. **Headline + support:** a concrete idea followed by mechanism/scope. Use product
    nouns and verbs, not category slogans, forced puns or repeated account names.
 3. **Section spine:** headings form a coherent story from relevance through product
