@@ -13,6 +13,6 @@ MANUAL_VERSION/PROFILE_VERSION; tool_notes.yaml; launch tool description path). 
 registry + composer pin, tests (catalog list, registry digest 4a04d337…, pins) updated.
 
 Also 2026-09-29: dubai `.env` LUMEN_INGESTION_DESCRIBE_MODEL back to deepseek/deepseek-v4.1-flash
-(example parity). Graph limit "700" question open with the founder: production research runs
-350 rounds → recursion fuse 2110; 700 was a trial-script superstep limit (~115 rounds).
+(example parity). Graph limit: founder ruling 2026-09-29 — keep production at 350 rounds
+(recursion fuse 2110); the trial script's 700 supersteps (~115 rounds) was never the intent.
 Owed: a live research run to see 4–5 nominations per account.
