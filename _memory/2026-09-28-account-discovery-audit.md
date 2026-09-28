@@ -69,3 +69,14 @@ is **not built yet**.
   tests/agents: 2 failures in test_runtime.py, identical on clean HEAD.
 - Not done: the 16 tool descriptions still point at `manual-tools/v5` (one at v8), and several
   tool notes still cite `stage0-interview v33`. Cross-cutting, left for a separate pass.
+
+## Third round (same day)
+
+Founder rulings: a company another project already has IS added to this project when it fits
+(verified against this project's ICP); the website-domain check stays as it is; start building
+decisions 1 and 2; agent instructions change **only in new versions** — so the in-place v38 §7b
+edit was reverted (v38, tool_notes, manual-tools v11, v65 pins and the registry digest are back
+to the turn-budget session's bytes; digests `0db35b21…`, `d76c280e…`, `9b961077…` verified).
+Build plan written: `docs/superpowers/plans/2026-09-28-arv2-discovery-exact-count-and-find-more.md`;
+§4 holds four design choices awaiting founder sign-off before code (standing rule: design
+decisions inside an approved goal are surfaced first). No code written for the rebuild yet.
