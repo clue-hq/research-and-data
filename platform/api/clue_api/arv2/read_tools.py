@@ -473,16 +473,133 @@ async def _account_in_workspace(
     return account_uuid, str(row["canonical_name"])
 
 
+def _claim_ids_in(value: object) -> tuple[str, ...]:
+    """Every ``claimIds`` entry inside one served section body, in first-seen order."""
+    found: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            for key, item in node.items():
+                if key == "claimIds" and isinstance(item, list):
+                    found.extend(str(claim_id) for claim_id in item)
+                else:
+                    walk(item)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(value)
+    return tuple(dict.fromkeys(found))
+
+
+_PAGE_WRITTEN_AT = text(
+    """
+    SELECT updated_at FROM arv2_research_page_current
+    WHERE workspace_id = :ws AND context_id = :context AND subject_kind = 'account'
+      AND subject_id = :subject AND page = 'overview'
+    """
+)
+
+
+async def _current_lane_overview(
+    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID, project_id: str | None
+) -> list[AccountOverviewSection] | None:
+    """The overview the current research lane wrote for this account in this project, as the
+    account page serves it; ``None`` when the account has no current-lane research at all.
+
+    Incident 2026-09-29: this read used to consult only the legacy display lane (blocks with no
+    research context), so every overview the current lane wrote was invisible and the tool
+    answered ``overview_not_written`` for a page the marketer could open. The page is chosen
+    exactly as the account screen chooses it (``select_quality_context``): the calling turn's
+    project when the context names one, otherwise the account's only researched project.
+    """
+
+    from clue_api.arv2.quality_pages import read_page
+    from clue_api.arv2.quality_read import select_quality_context
+
+    selection = await select_quality_context(
+        conn, workspace_id=workspace_id, subject_id=account_uuid, project_id=project_id
+    )
+    if selection is None:
+        return None
+    if selection.scope is None or selection.context_id is None:
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account was researched in more than one project and this read names none of "
+            "them; read section='claims' or open the account in the app",
+        )
+    try:
+        page = await read_page(
+            conn, selection.scope, context_id=selection.context_id, page=_OVERVIEW_PAGE
+        )
+    except ValueError:
+        # A stopped or not-yet-started generation has no usable narrative (the account screen
+        # shows an empty page in the same case).
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account's overview has not been written yet; read section='claims' or open "
+            "the account in the app",
+        ) from None
+    written_at = (
+        await conn.execute(
+            _PAGE_WRITTEN_AT,
+            {"ws": workspace_id, "context": selection.context_id, "subject": account_uuid},
+        )
+    ).scalar_one_or_none()
+    sections: list[AccountOverviewSection] = []
+    for section in page["display_block"]["sections"]:
+        # A section with no words is not served; one whose refresh is merely due still is (the
+        # account screen shows it too, marked pending).
+        if not section.get("intro") and not section.get("items"):
+            continue
+        body = {
+            key: section[key]
+            for key in ("h1", "intro", "items", "restricted")
+            if key in section and section[key] not in (None, [])
+        }
+        body_text, body_truncated = _clip(
+            json.dumps(body, sort_keys=True, ensure_ascii=False), BODY_CHARS
+        )
+        sections.append(
+            AccountOverviewSection(
+                section_key=str(section["key"]),
+                body_text=body_text,
+                body_truncated=body_truncated,
+                cited_claim_ids=_claim_ids_in(body),
+                generated_at="" if written_at is None else written_at.isoformat(),
+            )
+        )
+    if not sections:
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account's overview has not been written yet; read section='claims' or open "
+            "the account in the app",
+        )
+    return sections
+
+
 async def _overview_sections(
-    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_uuid: UUID,
+    project_id: str | None = None,
 ) -> tuple[tuple[AccountOverviewSection, ...], bool]:
     """The account's written overview in the order the overview page itself serves it, bounded by
     the receipt's budget, plus whether anything was left out.
+
+    The current research lane's project-scoped page is read first; the legacy display lane's
+    unscoped blocks only when the account has no current-lane research.
 
     :data:`BODY_CHARS` bounds one section; nothing bounded the *page*, and a handful of capped
     sections is past the receipt on its own. What fits is served, and the cut is said out loud.
     """
 
+    current = await _current_lane_overview(
+        conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
+    )
+    if current is not None:
+        return _fit_overview(current)
     blocks = await live_blocks(
         conn,
         workspace_id=workspace_id,
@@ -506,14 +623,14 @@ async def _overview_sections(
         blocks.values(),
         key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
     )
-    sections: list[AccountOverviewSection] = []
+    legacy: list[AccountOverviewSection] = []
     for block in ordered:
         # ``sort_keys`` so two attempts of one turn serialize identical bytes, and
         # ``ensure_ascii=False`` so a quote the writer used stays the character the human typed.
         body_text, body_truncated = _clip(
             json.dumps(block.body_json, sort_keys=True, ensure_ascii=False), BODY_CHARS
         )
-        sections.append(
+        legacy.append(
             AccountOverviewSection(
                 section_key=block.section_key,
                 body_text=body_text,
@@ -522,6 +639,13 @@ async def _overview_sections(
                 generated_at=block.generated_at.isoformat(),
             )
         )
+    return _fit_overview(legacy)
+
+
+def _fit_overview(
+    sections: list[AccountOverviewSection],
+) -> tuple[tuple[AccountOverviewSection, ...], bool]:
+    """The sections that fit the receipt's byte budget, and whether any were cut."""
     fitted, cut = _take_within_budget(
         [section.model_dump() for section in sections], budget=READ_REFERENCES_BUDGET_BYTES
     )
@@ -727,6 +851,7 @@ async def read_account_research(
     field_prefix: str | None = None,
     offset: int = 0,
     limit: int = MAX_CLAIMS,
+    project_id: str | None = None,
 ) -> AccountResearch:
     """What research found about one account: its written overview, or its live claims.
 
@@ -757,7 +882,7 @@ async def read_account_research(
         if offset != 0:
             raise Arv2ReadRefused("offset_not_paged", "the overview is not paged; omit offset")
         overview, truncated = await _overview_sections(
-            conn, workspace_id=workspace_id, account_uuid=account_uuid
+            conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
         )
     else:
         claims, truncated, excluded, next_offset, prefixes = await _account_claims(
@@ -1194,6 +1319,7 @@ class Arv2ReadService(Protocol):
         field_prefix: str | None,
         offset: int,
         limit: int,
+        project_id: str | None = None,
     ) -> AccountResearch: ...
 
     async def read_discovery_run(
@@ -1262,6 +1388,7 @@ class DbArv2ReadService:
         field_prefix: str | None,
         offset: int,
         limit: int,
+        project_id: str | None = None,
     ) -> AccountResearch:
         async with self._conn_factory() as conn:
             return await read_account_research(
@@ -1273,6 +1400,7 @@ class DbArv2ReadService:
                 settings=self._settings,
                 offset=offset,
                 limit=limit,
+                project_id=project_id,
             )
 
     async def read_discovery_run(
@@ -1509,6 +1637,9 @@ class ReadAccountResearchTool(Tool):
                 field_prefix=inputs.field_prefix,
                 offset=inputs.offset,
                 limit=self._claims_limit(inputs),
+                # The project is AMBIENT too: the calling turn's (or design leg's) own project
+                # picks which project's overview is served.
+                project_id=ctx.project_id,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused

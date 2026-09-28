@@ -1628,6 +1628,7 @@ class RecipeExecutor:
             cast(dict[str, object], durable),
             ToolContext(
                 workspace_id=runtime.workspace_id,
+                project_id=runtime.project_id,
                 actor="human" if node.actor == "human" else "agent",
                 conn_factory=self._conn_factory,
                 operation_id=node.operation_id,
@@ -1981,6 +1982,7 @@ class RecipeExecutor:
                     body,
                     ToolContext(
                         workspace_id=runtime.workspace_id,
+                        project_id=runtime.project_id,
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
@@ -2038,6 +2040,7 @@ class RecipeExecutor:
                     parameters=body,
                     context=ToolContext(
                         workspace_id=runtime.workspace_id,
+                        project_id=runtime.project_id,
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
