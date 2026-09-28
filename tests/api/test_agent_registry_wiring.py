@@ -289,7 +289,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Design-only read_account_research@3 adds one address.
+    assert len(by_address) == 162
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -402,7 +403,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # the head now sees it AVAILABLE rather than role-unavailable.
     assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
-    assert len(by_address) == 161
+    # Design-only read_account_research@3 adds one address.
+    assert len(by_address) == 162
     for address in (
         "create_thread@1",
         "rename_thread@1",
@@ -956,15 +958,12 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v2"
+    assert resolved.profile.version == "v3"
     assert len(resolved.profile.tools) == 53
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
-    # 2026-09-19: the design agent reads the target account the way head-of-abm does.
-    # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
-    # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
-    # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
-    for address in ("read_project_accounts@1", "read_account_research@2", "read_claims@1"):
+    # Design alone uses @3 for complete overview pagination; Head retains @2.
+    for address in ("read_project_accounts@1", "read_account_research@3", "read_claims@1"):
         assert any(pin.address == address for pin in resolved.profile.tools), address
 
     by_address = {item.address: item for item in resolved.capabilities}

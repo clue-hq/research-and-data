@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_launch import (
 from clue_api.arv2.icp_authoring import IcpAuthoringService
 from clue_api.arv2.read_tools import (
     Arv2ReadService,
+    ReadAccountResearchV3Tool,
     build_arv2_paged_read_tools,
     build_arv2_read_tools,
 )
@@ -2850,6 +2851,8 @@ def build_toolbelt(
     # gets — the reasoning `open_icp_confirmation_gate` already established, in this direction.
     for tool in build_arv2_paged_read_tools(arv2_reads):
         registry.register(tool, make_default=True)
+    # Design alone pins the lossless overview contract. The Head's name-only default stays @2.
+    registry.register(ReadAccountResearchV3Tool(arv2_reads), make_default=False)
     # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
     # design documents and the legs that bind them to a project exist wherever there is a database,
     # so the ambient ``conn_factory`` is its whole composition. Granted at `head-of-abm@v56`,

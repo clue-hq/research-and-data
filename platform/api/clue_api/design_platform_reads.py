@@ -7,11 +7,11 @@ worker's shared ``ToolInvoker`` and storage, and handed to the design turn host 
 as the scoped-preference resolver, for the same reason: the design runtime never opens the
 platform database and imports none of this.
 
-Three of the four reads are the governed tools head-of-abm uses (``read_project_accounts@1``,
-``read_account_research@2``, ``read_claims@1``), invoked through the journaled invoker under the
+Three of the four reads are governed platform tools (``read_project_accounts@1``,
+``read_account_research@3``, ``read_claims@1``), invoked through the journaled invoker under the
 turn's workspace, so a design turn's reads are receipts like any other. ``read_account_research``
-is asked for at ``@2`` and nowhere else at ``@1``: ``@1`` is granted to no role, and ``@2`` is the
-paged contract the design role was granted (Task 1, ``design@v2``).
+is pinned at ``@3`` by ``design@v3`` so complete overview sections can be traversed. Head of ABM
+keeps ``@2``; ``@1`` remains frozen for replay. Claims use the same verification/use gate.
 
 The fourth is not a tool: it hands over the seller's brand-knowledge documents as pinned for the
 turn that OPENED the leg (``get_knowledge_pin`` by the bundle's ``opened_by_turn_id``), plus the
@@ -63,7 +63,7 @@ log = get_logger("clue_api.design_platform_reads")
 _T = TypeVar("_T")
 
 #: The one read asked for at a version other than its default alias (ruling T1-1).
-_PINNED_VERSIONS = {"read_account_research": "2"}
+_PINNED_VERSIONS = {"read_account_research": "3"}
 
 
 class DesignPlatformReadError(RuntimeError):
@@ -196,7 +196,7 @@ class DesignPlatformReads:
         offset: int = 0,
         limit: int | None = None,
     ) -> dict[str, Any]:
-        """One account's written overview, or its claims — ``@2``'s paged contract."""
+        """One account's stored overview chunks, or gated claims — ``@3``'s paged contract."""
 
         body: dict[str, Any] = {
             "account_entity_id": account_entity_id,

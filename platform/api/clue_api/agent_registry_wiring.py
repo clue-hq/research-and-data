@@ -214,7 +214,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `read_account_research@2` and `read_claims@1`, the same tools on the same contracts
     # head-of-abm holds — so a 1:1 creative can open the target account's research itself
     # instead of writing from whatever the brief happened to carry. Nothing else moves.
-    AgentRole.DESIGN: "v2",
+    # v3 pages complete stored overview sections at read_account_research@3.
+    AgentRole.DESIGN: "v3",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -799,10 +800,13 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # requirement set resolves one version per (kind, key) — but a role holding a version no
     # current profile pins is authority nobody asked for, so they are ungranted here.
     # The same shape `open_icp_confirmation_gate` has, with the grant on the newer version.
-    # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
-    # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
-    # on `@2` only. The `@1`s stay held by nobody.
-    if name in {"read_account_research", "read_discovery_run"}:
+    # Design v3 pins the complete overview at @3; Head retains its frozen @2 contract.
+    # Their union remains in the name-level audit dict, but no role gains both versions.
+    if name == "read_account_research":
+        if address.endswith("@3"):
+            return (AgentRole.DESIGN,)
+        return (AgentRole.HEAD_OF_ABM,) if address.endswith("@2") else ()
+    if name == "read_discovery_run":
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
     if name == "research_account_gaps":
         return ()

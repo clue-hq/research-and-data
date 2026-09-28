@@ -127,6 +127,49 @@ def test_a_governed_refusal_reaches_the_agent_as_its_reason_codes(tmp_path, monk
     assert event["payload"]["code"] == "refused:overview_not_written,account_not_researched"
 
 
+def test_overview_pagination_reaches_the_platform_and_preserves_chunk_metadata(
+    tmp_path, monkeypatch
+) -> None:
+    tools = _tools(tmp_path, monkeypatch)
+
+    class ChunkReads(_Reads):
+        def read_account_research(self, **kw):
+            self.calls.append(("research", kw))
+            return {
+                "overview": [
+                    {
+                        "section_key": "why-now",
+                        "display_block_id": "block",
+                        "section_json": '{"body_json": {"status": "unverified"}}',
+                        "chunk_index": 0,
+                        "chunk_count": 1,
+                        "section_sha256": "digest",
+                    }
+                ],
+                "offset": kw["offset"],
+                "next_offset": 3,
+            }
+
+    reads = ChunkReads()
+    _, research, _ = make_platform_read_tools(tools, reads)
+    result = json.loads(research.invoke({"account_entity_id": "x", "offset": 2, "limit": 1}))
+    assert reads.calls == [
+        (
+            "research",
+            {
+                "account_entity_id": "x",
+                "section": "overview",
+                "field_prefix": None,
+                "offset": 2,
+                "limit": 1,
+            },
+        )
+    ]
+    assert result["overview"][0]["chunk_count"] == 1
+    assert json.loads(result["overview"][0]["section_json"])["body_json"]["status"] == "unverified"
+    assert result["next_offset"] == 3
+
+
 def test_seller_files_are_written_once_per_pin(tmp_path, monkeypatch) -> None:
     tools = _tools(tmp_path, monkeypatch)
     reads = _Reads()

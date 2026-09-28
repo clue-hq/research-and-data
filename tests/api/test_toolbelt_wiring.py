@@ -1481,7 +1481,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 161
+    # Complete overview pagination adds @3 without moving the Head's default.
+    assert len(registry) == 162
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1551,7 +1552,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 161
+    # Complete overview pagination adds @3 without moving the Head's default.
+    assert len(registry) == 162
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

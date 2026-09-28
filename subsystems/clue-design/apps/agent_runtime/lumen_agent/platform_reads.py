@@ -74,12 +74,17 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
         section: str = "overview",
         field_prefix: str | None = None,
         offset: int = 0,
+        limit: int | None = None,
     ) -> str:
-        """What research found about one account. section="overview" returns the written
-        sections; a researched account whose overview is not written yet answers
-        overview_not_written — then read section="claims". Claims come in pages: when
-        next_offset is not null, read again with offset=next_offset before you summarize or
-        count. field_prefix narrows to one family named in the answer's prefixes."""
+        """Read account context or gated claims. Both sections page: follow next_offset until
+        null; limit caps overview chunks or claims. Overview entries carry section_key,
+        display_block_id, section_json, section_sha256, chunk_index and chunk_count. A single
+        chunk is complete JSON with body_json, cited_claim_ids and generated_at. For multiple
+        chunks, concatenate section_json by chunk_index for the same block/hash, verify SHA-256,
+        then parse; restart at offset=0 if the block changes. Preserve source/status labels:
+        stored overview prose (including imported unverified notes) is context, not verified
+        evidence. overview_not_written means read section="claims". Claims retain the
+        verification/use gate; field_prefix narrows a family named in prefixes."""
         return _call(
             tools,
             reads,
@@ -88,6 +93,7 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
             section=section,
             field_prefix=field_prefix,
             offset=offset,
+            **({"limit": limit} if limit is not None else {}),
         )
 
     @tool

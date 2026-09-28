@@ -2,7 +2,7 @@
 
 Three properties are load-bearing here and none of them can be asserted from an in-memory double:
 
-* **The reads are the governed reads.** ``read_project_accounts`` / ``read_account_research@2`` /
+* **The reads are the governed reads.** ``read_project_accounts`` / ``read_account_research@3`` /
   ``read_claims`` go through the shared journaled ``ToolInvoker``, so a design turn's reads leave
   the same receipts head-of-abm's do — and each call is its own logical operation, so A9 never
   replays page one as the answer to page two.
@@ -34,6 +34,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
 from clue_api.arv2.read_tools import (
     DbArv2ReadService,
+    ReadAccountResearchV3Tool,
     build_arv2_paged_read_tools,
     build_arv2_read_tools,
 )
@@ -97,7 +98,7 @@ def _leg_envelope(
 
 
 async def _seed_overview_block(
-    conn: AsyncConnection, *, workspace_id: str, account_id: Any
+    conn: AsyncConnection, *, workspace_id: str, account_id: Any, section_key: str = "why-now"
 ) -> None:
     """One live ``display_block`` for the account's overview page."""
 
@@ -105,13 +106,14 @@ async def _seed_overview_block(
         text(
             "INSERT INTO display_block (workspace_id, subject_kind, subject_id, page, "
             "section_key, body_json, cited_claim_ids, model, prompt_version, recipe_version, "
-            "generated_at) VALUES (:ws, 'account', :subject, 'overview', 'why-now', "
+            "generated_at) VALUES (:ws, 'account', :subject, 'overview', :section, "
             "CAST(:body AS jsonb), CAST(:cited AS uuid[]), 'luna', 'v1+v1', 1, "
             "CAST(:now AS timestamptz))"
         ),
         {
             "ws": workspace_id,
             "subject": account_id,
+            "section": section_key,
             "body": json.dumps({"text": "They opened a second endoscopy suite."}),
             "cited": [],
             "now": NOW,
@@ -236,6 +238,7 @@ async def _seeded(
         registry.register(tool, make_default=tool.descriptor.name not in unaliased)
     for tool in build_arv2_paged_read_tools(service):
         registry.register(tool, make_default=True)
+    registry.register(ReadAccountResearchV3Tool(service), make_default=False)
     invoker = build_tool_invoker(
         registry=registry,
         idempotency_store=DbIdempotencyStore(conn_factory=conn_factory),
@@ -331,7 +334,7 @@ def test_the_three_reads_answer_for_the_legs_project_on_the_platform_loop(
             ).all()
             assert [str(row[0]) for row in rows] == [
                 "read_project_accounts@1",
-                "read_account_research@2",
+                "read_account_research@3",
                 "read_claims@1",
             ]
 
@@ -372,6 +375,61 @@ def test_paging_a_read_is_never_answered_by_the_previous_pages_receipt(
                 )
             ).scalar_one()
             assert rows == 2
+
+    run_async(scenario())
+
+
+def test_every_overview_page_has_its_own_governed_receipt(
+    tmp_path: Path, migrated_db: bool
+) -> None:
+    if not migrated_db:
+        pytest.skip("database not reachable")
+    from clue_api.design_platform_reads import build_design_platform_reads_factory
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seeded(conn, tmp_path, label="overview_pages", overview=False)
+            for index in range(6):
+                await _seed_overview_block(
+                    conn,
+                    workspace_id=seeds["workspace_id"],
+                    account_id=seeds["account_id"],
+                    section_key=f"section-{index}",
+                )
+            factory = build_design_platform_reads_factory(
+                invoker=seeds["invoker"],
+                storage=seeds["storage"],
+                conn_factory=seeds["conn_factory"],
+            )
+            reads = factory(
+                _leg_envelope(
+                    seeds["workspace_id"], seeds["project"].project_id, seeds["opening_turn"]
+                )
+            )
+            assert reads is not None
+            sections = []
+            offset = 0
+            while True:
+                page = await asyncio.to_thread(
+                    reads.read_account_research,
+                    account_entity_id=str(seeds["account_id"]),
+                    offset=offset,
+                    limit=1,
+                )
+                assert page["offset"] == offset
+                sections.extend(chunk["section_key"] for chunk in page["overview"])
+                if page["next_offset"] is None:
+                    break
+                offset = page["next_offset"]
+            assert sections == [f"section-{index}" for index in range(6)]
+            receipts = await conn.scalar(
+                text(
+                    "SELECT count(*) FROM tool_invocation WHERE workspace_id=:ws "
+                    "AND tool_name='read_account_research@3'"
+                ),
+                {"ws": seeds["workspace_id"]},
+            )
+            assert receipts == 6
 
     run_async(scenario())
 

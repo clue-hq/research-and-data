@@ -178,10 +178,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         AgentRole.HEAD_OF_ABM,
         AgentRole.DESIGN,
     )
-    assert c6_roles_for_tool("read_account_research@2") == (
-        AgentRole.HEAD_OF_ABM,
-        AgentRole.DESIGN,
-    )
+    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_account_research@3") == (AgentRole.DESIGN,)
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
     # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.

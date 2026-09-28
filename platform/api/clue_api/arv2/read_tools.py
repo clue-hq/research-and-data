@@ -33,6 +33,7 @@ new address rather than by editing the old one.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 from collections.abc import Iterable, Sequence
@@ -52,7 +53,7 @@ from clue_api.arv2.discovery_store import (
     list_candidates,
 )
 from clue_api.arv2.discovery_store import read_discovery_run as read_discovery_run_row
-from clue_api.arv2.display.blocks import live_blocks
+from clue_api.arv2.display.blocks import LiveBlock, live_blocks
 from clue_api.arv2.display.recipes import read_recipes
 from clue_api.arv2.errors import Arv2Error
 from clue_config import Settings
@@ -99,6 +100,9 @@ __all__ = [
     "ReadAccountResearchTool",
     "ReadAccountResearchV2Input",
     "ReadAccountResearchV2Tool",
+    "ReadAccountResearchV3Input",
+    "ReadAccountResearchV3Output",
+    "ReadAccountResearchV3Tool",
     "ReadClaimsInput",
     "ReadClaimsOutput",
     "ReadClaimsTool",
@@ -119,6 +123,7 @@ __all__ = [
     "list_project_accounts",
     "parse_since",
     "read_account_research",
+    "read_account_overview",
     "read_claims",
     "read_discovery_run",
     "receipt_bytes",
@@ -471,15 +476,10 @@ async def _account_in_workspace(
     return account_uuid, str(row["canonical_name"])
 
 
-async def _overview_sections(
+async def _ordered_overview_blocks(
     conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
-) -> tuple[tuple[AccountOverviewSection, ...], bool]:
-    """The account's written overview in the order the overview page itself serves it, bounded by
-    the receipt's budget, plus whether anything was left out.
-
-    :data:`BODY_CHARS` bounds one section; nothing bounded the *page*, and a handful of capped
-    sections is past the receipt on its own. What fits is served, and the cut is said out loud.
-    """
+) -> list[LiveBlock]:
+    """The shared scoped lookup and page ordering, for every version of the overview read."""
 
     blocks = await live_blocks(
         conn,
@@ -500,9 +500,19 @@ async def _overview_sections(
     # after the known ones by key, which is also the whole order when no recipes are loaded.
     recipes = await read_recipes(conn, _OVERVIEW_PAGE, workspace_id=workspace_id)
     position = {recipe.section_key: index for index, recipe in enumerate(recipes)}
-    ordered = sorted(
+    return sorted(
         blocks.values(),
         key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
+    )
+
+
+async def _overview_sections(
+    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
+) -> tuple[tuple[AccountOverviewSection, ...], bool]:
+    """The historical @1/@2 clipping behavior, kept unchanged for replay."""
+
+    ordered = await _ordered_overview_blocks(
+        conn, workspace_id=workspace_id, account_uuid=account_uuid
     )
     sections: list[AccountOverviewSection] = []
     for block in ordered:
@@ -538,6 +548,142 @@ async def _overview_sections(
             }
         )
     return tuple(sections[:fitted]), cut
+
+
+class AccountOverviewChunk(BaseModel, frozen=True):
+    """A complete stored section, or an explicitly numbered piece of its JSON.
+
+    Concatenate ``section_json`` in ``chunk_index`` order for the same block id and hash,
+    verify the hash, then parse JSON. Never interpret an incomplete piece as a complete section.
+    The object retains ``body_json`` (including source/status labels), ``cited_claim_ids`` and
+    ``generated_at``. These are stored display words, not newly verified claims.
+    """
+
+    section_key: str
+    display_block_id: str
+    section_json: str
+    section_sha256: str
+    chunk_index: int
+    chunk_count: int
+
+
+class ReadAccountResearchV3Output(ToolOutput):
+    """The @3 overview uses lossless section chunks; claims keep their existing gated shape."""
+
+    account_entity_id: str
+    account_name: str
+    section: str
+    overview: tuple[AccountOverviewChunk, ...]
+    claims: tuple[AccountClaimView, ...]
+    truncated: bool
+    excluded: dict[str, int]
+    offset: int
+    next_offset: int | None
+    prefixes: dict[str, int]
+
+
+def _overview_json_chunks(value: str) -> tuple[str, ...]:
+    """Split JSON text losslessly under its *outer JSON string* byte cost, including escapes.
+
+    A fixed 4 KiB chunk ceiling is independent of the caller's page size, so changing ``limit``
+    never changes what ``offset`` identifies. Code-point boundaries preserve Unicode exactly.
+    """
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(value):
+        low, high = 1, min(len(value) - start, 4096)
+        while low < high:
+            middle = (low + high + 1) // 2
+            if receipt_bytes(value[start : start + middle]) <= 4096:
+                low = middle
+            else:
+                high = middle - 1
+        chunks.append(value[start : start + low])
+        start += low
+    return tuple(chunks)
+
+
+async def read_account_overview(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: str,
+    offset: int = 0,
+    limit: int = 40,
+) -> ReadAccountResearchV3Output:
+    """Page the existing overview without clipping a section or bypassing its tenant scope.
+
+    ``offset`` counts deterministic JSON chunks, not sections. The entire response is measured
+    against the receipt budget. Source and verification labels remain verbatim in ``body_json``;
+    reading a display section does not promote any of its claims or call any research provider.
+    """
+
+    account_uuid, name = await _account_in_workspace(
+        conn, workspace_id=workspace_id, account_entity_id=account_entity_id
+    )
+    if offset < 0 or not 1 <= limit <= MAX_CLAIMS:
+        raise Arv2ReadRefused("invalid_page", "offset must be nonnegative; limit must be 1..120")
+    ordered = await _ordered_overview_blocks(
+        conn, workspace_id=workspace_id, account_uuid=account_uuid
+    )
+    chunks: list[AccountOverviewChunk] = []
+    for block in ordered:
+        section_json = json.dumps(
+            {
+                "body_json": block.body_json,
+                "cited_claim_ids": block.cited_claim_ids,
+                "generated_at": block.generated_at.isoformat(),
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        digest = hashlib.sha256(section_json.encode()).hexdigest()
+        parts = _overview_json_chunks(section_json)
+        chunks.extend(
+            AccountOverviewChunk(
+                section_key=block.section_key,
+                display_block_id=block.display_block_id,
+                section_json=part,
+                section_sha256=digest,
+                chunk_index=index,
+                chunk_count=len(parts),
+            )
+            for index, part in enumerate(parts)
+        )
+    output = ReadAccountResearchV3Output(
+        account_entity_id=str(account_uuid),
+        account_name=name,
+        section="overview",
+        overview=(),
+        claims=(),
+        truncated=False,
+        excluded={},
+        offset=offset,
+        next_offset=None,
+        prefixes={},
+    )
+    for chunk in chunks[offset : offset + limit]:
+        candidate = output.model_copy(update={"overview": (*output.overview, chunk)})
+        next_offset = offset + len(candidate.overview)
+        candidate = candidate.model_copy(
+            update={
+                "truncated": next_offset < len(chunks),
+                "next_offset": next_offset if next_offset < len(chunks) else None,
+            }
+        )
+        if receipt_bytes(candidate.model_dump()) > READ_REFERENCES_BUDGET_BYTES:
+            if not output.overview:
+                raise Arv2ReadRefused(
+                    "overview_metadata_too_large", "overview metadata exceeds the read budget"
+                )
+            break
+        output = candidate
+    if receipt_bytes(output.model_dump()) > READ_REFERENCES_BUDGET_BYTES:
+        raise Arv2ReadRefused(
+            "overview_metadata_too_large", "overview metadata exceeds the read budget"
+        )
+    return output
 
 
 def _is_sensitive(claim: Claim) -> bool:
@@ -1178,6 +1324,10 @@ class Arv2ReadService(Protocol):
         offset: int,
     ) -> ProjectAccountsPage: ...
 
+    async def read_account_overview(
+        self, *, workspace_id: str, account_entity_id: str, offset: int, limit: int
+    ) -> ReadAccountResearchV3Output: ...
+
     async def read_account_research(
         self,
         *,
@@ -1226,6 +1376,18 @@ class DbArv2ReadService:
     def __init__(self, *, settings: Settings, conn_factory: ConnFactory = transaction) -> None:
         self._settings = settings
         self._conn_factory = conn_factory
+
+    async def read_account_overview(
+        self, *, workspace_id: str, account_entity_id: str, offset: int, limit: int
+    ) -> ReadAccountResearchV3Output:
+        async with self._conn_factory() as conn:
+            return await read_account_overview(
+                conn,
+                workspace_id=workspace_id,
+                account_entity_id=account_entity_id,
+                offset=offset,
+                limit=limit,
+            )
 
     async def list_project_accounts(
         self,
@@ -1566,6 +1728,47 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
     def _claims_limit(self, inputs: ReadAccountResearchInput) -> int:
         assert isinstance(inputs, ReadAccountResearchV2Input)
         return inputs.limit
+
+
+class ReadAccountResearchV3Input(ReadAccountResearchV2Input):
+    """Offset/limit page overview JSON chunks or gated claims. field_prefix only filters claims."""
+
+
+class ReadAccountResearchV3Tool(ReadAccountResearchV2Tool):
+    """Design's lossless overview read; historical versions and the claims gate stay frozen."""
+
+    version = "3"
+    input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV3Input
+    output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchV3Output
+    model_description = (
+        "Read this workspace's existing account research. For section='overview', follow "
+        "next_offset until null; limit caps JSON chunks, not sections. Each overview entry has "
+        "section_key, display_block_id, section_json, section_sha256, chunk_index and chunk_count. "
+        "A one-chunk section is readable JSON containing original body_json, cited_claim_ids and "
+        "generated_at. For multiple chunks, concatenate section_json in chunk_index order for "
+        "the same block id/hash and verify the SHA-256 before parsing; restart at offset=0 if "
+        "the block changes. Preserve all source/status labels: stored overview prose, including "
+        "imported unverified notes, is context, not verified claim evidence. section='claims' "
+        "uses the unchanged verification/use gate and field_prefix; excluded counts what is held "
+        "back. Claims retain their own offset/next_offset. Effect-free; never starts research."
+    )
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadAccountResearchV3Input)
+        assert self._service is not None
+        if inputs.section == "claims":
+            return await super().invoke(inputs, ctx)
+        try:
+            output = await self._service.read_account_overview(
+                workspace_id=ctx.workspace_id,
+                account_entity_id=inputs.account_entity_id,
+                offset=inputs.offset,
+                limit=inputs.limit,
+            )
+        except Arv2ReadRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        tag_entities([output.account_entity_id])
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 
 
 class ReadDiscoveryRunInput(ToolInput):
