@@ -583,6 +583,16 @@ class Settings(BaseSettings):
     # unconfigured and does nothing, which is a posture, not an error. Env:
     # ``CLUE_DESIGN_API_BASE_URL``.
     design_api_base_url: str | None = None
+    # Onboarding also offers ONE ad-assets harvest for the company's own LinkedIn ads, beside the
+    # website ingestion and through the same trigger (auto ad ingestion, 2026-09-28): the most
+    # recent static ads, up to ``brand_ad_assets_auto_max_creatives``, reading at most
+    # ``brand_ad_assets_auto_max_pages`` ad-library pages (~25 ads and ~1 vendor credit each).
+    # The design API must also run the ad lane (``LUMEN_BRAND_AD_ASSETS``); when it does not, the
+    # route 404s and the offer is a logged, fail-soft skip. Env:
+    # ``CLUE_BRAND_AD_ASSETS_AUTO_ONBOARD`` / ``_AUTO_MAX_CREATIVES`` / ``_AUTO_MAX_PAGES``.
+    brand_ad_assets_auto_onboard: bool = True
+    brand_ad_assets_auto_max_creatives: int = Field(default=50, ge=1)
+    brand_ad_assets_auto_max_pages: int = Field(default=8, ge=1)
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
