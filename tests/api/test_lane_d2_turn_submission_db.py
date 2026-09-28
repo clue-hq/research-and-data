@@ -1382,6 +1382,72 @@ def test_worker_replays_before_recipe_or_current_context_composition(tmp_path: P
     run_async(scenario())
 
 
+def test_the_turn_that_opened_a_leg_replays_as_head_of_abm(tmp_path: Path) -> None:
+    """Incident 2026-09-29: the head-of-abm turn that OPENED a design leg was re-claimed after
+    its worker died, saw the leg open on its thread, and was routed to the leg — where it
+    collided with its own durable rows and failed. Its retry must replay as head-of-abm."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-leg-opener", name="D2 leg opener")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="leg-opener",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Make a LinkedIn ad for this account.",
+                    key="leg-opener",
+                )
+            turn_id = UUID(accepted.json()["data"]["turn_id"])
+            parent_execution_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO execution "
+                    "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                    " pin_manifest_hash) "
+                    "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+                ),
+                {
+                    "id": parent_execution_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "hash": "0" * 64,
+                },
+            )
+            await design_legs.open_leg(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                parent_execution_id=parent_execution_id,
+                opened_by_turn_id=turn_id,
+            )
+            engine = _ReplayBeforeCompositionEngine()
+            runner = _ReplayBeforeCompositionRunner(
+                engine=engine,
+                executor=None,
+                recipes=None,
+                starter=None,
+                parameters=None,
+                conn_factory=conn_session_factory(conn),
+                streaming=False,
+            )
+            # No design-leg runner is composed: routing this turn to the leg would raise.
+            result = await runner.run(turn_id=turn_id, workspace_id=project.workspace_id)
+            assert result.replayed is True
+            assert engine.calls == [(turn_id, project.workspace_id, thread_id)]
+
+    run_async(scenario())
+
+
 def test_a_committed_turn_is_replayed_never_re_executed(tmp_path: Path) -> None:
     """The convergence guarantee, over real durable rows.
 

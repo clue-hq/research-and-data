@@ -454,7 +454,13 @@ class ProjectConversationTurnRunner:
             # answer while a leg is open, but it cannot see the future — an answer accepted
             # first and QUEUED BEHIND a turn that then opened a leg would otherwise reach the
             # design agent as canonical gate-answer JSON. The answer row is the durable proof.
-            if open_leg is not None and (
+            if open_leg is not None and open_leg.get("opened_by_turn_id") == str(turn_id):
+                # The head-of-abm turn that OPENED this leg is never a leg turn. Only its retry
+                # (a crash or lost lease after the leg was born) can arrive here, and it must
+                # replay as the committed head-of-abm turn it is; routed to the leg it collided
+                # with its own durable rows and failed (incident 2026-09-29).
+                open_leg = None
+            elif open_leg is not None and (
                 await gate_answer_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
                 is not None
             ):
