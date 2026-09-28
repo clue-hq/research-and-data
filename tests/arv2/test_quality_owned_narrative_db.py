@@ -325,10 +325,11 @@ def test_pre_miscellaneous_narrative_can_publish_without_refresh_loop(tmp_path, 
     run_async(case())
 
 
+@pytest.mark.parametrize("version", [20, 24])
 @pytest.mark.parametrize("person", [False, True])
 @pytest.mark.parametrize("report_mode", ["legacy", "notes", "none"])
 def test_native_researcher_writes_pages_without_specialist_and_replays(
-    tmp_path, monkeypatch, person, report_mode
+    tmp_path, monkeypatch, person, version, report_mode
 ):
     import asyncio
     from contextlib import asynccontextmanager
@@ -359,12 +360,14 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
     async def case():
         async with rollback_conn() as conn:
             parent, child, cid, storage, ctx, gen, path = await initial(conn, tmp_path / "blobs")
-            parent = replace(parent, input_refs={"quality_recipe_version": 20})
+            parent = replace(parent, input_refs={"quality_recipe_version": version})
             await load_display_recipes(conn)
             await invoke(FinishDossierTool, parent, storage, ctx, DossierInput())
             job = parent
             if person:
-                job = replace(child, input_refs={**child.input_refs, "quality_recipe_version": 20})
+                job = replace(
+                    child, input_refs={**child.input_refs, "quality_recipe_version": version}
+                )
                 op = OperationScope(job.workspace_id, job.run_id, job.job_id, job.account_id)
                 eid = await execution(conn, op, job.project_id)
                 await bind_execution(

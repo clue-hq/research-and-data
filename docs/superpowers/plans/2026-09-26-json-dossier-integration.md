@@ -1,5 +1,10 @@
 # Researcher-authored JSON dossiers — platform integration
 
+> Historical revision-16 integration record. Current local revision 24 is documented in
+> [the research lane README](../../../platform/api/clue_api/arv2/README.md): researcher-owned
+> narrative, targeted finding updates, concise review, post-import revisions and reciprocal
+> conflict imports. Do not use the older steps below as the selected runtime instructions.
+
 ## Outcome and ownership
 
 New v4 launches pin quality recipe revision 16. Both account and person Deep Agents own

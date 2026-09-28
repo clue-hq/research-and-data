@@ -176,6 +176,7 @@ async def submit_proposal(
     context_id: UUID,
     actor_ref: str,
     purge_unevidenced: bool = True,
+    claim_id: UUID | None = None,
 ) -> ProposalReceipt:
     subject = scope.person_subject_id or scope.account_id
     advisory = advisory_research(scope)
@@ -217,6 +218,8 @@ async def submit_proposal(
     if old is not None:
         if old["workspace_id"] != scope.workspace_id or old["request_sha256"] != sha:
             raise ValueError("proposal operation key already has different content; use a new key")
+        if claim_id is not None and old["claim_id"] != claim_id:
+            raise ValueError("Proposal replay does not match its allocated claim ID")
         return ProposalReceipt(oid, old["claim_id"], old["status"], old["error_code"], True)
     refs: list[SourceRef] = []
     support_keys: set[str] = set()
@@ -612,7 +615,10 @@ async def submit_proposal(
                     operation_id=OperationId(oid),
                 )
             receipt = await LenientClaimWriter(lenient=True, scoped_proposals=True).write(
-                conn, draft, derivation=derivation
+                conn,
+                draft,
+                derivation=derivation,
+                claim_id=ClaimId(claim_id) if claim_id is not None else None,
             )
             cid = UUID(str(receipt.claim_id))
             await assess_claim(

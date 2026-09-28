@@ -104,6 +104,7 @@ from clue_api.arv2.quality_json_dossier import (
     DiscardDossierRevisionTool,
     FinishDossierTool,
     SaveDossierSectionTool,
+    UpdateDossierFindingsTool,
     ValidateDossierTool,
     uses_json_dossier,
     validate_dossier_handoff,
@@ -240,6 +241,7 @@ def quality_tools(
         DiscardDossierRevisionTool,
         BeginDossierRevisionTool,
         SaveDossierSectionTool,
+        UpdateDossierFindingsTool,
         ValidateDossierTool,
         FinishDossierTool,
     ):
@@ -266,6 +268,7 @@ def quality_profiles(
                 "discard_dossier_revision",
                 "begin_dossier_revision",
                 "save_dossier_section",
+                "update_dossier_findings",
                 "validate_dossier",
                 "finish_dossier",
                 "read_narrative_inputs",
@@ -306,7 +309,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v23-person" if person else "v23")
+            role: ("v24-person" if person else "v24")
+            if version >= 24 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v23-person" if person else "v23")
             if version >= 23 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v22-person" if person else "v22")
             if version >= 22 and role == AgentRole.ACCOUNT_RESEARCH

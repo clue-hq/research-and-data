@@ -19,7 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.dossier_import import import_research_dossier
-from clue_api.arv2.dossier_json import Entry, parse_json_dossier, replace_section
+from clue_api.arv2.dossier_json import (
+    Entry,
+    dossier_coverage,
+    parse_json_dossier,
+    replace_section,
+    update_findings,
+)
 from clue_api.arv2.dossier_revision import claim_versions, import_revision, revision_plan
 from clue_api.arv2.quality_authority import resolve_authority
 from clue_api.arv2.quality_evidence import list_sources
@@ -208,6 +214,7 @@ class _DossierTool(_ResearchWriteTool):
 class SaveDossierSectionTool(_DossierTool):
     name = "save_dossier_section"
     input_model = SaveSectionInput
+    change_document = staticmethod(replace_section)
     model_description = (
         "Save one complete JSON dossier section, replacing that named section and preserving "
         "others. Read /research/dossier/latest.json before revisions. Each finding has a stable "
@@ -232,7 +239,7 @@ class SaveDossierSectionTool(_DossierTool):
                 "path": VIEW,
             }
         try:
-            document = replace_section(
+            document = self.change_document(
                 saved["document"],
                 args.section,
                 [f.model_dump(mode="json") for f in args.findings],
@@ -255,6 +262,18 @@ class SaveDossierSectionTool(_DossierTool):
             "section": args.section,
             "entries": len(args.findings),
         }
+
+
+class UpdateDossierFindingsTool(SaveDossierSectionTool):
+    name = "update_dossier_findings"
+    change_document = staticmethod(update_findings)
+    model_description = (
+        "Save only new or corrected findings within a named draft section. Send each affected "
+        "finding's complete Entry with its stable F-ID; omitted findings and other sections "
+        "remain unchanged. New IDs append; existing IDs replace in place. No field fragments "
+        "or deletion by omission. Use for small corrections and incremental batches instead "
+        "of rewriting whole sections. Imported dossiers require begin_dossier_revision first."
+    )
 
 
 class BeginRevisionInput(ToolInput):
@@ -415,7 +434,8 @@ def validation(saved: dict[str, Any], aliases: dict[str, UUID]) -> dict[str, Any
         "errors": errors,
         "path": VIEW,
         "state": saved["state"],
-        "note": "Shape and references only; review meaning and coverage against the skill.",
+        "coverage": dossier_coverage(saved["document"], set(aliases)),
+        "note": "Shape and references only; counts are informational, not a completion gate.",
     }
 
 

@@ -51,7 +51,7 @@ def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(per
     assert {"finish_dossier", "read_narrative_inputs", "write_research_narrative"} <= names
     assert "record_research_finding" not in names
     assert "publish_research_page" not in names
-    assert CURRENT_RECIPE_VERSION == 23
+    assert CURRENT_RECIPE_VERSION == 24
     manifest = json.loads(load_quality_resources("person" if person else "account").profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
     for version in range(2, CURRENT_RECIPE_VERSION + 1):

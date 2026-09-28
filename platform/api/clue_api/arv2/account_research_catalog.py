@@ -34,7 +34,7 @@ CONTACT_ENRICHMENT_POLICY = (
 
 
 RESEARCH_PROVIDER_POLICY = (
-    "Current provider policy supersedes older catalog guidance: AI Ark supplies basic typed "
+    "AI Ark supplies basic typed "
     "company/person facts and work email, not descriptive prose or qualitative research. "
     "Keep its original responses inspectable; summaries, biographies and headlines are not "
     "research evidence. Synthesize core.company_about from Exa research and company website "
