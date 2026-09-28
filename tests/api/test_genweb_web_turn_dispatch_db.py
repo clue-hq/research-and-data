@@ -889,6 +889,7 @@ def test_an_account_stamped_web_document_freezes_the_account_card(
 
             # The design route's card, key for key — the executor reads only this key.
             assert lane.envelopes[0].config["account_card"] == {
+                "account_id": account_id,
                 "name": "Northwind Logistics",
                 "domain": "northwind.example",
                 "logo_asset_id": None,

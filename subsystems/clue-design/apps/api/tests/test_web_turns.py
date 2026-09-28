@@ -586,6 +586,7 @@ def test_web_turn_account_card_reaches_runner(client: TestClient) -> None:
 
     card = received["account_card"]
     assert card == {
+        "account_id": account_id,
         "name": "Privia",
         "domain": "privia.com",
         "logo_asset_id": None,

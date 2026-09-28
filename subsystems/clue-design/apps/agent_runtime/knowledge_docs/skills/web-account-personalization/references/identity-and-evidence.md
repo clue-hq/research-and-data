@@ -87,5 +87,8 @@ the seller's visual system unless the brief explicitly changes it.
 `asset(action="use_account_asset")` registers an attached account logo.
 `bind_account_logo(account_id, asset_id)` persists a fetched mark to an existing
 account when its binder is available; placement alone does not bind the account.
-Use a known valid account ID, inspect the result, and report binder unavailability.
+Use `account_id` from the supplied target account card for this design binding.
+The platform research tools' `account_entity_id` is a different identifier. If the
+card omits its ID, keep the missing binding context explicit instead of guessing.
+Inspect the result and report binder unavailability.
 Neither logo fetching nor binding verifies target business claims or derivation.

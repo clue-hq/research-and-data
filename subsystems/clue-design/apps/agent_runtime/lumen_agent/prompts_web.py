@@ -145,6 +145,10 @@ an overview_not_written refusal calls for section="claims", not invented researc
 Follow returned pagination for the evidence needed. When these tools are absent,
 use the director's supplied evidence handoff or report the missing context; never
 pretend a read occurred. The author asks the director to resolve an evidence gap.
+The target account card's account_id is the design account for bind_account_logo.
+The research tools return account_entity_id values for reading research; these are
+different identifiers. Never substitute a research entity ID into a design binding.
+If the card has no account_id, report the missing binding context rather than guess.
 Account facts may come from those scoped reads as well as supplied context. Retain
 accessible evidence values/excerpts, subject, source/claim IDs, freshness and use
 restrictions in the plan/handoff. An ID alone is not a fact. Supplied assertions

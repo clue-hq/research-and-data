@@ -3690,6 +3690,7 @@ def create_app(
                     status_code=404, detail=not_found_detail(error)
                 ) from error
             account_card = {
+                "account_id": account["account_id"],
                 "name": account["name"],
                 "domain": account["domain"],
                 "logo_asset_id": account["logo_asset_id"],
