@@ -165,3 +165,15 @@ asset-enrichment lane; five Zafran account-research frontend fixture tests
   reads `DEV_STACK_*` from the SHELL env at script start, so start the stack with
   `set -a; source .env; set +a; ./scripts/dev_stack.sh up` (or a lane wrapper) for the ports to apply;
   the page origin stays on 8040.
+
+## Addendum 2026-09-29 — stack first UP on this lane; two defects found and fixed
+- Ports: 8021 turned out to be held by macOS `launchd` (unbindable; invisible to unprivileged
+  `lsof`) — the platform API moved to **8022** (`DEV_STACK_PLATFORM_PORT`, `apps/frontend/.env.local`).
+  Final lane map: 3021 frontend / 8011 design API / 8022 platform / 8031 twin / 8040 page origin.
+- **Fleet workers crashed at boot** with `tool 'design_publish_web@1' schema digest changed`: removing
+  `public_base` from the tool input (S1/reconciliation) changed the input schema digest pinned by the
+  design profiles. Re-pinned in place on v1/v2/v3 with a dated comment (`63f582967`, `aa11a5f1d`),
+  the F5 output-re-pin precedent; catalog + registry-wiring tests green (51). No other pin drifted.
+- Stack verified: all five ports listening, `/healthz` on 8040 = 200, 4 lane workers alive without
+  the crash, frontend restarted on the updated env. `up` / `restart-api` hang in their trailing
+  `sleep; status` — run under `timeout`; the detached processes survive.
