@@ -265,3 +265,20 @@ def published_manifest(workspace_id: str, slug: str) -> dict:
     manifest = row.get("manifest")
     assert isinstance(manifest, dict)
     return manifest
+
+
+def published_page(workspace_id: str, slug: str, route: str) -> dict | None:
+    """One served route of a multi-page site (F5), as the page origin would read it: the page
+    row the last publish materialized, or ``None`` when the site serves no such route."""
+    from lumen_api.design_store import HybridRepository
+
+    return HybridRepository(workspace_id=workspace_id, ensure_workspace=False).get_web_publish_page(
+        slug, route
+    )
+
+
+def published_page_html(workspace_id: str, slug: str, route: str) -> str:
+    assert is_served(workspace_id, slug), f"no active publish at {slug!r}"
+    page = published_page(workspace_id, slug, route)
+    assert page is not None, f"site {slug!r} serves no route {route!r}"
+    return str(page["html"])

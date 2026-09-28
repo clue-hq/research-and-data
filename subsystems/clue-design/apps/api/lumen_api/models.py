@@ -302,19 +302,6 @@ class WebPublishRequest(BaseModel):
     noindex: bool = False
 
 
-class SetWorkspaceHandleRequest(BaseModel):
-    """Choose the workspace handle — the DNS label published sites hang off (ruling R-F5-5).
-
-    REQUIRED and un-defaulted: the handle is the host segment of every public URL this workspace
-    will ever serve, so a body that merely forgets the field must be a 422, never a silent
-    re-derivation from the workspace name. Shape and reserved-word validation live in the DAL
-    (one contract, mirrored by the ``design_workspace_handle_shape`` CHECK) rather than here, so
-    the endpoint and the agent path refuse identically.
-    """
-
-    handle: str
-
-
 class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 

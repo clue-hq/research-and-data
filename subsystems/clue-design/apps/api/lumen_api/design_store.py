@@ -105,6 +105,7 @@ from clue_config import Settings
 from clue_db import create_engine
 from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
 from clue_spine.hostnames import ensure_system_hostname
+from clue_spine.hostnames import lock_system_hostname as _lock_system_hostname
 from clue_spine.hostnames import system_hostname as _system_hostname
 from clue_spine.pages_settings import get_pages_settings
 from py_lumen_obs import get_logger
@@ -125,7 +126,6 @@ from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
 from clue_design import web_fragments as design_web_fragments
-from clue_design import workspace_handles as design_workspace_handles
 from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
@@ -1382,6 +1382,15 @@ class HybridRepository:
 
         return self._bridge._run(_read)
 
+    def lock_system_hostname(self) -> None:
+        """Freeze the workspace's system label at a successful publish (F5 R-F5-5, adopted by
+        the 2026-09-28 reconciliation ruling): a published URL is out in the world, so its host
+        segment must not move. Idempotent — ``locked_at`` stays the moment the address first
+        went public."""
+        self._bridge._run(
+            lambda conn: _lock_system_hostname(conn, workspace_id=self.workspace_id)
+        )
+
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         return self._bridge._run(
             lambda conn: design_publishes.get_web_publish_for_document(
@@ -1420,52 +1429,6 @@ class HybridRepository:
             lambda conn: design_publishes.list_web_publish_pages(
                 conn, workspace_id=self.workspace_id, slug=slug
             )
-        )
-
-    # --- workspace handle (F5 task 14, ruling R-F5-5) -----------------------------------------
-    # The DNS label this workspace's published sites hang off. Derived from the workspace name,
-    # editable until the first publish, frozen after — see `clue_design.workspace_handles`.
-
-    def get_workspace_handle(self) -> Optional[JsonObject]:
-        """This workspace's handle row, or ``None`` if it has never had one."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.get_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def ensure_workspace_handle(self) -> JsonObject:
-        """The handle, minting the name-derived default the first time. Never overwrites."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.ensure_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def set_workspace_handle(self, handle: str) -> JsonObject:
-        """Choose the handle. ``ValueError`` carries the refusal:
-        ``handle_locked`` / ``handle_invalid`` / ``handle_taken``."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.set_workspace_handle(
-                conn, workspace_id=self.workspace_id, handle=handle
-            )
-        )
-
-    def lock_workspace_handle(self) -> JsonObject:
-        """Freeze the handle at a successful publish. Idempotent; mints one if absent."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.lock_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def get_workspace_by_handle(self, handle: str) -> Optional[str]:
-        """``handle -> workspace_id``, the public host router's reverse lookup (Task 15).
-
-        Cross-workspace ON PURPOSE — it answers *which* tenant a host belongs to, so it is the
-        one store method whose result is not scoped to ``self.workspace_id``."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.get_workspace_by_handle(conn, handle=handle)
         )
 
     # --- custom-component registry (D2.4B) ----------------------------------------------------
