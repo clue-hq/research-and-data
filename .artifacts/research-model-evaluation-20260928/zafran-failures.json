@@ -1,0 +1,246 @@
+[
+  {
+    "id": "Z01",
+    "run_id": "grok47",
+    "category": "provider",
+    "subject_stage": "Grok 4.7 medium account",
+    "root_cause_classification": "Provider capacity; downstream runtime termination",
+    "confidence": "Confirmed provider response and terminal job",
+    "explanation": "Model call 68 returned 502 `provider_unavailable`, explicitly capacity/high demand. Agent stopped during dossier assembly; 30 draft findings survived, no import/narrative. Nick and Vari never started. This is not an Exa timeout or evidence of poor completed research.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/agent_model_call.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_research_job.json"
+    ]
+  },
+  {
+    "id": "Z02",
+    "run_id": "glm53",
+    "category": "model behavior",
+    "subject_stage": "GLM initial account committee nomination",
+    "root_cause_classification": "Model instruction-following plus concurrent slot allocation",
+    "confidence": "Confirmed observable calls and retained jobs",
+    "explanation": "Four people nominated concurrently despite fixed Nick/Vari scope. Tom Anthony and Kelly W. acquired the two slots first. Nick/Vari cap retries did not repair the selection. This contributed to failure to complete the requested flow, but is not the final exception itself. No person research started.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/activity-latest.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_research_job.json"
+    ]
+  },
+  {
+    "id": "Z03",
+    "run_id": "glm53",
+    "category": "backend",
+    "subject_stage": "Both GLM account attempts",
+    "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+    "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+    "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+    ]
+  },
+  {
+    "id": "Z03",
+    "run_id": "glm53-untouched-02",
+    "category": "backend",
+    "subject_stage": "Both GLM account attempts",
+    "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+    "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+    "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+    ]
+  },
+  {
+    "id": "Z04",
+    "run_id": "glm53-untouched-02",
+    "category": "provider/model output limit",
+    "subject_stage": "GLM untouched-02 last ordinary model response",
+    "root_cause_classification": "Provider/model output truncation interacting with runtime output allowance",
+    "confidence": "Confirmed `finish_reason=length`, 16,384 output tokens",
+    "explanation": "Last ordinary response had incomplete public output `[`; finalize-only recovery then failed on absent output file. Why the model produced this form is not proven. Fresh run was not interrupted.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/final-model-metadata.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z05",
+    "run_id": "glm53",
+    "category": "operator",
+    "subject_stage": "Initial GLM worker",
+    "root_cause_classification": "Operator action after natural failure",
+    "confidence": "Confirmed ordering; not the account-failure cause",
+    "explanation": "Account ended 08:44:16.802 UTC; worker stopped around 08:44:44, then same queue restored after user said not to interrupt. No account restart or person spending resulted. Fresh untouched-02 was a separate user-authorized test.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/operator-stop.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z06",
+    "run_id": "grok46",
+    "category": "model behavior / ownership contract",
+    "subject_stage": "Grok 4.6 Nick and Vari completion",
+    "root_cause_classification": "Model completion-reference selection / tool ownership contract",
+    "confidence": "Confirmed saved references and rejection",
+    "explanation": "Both included account-owned committee-selection IDs in person completion files. Finalizer rejected references outside person context; finalizer retry did not change the invalid file. Both person dossiers, imports and narratives survived. Account completed; generation settled partial.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/finalize-audit.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z07",
+    "run_id": "deepseek4pro-high",
+    "category": "backend",
+    "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+    "root_cause_classification": "Backend reference overwrite",
+    "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+    "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z07",
+    "run_id": "muse-max",
+    "category": "backend",
+    "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+    "root_cause_classification": "Backend reference overwrite",
+    "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+    "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z08",
+    "run_id": "deepseek4pro-high",
+    "category": "unresolved provider/parser/runtime",
+    "subject_stage": "DeepSeek account and Vari early stops",
+    "root_cause_classification": "Provider/parser/runtime boundary unresolved",
+    "confidence": "Stop metadata confirmed; exact responsible component unproven",
+    "explanation": "Last metadata says `finish_reason=tool_calls` with empty public content, then no accepted finalizer. Token counts 9,945 and 3,618 do not establish truncation. Serialized snapshots omit typed tool calls in successful cases too, so missing serialized calls alone cannot diagnose a lost provider tool call. Account 64 findings imported; Vari stopped before deep research/dossier.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z09",
+    "run_id": "deepseek4pro-high",
+    "category": "provider / observability",
+    "subject_stage": "DeepSeek Nick final call",
+    "root_cause_classification": "Provider response error plus observability/status mismatch",
+    "confidence": "Confirmed metadata; deeper provider cause unproven",
+    "explanation": "Final response has `finish_reason=error`, 571 output tokens and empty public content, but model ledger labels the call completed. Job ends missing_finalize. The earlier parent-reference bug is a separate failure. Nick's 37 findings imported; no narrative.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/agent_model_call.json"
+    ]
+  },
+  {
+    "id": "Z10",
+    "run_id": "deepseek4pro-high",
+    "category": "common reconciliation model/schema",
+    "subject_stage": "DeepSeek's two common-Muse reconciliation calls",
+    "root_cause_classification": "Shared reconciliation model/schema contract",
+    "confidence": "Confirmed validator rejection",
+    "explanation": "First returned an object where `gaps[0]` required a string. Second returned missing/extra keys and malformed contact UUID containing prose. No account narrative was saved. These costs/failures belong to common Muse reconciliation, not DeepSeek research.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_narrative_reconciliation.json"
+    ]
+  },
+  {
+    "id": "Z11",
+    "run_id": "muse-max",
+    "category": "model behavior",
+    "subject_stage": "Muse max account narrative writes",
+    "root_cause_classification": "Model tool argument/schema use; recovered",
+    "confidence": "Confirmed validation and eventual saved page",
+    "explanation": "JSON string passed where `pages` required structured tuple, then wrong owned-page shape. Later corrected and saved 11 account sections. Retries changed wording/quote presentation, so semantic quality still needs review.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/page.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z12",
+    "run_id": "muse-max",
+    "category": "model behavior",
+    "subject_stage": "Muse max Nick person",
+    "root_cause_classification": "Model workflow omission; backend context issue also present",
+    "confidence": "Confirmed no narrative-write call/page; causal reason not inferred",
+    "explanation": "After importing 68 findings and reading narrative inputs/sources, agent wrote completion without saving a contact narrative. Ends `quality_unit_incomplete`. Parent-reference corruption is also present, but trace does not justify treating it as the sole cause of the missing write.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z13",
+    "run_id": "muse-max",
+    "category": "model behavior / repair contract",
+    "subject_stage": "Muse max Vari narrative",
+    "root_cause_classification": "Model tool arguments/repair reference; failed recovery",
+    "confidence": "Confirmed tool errors and draft only",
+    "explanation": "Literal string `null` supplied for account dossier version, then retry_of pointed to wrong slot/tool. Repair rejected; a narrative payload/review note was saved locally but not published through narrative writer. 56 findings imported; ends `quality_unit_incomplete`.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md"
+    ]
+  },
+  {
+    "id": "Z14",
+    "run_id": "muse-max",
+    "category": "common reconciliation model/schema",
+    "subject_stage": "Muse max common reconciliation, revisions 244/245",
+    "root_cause_classification": "Shared reconciliation model/schema contract",
+    "confidence": "Confirmed parser rejection; response not retained as usable parsed artifact",
+    "explanation": "Both calls fail `Each update needs page and section only`; generation settles needs_review 245/245. Existing account narrative survives unchanged. This was two distinct input snapshots, not a proven infinite self-trigger loop.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_narrative_reconciliation.json"
+    ]
+  },
+  {
+    "id": "Z15",
+    "run_id": "grok46",
+    "category": "model behavior",
+    "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+    "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+    "confidence": "Confirmed tool feedback; not root terminal failure",
+    "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+    ]
+  },
+  {
+    "id": "Z15",
+    "run_id": "grok47",
+    "category": "model behavior",
+    "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+    "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+    "confidence": "Confirmed tool feedback; not root terminal failure",
+    "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+    "evidence_paths": [
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+    ]
+  }
+]
