@@ -15,9 +15,9 @@ def annotate_sentences(body: dict[str, Any], claims: dict[Any, dict[str, Any]]) 
     by_id = {str(id): claim for id, claim in claims.items()}
     sentences = [*body.get("intro", [])]
     for item in body.get("items", []):
+        # The opener (``sendLine``) is not annotated: its served shape (``ResearchSendLine``) has
+        # no ``kind``/``qualifications``, and the strict read refused the whole contact page.
         sentences.extend(item.get("body", []))
-        if item.get("sendLine"):
-            sentences.append(item["sendLine"])
     for sentence in sentences:
         notes = list(sentence.get("qualifications", []))
         for id in sentence.get("claimIds", []):
