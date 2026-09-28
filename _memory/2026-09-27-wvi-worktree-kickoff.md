@@ -50,3 +50,29 @@ ARV2 D3 (see facts). W1/W2/W6/W7 (provider, EU never, default off, credit unit) 
 
 ## State
 No code yet in this worktree; this note is the first commit. `pricing-strategy/` and `.context/` stay uncommitted.
+
+## Addendum (same day) — deep research + implementation plan
+Delivered **`docs/specs/WVI-3-implementation-plan.md`** (supersedes WVI-1 §4/§6/§7 and WVI-2 §4.5 where they differ).
+Five research agents (3 repo seams, 2 web). Corrections to the earlier specs found in code:
+- Web batch derive passes flat `account_values`, no `BindingSet` → `InstanceLink`/`UrlQr` unreachable for web pages;
+  V0 mints tokens via `POST /frontend/v1/visitor-links`, automatic minting goes through `account_values` (V3).
+- `/w/` page routes are temporary (Part IV deletes them) → collector hook lives in the app middleware
+  (`lumen_api/main.py:779-836`); `lumen_api` may lazily import `clue_fleet` (precedent `design_store.py:1813-1847`),
+  `clue_design` may not; collector writes `web_visit_event` via raw SQL + enqueues `VISITOR_RESOLVE`.
+- Published pages are `Cache-Control: public, max-age=60` with no 304 path and no Set-Cookie anywhere → switch to
+  `private, no-cache` while collecting; `?cl=` reaches `uvicorn.access` logs → strip via 302 redirect.
+- No proxy-header config; uvicorn trusts XFF only from 127.0.0.1 → `FORWARDED_ALLOW_IPS` needed on Railway.
+- No published-page origin setting exists (origin frozen from the publishing request) → `CLUE_WVI_PUBLIC_PAGE_ORIGIN`.
+- `research_subject_activity` needs project-run/account-run FKs → visits served from `visitor_resolution` via a
+  second activity query; accounts contract forbids served display strings → structured `visit` variant.
+- Contact "Recent signals" chip is count-only over facet keys with exact-set tests → separate served field.
+- `signal_class` does nothing for scoring (needs `pass_kind=SCORING` + rubric entry) → V3.
+- No workspace-level cost ledger → `visitor_resolution.cost_cents`; no AI Ark client exists yet.
+- `claim.run_id` is NOT NULL uuid without FK → uuid5 per resolution; fields default PUBLIC → declare TENANT_PRIVATE.
+- Accounts frontend is live-only (no fixture mode); no settings UI exists at all; no vitest (node:test only).
+Web facts that shaped the design: pixel model = public per-domain id + host allowlist + path denylist (RB2B/Vector/
+Leadpipe); LinkedIn exposes nothing per member (Insight Tag aggregated ≥300; `li_fat_id` resolves only inside
+LinkedIn CAPI); LinkedInBot prefetches shared links (UA `LinkedInBot/1.0`, rDNS `*.fwd.linkedin.com`); ipregistry has
+`company.type` + `security.is_vpn/is_relay/is_cloud_provider`, 20k free credits, EU base URL; Leadpipe webhook carries
+`linkedin_url`; SB 690 passed 28 Aug, unsigned as of 27 Sep (deadline 30 Sep); EDPB 2/2023 ¶55 on IP + Art 5(3).
+New rulings proposed W10–W13 (cache header, settings surface, rung-1 provider, rung-2 POC). No code yet.
