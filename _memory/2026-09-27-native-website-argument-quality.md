@@ -97,3 +97,16 @@
   inspection. This proves tool behavior, not native model adoption or page acceptance. Native
   repair/live checks still await the user's pending Google passkey handoff; the goal is active
   and current drafts remain below the requested quality bar.
+- Idle-only reload after the preview-tile checkpoint restarted the two owned platform
+  APIs, design API and four workers. Frontend remained running; old instances stayed
+  suspended. The wrapper's cwd and terminal-run guards were retained.
+- Completed read-only responsive-capture seam audit, independently checked against
+  the capture, persistence, mint and listing code. One snapshot row keys on job/page;
+  adding a flat mobile entry would overwrite its source pointers. Proposed immutable
+  variant manifest is documented in `subsystems/clue-design/docs/website-responsive-capture-audit-2026-09-27.md`;
+  it is NOT implemented. Pairing variants as repairs would misuse lineage resolution.
+  Retaining evidence and automatically composing responsive output are distinct steps.
+- Read-only solo-mode history confirms the single-agent path was an explicit prior
+  founder decision. No quarantined reviewer was enabled and no model/env changed.
+  Pending Google passkey remains the native acceptance blocker across goal turns.
+  No new page prompt, account research, capture or document mutation was performed.
