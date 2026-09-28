@@ -517,9 +517,10 @@ class Settings(BaseSettings):
     sensitivity_floor_enabled: bool = True
 
     # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
-    # OpenRouter model id for the section writer. The control test (2026-09-04) rejected every
-    # cheaper model on the two non-negotiables. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
-    arv2_display_model: str = "openai/gpt-5.6-luna"
+    # OpenRouter model id for focused account reconciliation and the legacy section writer. Muse
+    # Spark 1.3 since 2026-09-28 (founder request, `_memory/2026-09-28-research-muse-model.md`);
+    # the 2026-09-04 control test had chosen Luna. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "meta/muse-spark-1.3"
     # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
     # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
     arv2_display_timeout_s: float = 240.0

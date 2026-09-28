@@ -624,13 +624,6 @@ class DeepAgentTurnRuntime:
                         wrap_up_status=self._wrap_up_status,
                         max_runtime_s=self._max_runtime_s,
                     ),
-                    # Inside the exact-surface check, which insists every granted tool is present:
-                    # only after it may the last rounds be narrowed to finalize_turn.
-                    TurnBudgetMiddleware(
-                        max_rounds=self._max_rounds,
-                        wrap_up_status=self._wrap_up_status,
-                        max_runtime_s=self._max_runtime_s,
-                    ),
                     *self._middleware,
                 ),
                 backend=backend,  # type: ignore[arg-type]
