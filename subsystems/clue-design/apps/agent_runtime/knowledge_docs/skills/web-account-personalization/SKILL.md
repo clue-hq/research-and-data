@@ -24,6 +24,9 @@ keep their narrower scope.
    platform reads when exposed; keep missing research explicit instead of
    inventing it or launching discovery inside design. Supplied assertions retain
    their source scope; only evidence supports a claim of verification.
+   Reused campaign variants contain earlier generated copy, not new seller or
+   account evidence. Check their wording and overrides against the current sources;
+   a released fragment or successful prior review does not validate its claims.
 3. Join a supported seller capability to the supplied audience's task. Without
    target research, write an invitation or proposed use. Remove the name/logo
    mentally: the remaining argument must still explain the task relevance.
