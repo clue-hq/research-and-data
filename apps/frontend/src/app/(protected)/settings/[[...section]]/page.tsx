@@ -80,15 +80,21 @@ export default async function SettingsPage({
           />
         );
         break;
+      case "pages":
+        content = (
+          <PagesSettings
+            key={session?.principal.workspace_id}
+            initial={result.data}
+            canManage={canManageSettings}
+          />
+        );
+        break;
       default:
         switch (section) {
           case "billing":
             content = (
               <BillingSettings billing={staticSettingsSections.billing} />
             );
-            break;
-          case "pages":
-            content = <PagesSettings pages={staticSettingsSections.pages} />;
             break;
           default:
             content = (

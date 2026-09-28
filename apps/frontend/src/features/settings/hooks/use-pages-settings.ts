@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useConfirmation } from "@/components/ui/confirmation-card";
 import { ClueApiError } from "@/features/accounts/data/clue-api-error";
 
+import { useAutosaveField } from "./use-autosave-field";
+
 import {
   changeSystemLabel,
   checkCustomHostname,
@@ -12,7 +14,6 @@ import {
   removeCustomHostname,
   updatePagesSettings,
   uploadPagesImage,
-  type PagesSettingsPatch,
 } from "../data/pages.actions";
 import {
   connectionView,
@@ -42,8 +43,10 @@ export interface PagesSettingsController {
   /** Inline refusal under the custom-hostname input; `null` while the input is clean. */
   refusal: string | null;
   busy: boolean;
-  /** Rejects on failure so {@link SettingsAutosaveInput} can restore the saved value. */
-  save: (patch: PagesSettingsPatch) => Promise<void>;
+  /** The three text defaults, each an autosave field bound on blur/Enter. */
+  fallbackUrl: ReturnType<typeof useAutosaveField>;
+  pageTitle: ReturnType<typeof useAutosaveField>;
+  pageDescription: ReturnType<typeof useAutosaveField>;
   upload: (kind: "favicon" | "social-preview", file: File) => Promise<void>;
   /** `true` when the label changed; the editor stays open on a refusal. */
   changeLabel: (label: string) => Promise<boolean>;
@@ -66,7 +69,7 @@ export function usePagesSettings(initial: PagesSettingsRead): PagesSettingsContr
         setState(await action());
         confirm("Pages updated");
       } catch (error) {
-        confirm(messageFor(error), "error");
+        confirm(messageFor(error), true);
         throw error;
       } finally {
         setBusy(false);
@@ -75,9 +78,36 @@ export function usePagesSettings(initial: PagesSettingsRead): PagesSettingsContr
     [confirm],
   );
 
-  const save = useCallback(
-    (patch: PagesSettingsPatch) => run(() => updatePagesSettings(patch)),
-    [run],
+  // Each default saves on its own through the settings slice's autosave field,
+  // which owns the confirmation card and restores the saved value on a refusal.
+  // An emptied field clears the default (`null`), matching the backend's shape.
+  const fallbackUrl = useAutosaveField(
+    initial.settings.fallbackUrl ?? "",
+    async (value) => {
+      const next = await updatePagesSettings({ fallbackUrl: value || null });
+      setState(next);
+      return next.settings.fallbackUrl ?? "";
+    },
+    "Pages updated",
+  );
+  const pageTitle = useAutosaveField(
+    initial.settings.pageTitle ?? "",
+    async (value) => {
+      const next = await updatePagesSettings({ pageTitle: value || null });
+      setState(next);
+      return next.settings.pageTitle ?? "";
+    },
+    "Pages updated",
+  );
+  const pageDescription = useAutosaveField(
+    initial.settings.pageDescription ?? "",
+    async (value) => {
+      const next = await updatePagesSettings({ pageDescription: value || null });
+      setState(next);
+      return next.settings.pageDescription ?? "";
+    },
+    "Pages updated",
+    { multiline: true },
   );
 
   const upload = useCallback(
@@ -159,5 +189,17 @@ export function usePagesSettings(initial: PagesSettingsRead): PagesSettingsContr
     return () => clearInterval(timer);
   }, [view]);
 
-  return { state, refusal, busy, save, upload, changeLabel, connect, check, remove };
+  return {
+    state,
+    refusal,
+    busy,
+    fallbackUrl,
+    pageTitle,
+    pageDescription,
+    upload,
+    changeLabel,
+    connect,
+    check,
+    remove,
+  };
 }

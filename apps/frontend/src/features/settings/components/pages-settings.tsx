@@ -9,9 +9,8 @@ import { Button } from "@/components/ui/button";
 import { usePagesSettings } from "../hooks/use-pages-settings";
 import type { PagesSettingsRead } from "../model/pages";
 import { CustomDomainCard } from "./custom-domain-card";
-import { SettingsAutosaveInput } from "./settings-autosave-input";
 import styles from "./settings.module.css";
-import { SettingsCard } from "./settings-primitives";
+import { SettingsCard, SettingsInput } from "./settings-primitives";
 
 function FormRow({
   children,
@@ -126,11 +125,10 @@ export function PagesSettings({
           onSave={pages.changeLabel}
         />
         <FormRow description="Broken or audited links send visitors here" label="Fallback URL">
-          <SettingsAutosaveInput
+          <SettingsInput
             ariaLabel="Fallback URL"
-            onSave={(next) => pages.save({ fallbackUrl: next })}
-            readOnly={!canManage}
-            value={settings.fallbackUrl ?? ""}
+            {...pages.fallbackUrl}
+            readOnly={!canManage || pages.fallbackUrl.readOnly}
           />
         </FormRow>
         <FormRow description="128 × 128px recommended" label="Favicon">
@@ -196,20 +194,19 @@ export function PagesSettings({
           </div>
         </FormRow>
         <FormRow label="Page title">
-          <SettingsAutosaveInput
+          <SettingsInput
             ariaLabel="Page title"
-            onSave={(next) => pages.save({ pageTitle: next })}
-            readOnly={!canManage}
-            value={settings.pageTitle ?? ""}
+            {...pages.pageTitle}
+            readOnly={!canManage || pages.pageTitle.readOnly}
           />
         </FormRow>
         <FormRow label="Page description">
-          <SettingsAutosaveInput
-            ariaLabel="Page description"
-            multiline
-            onSave={(next) => pages.save({ pageDescription: next })}
-            readOnly={!canManage}
-            value={settings.pageDescription ?? ""}
+          <textarea
+            aria-label="Page description"
+            className={styles.textarea}
+            rows={3}
+            {...pages.pageDescription}
+            readOnly={!canManage || pages.pageDescription.readOnly}
           />
         </FormRow>
       </SettingsCard>

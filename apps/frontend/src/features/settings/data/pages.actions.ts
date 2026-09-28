@@ -1,5 +1,8 @@
 import { ClueApiError } from "@/features/accounts/data/clue-api-error";
-import { fetchMutation } from "@/features/accounts/data/frontend-mutation";
+import {
+  fetchMutation,
+  fetchMutationVoid,
+} from "@/features/accounts/data/frontend-mutation";
 
 import { PagesSettingsReadSchema, type PagesSettingsRead } from "../model/pages";
 
@@ -52,9 +55,9 @@ export async function checkCustomHostname(): Promise<PagesSettingsRead> {
   );
 }
 
-/** Removal answers `204 No Content`; `fetchMutation` returns `null` for it. */
+/** Removal answers `204 No Content`, so it goes through the body-less mutation. */
 export async function removeCustomHostname(): Promise<void> {
-  await fetchMutation("/settings/pages/custom-hostname", { method: "DELETE" });
+  await fetchMutationVoid("/settings/pages/custom-hostname", { method: "DELETE" });
 }
 
 /**

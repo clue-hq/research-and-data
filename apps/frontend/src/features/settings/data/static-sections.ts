@@ -30,18 +30,4 @@ export const staticSettingsSections: StaticSettings = {
     remainingCredits: 300,
     totalCredits: 500,
   },
-  pages: {
-    customDomain: "https://acme.com",
-    fallbackUrl: "https://cluehq.ai",
-    pageTitle: "Acme",
-    pageDescription: "Personalized experiences made with Clue.",
-    faviconPath: null,
-    socialPreviewPath: null,
-    allowIndexing: true,
-    allowFollowing: true,
-    headHtml: "",
-    bodyHtml: "",
-    llmsText: "",
-    autoGenerateLlmsText: true,
-  },
 };

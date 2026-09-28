@@ -808,7 +808,39 @@ describe("fetchWebPublishInfo", () => {
       packageDigest: "package-abc",
       htmlDigest: "html-abc",
       pages: [],
-      pageUrls: {}
+      pageUrls: {},
+      customPageUrls: {}
+    });
+  });
+
+  it("maps the custom hostname's url and page urls", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        published: true,
+        slug: "acme",
+        url: "https://acme.pages.test/acme",
+        custom_url: "https://go.acme.com/acme",
+        public_origin: "https://acme.pages.test",
+        custom_origin: "https://go.acme.com",
+        status: "active",
+        page_urls: { "/": "https://acme.pages.test/acme" },
+        custom_page_urls: {
+          "/": "https://go.acme.com/acme",
+          "/pricing": "https://go.acme.com/acme/pricing",
+          "/broken": 7
+        }
+      })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info.customUrl).toBe("https://go.acme.com/acme");
+    expect(info.customOrigin).toBe("https://go.acme.com");
+    // The non-string entry is dropped, exactly as for `page_urls`.
+    expect(info.customPageUrls).toEqual({
+      "/": "https://go.acme.com/acme",
+      "/pricing": "https://go.acme.com/acme/pricing"
     });
   });
 
@@ -897,7 +929,8 @@ describe("publishWebDocument", () => {
       routes: [],
       // A response carrying neither `routes` nor `page_urls` (a server older
       // than F5) maps to empty for both — the caller falls back to joining.
-      pageUrls: {}
+      pageUrls: {},
+      customPageUrls: {}
     });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
@@ -930,6 +963,38 @@ describe("publishWebDocument", () => {
     expect(result.pageUrls).toEqual({
       "/": "https://acme.pages.cluehq.ai/launch",
       "/pricing": "https://acme.pages.cluehq.ai/launch/pricing"
+    });
+    expect(result.customPageUrls).toEqual({});
+  });
+
+  it("reads the custom hostname's addresses off the publish response", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        slug: "launch",
+        url: "https://acme.pages.cluehq.ai/launch",
+        custom_url: "https://go.acme.com/launch",
+        custom_origin: "https://go.acme.com",
+        routes: ["/", "/pricing"],
+        page_urls: {
+          "/": "https://acme.pages.cluehq.ai/launch",
+          "/pricing": "https://acme.pages.cluehq.ai/launch/pricing"
+        },
+        custom_page_urls: {
+          "/": "https://go.acme.com/launch",
+          "/pricing": "https://go.acme.com/launch/pricing"
+        }
+      })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "launch"
+    );
+    expect(result.customUrl).toBe("https://go.acme.com/launch");
+    expect(result.customOrigin).toBe("https://go.acme.com");
+    expect(result.customPageUrls).toEqual({
+      "/": "https://go.acme.com/launch",
+      "/pricing": "https://go.acme.com/launch/pricing"
     });
   });
 

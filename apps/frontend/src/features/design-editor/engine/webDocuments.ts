@@ -2041,8 +2041,9 @@ export interface WebPublishPage {
 /** The document's current publish state (`GET /documents/{id}/web/publish`).
  * `published: false` is the unpublished case; the slug/url/version fields carry
  * values only when `published` is true. `publicOrigin`/`customOrigin` are the
- * workspace's public hosts and are served in both states (S1 leaves
- * `customUrl`/`customOrigin` null until custom domains land). */
+ * workspace's public hosts and are served in both states; `customOrigin`,
+ * `customUrl` and `customPageUrls` are null/empty while the workspace has no
+ * active custom hostname. */
 export interface WebPublishState {
   published: boolean;
   slug: string | null;
@@ -2064,6 +2065,9 @@ export interface WebPublishState {
   /** F5: the ABSOLUTE address of every route, computed by the server (R-F5-1).
    * The client never builds a public URL from a host constant of its own. */
   pageUrls: Record<string, string>;
+  /** The same routes on the workspace's active custom hostname, computed by the
+   * server. Empty when the workspace has no active custom hostname. */
+  customPageUrls: Record<string, string>;
 }
 
 /** Read the document's publish state. Throws (with the server message) on any
@@ -2097,6 +2101,7 @@ export async function fetchWebPublishInfo(
     html_digest?: unknown;
     pages?: unknown;
     page_urls?: unknown;
+    custom_page_urls?: unknown;
   };
   return {
     published: payload.published === true,
@@ -2114,7 +2119,8 @@ export async function fetchWebPublishInfo(
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
     htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
     pages: parseWebPublishPages(payload.pages),
-    pageUrls: parseStringMap(payload.page_urls)
+    pageUrls: parseStringMap(payload.page_urls),
+    customPageUrls: parseStringMap(payload.custom_page_urls)
   };
 }
 
@@ -2170,6 +2176,9 @@ export interface WebPublishResult {
    * server's to compute, because only it knows whether this workspace's sites
    * live on their own host or on the interim tenant path. */
   pageUrls: Record<string, string>;
+  /** Every one of those routes on the workspace's active custom hostname, built
+   * by the server. Empty when there is no active custom hostname. */
+  customPageUrls: Record<string, string>;
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
@@ -2220,6 +2229,7 @@ export async function publishWebDocument(
     html_digest?: unknown;
     routes?: unknown;
     page_urls?: unknown;
+    custom_page_urls?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
@@ -2243,7 +2253,8 @@ export async function publishWebDocument(
     routes: Array.isArray(payload.routes)
       ? payload.routes.filter((route): route is string => typeof route === "string")
       : [],
-    pageUrls: parseStringMap(payload.page_urls)
+    pageUrls: parseStringMap(payload.page_urls),
+    customPageUrls: parseStringMap(payload.custom_page_urls)
   };
 }
 

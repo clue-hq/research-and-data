@@ -7,6 +7,7 @@ import {
 import {
   pageLinkRows,
   publishWithRepository,
+  shareAddresses,
 } from "./use-artifact-sharing-controller";
 
 test("publishWithRepository publishes the slug and returns the server url", async () => {
@@ -58,6 +59,58 @@ test("publishWithRepository forwards the noindex the caller asked for", async ()
   assert.equal(outcome.status, "published");
   assert.deepEqual(asked, [{ slug: "acme", noindex: true }]);
   assert.deepEqual(Object.keys(outcome.pageUrls), ["/"]);
+});
+
+test("a publish on a custom hostname shares the custom address and its pages", async () => {
+  const repo = createFixtureWebPublishRepository();
+  const outcome = await publishWithRepository(
+    {
+      ...repo,
+      publish: async () => ({
+        customPageUrls: {
+          "/": "https://go.acme.com/launch",
+          "/pricing": "https://go.acme.com/launch/pricing",
+        },
+        customUrl: "https://go.acme.com/launch",
+        pageUrls: {
+          "/": "https://acme.pages.cluehq.ai/launch",
+          "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+        },
+        slug: "launch",
+        url: "https://acme.pages.cluehq.ai/launch",
+      }),
+    },
+    "doc_1",
+    { slug: "launch", noindex: false },
+  );
+  assert.equal(outcome.status, "published");
+  assert.equal(outcome.url, "https://go.acme.com/launch");
+  assert.deepEqual(outcome.pageUrls, {
+    "/": "https://go.acme.com/launch",
+    "/pricing": "https://go.acme.com/launch/pricing",
+  });
+});
+
+test("shareAddresses keeps the Clue address when there is no custom hostname", () => {
+  assert.deepEqual(
+    shareAddresses({
+      customPageUrls: {},
+      customUrl: null,
+      pageUrls: { "/": "https://acme.pages.cluehq.ai/launch" },
+      url: "https://acme.pages.cluehq.ai/launch",
+    }),
+    {
+      pageUrls: { "/": "https://acme.pages.cluehq.ai/launch" },
+      url: "https://acme.pages.cluehq.ai/launch",
+    },
+  );
+});
+
+test("shareAddresses reads an unpublished state as no address at all", () => {
+  assert.deepEqual(
+    shareAddresses({ customPageUrls: {}, customUrl: null, pageUrls: {}, url: null }),
+    { pageUrls: {}, url: "" },
+  );
 });
 
 test("pageLinkRows puts Home first and then the routes alphabetically", () => {
