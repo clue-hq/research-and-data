@@ -20,6 +20,8 @@ do not invent an offer, default to a pilot/demo or claim measured conversion gai
    navigation or available campaign chrome from traffic, trust and the brief.
    A named target alone does not mandate either. Follow the selected tool's
    actual contract; shell refusal does not authorize release or approval.
+   When several concepts or different page layouts are requested,
+   read [distinct page directions](references/page-directions.md) before composing the first page.
 3. Read `conversion-copywriting` for wording and action/destination alignment.
    Put the argument, source choices, preservation scope and unresolved needs in
    the run's existing plan; do not create a new schema or fabricate source IDs.

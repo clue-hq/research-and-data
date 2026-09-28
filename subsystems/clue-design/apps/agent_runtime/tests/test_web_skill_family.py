@@ -77,6 +77,31 @@ def test_account_argument_guide_is_required_and_delivered_with_the_skill(tmp_pat
     )
 
 
+def test_requested_page_directions_and_copy_brief_are_delivered(tmp_path):
+    """The working guides must be reachable from the actual progressive entrypoints."""
+    read_required_skill_reference(
+        tmp_path, "campaign-landing-page", "distinct page directions",
+        before="read ", after=" before composing the first page.",
+    )
+    read_required_skill_reference(
+        tmp_path, "conversion-copywriting", "website copy brief",
+        before="read ", after=" before filling section slots.",
+    )
+
+
+def test_materialized_planning_does_not_override_native_research_or_campaign_scope(tmp_path):
+    """Catch the legacy instructions that contradicted the account workflow at runtime."""
+    materialize_agent_workspace(SimpleNamespace(workspace_root=tmp_path))
+    plan = (tmp_path / ".deepagent/skills/plan-design/SKILL.md").read_text()
+    recipe = (tmp_path / "knowledge_docs/knowledge/web/landing-page.md").read_text()
+    assert "scoped account/contact" in plan
+    assert "deliberately absent for now" not in plan
+    assert "will eventually arrive" not in plan
+    assert "Every claim on the page traces to the brief or the library" not in plan
+    assert "Required section order" not in recipe
+    assert "one generated product image" not in recipe
+
+
 @pytest.mark.parametrize("role", ["orchestrator", "author", "reviewer", "solo"])
 def test_runtime_prompts_receive_the_same_conditional_family_router(role):
     if role == "orchestrator":

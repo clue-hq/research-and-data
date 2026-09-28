@@ -60,17 +60,19 @@ action. State every assumption you made where the brief was silent.
 
 Then close the evidence question before it can drift:
 
-- The page may use ONLY: what the brief supplied, what the cloned library
-  captured, and registered brand assets. **Never your own knowledge of
-  the client company** — no products, events, customers, numbers, dates,
-  or speakers from memory, however confident the memory feels.
+- The evidence inventory includes attributed brief material, captured library
+  content, registered brand assets, pinned seller knowledge and scoped account/contact
+  research returned by exposed platform reads. Record accessible values/excerpts,
+  subject, source/claim references, dates, verification and allowed-use limits.
+  Supplied assertions and written overviews do not become verified facts by being
+  read. Preserve conflicts and truncation as gaps. **Never use your own knowledge
+  of the company** to fill those gaps, however confident the memory feels.
 - Never invent named customers, metrics, quotes, awards, or deadlines —
   an honest gap is correct output; a fabricated proof is the only real
   failure. Product phrasing composed from the brief and the site's own
   captured language is acceptable; say in your report where you were
-  uncertain. (The platform's research spine will later hand this section
-  verified claims; until then these two lines are the whole evidence
-  policy.)
+  uncertain. Research may change the page's argument and section choices; it
+  does not replace the seller's visual grammar or establish a relationship.
 
 ### 2. Brand Grammar Audit
 
@@ -126,9 +128,10 @@ invented afterward to match whatever got built:
 - Compare against the cloned source page — it is the acceptance
   reference for grammar, rhythm, and density.
 - The logo-off test on every composed or derived band.
-- One action: every CTA leads to the same place.
-- Every claim on the page traces to the brief or the library (the
-  anchors section) — walk the page and check.
+- One primary conversion action: its CTAs use the real supported destination.
+  Useful source, legal and navigation links retain their distinct purposes.
+- Every factual meaning traces to the evidence inventory in the anchors section,
+  at that source's strength, subject and use scope. Walk the rendered page and check.
 - Re-read the finished page top to bottom as the arriving visitor
   (campaign-landing-page step 8).
 - Every section's status is `verified`.
@@ -176,5 +179,6 @@ even when it looks good.
   executing it.
 - **Words** — conversion-copywriting owns the copy the content specs
   gesture at.
-- **Research** — deliberately absent for now; the anchors section is the
-  placeholder where verified claims will eventually arrive.
+- **Research acquisition and verification** — owned by the platform. This plan
+  consumes available scoped evidence through `web-account-personalization`; it
+  does not launch discovery or promote supplied assertions into verified claims.

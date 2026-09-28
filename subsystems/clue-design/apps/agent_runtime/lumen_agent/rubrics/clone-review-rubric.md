@@ -1,5 +1,5 @@
 <!--
-version: 3
+version: 4
 DRAFT — founder review pending (standing rule for prompt/rubric wording).
 
 v2 (clone-fidelity F4.2, ruling R24-4) adds the ABM / seller-dominance section at the end. It is
@@ -15,7 +15,7 @@ readers change. Do not paste any of it into a prompt builder.
 Everything below the marker line is what those readers receive, verbatim.
 -->
 --- rubric ---
-CLONE-REVIEW RUBRIC (v3) — how a cloned or repaired page is judged.
+CLONE-REVIEW RUBRIC (v4) — how a cloned or repaired page is judged.
 
 This rubric is the same for every reviewer of this page, whoever that is. It is not a
 style opinion; it is where the line sits between "different" and "broken".
@@ -30,7 +30,10 @@ SOFT — note it, do not block on it, do not spend a repair round on it:
 
 STRICT — this is BROKEN and it is work, not taste:
 - blank space: a band that renders nothing, or a screenful of nothing between bands;
-- missing content: something the original said that the page no longer says;
+- missing content: required or preserved content absent from the rendered result.
+  For exact reproduction, compare with the visible original. For an authorized
+  campaign adaptation, compare with the agreed argument and preservation scope;
+  deliberately omitted or rewritten source content is not itself a defect;
 - broken controls: a button, link or disclosure that does nothing, or throws;
 - unusable height: a band far taller than anything visible in it — the reader drags
   through emptiness. This is the commonest clone defect and it is never acceptable at

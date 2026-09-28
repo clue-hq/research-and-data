@@ -23,6 +23,9 @@ A successful operation, valid document or screenshot path proves none of these.
 3. Check copy against accessible evidence and inspect each primary CTA's actual
    destination/behavior. Read `web-account-personalization` when targets or personal
    facets appear. A name/logo alone is not verified relevance or relationship proof.
+   For requested alternatives, compare the rendered pages against the campaign
+   skill's distinct-page-directions plan. Reworded copies of one layout do not
+   satisfy a request for different layouts; report undelivered pages separately.
 4. Use [verdict and tool contract](references/verdict-and-tools.md). If an independent
    reviewer is exposed, give it the current brief, source evidence, preserved
    requirements, previews/states and scope. If unavailable, identify self-review;
