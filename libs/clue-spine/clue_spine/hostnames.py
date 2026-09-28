@@ -82,6 +82,9 @@ class WorkspaceHostname(BaseModel):
     status: HostnameStatus
     created_at: UtcDatetime
     activated_at: UtcDatetime | None = None
+    # Set by the workspace's first publish (:func:`lock_system_hostname`); NULL = never published.
+    # Only ever set on a system row; a locked label refuses :func:`replace_system_label`.
+    locked_at: UtcDatetime | None = None
 
 
 # --- pure helpers -----------------------------------------------------------
@@ -219,7 +222,7 @@ def validate_label(label: str) -> str:
 
 
 # --- DAL --------------------------------------------------------------------
-_ROW = "hostname, workspace_id, kind, status, created_at, activated_at"
+_ROW = "hostname, workspace_id, kind, status, created_at, activated_at, locked_at"
 
 
 async def _system_row(conn: AsyncConnection, workspace_id: str) -> WorkspaceHostname | None:
@@ -480,12 +483,47 @@ async def delete_custom_hostname(conn: AsyncConnection, *, hostname: str) -> boo
     return bool(result.rowcount)
 
 
+async def lock_system_hostname(conn: AsyncConnection, *, workspace_id: str) -> WorkspaceHostname:
+    """First publish freezes the label (F5 R-F5-5, adopted 2026-09-28): a published URL is out in
+    the world, so its host segment must not move. Idempotent: an already-locked row keeps its
+    original ``locked_at``."""
+    result = await conn.execute(
+        text(
+            "UPDATE workspace_hostname SET locked_at = COALESCE(locked_at, now()), "
+            f"updated_at = now() WHERE workspace_id = :w AND kind = 'system' RETURNING {_ROW}"
+        ),
+        {"w": workspace_id},
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise HostnameRefused(
+            "system_hostname_missing",
+            f"Workspace {workspace_id!r} has no system hostname; "
+            "run `make pages-backfill-hostnames`.",
+        )
+    return WorkspaceHostname(**dict(row))
+
+
 async def replace_system_label(
     conn: AsyncConnection, *, workspace_id: str, label: str, suffix: str
 ) -> WorkspaceHostname:
     """Label change (spec §4.1, A1): delete the old system row and insert the new one in ONE
-    transaction. The old label is free immediately; there is no redirect."""
+    transaction. The old label is free immediately; there is no redirect. Refused with
+    ``label_locked`` once the workspace has published (:func:`lock_system_hostname`)."""
     validate_label(label)
+    # FOR UPDATE: a concurrent first publish (lock_system_hostname) waits for this transaction or
+    # this read waits for it — the label can never be swapped out from under a publish.
+    locked = await conn.execute(
+        text(
+            "SELECT locked_at FROM workspace_hostname WHERE workspace_id = :w AND kind = 'system' "
+            "FOR UPDATE"
+        ),
+        {"w": workspace_id},
+    )
+    if locked.scalar() is not None:
+        raise HostnameRefused(
+            "label_locked", "This address has already published a site, so its label is fixed."
+        )
     hostname = f"{label}.{suffix}"
     try:
         async with conn.begin_nested():

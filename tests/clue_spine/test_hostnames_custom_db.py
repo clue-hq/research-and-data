@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from clue_spine import create_workspace
@@ -13,6 +14,7 @@ from clue_spine.hostnames import (
     get_custom_hostname,
     hostname_exists,
     insert_custom_hostname,
+    lock_system_hostname,
     record_custom_hostname_check,
     replace_system_label,
     resolve_active_hostname,
@@ -146,5 +148,49 @@ def test_replace_system_label_is_atomic_and_frees_the_old_label() -> None:
                 await replace_system_label(
                     conn, workspace_id=ws.workspace_id, label="www", suffix=SUFFIX
                 )
+
+    run_async(scenario())
+
+
+def test_label_locks_at_first_publish() -> None:
+    """F5 R-F5-5, adopted 2026-09-28: the first publish freezes the system label."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = await create_workspace(
+                conn, name="Lock " + uuid4().hex[:4], pages_system_suffix=SUFFIX
+            )
+            first = await lock_system_hostname(conn, workspace_id=ws.workspace_id)
+            assert first.locked_at is not None
+            again = await lock_system_hostname(conn, workspace_id=ws.workspace_id)
+            assert again.locked_at == first.locked_at  # idempotent, never moves forward
+            assert again.hostname == first.hostname
+            with pytest.raises(HostnameRefused) as caught:
+                await replace_system_label(
+                    conn,
+                    workspace_id=ws.workspace_id,
+                    label="acme-new-" + uuid4().hex[:4],
+                    suffix=SUFFIX,
+                )
+            assert caught.value.code == "label_locked"
+            # The refusal left the locked row exactly where it was.
+            assert await system_hostname(conn, ws.workspace_id) == first.hostname
+
+    run_async(scenario())
+
+
+def test_lock_without_a_system_row_refuses() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            ws = await create_workspace(
+                conn, name="Bare " + uuid4().hex[:4], pages_system_suffix=SUFFIX
+            )
+            await conn.execute(
+                text("DELETE FROM workspace_hostname WHERE workspace_id = :w AND kind = 'system'"),
+                {"w": ws.workspace_id},
+            )
+            with pytest.raises(HostnameRefused) as caught:
+                await lock_system_hostname(conn, workspace_id=ws.workspace_id)
+            assert caught.value.code == "system_hostname_missing"
 
     run_async(scenario())
