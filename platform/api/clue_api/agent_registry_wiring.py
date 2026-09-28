@@ -230,7 +230,13 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # adding), and the manual re-mints at `manual-*@v12` (discovery and glossary chapters
     # rewritten; the generated tools chapter carries the new launch description and notes). No
     # tool address moves; the recipe stays.
-    AgentRole.HEAD_OF_ABM: "v66",
+    # v67 (founder ruling 2026-09-29): v66's surface exactly. The briefing example had carried
+    # the one-person trial scope into every real brief ("select one relevant buying-committee
+    # person"); `account-research-briefing` moves to v3, which aims for four or five people within
+    # the job's committee limit. Prompt v18 and `stage0-interview@v40` are v17/v39 with only
+    # their briefing and manual paths repointed, and the manual re-mints at `manual-*@v13`. No
+    # tool address moves; the recipe stays.
+    AgentRole.HEAD_OF_ABM: "v67",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

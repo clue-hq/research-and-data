@@ -1483,7 +1483,7 @@ steps below wherever the two disagree:
   Exa charged for reaches the ledger (`webset_stopped`, `rows_priced_at_stop`); the recall estimate is
   read from `recall.expected.total`, and its 5 credits are recorded on the create. The wall clock
   applies per search.
-- **Agent:** `head-of-abm@v66` — `stage0-interview@v39` §7b and `manual-*@v12` teach the above.
+- **Agent:** `head-of-abm@v67` — `stage0-interview@v40` §7b and `manual-*@v13` teach the above.
 
 ### The module map (nine modules)
 
