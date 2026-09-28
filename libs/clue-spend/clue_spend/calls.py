@@ -31,6 +31,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from clue_core.provider_failures import classify_http
+from clue_obs import get_logger
 from clue_obs.langfuse import ObservationLike, ObservationType, guardrail, observation
 
 from .errors import (
@@ -423,11 +424,13 @@ class ProviderCaller:
                 is_last = index == spec.max_attempts - 1
                 started = self._monotonic()
                 try:
-                    response = self._transport.send(spec.request)
+                    response = self._send_attempt(spec, call_id=call_id, attempt=attempts)
                 except TransportFailure as exc:
                     latency_ms = self._elapsed_ms(started)
                     if not is_last:
-                        self._sleep(2.0 * (index + 1))
+                        self._retry_wait(
+                            spec, call_id, attempts, "transport_error", 2.0 * (index + 1)
+                        )
                         continue
                     self._record(
                         spec,
@@ -478,7 +481,13 @@ class ProviderCaller:
                     raise RawScrubFailed(spec.provider, raw_refs[-1], str(exc)) from exc
                 raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
                 if response.status in spec.retry_statuses and not is_last:
-                    self._sleep(self._retry_delay(response, index))
+                    self._retry_wait(
+                        spec,
+                        call_id,
+                        attempts,
+                        f"http_{response.status}",
+                        self._retry_delay(response, index),
+                    )
                     continue
                 break
 
@@ -548,6 +557,74 @@ class ProviderCaller:
             )
 
     # -- internals ---------------------------------------------------------------------------
+
+    def _send_attempt(self, spec: CallSpec, *, call_id: str, attempt: int) -> HttpResponse:
+        """Observe the wire wait independently of parsing, persistence and retry backoff."""
+        metadata = {
+            "call_id": call_id,
+            "provider": spec.provider,
+            "operation": spec.operation,
+            "label": spec.label,
+            "attempt": attempt,
+            "max_attempts": spec.max_attempts,
+            "timeout_s": spec.request.timeout_s,
+        }
+        log = get_logger(__name__)
+        with observation("provider.http_attempt", as_type="span", metadata=metadata) as span:
+            fields = {**metadata, **_langfuse_extras(span)}
+            log.info("provider.attempt.started", **fields)
+            started = self._monotonic()
+            try:
+                response = self._transport.send(spec.request)
+            except BaseException as exc:
+                # Exception messages may contain URLs/credentials. Record only the class.
+                outcome = {
+                    "elapsed_ms": self._elapsed_ms(started),
+                    "outcome": "transport_error"
+                    if isinstance(exc, TransportFailure)
+                    else "interrupted"
+                    if not isinstance(exc, Exception)
+                    else "error",
+                    "error_type": type(exc).__name__,
+                    "cause_type": type(exc.__cause__).__name__ if exc.__cause__ else None,
+                }
+                log.info("provider.attempt.finished", **fields, **outcome)
+                span.update(output=outcome, level="ERROR", status_message=outcome["outcome"])
+                raise
+            outcome = {
+                "elapsed_ms": self._elapsed_ms(started),
+                "outcome": "response",
+                "http_status": response.status,
+            }
+            log.info("provider.attempt.finished", **fields, **outcome)
+            span.update(output=outcome)
+            return response
+
+    def _retry_wait(
+        self,
+        spec: CallSpec,
+        call_id: str,
+        attempt: int,
+        reason: str,
+        delay_s: float,
+    ) -> None:
+        metadata = {
+            "call_id": call_id,
+            "provider": spec.provider,
+            "operation": spec.operation,
+            "label": spec.label,
+            "attempt": attempt,
+            "next_attempt": attempt + 1,
+            "reason": reason,
+            "delay_s": delay_s,
+        }
+        with observation("provider.retry_wait", as_type="span", metadata=metadata) as span:
+            get_logger(__name__).info(
+                "provider.retry.scheduled",
+                **metadata,
+                **_langfuse_extras(span),
+            )
+            self._sleep(delay_s)
 
     def _elapsed_ms(self, started: float) -> int:
         return max(0, int((self._monotonic() - started) * 1000))
