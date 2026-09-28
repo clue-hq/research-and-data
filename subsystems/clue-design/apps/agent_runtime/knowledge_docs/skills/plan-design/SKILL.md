@@ -1,6 +1,6 @@
 ---
 name: plan-design
-description: Write the page's design plan to workspace/plan.md BEFORE building — the brief's anchors, the brand grammar audit, per-section specs with named sources, and the review tasks — then track status per section, amend in writing when direction changes, and finish against the plan. Read this before any substantial build (a fresh page, a campaign page, a multi-section brief).
+description: Use before a substantial website build, campaign page or multi-section rebuild, and when resuming an inherited page plan whose requirements, assumptions or sources need reconciliation.
 ---
 
 # Plan the Design — write it down, then build against it
@@ -47,7 +47,7 @@ Write `workspace/plan.md` BEFORE your first document mutation, in this
 order:
 
 ```
-1. Anchors          — the brief's own words; what the page may use
+1. Anchors          — attributed user requirements, working choices and evidence
 2. Grammar audit    — the measured visual law of this client's site
 3. Sections         — one spec per band, each with a named source
 4. Review & finish  — the acceptance walk, written before building
@@ -55,8 +55,27 @@ order:
 
 ### 1. Anchors
 
-Quote the user's words VERBATIM for: the audience, the offer, and the one
-action. State every assumption you made where the brief was silent.
+Separate three kinds of input in a compact record before deciding the page:
+
+| Input | Record | How it governs the build |
+| --- | --- | --- |
+| User requirement | Exact relevant quote and origin: current message, prior user message, or a user-approved plan with its approval reference | Preserve the requested audience, purpose, copy, scope and constraints; later user corrections supersede earlier ones. |
+| Working choice | Proposed decision, origin (strategy brief, earlier assistant plan or this pass), reason and uncertainty | Adopt it when it serves the user and evidence; amend it when it does not. This is a design decision, not a user mandate. |
+| Evidence | Source/claim reference, subject, accessible value and verification/use limits | Supports factual meaning at its actual strength. User approval of a layout does not verify its claims. |
+
+A delegation brief is an agent-authored summary. Extract useful context without
+turning its emphatic wording into a user quote. A reported prior approval whose
+user source is unavailable stays reported context; it can inform a consistent
+working choice but must not be described as observed approval. When the user says
+"use the approved plan," follow the available approval and its scope, not later
+assistant additions. Carry this distinction forward when resuming an existing plan.
+
+Quote only what the user actually specified. A simple request for an account page
+does not specify a pilot, navigation logos, a demo offer or a number of sections.
+Choose any missing audience detail, offer/action and shell deliberately, with a
+short reason; keep those choices revisable. Explicit requests for those treatments
+remain requirements. Ordinary design choices do not need a confirmation round.
+For a narrow edit, preserve its boundary and inspect only the affected assumptions.
 
 Then close the evidence question before it can drift:
 
@@ -153,11 +172,12 @@ The rule is not "never deviate"; it is:
 > `AMENDMENT: <what changes> — <why> — <which sections it affects>`
 
 Before writing an amendment, re-read the ANCHORS and the GRAMMAR AUDIT —
-the amendment must still serve both. An amendment that changes what the
-page is about (a different offer, a different audience, content outside
-the anchors) is not an amendment; it is a wrong turn, and re-reading the
-anchors is what catches it. An unwritten deviation is drift by
-definition, however reasonable it feels in the moment.
+the amendment must serve the current user requirements and preserve applicable
+brand constraints. Replace superseded requirements in the active record and keep
+a short change note. Reclassify inherited assistant choices that were incorrectly
+listed as user requirements. An inferred offer can change for a documented reason;
+an explicit user offer cannot silently become a different one. Repeating a choice
+in several plans does not establish its approval. Unrecorded deviation is drift.
 
 If something fails mid-turn, amend the plan and continue against it —
 never abandon the file and improvise the rest of the page.

@@ -27,10 +27,14 @@ that the brief has already answered is a step you skip, saying so.
 
 *Skill: campaign-landing-page (steps 1–2).*
 
-From the user's words, the design brief, and anything they supplied,
-establish: the audience, the offer, the ONE action, the traffic source,
-and the visitor's awareness stage. User-supplied material retains its
-attribution and scope; it is not independently verified or support for invented claims. Where the brief is silent, assume and state the assumption; ask
+Establish the audience, offer, ONE action, traffic source and awareness stage,
+distinguishing user requirements, agent-proposed working choices and source
+evidence as specified in `plan-design`. The strategy brief is useful context;
+its proposals are not automatically user requirements. Attribute genuine prior
+approvals to available user messages; retain uncorroborated reports as reported
+context. User-supplied material retains its attribution and scope; it is not
+independently verified or support for invented claims. Where a decision is open,
+make and state a reasonable working choice; ask
 in chat only when the missing piece forks the page into two genuinely
 different arguments.
 
@@ -93,7 +97,8 @@ argument in step 8.
 
 *Skill: plan-design. Tool: `write_file` → `workspace/plan.md`.*
 
-Anchors (verbatim), the brand grammar audit extracted from the real
+Attributed user anchors (verbatim), revisable working choices and evidence,
+the brand grammar audit extracted from the real
 bands you viewed in step 2, one spec per section with its NAMED source —
 PIN · REBIND · DERIVE-VARIANT · REPAIR · COMPOSE-RAW · COMPOSE-VOCAB —
 and the Review & Finish tasks, written before building so acceptance
@@ -105,6 +110,8 @@ written amendment FIRST, then an act. If a plan.md already exists from
 an earlier pass, continue it — never write a competitor. Replace superseded
 requirements in its active section and retain a short change note; do not leave
 contradictory old instructions as simultaneous requirements.
+Reclassify unsupported inherited mandates as working choices; continuation does
+not turn an earlier assistant's proposal into a user-approved requirement.
 
 For each affected existing band, record the current pin/version, intended change,
 and properties to preserve: type hierarchy, background/product layers, crop/frame

@@ -728,7 +728,8 @@ the brand's colors" sneaks in.
 THE PLAN COMES BEFORE THE PAGE. On any substantial build — a fresh page, a
 campaign page, a multi-section brief, a whole-page rebuild — your FIRST
 WRITE is `workspace/plan.md`, not the document: read the plan-design skill
-and write the plan (the brief's verbatim anchors, the brand grammar audit
+and write the plan (attributed user requirements, separate working choices
+and evidence per plan-design, the brand grammar audit
 extracted from real bands, one spec per section with a NAMED source, and
 the review tasks — written before building, so acceptance criteria cannot
 be invented afterward). If plan.md already exists when you start, an
@@ -737,7 +738,9 @@ competing second plan. Re-read the plan before every STRUCTURAL decision
 (adding, removing, or reordering bands), and when you change your mind
 mid-build, append a written AMENDMENT (what — why — which sections) BEFORE
 acting on it, re-reading the anchors first: an amendment must still serve
-the brief's own words. Update each section's status (planned → built →
+the user's current requirements. Reconcile inherited strategy proposals with
+those requirements; repetition in a brief or plan does not make them user-approved.
+Update each section's status (planned → built →
 verified) as you go, and finalize with plan-vs-built. An unwritten
 deviation is drift by definition.
 
@@ -1251,12 +1254,14 @@ THE SHAPE OF THE TURN
    them. Reuse unchanged observations; do not assume missing state is present.
    fetch_page supplies bounded text/links; it is not a capture refresh tool.
 
-2. WRITE THE PLAN — your first write is `{workspace_dir}/plan.md` (THIS RUN'S
+2. WRITE THE PLAN — for a new page or rebuild, your first write is
+   `{workspace_dir}/plan.md` (THIS RUN'S
    OWN workspace folder — the one holding your brief.md; NEVER a bare
    top-level `workspace/`, which is shared across runs and is how a previous
    brief's plan leaks into yours), per the
-   plan-design skill, BEFORE any document mutation: the brief's words VERBATIM
-   as anchors; the brand grammar audit extracted from the real bands you
+   plan-design skill, BEFORE any document mutation: attributed user requirements
+   quoted VERBATIM, agent-proposed working choices and source evidence recorded
+   separately; the brand grammar audit extracted from the real bands you
    viewed; one spec per section with a NAMED source (PIN frag_… · REBIND
    frag_… · DERIVE-VARIANT of frag_… · REPAIR frag_… · COMPOSE-RAW remixing
    frag_… · COMPOSE-VOCAB and why — and the "why" must name what PIN, REBIND,
@@ -1267,19 +1272,26 @@ THE SHAPE OF THE TURN
    with the reason); the BRAND ANCHOR (2–3 creative-director words every
    decision must express); and the Review & Finish tasks, written before
    building so acceptance criteria cannot be invented afterward.
-   SEQUENCE THE SPECS MUST-LAND-FIRST: chrome, hero, and the one CTA before
+   SEQUENCE THE SPECS MUST-LAND-FIRST: the chosen shell (if any), hero, and the
+   selected primary action before
    nice-to-have bands, so an interrupted build still ends coherent.
    The plan is your working memory. If the conversation is ever compacted,
    plan.md is what survives — keep each section's status current (planned →
    built → verified) so you could resume from the file alone. A change of
    mind is a written AMENDMENT before you act on it, re-reading the anchors
    first. If plan.md already exists when you start, an earlier pass wrote it:
-   read it FIRST and continue it — never write a competitor.
+   read it FIRST and continue it — never write a competitor. Reconcile inherited
+   requirements with their user sources and current corrections; assistant choices
+   remain revisable even when earlier briefs describe them as mandatory.
    SIZE THE PLAN TO THE CHANGE. The full plan above is for a NEW page or a
-   rebuild. When the page already stands and the brief asks for a bounded
+   rebuild. A tiny edit such as one CTA label or slot reword needs no plan-file
+   write: read the target and applicable constraints, make the smallest sufficient
+   edit and inspect its affected output. Keep its scope even if an older plan
+   describes a larger build. When the page already stands and the brief asks for a bounded
    change — one band restyled, copy swapped, an image moved, a section added
    or removed — the plan is ONE SHORT PARAGRAPH PER SECTION YOU WILL TOUCH
-   and nothing else: the brief's words for that change verbatim, the rung
+   and nothing else: the user's words for that change verbatim, its relevant
+   constraints and working choices, the rung
    you will use and why the rungs below it cannot do it, the imagery
    decision if one is involved, and the one check that proves it landed.
    Sections you will not touch get one line: "untouched". No grammar audit,
