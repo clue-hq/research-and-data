@@ -43,7 +43,10 @@ real asset registration and existing node identity rules from the reference.
 ## Preserve context and campaign intent
 
 Retain source responsive rules, inherited font/custom-property/root-unit
-context, assets, image ratios and section rhythm. A literal 10px source root
+context, assets, image ratios and section rhythm. For new raw bands, carry the
+inspected heading/body font families and roles explicitly: semantic `h1`/`h2`
+tags alone do not recreate a captured display font. Compare these bands with
+adjacent source typography after rendering. A literal 10px source root
 and a 16px host are not interchangeable; do not change the shared host root
 or arbitrarily shrink headings to hide that defect. Raw CSS still passes
 custody/sanitizer boundaries; scripts and unsupported runtime behavior do not

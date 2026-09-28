@@ -20,11 +20,12 @@ slot-fit guidance. For a tiny exact-text website change, preserve the requested
 wording and use `edit-website`; other surfaces keep their own edit contract.
 Apply the same evidence checks to exact replacements. Skip a new strategy exercise.
 
-Check each factual meaning against its source. Keep metrics attributed and
-visibly qualified; do not turn seller capability or another customer's result
-into this reader's forecast. Conditional words, imperative grammar and a
-positioning label do not remove causal or product promises. An unsupported
-requested claim remains a named review gap even after writing a narrower draft.
+Before composing prominent facts or outcome claims, pair the sentence with its
+supporting excerpt in the existing plan. Preserve terms, subject, units, eligibility
+and timeframe; retrieve missing detail or narrow the claim, never fill from memory.
+Keep metrics attributed and qualified. Seller capability and another customer's
+result are not this reader's forecast; conditional words do not supply causality.
+Unsupported requested proof remains a review gap even in a useful narrower draft.
 
 For web copy addressing accounts/contacts or segments, read
 `web-account-personalization`. Use its identity, claim and allowed-use limits.
