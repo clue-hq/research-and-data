@@ -58,8 +58,9 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 # — and a turn can legitimately trip both once each while converging: the model fixes the shape,
 # then learns from the guard that it must route the human's input first. With a single shared
 # repair the second, honest attempt never happened and the turn died ``missing_finalize`` mid-
-# repair. A model that proposes a dishonest terminal shape a *third* time has not misread the
-# schema; it is refusing the contract, and the turn must die rather than loop.
+# repair. A model that repeatedly proposes an invalid terminal shape may still be receiving
+# incomplete feedback. Bound retries to prevent a loop;
+# exhausting this allowance is not evidence of model intent or of failed research.
 _MAX_FINALIZE_REPAIRS = 2
 
 
@@ -85,13 +86,15 @@ def superstep_ceiling(max_rounds: int) -> int:
 # The status contract itself is stated once, on the finalize tool's own description, which the
 # model is holding when it reads this. Restating it here would be a second copy free to drift.
 _FINALIZE_CONTRACT_HELP = (
-    "Nothing was committed and this turn is not finished. Call finalize_turn again with a "
-    "terminal shape that satisfies the status contract in its description. Keep the content "
-    "you already wrote; change only what the error above names."
+    "Execution finalization was not accepted; previously saved tool outputs remain stored. "
+    "Correct the specific file, field, or unfinished stage named above, using other tools "
+    "if needed, then retry finalize_turn. Changing user_message cannot repair a saved file. "
+    "Do not repeat already successful research or writes."
 )
 
 _FINALIZE_REPAIRS_EXHAUSTED = (
-    "Nothing was committed and no further finalize attempt will be accepted for this turn."
+    "Execution finalization was not accepted and its repair allowance is exhausted. "
+    "Previously saved tool outputs remain stored for recovery."
 )
 
 
@@ -214,7 +217,7 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         return await self._bounded_finalize(request, handler)
 
     async def _bounded_finalize(self, request: Any, handler: Any) -> Any:
-        """Give a refused finalization back to the model once, then fail the turn closed.
+        """Return refused finalizations for bounded correction, then fail the turn closed.
 
         ``finalize_turn`` is ``return_direct``: the agent graph ends as soon as the tool node
         produces its message, which is exactly right for a *committed* finalization and exactly

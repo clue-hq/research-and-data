@@ -25,6 +25,43 @@ class ResearchUnitReport(BaseModel):
     pending_person_job_ids: tuple[UUID, ...] = Field(default=(), max_length=100)
     gaps: tuple[str, ...] = Field(default=(), max_length=100)
     unprocessed_source_ids: tuple[UUID, ...] = Field(default=(), max_length=5000)
+    # Backend-generated delivery evidence; old saved reports remain readable.
+    delivery: dict[str, object] = Field(default_factory=dict)
+
+
+async def committee_references(
+    conn: AsyncConnection, scope: JobScope, context_id: UUID
+) -> tuple[UUID, ...]:
+    """Account-owned contextual references, restricted to this person when applicable."""
+    return tuple(
+        (
+            await conn.execute(
+                text("""SELECT c.id FROM claim c
+                JOIN claim_quality_current q ON q.claim_id=c.id
+                WHERE c.workspace_id=:ws AND c.entity_id=:account AND q.context_id=:context
+                  AND c.field_key IN (:committee,:selection)
+                  AND (CAST(:contact AS text) IS NULL OR c.value_json->>'contact_id'=:contact)
+                ORDER BY c.id"""),
+                {
+                    "ws": scope.workspace_id,
+                    "account": scope.account_id,
+                    "context": context_id,
+                    "contact": str(scope.person_subject_id) if scope.person_subject_id else None,
+                    "committee": COMMITTEE,
+                    "selection": SELECTION,
+                },
+            )
+        ).scalars()
+    )
+
+
+def report_error(field: str, ids: set[UUID], instruction: str) -> ValueError:
+    examples = ", ".join(str(i) for i in sorted(ids)[:5])
+    return ValueError(
+        f"/outputs/research.json: invalid {field} [{examples}]. {instruction} "
+        "Correct the saved report before retrying finalize_turn; changing its user_message "
+        "does not change the report. Previously saved research remains stored."
+    )
 
 
 async def validate_report(
@@ -32,7 +69,7 @@ async def validate_report(
 ) -> None:
     if (report.context_id, report.job_id) != (context_id, scope.job_id):
         raise ValueError("research output differs from its pinned task")
-    ids = set(report.claim_ids) | set(report.committee_assessment_ids)
+    ids = set(report.claim_ids)
     rows = (
         (
             await conn.execute(
@@ -51,12 +88,24 @@ async def validate_report(
         if ids
         else []
     )
-    if {row.id for row in rows} != ids or any(
-        row.field_key not in (COMMITTEE, SELECTION)
-        for row in rows
-        if row.id in report.committee_assessment_ids
-    ):
-        raise ValueError("output claim references are unavailable or outside this task context")
+    invalid = ids - {row.id for row in rows}
+    if invalid:
+        raise report_error(
+            "claim_ids",
+            invalid,
+            "Use only this subject's imported claim IDs. Account-owned committee evidence "
+            "belongs in committee_assessment_ids, not person claim_ids.",
+        )
+    invalid = set(report.committee_assessment_ids) - set(
+        await committee_references(conn, scope, context_id)
+    )
+    if invalid:
+        raise report_error(
+            "committee_assessment_ids",
+            invalid,
+            "Use committee selection/assessment claims owned by this account in this context; "
+            "a person report may reference only assessments about that same person.",
+        )
     if report.pending_person_job_ids:
         jobs = (
             (
@@ -78,7 +127,13 @@ async def validate_report(
             .all()
         )
         if set(jobs) != set(report.pending_person_job_ids):
-            raise ValueError("output names person work not created by this account")
+            raise report_error(
+                "pending_person_job_ids",
+                set(report.pending_person_job_ids) - set(jobs),
+                "Use only this account job's delegated person-job IDs. A person job has no "
+                "delegated person jobs. If listed IDs are correct, the stored delegation "
+                "needs backend repair; do not invent replacements.",
+            )
     if report.unprocessed_source_ids:
         sources = (
             (
@@ -98,7 +153,12 @@ async def validate_report(
             .all()
         )
         if set(sources) != set(report.unprocessed_source_ids):
-            raise ValueError("output names an unavailable original")
+            raise report_error(
+                "unprocessed_source_ids",
+                set(report.unprocessed_source_ids) - set(sources),
+                "Copy source UUIDs from /evidence/index.json in this run, or remove an "
+                "incorrect reference. Do not substitute a URL or evidence path.",
+            )
 
 
 # The ARV2 lane receives this seam from the API composition root; it never imports another

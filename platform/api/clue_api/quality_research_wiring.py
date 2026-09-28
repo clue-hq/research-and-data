@@ -79,6 +79,11 @@ from clue_api.arv2.quality_committee_tool import (
     NominateSourceWebCommitteeTool,
     NominateWebCommitteeTool,
 )
+from clue_api.arv2.quality_completion import (
+    COMPLETION_INSTRUCTIONS,
+    build_completion_report,
+    completion_notes,
+)
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import (
     Allowance,
@@ -819,6 +824,11 @@ class ResearchUnitRuntime:
             task = await self.artifact(
                 {
                     "objective": objective,
+                    **(
+                        {"completion_contract": COMPLETION_INSTRUCTIONS}
+                        if uses_json_dossier(self.scope)
+                        else {}
+                    ),
                     "context_id": str(self.context_id),
                     "job_id": str(self.scope.job_id),
                 },
@@ -910,6 +920,28 @@ class ResearchUnitRuntime:
 
             async def completion_guard(model_input: Any) -> None:
                 if model_input.status is FinalizeStatus.COMPLETED:
+                    if uses_json_dossier(self.scope):
+                        # The researcher supplies judgment; storage supplies bookkeeping.
+                        entries = await lease.backend.list_entries("outputs")
+                        raw = (
+                            await lease.backend.read_text("outputs/research.json")
+                            if any(e.path == "outputs/research.json" for e in entries)
+                            else None
+                        )
+                        notes = completion_notes(raw, model_input.user_message)
+                        async with self.connections() as conn:
+                            report = await build_completion_report(
+                                conn, self.storage, self.scope, self.context_id, notes
+                            )
+                        if raw is None:
+                            await lease.backend.write_text(
+                                "outputs/research.json", report.model_dump_json()
+                            )
+                        else:
+                            await lease.backend.edit_text(
+                                "outputs/research.json", old=raw, new=report.model_dump_json()
+                            )
+                        return
                     report = ResearchUnitReport.model_validate_json(
                         await lease.backend.read_text("outputs/research.json")
                     )
@@ -927,9 +959,15 @@ class ResearchUnitRuntime:
                 lease=lease,
                 artifacts=self.artifacts,
                 before_work=bindings.before_work,
-                required_output_path="outputs/research.json",
+                required_output_path=None
+                if uses_json_dossier(self.scope)
+                else "outputs/research.json",
                 completion_guard=completion_guard,
             ).build()
+            if uses_json_dossier(self.scope):
+                for tool in governed:
+                    if tool.name == "finalize_turn":
+                        tool.description += "\n\n" + COMPLETION_INSTRUCTIONS
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
                     models=self.models,

@@ -326,8 +326,9 @@ def test_pre_miscellaneous_narrative_can_publish_without_refresh_loop(tmp_path, 
 
 
 @pytest.mark.parametrize("person", [False, True])
+@pytest.mark.parametrize("report_mode", ["legacy", "notes", "none"])
 def test_native_researcher_writes_pages_without_specialist_and_replays(
-    tmp_path, monkeypatch, person
+    tmp_path, monkeypatch, person, report_mode
 ):
     import asyncio
     from contextlib import asynccontextmanager
@@ -447,34 +448,43 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
                 def build(self, **kwargs):
                     builds.append(kwargs["role"])
                     assert kwargs["role"] == "account_research"
-                    return Writer(
-                        responses=[
-                            model_call("read_narrative_inputs", {}, "inputs"),
-                            model_call("write_research_narrative", {}, "write"),
-                            model_call(
-                                "write_file",
-                                {
-                                    "file_path": "/outputs/research.json",
-                                    "content": json.dumps(
-                                        {
-                                            "schema_version": "research-unit-v1",
-                                            "context_id": str(cid),
-                                            "job_id": str(job.job_id),
-                                            "summary": "Own narrative saved after existing import.",
-                                            "claim_ids": claimids,
-                                            "gaps": ["Scripted contract test, not live research."],
-                                        }
-                                    ),
-                                },
-                                "report",
-                            ),
-                            model_call(
-                                "finalize_turn",
-                                {"status": "completed", "user_message": "Saved owned pages."},
-                                "finish",
-                            ),
-                        ]
-                    )
+                    responses = [
+                        model_call("read_narrative_inputs", {}, "inputs"),
+                        model_call("write_research_narrative", {}, "write"),
+                        model_call(
+                            "write_file",
+                            {
+                                "file_path": "/outputs/research.json",
+                                "content": json.dumps(
+                                    {
+                                        "schema_version": "research-unit-v1",
+                                        "context_id": str(cid),
+                                        "job_id": str(job.job_id),
+                                        "summary": "Own narrative saved after existing import.",
+                                        "claim_ids": claimids,
+                                        "gaps": ["Scripted contract test, not live research."],
+                                    }
+                                ),
+                            },
+                            "report",
+                        ),
+                        model_call(
+                            "finalize_turn",
+                            {"status": "completed", "user_message": "Saved owned pages."},
+                            "finish",
+                        ),
+                    ]
+                    if report_mode == "none":
+                        responses.pop(2)
+                    elif report_mode == "notes":
+                        responses[2].tool_calls[0]["args"]["content"] = json.dumps(
+                            {
+                                "summary": "Own narrative saved after existing import.",
+                                "gaps": ["Scripted contract test, not live research."],
+                                "claim_ids": ["obsolete bookkeeping is ignored"],
+                            }
+                        )
+                    return Writer(responses=responses)
 
             runtime = ResearchUnitRuntime(
                 scope=job,
@@ -492,6 +502,11 @@ def test_native_researcher_writes_pages_without_specialist_and_replays(
                 objective="Continue from the imported dossier and write your own narrative."
             )
             assert outcome.status is AgentExecutionStatus.COMPLETED, outcome
+            report = await runtime.report(outcome)
+            assert {str(i) for i in report.claim_ids} == set(claimids)
+            assert report.delivery["claims_imported"]
+            assert report.delivery["narrative_published"]
+            assert report.delivery["narrative_pages"]
             assert builds == ["account_research"]
             nodes = set(
                 (
