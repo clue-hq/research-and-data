@@ -5,6 +5,8 @@ only provider metadata; transport, tools, retries and resource cleanup remain up
 Do not use this adapter for the Responses route.
 """
 
+import json
+from copy import deepcopy
 from typing import Any
 
 from langchain_core.language_models import LanguageModelInput
@@ -12,6 +14,33 @@ from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
 from langchain_core.outputs import ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
 from openai import BaseModel
+
+
+def _muse_schema_guidance(node: Any, depth: int = 0) -> Any:
+    """Bound the wire schema, retaining deep constraints as model-readable guidance.
+
+    Muse rejects deeply nested tool schemas even outside strict mode. The complete
+    nested specification remains in the description; tool arguments stay JSON values
+    and are still validated against the original platform model before execution.
+    """
+    if isinstance(node, dict):
+        if depth >= 6 and any(key in node for key in ("type", "anyOf", "oneOf", "allOf")):
+            result = {
+                "description": (
+                    "Supply the actual JSON value, not a serialized string. Full schema for this "
+                    "value (validated by the platform): "
+                    + json.dumps(node, ensure_ascii=False, separators=(",", ":"))
+                )
+            }
+            if node.get("type") in ("object", "array", "string", "number", "integer", "boolean"):
+                result["type"] = node["type"]
+                if node["type"] == "array":
+                    result["items"] = {}
+            return result
+        return {key: _muse_schema_guidance(value, depth + 1) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_muse_schema_guidance(value, depth + 1) for value in node]
+    return node
 
 
 def _retain_reasoning(message: BaseMessage, wire: dict[str, Any]) -> None:
@@ -77,6 +106,8 @@ class OpenRouterChatModel(ChatOpenAI):
         # For `required`, auto cannot force a call: the runtime's bounded plain-text
         # recovery remains responsible for handling a model that stops without one.
         if payload.get("model") == "meta/muse-spark-1.3":
+            if "tools" in payload:
+                payload["tools"] = deepcopy(payload["tools"])
             choice = payload.get("tool_choice")
             if choice == "none":
                 payload.pop("tools", None)
@@ -94,6 +125,14 @@ class OpenRouterChatModel(ChatOpenAI):
                 payload["tool_choice"] = "auto"
             elif choice in ("required", "any"):
                 payload["tool_choice"] = "auto"
+            for tool in payload.get("tools", []):
+                function = tool.get("function", {})
+                if "parameters" in function:
+                    original = function["parameters"]
+                    adapted = _muse_schema_guidance(original)
+                    if adapted != original:
+                        function["parameters"] = adapted
+                        function["strict"] = False
         for message, wire in zip(
             self._convert_input(input_).to_messages(), payload["messages"], strict=True
         ):
