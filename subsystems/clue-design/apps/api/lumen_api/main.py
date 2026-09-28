@@ -10800,13 +10800,17 @@ def _execute_agent_turn_job(
         else None
     )
     history_block = None if session_continued else leg_history
-    if bundle_block or history_block or drift_note:
-        composed_prompt = render_leg_turn_prompt(
-            bundle=bundle_block if isinstance(bundle_block, dict) else None,
-            history=history_block if isinstance(history_block, list) else None,
-            prompt=composed_prompt,
-            drift_note=drift_note,
-        )
+    # The brief can be cached, but this turn's assignment cannot: a batch user message may
+    # address several documents and an older checkpoint may contain a plan for a sibling.
+    composed_prompt = render_leg_turn_prompt(
+        bundle=bundle_block if isinstance(bundle_block, dict) else None,
+        history=history_block if isinstance(history_block, list) else None,
+        prompt=composed_prompt,
+        drift_note=drift_note,
+        artifact=(
+            delegation_bundle.get("artifact") if isinstance(delegation_bundle, dict) else None
+        ),
+    )
     if composed_prompt != payload.prompt:
         payload = payload.model_copy(update={"prompt": composed_prompt})
 
@@ -11415,15 +11419,14 @@ def _execute_web_turn_job(
             if leg_block
             else None
         )
-        prompt = (
-            render_leg_turn_prompt(
-                bundle=bundle_block if isinstance(bundle_block, dict) else None,
-                history=history_block if isinstance(history_block, list) else None,
-                prompt=user_message,
-                drift_note=drift_note,
-            )
-            if (bundle_block or history_block or drift_note)
-            else user_message
+        prompt = render_leg_turn_prompt(
+            bundle=bundle_block if isinstance(bundle_block, dict) else None,
+            history=history_block if isinstance(history_block, list) else None,
+            prompt=user_message,
+            drift_note=drift_note,
+            artifact=(
+                delegation_bundle.get("artifact") if isinstance(delegation_bundle, dict) else None
+            ),
         )
         if override is not None:
             # Backward-compatible seam: existing stubs take four positional args; only pass the

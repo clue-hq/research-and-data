@@ -11,6 +11,9 @@ description: Use when changing an existing website page, selected element, compo
    active-page node with current props/rich text and parent/child IDs. Require
    `complete: true` before a full-payload edit. This is turn-local state, not a
    checked persisted revision. On refusal, preserve the node and report the gap.
+   Match the reported symptom to that section in the current preview at the failing
+   width before editing; a remembered or recently edited product panel may be a
+   different section. Record its visible neighbors so the after-check targets the same area.
 2. Read [scoped editing](references/scoped-editing.md), using the relevant ladder:
    `web_ops` for a few existing-node changes; clone slots for supported content;
    a campaign variant for healthy cloned structure; repair for a real defect;
