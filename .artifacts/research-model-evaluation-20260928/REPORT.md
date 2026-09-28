@@ -2,9 +2,9 @@
 
 **My recommendation is to retain Grok 4.6 at medium as the current quality baseline. Muse deserves further evaluation, especially xhigh for account work and max for person depth. The evidence does not justify switching the full pipeline to DeepSeek or GLM yet, or paying for Grok 4.7 high as the default.** This is a conclusion about these runs, not a universal model ranking.
 
-The review covers **11 research attempts across Insight Health → Premier Gastroenterology and Clue → Zafran**, plus three Muse setup failures. The runs used isolated databases and workers in the Jerusalem checkout; these are two seller/account contexts, not two different production deployments. The earlier Grok 4.6 Premier run began September 27 UTC, already September 28 in India.
+The workbook now covers **13 research attempts across Insight Health → Premier Gastroenterology and Clue → Zafran**, plus three Muse setup failures. The latest addition includes a full [Muse xhigh versus Grok quality review](MUSE-XHIGH-QUALITY.md) and GLM retry final status/artifacts. GLM selected Tom/Sanaz instead of Nick/Vari; its different-person output has not received the same semantic comparison. The runs used isolated databases and workers in the Jerusalem checkout; these are two seller/account contexts, not two different production deployments. The earlier Grok 4.6 Premier run began September 27 UTC, already September 28 in India.
 
-Known recorded spend is **$73.261911 plus 23.6 AI Ark credits**, including the shared Muse Head-brief setup once. This is not a final invoice total: the cancelled Exa request, an interrupted legacy continuation, and failed/unpriced Grok requests leave billing uncertainty. No research or model calls were purchased to prepare this report.
+Known recorded spend is **$86.984282 plus 32.3 AI Ark credits**, including the shared Muse Head-brief setup once and both latest retries. This is not a final invoice total: the cancelled Exa request, an interrupted legacy continuation, and failed/unpriced Grok requests leave billing uncertainty. No research or model calls were purchased to prepare this report.
 
 ## Deliverables and how to inspect them
 
@@ -14,6 +14,8 @@ The accompanying workbook has Runs, Jobs, Costs, Quality, Failures, Outputs, Tra
 - [Zafran detailed quality review](ZAFRAN-QUALITY.md): 20 substantive probes across Grok 4.6, Muse max and DeepSeek, with exact finding IDs.
 - [Exact Zafran evidence](quality-evidence.json) and [Premier evidence observations](premier-quality-observations.json): acquired passages, authored findings and source locations.
 - [Zafran failure analysis](FAILURES-ZAFRAN.md): provider, runtime, model-behavior and operator causes kept separate.
+- [Latest Muse xhigh quality review](MUSE-XHIGH-QUALITY.md): all 109 authored findings, 20 comparative probes, wrong-employer attribution, source omissions and citation support. [Exact evidence](muse-xhigh-quality-evidence.json).
+- [Latest GLM final status](../zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md): saved outputs and final failures; different-person quality not fully graded.
 
 The trace material exposes observable requests, research assignments, source choices, tool calls, corrections, milestones and costs. Reasoning effort is recorded, but private chain-of-thought is neither reproduced nor inferred. Requesting “max” does not establish an equivalent reasoning budget across providers.
 
@@ -34,6 +36,8 @@ The trace material exposes observable requests, research assignments, source cho
 | Z4 | Zafran — GLM 5.3 untouched retry | medium | 2m21s | 2m22s | $0.794624 | Sources/Exa report only; output truncated; no authored dossier |
 | Z5 | Zafran — DeepSeek v4 Pro 0813 | high | 56m21s | 57m55s | $8.413757 | Account and Nick dossiers; Vari incomplete; no pages |
 | Z6 | Zafran — Muse 1.3 | max | 34m20s | 36m03s | $13.141414 | All three dossiers; account page; contact pages unpublished |
+| Z7 | Zafran — Muse 1.3 retry | xhigh | 16m11s | 18m45s | $6.540534 | All jobs and pages complete; reconciliation recovered; attribution and coverage defects remain |
+| Z8 | Zafran — GLM 5.3 retry | medium | 38m23s | 39m57s | $7.181837 | Account/Tom/Sanaz dossiers and pages; account/reconciliation need review; wrong comparison people |
 
 Separate setup01 Head-brief cost: **$0.118116**, counted once. Setup01–03 failed before research tools because of age attestation, unsupported tool-choice mode and nested tool-schema depth respectively. No priced research usage was recorded for those attempts; that does not certify a zero provider invoice.
 
