@@ -71,6 +71,29 @@ class OpenRouterChatModel(ChatOpenAI):
         **kwargs: Any,
     ) -> dict[str, Any]:
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        # Meta's Muse Spark 1.3 endpoint currently rejects forced tool choices.
+        # Keep the offered surface restrictive for named/disabled choices; the
+        # governed runtime still requires and validates finalize_turn before success.
+        # For `required`, auto cannot force a call: the runtime's bounded plain-text
+        # recovery remains responsible for handling a model that stops without one.
+        if payload.get("model") == "meta/muse-spark-1.3":
+            choice = payload.get("tool_choice")
+            if choice == "none":
+                payload.pop("tools", None)
+                payload.pop("tool_choice", None)
+            elif isinstance(choice, dict):
+                name = choice.get("function", {}).get("name")
+                selected = [
+                    tool
+                    for tool in payload.get("tools", [])
+                    if tool.get("function", {}).get("name") == name and name
+                ]
+                if len(selected) != 1:
+                    raise ValueError("Muse named tool choice must match exactly one bound function")
+                payload["tools"] = selected
+                payload["tool_choice"] = "auto"
+            elif choice in ("required", "any"):
+                payload["tool_choice"] = "auto"
         for message, wire in zip(
             self._convert_input(input_).to_messages(), payload["messages"], strict=True
         ):
