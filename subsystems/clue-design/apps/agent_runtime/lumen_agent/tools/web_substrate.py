@@ -136,6 +136,9 @@ from .view import (
     _image_observation_label,
     _text_block,
 )
+from .web_review_evidence import TILE_HEIGHT as _PREVIEW_TILE_HEIGHT
+from .web_review_evidence import TILE_OVERLAP as _PREVIEW_TILE_OVERLAP
+from .web_review_evidence import ReviewObservations, tile_count
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -321,10 +324,6 @@ def tailwind_runtime_path(repo_root: Path) -> Optional[Path]:
 
 # The screenshot widths captured for every render, in emission order.
 _PREVIEW_WIDTHS = (1440, 768, 375)
-# Read-only strips of an already-rendered screenshot. Crop BEFORE the shared
-# image ceiling: a 379x7464 full-page image otherwise shrinks to 102px wide.
-_PREVIEW_TILE_HEIGHT = 1200
-_PREVIEW_TILE_OVERLAP = 100
 
 # The two widths interactive STATE captures (dialog-open, accordion-expanded)
 # are taken at — desktop + mobile, the ends that break interaction layouts.
@@ -1142,6 +1141,8 @@ class LumenWebTools:
         self._preview_doc_version: Optional[int] = None
         self._preview_media_ready = False
         self._preview_media_readiness: Dict[str, JsonObject] = {}
+        self._review_observations = ReviewObservations()
+        self._state_capture_limits: JsonObject = {}
         # Between-renders edit budget (live failure 2026-07-29: an author round
         # never returned control — 16 blind subtree rewrites over 14 minutes).
         # Every MUTATING tool call charges it; once exhausted, mutating tools
@@ -5254,6 +5255,8 @@ class LumenWebTools:
         ):
             if key in source:
                 payload[key] = source[key]
+        if isinstance(source.get("behavior_evidence"), dict):
+            self._review_observations.sources[clean_id] = copy.deepcopy(source["behavior_evidence"])
         self.record(
             "author",
             "cloned_section_inspected",
@@ -8918,6 +8921,21 @@ class LumenWebTools:
         the review, never a pass. Returns the structured critique, the capture paths, and
         the blind side-by-side artifact when a reference capture exists.
         """
+        try:
+            result = self._review_cloned_page()
+            payload = json.loads(result)
+        except Exception as error:
+            self._review_observations.record_walk_failure(
+                self.page_id, self._doc_version, type(error).__name__,
+            )
+            raise
+        if payload.get("status") != "ok":
+            self._review_observations.record_walk_failure(
+                self.page_id, self._doc_version, payload.get("error_code") or "review.failed",
+            )
+        return result
+
+    def _review_cloned_page(self) -> str:
         self._review_iteration += 1
         registry = self._cloned_section_registry()
         fragment_ids = self._fragment_ids()
@@ -9037,6 +9055,7 @@ class LumenWebTools:
             )
             result[status_key] = True
 
+        self._review_observations.record_walk(self.page_id, self._doc_version, result)
         self.record(
             "orchestrator",
             "web_review_walked",
@@ -9818,6 +9837,10 @@ class LumenWebTools:
         if state_capture_error is not None:
             result["state_capture_error"] = state_capture_error
         omitted_nonempty = {k: v for k, v in (state_omitted or {}).items() if v}
+        self._state_capture_limits = {
+            "version": self._doc_version, "page_id": self.page_id,
+            "error": state_capture_error, "omitted": omitted_nonempty,
+        }
         if omitted_nonempty:
             result["state_captures_omitted"] = omitted_nonempty
         self.record(
@@ -10208,6 +10231,10 @@ class LumenWebTools:
         refusals must never instruct a role to call a tool it does not have —
         live failure 2026-07-29: an author churned blind for 14 minutes retrying
         stale views because the refusal said "call render_web_preview() first"."""
+        if target == "review":
+            report = self._review_evidence_report()
+            self.record("agent", "web_review_evidence_viewed", payload=report)
+            return [_text_block(json.dumps(report))]
         if target.startswith("node:"):
             return self._view_node(target[len("node:") :])
         if target == "brand":
@@ -10294,7 +10321,7 @@ class LumenWebTools:
             self.record(
                 "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
             )
-            return [
+            blocks = [
                 _text_block(_image_observation_label(
                     Path(path), f"view: latest preview at {width}px (iteration {self._preview_iteration})"
                 )),
@@ -10304,6 +10331,8 @@ class LumenWebTools:
                 # here clamps to the many-image ceiling — see view.py.
                 _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
             ]
+            self._record_review_image(target, Path(path))
+            return blocks
         if target.startswith("state:"):
             return self._view_state(target)
         if target.startswith("asset:"):
@@ -10317,12 +10346,15 @@ class LumenWebTools:
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
                 '"preview:768", "preview:375", "preview:<width>:tile:<n>", '
-                '"state:<n>", "asset:<asset_id>", '
+                '"state:<n>", "state:<n>:tile:<index>", "review", "asset:<asset_id>", '
                 '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
             )
         ]
 
-    def _view_preview_tile(self, width: int, path: Path, index: int, target: str) -> list:
+    def _view_preview_tile(
+        self, width: int, path: Path, index: int, target: str,
+        source_target: str | None = None,
+    ) -> list:
         """Inspect one strip from the guarded, registered preview; never render/save.
 
         Coverage describes only this call, not what a model remembers or has
@@ -10334,8 +10366,7 @@ class LumenWebTools:
         with Image.open(io.BytesIO(raw)) as source:
             pixel_width, pixel_height = source.size
             stride = _PREVIEW_TILE_HEIGHT - _PREVIEW_TILE_OVERLAP
-            tail = max(0, pixel_height - _PREVIEW_TILE_HEIGHT)
-            count = 1 + (tail + stride - 1) // stride
+            count = tile_count(pixel_height)
             if index >= count:
                 self.record(
                     "agent", "web_view_called", input_summary=target,
@@ -10364,7 +10395,7 @@ class LumenWebTools:
             "run_id": self.run_id,
             "persisted_revision_checked": False,
             "source": {
-                "target": f"preview:{width}",
+                "target": source_target or f"preview:{width}",
                 "sha256": hashlib.sha256(raw).hexdigest(),
                 "pixel_width": pixel_width,
                 "pixel_height": pixel_height,
@@ -10379,7 +10410,7 @@ class LumenWebTools:
             "coverage": {
                 "scope": "this_call_only",
                 "other_tile_index_ranges": other_ranges,
-                "next_target": f"preview:{width}:tile:{index + 1}" if index + 1 < count else None,
+                "next_target": f"{source_target or f'preview:{width}'}:tile:{index + 1}" if index + 1 < count else None,
                 "complete_source_shown": count == 1,
             },
             "note": (
@@ -10390,12 +10421,79 @@ class LumenWebTools:
             ),
         }
         image = _image_bytes_block(buffer.getvalue(), max_px=_VISION_MANY_IMAGE_MAX_PX)
+        self._record_review_image(source_target or f"preview:{width}", path, index=index)
         self.record(
             "agent", "web_view_called", input_summary=target,
             output_summary=f"preview_tile={index}/{count}; blocks=2",
             payload=metadata,
         )
         return [_text_block(json.dumps(metadata)), image]
+
+    def _record_review_image(self, target: str, path: Path, *, index: int | None = None) -> None:
+        self._review_observations.shown(
+            page_id=self.page_id, version=self._preview_doc_version,
+            iteration=self._preview_iteration, target=target, path=path, index=index,
+        )
+
+    def _review_evidence_report(self) -> JsonObject:
+        def describe(target: str, path: str | None) -> JsonObject:
+            return self._review_observations.image_report(
+                page_id=self.page_id, version=self._doc_version,
+                preview_version=self._preview_doc_version, iteration=self._preview_iteration,
+                target=target, path=path,
+            )
+
+        previews = {str(width): describe(f"preview:{width}", self._preview_by_width.get(width))
+                    for width in _PREVIEW_WIDTHS}
+        states = {str(index): {**describe(f"state:{index}", capture.get("path")),
+                              "kind": capture.get("kind"), "node_id": capture.get("node_id"),
+                              "width": capture.get("width")}
+                  for index, capture in enumerate(self._state_captures)}
+        gaps = [{"code": "review.unseen_pixels", "target": row["target"],
+                 "status": row["status"], "next_target": row.get("next_target")}
+                for row in [*previews.values(), *states.values()]
+                if not row["readable_coverage_complete"]]
+        walk = self._review_observations.walk_report(
+            self.page_id, self._doc_version, bool(self._fragment_ids()),
+        )
+        if walk["status"] == "failed":
+            gaps.append({"code": "review.clone_walk_failed", "error_code": walk.get("error_code")})
+        elif walk["status"] not in {"current", "not_applicable"}:
+            gaps.append({"code": "review.clone_walk_missing_or_stale"})
+        if walk["status"] == "current":
+            if walk.get("advice_available") is False:
+                gaps.append({"code": "review.advice_unavailable"})
+            if walk.get("evidence_settled") is not True:
+                gaps.append({"code": "review.walk_unsettled"})
+            if walk.get("unobserved_capture_classes"):
+                gaps.append({"code": "review.capture_classes_unobserved"})
+            comparison = walk.get("comparison") or {}
+            if walk.get("reference_unavailable") or comparison.get("status") != "ok":
+                gaps.append({"code": "review.source_comparison_unavailable",
+                             "because": walk.get("reference_unavailable") or comparison.get("because")})
+            elif not comparison.get("bands") or comparison.get("skipped"):
+                gaps.append({"code": "review.source_bands_uncompared"})
+        if not self._preview_media_ready or self._preview_doc_version != self._doc_version:
+            gaps.append({"code": "review.preview_unsettled"})
+        limits = self._state_capture_limits
+        if limits.get("page_id") == self.page_id and limits.get("version") == self._doc_version:
+            if limits.get("error") or limits.get("omitted"):
+                gaps.append({"code": "review.state_capture_incomplete"})
+        else:
+            limits = {}
+        return {
+            "schema_version": 1, "scope": "active_page_current_turn",
+            "page_id": self.page_id, "document_id": self.web_doc.get("id"),
+            "local_document_version": self._doc_version, "persisted_revision_checked": False,
+            "status": "incomplete" if gaps else "observations_recorded",
+            "quality_verdict": "not_computed", "previews": previews, "states": states,
+            "preview_media_readiness": copy.deepcopy(self._preview_media_readiness),
+            "clone_review": walk, "state_capture_limits": limits, "gaps": gaps,
+            "consulted_source_behavior": copy.deepcopy(self._review_observations.sources),
+            "note": "Records pixels returned by view, not attention, aesthetic approval or all "
+                    "required interactions. Consulted sources may have been discarded; reconcile "
+                    "any reused behavior with the brief. Scope an edit verdict to its changed regions.",
+        }
 
     def _asset_id_menu(self) -> str:
         """The ids an `asset:` target can name, by source — what an unknown id
@@ -10547,7 +10645,13 @@ class LumenWebTools:
         STATE capture (0-based) from the latest render, as [text, image] blocks.
         An unparseable or out-of-range index returns an honest text-only error
         naming how many captures exist."""
-        index_str = target[len("state:") :]
+        parts = target[len("state:") :].split(":")
+        index_str = parts[0]
+        tile_index = None
+        if len(parts) != 1:
+            if len(parts) != 3 or parts[1] != "tile" or re.fullmatch(r"0|[1-9][0-9]{0,8}", parts[2]) is None:
+                return [_text_block("view: invalid state tile. Use state:<n>:tile:<index>.")]
+            tile_index = int(parts[2])
         try:
             index = int(index_str)
         except ValueError:
@@ -10581,6 +10685,9 @@ class LumenWebTools:
                     f"{len(captures)} state capture(s) (0..{len(captures) - 1})."
                 )
             ]
+        if self._preview_doc_version is not None and self._doc_version > self._preview_doc_version:
+            return [_text_block("view: state capture is STALE. The document changed after this render; "
+                                "the orchestrator must render again before reviewing it.")]
         capture = captures[index]
         path = capture.get("path")
         if not path or not Path(path).exists():
@@ -10588,12 +10695,17 @@ class LumenWebTools:
                 "agent", "web_view_called", input_summary=target, output_summary="state_missing_file"
             )
             return [_text_block(f"view: state capture {index} has no readable screenshot.")]
+        if tile_index is not None:
+            return self._view_preview_tile(
+                int(capture.get("width") or 0), Path(path), tile_index, target,
+                source_target=f"state:{index}",
+            )
         node = capture.get("node_id")
         node_note = f" node {node}" if node else ""
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
         )
-        return [
+        blocks = [
             _text_block(_image_observation_label(
                 Path(path), f"view: state capture {index} — {capture.get('kind')}"
                 f"{node_note} at {capture.get('width')}px"
@@ -10602,6 +10714,8 @@ class LumenWebTools:
             # capture rides the identical accumulating request.
             _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
+        self._record_review_image(f"state:{index}", Path(path))
+        return blocks
 
     def finalize_web_run(
         self, outcome: str, summary: str, ladder_gap: Optional[str] = None
@@ -10645,6 +10759,7 @@ class LumenWebTools:
         payload: JsonObject = {
             "outcome": outcome,
             "summary": summary,
+            "review_evidence": self._review_evidence_report(),
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
             # Informational only — what this site ended up being. NO gate reads
@@ -10699,7 +10814,9 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     source/version/crop and coverage metadata, without rendering again;
     "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
-    latest render; "asset:<asset_id>" returns that asset's preview image (from
+    latest render; "state:<n>:tile:<index>" reads a strip of that state capture.
+    "review" returns cumulative current-turn observation coverage and unresolved
+    evidence gaps, not an acceptance verdict; "asset:<asset_id>" returns that asset's preview image (from
     the document's own registry, the kit manifest, or the workspace library);
     "cloned_section:<fragment_id>" returns the picture of a cloned section
     `search_cloned_sections` returned (F2.3); "doc" returns a compact
@@ -10721,12 +10838,18 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         screenshot (zero-based n; 1200px high, 100px overlap). Use tile:0 then
         coverage.next_target to inspect tall/mobile pages. JSON reports source
         hash/dimensions/render version, crop, tile count and other tile ranges
-        not shown by THIS call. Compare matching source hashes; coverage is not
-        cumulative or an acceptance verdict. It crops BEFORE image normalization,
+        not shown by THIS call. "review" aggregates observations from this turn
+        by page/version/render/image hash and reports unseen/stale evidence,
+        clone-review comparison limits and consulted source behavior. It records
+        pixels delivered, not attention or aesthetic/interaction acceptance.
+        For scoped edits, judge the affected regions; full-page gaps alone do not
+        mandate regenerating unrelated content. A tile crops BEFORE image normalization,
         never renders/writes, and uses the same stale-preview guards. This is a
         static full-page crop, not a new viewport/scroll/interaction observation;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
-        opened or accordions expanded) from the latest render;
+        opened or accordions expanded) from the latest render; "state:<n>:tile:<i>"
+        reads a readable strip of that capture with the same stale guards.
+        State captures sample supported interactions, not every panel or behavior;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE
         pixel dimensions (a brand kit asset, a `search_assets` library result, or
         one already registered in the document);

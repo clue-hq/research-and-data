@@ -531,6 +531,7 @@ def compose_critique(
     findings: list[PageFinding] = []
     findings.extend(console_findings(console.console if console.made else ()))
     findings.extend(absent_section_findings(desktop_measurements))
+    findings.extend(desktop_overflow_findings(desktop_measurements))
     findings.extend(reduced_motion_findings(walk))
     findings.extend(abstention_findings(walk))
     findings.extend(comparison_findings(comparison))
@@ -565,6 +566,32 @@ def compose_critique(
         page_findings=tuple(findings),
         comparison=comparison,
         settled=settled,
+    )
+
+
+def desktop_overflow_findings(measurements: Sequence[SectionMeasurement]) -> tuple[PageFinding, ...]:
+    """Surface excess desktop content width without minting a clone verdict.
+
+    A carousel may intentionally scroll. This measurement asks the reviewer to
+    inspect clipping and the page boundary; it does not label that intent broken.
+    Use the same rounding tolerance as the mobile measurement.
+    """
+    return tuple(
+        PageFinding(
+            code="review.desktop_overflow",
+            severity="warning",
+            message=(
+                f"desktop content in {item.fragment_id} exceeds its section width: "
+                f"{item.scroll_width_px:g}px inside {item.width_px:g}px. Inspect the current "
+                "desktop capture for clipped text or page overflow; intentional contained "
+                "horizontal scrolling may be valid. These measurements are advice only"
+            ),
+            detail={"fragment_id": item.fragment_id, "width_px": item.width_px,
+                    "scroll_width_px": item.scroll_width_px, "viewport": item.viewport},
+        )
+        for item in measurements
+        if item.present and item.measured and item.visible and item.width_px > 0
+        and item.scroll_width_px > item.width_px * MOBILE_OVERFLOW_TOLERANCE
     )
 
 

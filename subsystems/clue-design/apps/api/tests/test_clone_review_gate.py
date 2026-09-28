@@ -92,6 +92,24 @@ def _measurement(fragment_id: str, **overrides: Any) -> SectionMeasurement:
     return SectionMeasurement(**base)  # type: ignore[arg-type]
 
 
+def test_desktop_section_overflow_is_visible_advice_without_a_durable_clone_verdict():
+    walk = _walk(desktop=(_measurement("frag_footer", width_px=1200, scroll_width_px=2285),))
+    critique = compose_critique(walk)
+    finding = next(item for item in critique.page_findings if item.code == "review.desktop_overflow")
+    assert finding.detail["fragment_id"] == "frag_footer"
+    assert finding.detail["scroll_width_px"] == 2285
+    assert not critique.broken
+
+
+@pytest.mark.parametrize("values", [
+    {"scroll_width_px": 1442}, {"present": False, "scroll_width_px": 2500},
+    {"measured": False, "scroll_width_px": 2500},
+])
+def test_desktop_overflow_advice_requires_meaningful_measured_excess(values):
+    critique = compose_critique(_walk(desktop=(_measurement("frag_footer", **values),)))
+    assert all(item.code != "review.desktop_overflow" for item in critique.page_findings)
+
+
 def _walk(
     *,
     desktop: tuple[SectionMeasurement, ...] = (),

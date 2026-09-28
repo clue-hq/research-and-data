@@ -437,6 +437,20 @@ def test_the_gate_walks_the_same_pixels_the_preview_renders(tmp_path, monkeypatc
     assert captured["plan"].mobile.width == 375
 
 
+def test_failed_repeat_review_retains_failure_alongside_previous_evidence(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, FakeRegistry())
+    _patch_walk(monkeypatch, _fake_walk(tmp_path, desktop=(_measurement(),)))
+    assert json.loads(tools.review_cloned_page())["status"] == "ok"
+    _patch_walk(monkeypatch, CloneReviewRefused("review.browser_unavailable", "browser unavailable"))
+    assert json.loads(tools.review_cloned_page())["status"] == "error"
+    evidence = json.loads(tools._view_content("review")[0]["text"])
+    assert evidence["clone_review"]["status"] == "failed"
+    assert evidence["clone_review"]["error_code"] == "review.browser_unavailable"
+    assert evidence["clone_review"]["previous_observation"]["evidence_settled"] is True
+    final = json.loads(tools.finalize_web_run("completed_with_warnings", "Review unavailable"))
+    assert final["review_evidence"]["clone_review"] == evidence["clone_review"]
+
+
 def test_no_browser_refuses_and_reports_nothing_about_the_page(tmp_path, monkeypatch) -> None:
     tools = _tools(tmp_path, FakeRegistry())
     _patch_walk(
@@ -515,6 +529,8 @@ def test_a_walk_that_could_not_observe_a_class_says_so_loudly(tmp_path, monkeypa
     gap = next(item for item in result["diagnostics"] if item["code"] == "LUMA0801")
     assert "mobile viewport" in gap["message"]
     assert "not the same as saying they are fine" in gap["message"]
+    evidence = json.loads(tools._view_content("review")[0]["text"])
+    assert evidence["clone_review"]["unobserved_capture_classes"] == [WALK_CLASS_MOBILE]
 
 
 def test_console_errors_ride_the_advice_and_never_the_marker(tmp_path, monkeypatch) -> None:
@@ -826,6 +842,11 @@ def test_the_blind_artifact_survives_a_comparison_that_abstained(tmp_path, monke
     result = json.loads(tools.review_cloned_page())
 
     assert result["reference_unavailable"] == "reference_viewport_mismatch"
+    evidence = json.loads(tools._view_content("review")[0]["text"])
+    assert evidence["clone_review"]["reference_unavailable"] == "reference_viewport_mismatch"
+    assert any(item["code"] == "review.source_comparison_unavailable" for item in evidence["gaps"])
+    tools._doc_version += 1
+    assert json.loads(tools._view_content("review")[0]["text"])["clone_review"]["status"] == "stale"
     artifact = result["blind_side_by_side"]
     assert Path(artifact["image_path"]).exists()
     assert Path(artifact["answer_key_path"]).exists()

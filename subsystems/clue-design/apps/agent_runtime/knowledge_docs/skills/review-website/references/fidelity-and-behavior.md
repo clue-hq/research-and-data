@@ -55,6 +55,11 @@ not every band alternates color, uses cards or shares an identical max-width.
 
 For every returned width, inspect horizontal overflow, collisions, clipping,
 content order, text measure, image-to-copy balance and mobile navigation usability.
+The clone walk can report `review.desktop_overflow` when measured content exceeds
+its desktop wrapper. Inspect the named band and page boundary before repair:
+contained intentional horizontal scrolling may be valid. An empty phone-overflow
+result does not establish desktop health, and the clone walk does not measure
+every newly composed section.
 Read the actual support and closing copy at placement scale; enlarging a preview
 to decipher it does not establish legibility. Trace the contrast chain: body and
 muted text against their band or image/gradient, button label against its fill,

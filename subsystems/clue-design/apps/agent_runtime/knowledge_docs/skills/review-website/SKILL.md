@@ -19,6 +19,11 @@ A successful operation, valid document or screenshot path proves none of these.
    required product imagery and copy in those pixels; a gradient placeholder is
    not a working product visual. Match source hashes/version when combining
    observations and report any required tiles left unseen.
+   Read `view("review")` before a verdict: it aggregates pixels actually returned
+   this turn and retains missing/stale views, source-comparison limits and capture
+   omissions. A report of `observations_recorded` is not a quality pass. For tall
+   state captures, use `view("state:<n>:tile:<i>")`. For a scoped edit, resolve the
+   relevant gaps without demanding a new full-page generation.
    Reuse a verified unchanged render instead of repeating the loop.
 2. Read [fidelity and behavior checks](references/fidelity-and-behavior.md).
    For reused/derived bands, inspect source pixels and compare their hierarchy,
@@ -69,6 +74,6 @@ A successful operation, valid document or screenshot path proves none of these.
    `completed_with_warnings` while required visual/interaction acceptance remains
    open. Name those unmet requirements prominently rather than calling them polish.
 
-`finalize_web_run` records the existing outcome and summary; it is not a new visual
-acceptance gate. No skill instruction recovers missing source React/JS/WebGL,
+`finalize_web_run` records the existing outcome, summary and observation report;
+it is not a new visual acceptance gate. No skill instruction recovers missing source React/JS/WebGL,
 imports frozen evaluations into a live workspace or proves publication.

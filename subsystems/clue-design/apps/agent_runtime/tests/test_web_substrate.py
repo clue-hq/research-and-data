@@ -13,6 +13,7 @@ import io
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -26,6 +27,9 @@ from lumen_agent.tools.web_substrate import (
     sanitize_token_name,
     web_theme_token_names,
 )
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -1452,6 +1456,98 @@ def test_web_preview_tile_reports_new_snapshot_identity_without_carrying_coverag
     assert second["coverage"]["other_tile_index_ranges"] == [[1, 2]]
 
 
+def _review_report(tools):
+    return json.loads(tools._view_content("review")[0]["text"])
+
+
+def test_review_report_retains_render_and_comparison_limits(tmp_path):
+    tools = _bare_tools(tmp_path)
+    tools._review_observations.record_walk(tools.page_id, tools._doc_version, {
+        "evidence_settled": True, "advice_available": False,
+        "comparison": {"status": "ok", "bands": [], "skipped": [
+            {"fragment_id": "frag_footer", "because": "no_reference_geometry"},
+        ]},
+    })
+    tools._state_capture_limits = {
+        "page_id": tools.page_id, "version": tools._doc_version,
+        "error": None, "omitted": {"tabs": ["omitted_tab"]},
+    }
+    report = _review_report(tools)
+    codes = {item["code"] for item in report["gaps"]}
+    assert {"review.preview_unsettled", "review.advice_unavailable",
+            "review.source_bands_uncompared", "review.state_capture_incomplete"} <= codes
+    assert report["clone_review"]["comparison"]["skipped"][0]["fragment_id"] == "frag_footer"
+    assert report["quality_verdict"] == "not_computed"
+
+
+def test_review_report_accumulates_readable_tiles_without_accepting_the_page(tmp_path):
+    tools = _bare_tools(tmp_path)
+    for width in (1440, 768, 375):
+        _seed_page_capture(tmp_path, tools, width, (width, 2400))
+        tools._view_content(f"preview:{width}")
+    tools._view_content("preview:375:tile:0")
+    tools._view_content("preview:375:tile:0")
+    report = _review_report(tools)
+    phone = report["previews"]["375"]
+    assert phone["overview_shown"] is True
+    assert phone["shown_tile_indexes"] == [0]
+    assert phone["unseen_tile_index_ranges"] == [[1, 2]]
+    assert report["quality_verdict"] == "not_computed"
+    for width in (1440, 768, 375):
+        for index in range(3):
+            tools._view_content(f"preview:{width}:tile:{index}")
+    report = _review_report(tools)
+    assert report["status"] == "observations_recorded"
+    assert report["quality_verdict"] == "not_computed"
+    assert all(row["readable_coverage_complete"] for row in report["previews"].values())
+
+
+def test_review_receipts_are_invalidated_by_document_revision_and_changed_pixels(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (375, 500))
+    tools._view_content("preview:375")
+    assert _review_report(tools)["previews"]["375"]["readable_coverage_complete"]
+    Image.new("RGB", (375, 500), "red").save(tools._preview_by_width[375])
+    assert not _review_report(tools)["previews"]["375"]["readable_coverage_complete"]
+    tools._view_content("preview:375")
+    tools._doc_version += 1
+    report = _review_report(tools)
+    assert report["previews"]["375"]["status"] == "stale"
+    assert report["previews"]["375"]["shown_tile_indexes"] == []
+
+
+def test_state_view_refuses_stale_capture_and_supports_readable_strips(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    path = _seed_state_capture(tmp_path, tools)
+    Image.new("RGB", (1440, 3500), "white").save(path)
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 1
+    blocks = tools._view_content("state:0:tile:1")
+    meta = json.loads(blocks[0]["text"])
+    assert meta["source"]["target"] == "state:0"
+    assert _review_report(tools)["states"]["0"]["shown_tile_indexes"] == [1]
+    tools._doc_version += 1
+    assert "STALE" in tools._view_content("state:0")[0]["text"]
+    assert "STALE" in tools._view_content("state:0:tile:1")[0]["text"]
+
+
+def test_finalization_persists_observed_review_gaps_without_blocking_draft_save(tmp_path):
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (375, 2400))
+    tools._view_content("preview:375:tile:0")
+    result = json.loads(tools.finalize_web_run("completed_with_warnings", "Draft saved"))
+    assert result["status"] == "ok"
+    evidence = result["review_evidence"]
+    assert evidence["status"] == "incomplete"
+    assert evidence["previews"]["375"]["unseen_tile_index_ranges"] == [[1, 2]]
+    saved = json.loads((tools.turn_dir / "final.json").read_text())
+    assert saved["review_evidence"] == evidence
+
+
 def test_web_view_state_capture_clamps_to_the_many_image_ceiling(tmp_path: Path):
     from PIL import Image
 
@@ -1574,6 +1670,7 @@ def test_round_budget_refuses_mutations_then_render_reopens(tmp_path: Path, monk
         tools._preview_by_width[width] = str(path)
     tools._preview_doc_version = tools._doc_version
     tools._preview_iteration = 1
+    tools._preview_media_ready = True
     assert json.loads(tools.render_web_preview())["status"] == "ok"
     assert tools._mutations_since_render == 0
 
