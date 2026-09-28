@@ -517,10 +517,10 @@ class Settings(BaseSettings):
     sensitivity_floor_enabled: bool = True
 
     # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
-    # OpenRouter model id for focused account reconciliation and the legacy section writer. Muse
-    # Spark 1.3 since 2026-09-28 (founder request, `_memory/2026-09-28-research-muse-model.md`);
-    # the 2026-09-04 control test had chosen Luna. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
-    arv2_display_model: str = "meta/muse-spark-1.3"
+    # OpenRouter model id for focused account reconciliation and the legacy section writer. Grok
+    # 4.6 since 2026-09-29 (founder request; Muse Spark 1.3 from 2026-09-28, Luna before). Env:
+    # ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "x-ai/grok-4.6"
     # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
     # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
     arv2_display_timeout_s: float = 240.0
