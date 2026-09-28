@@ -1,5 +1,5 @@
 <!--
-version: 4
+version: 5
 DRAFT — founder review pending (standing rule for prompt/rubric wording).
 
 v2 (clone-fidelity F4.2, ruling R24-4) adds the ABM / seller-dominance section at the end. It is
@@ -15,7 +15,7 @@ readers change. Do not paste any of it into a prompt builder.
 Everything below the marker line is what those readers receive, verbatim.
 -->
 --- rubric ---
-CLONE-REVIEW RUBRIC (v4) — how a cloned or repaired page is judged.
+CLONE-REVIEW RUBRIC (v5) — how a cloned or repaired page is judged.
 
 This rubric is the same for every reviewer of this page, whoever that is. It is not a
 style opinion; it is where the line sits between "different" and "broken".
@@ -34,7 +34,15 @@ STRICT — this is BROKEN and it is work, not taste:
   For exact reproduction, compare with the visible original. For an authorized
   campaign adaptation, compare with the agreed argument and preservation scope;
   deliberately omitted or rewritten source content is not itself a defect;
-- broken controls: a button, link or disclosure that does nothing, or throws;
+- broken controls: a button, link or disclosure that does nothing, or throws.
+  Captured JavaScript being absent explains the defect; it does not make a visible
+  control an acceptable static fallback. Test the resulting state, not just whether
+  a click can be dispatched. A linked panel must actually change its content. A
+  deliberate static alternative removes the false controls and preserves the useful
+  content; it does not satisfy an explicitly requested interaction.
+  Check source-relative links against the generated site's actual routes. A captured
+  booking/resource link that now points to a nonexistent local route is broken even
+  if a different CTA on the page works;
 - unusable height: a band far taller than anything visible in it — the reader drags
   through emptiness. This is the commonest clone defect and it is never acceptable at
   any repair rung;
@@ -46,6 +54,19 @@ STRICT — this is BROKEN and it is work, not taste:
   image, a font or a stylesheet that did not load. The preview shell we render
   through does run scripts of its own, and its errors are reported separately and
   are not the page's fault. Judge the page's; ignore the shell's.
+
+STRICT — reader-facing content. Review the actual rendered words independently of
+the plan's checklist. A clean layout does not excuse an unusable argument:
+- Internal production instructions, import mechanics and research-audit commentary
+  are not visitor copy. Keep those in the internal report. Convert an unknown into a
+  useful fit question, without turning it into a fact: "Which reservation systems
+  should the demo cover?" rather than "PMS is not evidenced; do not assume a vendor."
+  Preserve material product limits, attribution and proof conditions the reader needs.
+- The page must explain the product action and its relevance to the supplied reader,
+  with useful evidence or evaluation material. A target name plus generic feature
+  labels is not an account argument. Point to the visible explanation; do not accept
+  a plan that merely says these needs are covered. Narrow unsupported propositions
+  instead of filling the gaps with invented pains, outcomes or repeated disclaimers.
 
 STRICT — brand coherence AFTER a repair. A repaired band is judged against the band it
 replaced, on measurements, not on impressions:
@@ -89,8 +110,11 @@ still applies; these are the extra questions, and the first is the acceptance te
 
 If the answer is no, the page has adopted the target's brand and that is BLOCKING. The page
 renders in the SELLER's theme: their type, their palette, their spacing, their chrome. Judge:
-- SELLER CHROME DOMINATES. The campaign header and footer are the seller's, and the page
-  reads as a page of the seller's site that happens to name this account.
+- SELLER BRAND DOMINATES. The page reads as the seller's site addressed to this
+  account. That does not require a navigation bar or a full homepage footer. A
+  focused page may establish identity with genuine marks above the hero, preserving
+  the seller's typography, palette, imagery and spacing throughout. Follow the
+  requested placement and page intent; a library component is not a requirement.
 - THE EXACT TARGET LOGO is the only target-brand element on the page, and it is the target's
   real published mark. A redrawn, recoloured, re-lettered or approximated logo is BLOCKING —
   it is the never-synthesize rule, and it is not a matter of taste. AN EMPTY LOGO SLOT IS

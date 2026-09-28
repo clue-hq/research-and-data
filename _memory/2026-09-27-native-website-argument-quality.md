@@ -28,3 +28,24 @@
 - Follow-up narrowed the logo status: the latest three frozen run payloads contain the correct workspace-local design account ID. The recorded failed binds used the research entity UUID before the card fix; subsequent final summaries carried the old warning without a new bind attempt. Do not infer a second binder defect from that repeated prose or relax identity matching. All 29 focused account prompt/binder tests passed. Fresh native binding remains to be demonstrated.
 - Prepared one clean native project chat with the actual account mention and a short page request. It remains unsent while the isolated-preview font fix is reviewed. This test must assess first-pass output rather than reuse the long correction conversation; earlier artifacts stay preserved. Criteria are in ignored native-simple-prompt/test-plan.json.
 - Implemented the isolated-preview font repair: both API preview and native repair-preview resolve only the fragment's exact pinned brand kit, reuse page-render font resolution, and offer held font bytes through the existing deny-network renderer. No replacement theme, latest-kit fallback, engine change or artifact rewrite. Parent reviewed all five changed paths and independently passed 29 preview/font tests on the dedicated disposable DB plus 10 font-focused checks. Agent reported the initial nine regressions failing before implementation, then 20 focused checks passing; lint comparison added no diagnostics and diff check is clean. Runtime/native first-pass verification follows the checkpoint.
+- Fresh native request used one short prompt with the real account attached. It read all six
+  overview sections through three paginated receipts, loaded 15 skills and successfully fetched
+  and bound the genuine account logo. The generated page is a new document; earlier drafts stay
+  unchanged. Generation itself took about ten minutes and 111 tool calls after handoff recovery.
+- The handoff first stalled on a permanent refused interaction replay; the generic executor fix
+  is separately committed with 20 independently passing executor tests. Replaced only the four
+  owned workers after scoped guards; normal queue fencing recovered the existing request.
+- Fresh first-pass quality FAILED despite successful execution. Browser confirms inert feature
+  buttons, source-relative links pointing at missing local routes, identity below the product
+  panel, internal audit prose in visitor copy, and a wide footer. The agent reported warnings
+  rather than acceptance, but incorrectly treated these material defects as advisory. No extra
+  prompt was sent while it ran. Runtime previews may differ from live source-font rendering;
+  exact font parity is under read-only investigation, not asserted fixed.
+- Updated the one shared review rubric to distinguish working state transitions from mere
+  clickability, require actual link destinations, flag internal production prose and absent
+  account argument, and allow seller identity above a hero without mandatory homepage chrome.
+  This remains agent review guidance, not an enforced semantic validator. A concise native
+  revision will test the behavior; no direct artifact writes or verification-policy change.
+- Shared review-gate and solo-mode suites passed independently after the rubric edit; whitespace
+  check passed. Rubric is read uncached for each turn, so this guidance change needs no service
+  restart. Output quality is still pending the native revision, not established by those checks.
