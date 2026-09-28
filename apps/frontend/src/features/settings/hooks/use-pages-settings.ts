@@ -24,14 +24,10 @@ import {
 /** Spec §8.2 state 2: the card re-checks itself while the hostname is still provisioning. */
 const POLL_INTERVAL_MS = 5000;
 
-function messageFor(error: unknown): string {
-  return error instanceof ClueApiError ? error.message : "Something went wrong.";
-}
-
 /**
- * `REFUSAL_MESSAGES` carries copy for the custom-hostname refusal codes only.
- * Every other code (including the `label_*` family) falls through to the
- * server's own message rather than being guessed at here.
+ * `REFUSAL_MESSAGES` carries copy for the custom-hostname refusal codes and the
+ * `label_locked` / `label_taken` / `label_invalid` label refusals. Every other
+ * code falls through to the server's own message rather than being guessed at here.
  */
 function refusalFor(error: unknown): string {
   if (!(error instanceof ClueApiError)) return "Something went wrong.";
@@ -69,7 +65,7 @@ export function usePagesSettings(initial: PagesSettingsRead): PagesSettingsContr
         setState(await action());
         confirm("Pages updated");
       } catch (error) {
-        confirm(messageFor(error), true);
+        confirm(refusalFor(error), true);
         throw error;
       } finally {
         setBusy(false);

@@ -69,7 +69,10 @@ export function connectionView(custom: CustomHostname | null): ConnectionView {
   return "connecting";
 }
 
-/** Copy for the §7.3 refusal codes, rendered inline under the hostname input. */
+/**
+ * Copy for the §7.3 refusal codes, rendered inline under the hostname input, and for the
+ * label refusals (`label_locked` once the workspace has published), shown in the confirmation card.
+ */
 export const REFUSAL_MESSAGES: Record<string, string> = {
   hostname_invalid: "That is not a valid hostname.",
   hostname_is_apex:
@@ -81,4 +84,8 @@ export const REFUSAL_MESSAGES: Record<string, string> = {
   provider_error:
     "The hosting provider refused this hostname. Try again or contact support.",
   PROVIDER_NOT_CONFIGURED: "Custom domains are not configured on this deployment.",
+  label_locked: "This address has already published a site, so its label is fixed.",
+  label_taken: "That label is already in use.",
+  label_invalid:
+    "Use 3–40 lowercase letters, digits or hyphens, not starting or ending with a hyphen.",
 };

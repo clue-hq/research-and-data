@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { PagesSettingsReadSchema, connectionView, stepIndex } from "./pages";
+import {
+  PagesSettingsReadSchema,
+  REFUSAL_MESSAGES,
+  connectionView,
+  stepIndex,
+} from "./pages";
 
 const base = {
   settings: { fallbackUrl: null, pageTitle: null, pageDescription: null, faviconUrl: null, socialPreviewUrl: null },
@@ -46,4 +51,9 @@ test("a disconnecting hostname reads as connecting, with no step marked", () => 
   });
   assert.equal(connectionView(disconnecting.customHostname), "connecting");
   assert.equal(stepIndex("disconnecting"), -1);
+});
+
+test("a label change refused after the first publish has its own copy", () => {
+  assert.equal(typeof REFUSAL_MESSAGES.label_locked, "string");
+  assert.ok(REFUSAL_MESSAGES.label_locked.length > 0);
 });

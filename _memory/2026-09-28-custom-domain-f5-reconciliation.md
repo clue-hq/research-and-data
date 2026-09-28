@@ -121,11 +121,6 @@ asset-enrichment lane; five Zafran account-research frontend fixture tests
 - Backfilled hostnames take the `CLUE_PAGES_SYSTEM_SUFFIX` in force when the migration runs.
 - `DbPageReads.active_page` has no DB test (the origin suite is fakes-only).
 - `npm run build` not run; no live UI check with a real custom hostname.
-- `apps/frontend/docs/api-contracts/settings.md` Pages section: it does not document publish
-  responses (so `customPageUrls` needed no entry), but its refusal table and seam notes predate the
-  reconciliation — `label_locked` (422 from `PATCH /settings/pages/system-hostname`) is not listed,
-  `REFUSAL_MESSAGES` has no copy for it (the server's message is shown), and the seam still names
-  `fetchMutation` for the removal and the pre-slice fixture wording.
 
 ## Owed (honest list)
 
