@@ -13,6 +13,12 @@ A successful operation, valid document or screenshot path proves none of these.
    preserved properties and unresolved requirements. Current previews must follow
    the last relevant mutation. `render_web_preview()` captures 1440/768/375 and
    supported states; inspect them with `view("preview:<width>")` and `view("state:<n>")`.
+   A tall full-page image is only an overview: inspect readable saved strips with
+   `view("preview:375:tile:0")`, following `coverage.next_target` for the mobile
+   page and using the same syntax for 768/1440 when details are too small. Check
+   required product imagery and copy in those pixels; a gradient placeholder is
+   not a working product visual. Match source hashes/version when combining
+   observations and report any required tiles left unseen.
    Reuse a verified unchanged render instead of repeating the loop.
 2. Read [fidelity and behavior checks](references/fidelity-and-behavior.md).
    For reused/derived bands, inspect source pixels and compare their hierarchy,

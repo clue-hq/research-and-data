@@ -1320,6 +1320,138 @@ def test_web_view_preview_clamps_to_the_many_image_ceiling(tmp_path: Path):
     assert abs((emitted.size[0] / emitted.size[1]) - (1440 / 14325)) < 0.005
 
 
+def test_web_preview_tile_crops_saved_pixels_before_normalization(tmp_path: Path, monkeypatch):
+    """A real narrow/tall capture must stay legible, not become a 102px strip."""
+    from PIL import Image, ImageDraw
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (379, 7464))
+    path = Path(tools._preview_by_width[375])
+    with Image.open(path) as source:
+        drawing = ImageDraw.Draw(source)
+        drawing.rectangle((0, 1100, 378, 1699), fill="red")
+        drawing.rectangle((0, 1700, 378, 2299), fill="blue")
+        source.save(path)
+    original = path.read_bytes()
+    doc_before = json.dumps(tools.web_doc, sort_keys=True)
+    version_before = tools._doc_version
+
+    def must_not_render(*args, **kwargs):
+        raise AssertionError("viewing a saved tile must never render")
+
+    monkeypatch.setattr(tools, "render_web_preview", must_not_render)
+    # Invoke the same callable exposed to a non-rendering reviewer.
+    blocks = ws.make_web_view_tool(tools, can_render=False).invoke(
+        {"target": "preview:375:tile:1"}
+    )
+    tile = _emitted_image(blocks)
+    assert tile.size == (512, 1621)
+    assert tile.getpixel((256, 200)) == (255, 0, 0)
+    assert tile.getpixel((256, 1400)) == (0, 0, 255)
+    meta = json.loads(blocks[0]["text"])
+    assert meta["source"] == {
+        "target": "preview:375",
+        "sha256": hashlib.sha256(original).hexdigest(),
+        "pixel_width": 379,
+        "pixel_height": 7464,
+        "render_iteration": 1,
+        "local_document_version": version_before,
+    }
+    assert meta["crop"] == {"x": 0, "y": 1100, "width": 379, "height": 1200}
+    assert meta["tile"] == {"index": 1, "count": 7, "height": 1200, "overlap": 100}
+    assert meta["document_id"] == "doc_web_test"
+    assert meta["page_id"] == "home"
+    assert meta["run_id"] == tools.run_id
+    assert meta["persisted_revision_checked"] is False
+    assert meta["coverage"] == {
+        "scope": "this_call_only",
+        "other_tile_index_ranges": [[0, 0], [2, 6]],
+        "next_target": "preview:375:tile:2",
+        "complete_source_shown": False,
+    }
+    assert path.read_bytes() == original
+    assert list(tmp_path.glob("*.png")) == [path]
+    assert json.dumps(tools.web_doc, sort_keys=True) == doc_before
+    assert tools._doc_version == version_before
+    assert tools.operations_ledger == []
+
+
+@pytest.mark.parametrize(
+    ("size", "index", "crop", "count"),
+    [
+        ((379, 7464), 6, {"x": 0, "y": 6600, "width": 379, "height": 864}, 7),
+        ((768, 1200), 0, {"x": 0, "y": 0, "width": 768, "height": 1200}, 1),
+        ((1440, 600), 0, {"x": 0, "y": 0, "width": 1440, "height": 600}, 1),
+    ],
+)
+def test_web_preview_tile_bounds_cover_tail_and_short_pages(tmp_path, size, index, crop, count):
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, size)
+    blocks = tools._view_content(f"preview:375:tile:{index}")
+    meta = json.loads(blocks[0]["text"])
+    assert meta["crop"] == crop
+    assert meta["tile"]["count"] == count
+    assert meta["coverage"]["next_target"] is None
+    assert meta["coverage"]["complete_source_shown"] is (count == 1)
+    assert meta["coverage"]["other_tile_index_ranges"] == ([] if count == 1 else [[0, 5]])
+    assert max(_emitted_image(blocks).size) <= view_mod._VISION_MANY_IMAGE_MAX_PX
+    refused = tools._view_content(f"preview:375:tile:{count}")
+    assert len(refused) == 1
+    assert "out of range" in refused[0]["text"]
+
+
+@pytest.mark.parametrize("suffix", ["-1", "1.5", "0:extra", "../secret.png", "9" * 100])
+def test_web_preview_tile_invalid_indexes_never_open_a_file(tmp_path, monkeypatch, suffix):
+    tools = _bare_tools(tmp_path)
+
+    def must_not_open(*args, **kwargs):
+        raise AssertionError("malformed targets must be rejected before image access")
+
+    monkeypatch.setattr(Path, "read_bytes", must_not_open)
+    blocks = tools._view_content(f"preview:375:tile:{suffix}")
+    assert len(blocks) == 1
+    assert "invalid preview tile target" in blocks[0]["text"]
+
+
+def test_web_preview_tiles_use_only_registered_capture_and_existing_stale_guards(tmp_path):
+    tools = _bare_tools(tmp_path)
+    # An unregistered file with the expected name is not enough to expose pixels.
+    (tmp_path / "preview_375.png").write_bytes(b"unreadable")
+    missing = tools._view_content("preview:375:tile:0", can_render=False)
+    assert "no preview rendered" in missing[0]["text"]
+    tools._preview_by_width[375] = str(tmp_path / "preview_375.png")
+    tools._preview_doc_version = tools._doc_version
+    tools._doc_version += 1
+    # The unreadable bytes prove the stale guard runs before image decoding.
+    for can_render in (False, True):
+        stale = tools._view_content("preview:375:tile:0", can_render=can_render)
+        assert len(stale) == 1
+        assert "STALE" in stale[0]["text"]
+        assert ("render_web_preview" in stale[0]["text"]) is can_render
+        assert ("END YOUR REPLY" in stale[0]["text"]) is not can_render
+    unsupported = tools._view_content("preview:1024:tile:0")
+    assert "unknown preview width" in unsupported[0]["text"]
+
+
+def test_web_preview_tile_reports_new_snapshot_identity_without_carrying_coverage(tmp_path):
+    from PIL import Image
+
+    tools = _bare_tools(tmp_path)
+    _seed_page_capture(tmp_path, tools, 375, (379, 2400))
+    first = json.loads(tools._view_content("preview:375:tile:0")[0]["text"])
+    path = Path(tools._preview_by_width[375])
+    Image.new("RGB", (379, 2400), "red").save(path)
+    tools._doc_version += 1
+    tools._preview_doc_version = tools._doc_version
+    tools._preview_iteration = 2
+    second = json.loads(tools._view_content("preview:375:tile:0")[0]["text"])
+    assert second["source"]["sha256"] != first["source"]["sha256"]
+    assert second["source"]["render_iteration"] == 2
+    assert second["source"]["local_document_version"] == tools._doc_version
+    assert second["coverage"] == first["coverage"]
+    assert second["coverage"]["other_tile_index_ranges"] == [[1, 2]]
+
+
 def test_web_view_state_capture_clamps_to_the_many_image_ceiling(tmp_path: Path):
     from PIL import Image
 

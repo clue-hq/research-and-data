@@ -67,3 +67,33 @@
   Offline capture font-readiness evidence is incomplete; cold-load fallback remains a hypothesis.
   Newly composed bands omit display-family declarations separately. A bounded audit of full-page
   image downscaling is checking whether the current review receives legible viewport evidence.
+- Review-resolution audit confirmed a full phone capture of 379x7464 becomes 102x2000
+  through the shared many-image ceiling. Geometry-only review returns paths, not readable
+  mobile image blocks. A bounded indexed view of saved preview crops is in progress; it must
+  preserve stale guards and registered-path boundaries without re-rendering or editing pages.
+- Live original-site comparison at phone width found a second independent defect: JavaScript
+  mounts an operator interface inside the mobile product shell, while the approved captured
+  fragment's same branch contains only the gradient image. Original desktop capture retains
+  the desktop UI; this is missing viewport-dependent DOM, not an image decode failure.
+  Capture currently uses one desktop viewport and one HTML harvest: plain Chromium uses
+  1440x2000, while the default stealth backend keeps its own coherent viewport/fingerprint.
+  Native fetch_page is a bounded text/link evidence fetch, not a responsive browser recapture. A generic responsive
+  capture/variant seam is still needed; downloading arbitrary bundles is not equivalent to
+  preserving/reconstructing supported behavior. No source recapture or artifact edit performed
+  for this comparison; temporary browser viewport was restored.
+- Implemented native `view("preview:<width>:tile:<index>")`: one bounded saved-image strip,
+  cropped before the existing many-image ceiling, with source hash, local version, exact crop
+  and per-call coverage. Existing preview callers and role-aware stale guards remain intact.
+  Review skill now requests readable mobile evidence and distinguishes crop pixels from a new
+  interaction observation. No fresh capture, arbitrary file access or document write is added.
+- Agent demonstrated 11 failing tile regressions before implementation, then all 11 passed.
+  Parent reviewed the four changed paths and independently ran substrate + skill-family suites:
+  only the existing round-budget fixture failed. Agent's broader four-module run was 143 pass,
+  one same failure; in-memory HEAD reproduction confirms the fixture omits the existing media
+  readiness flag and falls into a real render. Kept that unrelated fixture unchanged. Whitespace
+  check is clean; lint comparison reports no newly introduced diagnostics (baseline remains).
+- Parent replayed the read-only tile tool on the actual saved phone screenshot: source 379x7464,
+  crop 379x1200, emitted 512x1621, source hash unchanged. The resulting copy is legible for
+  inspection. This proves tool behavior, not native model adoption or page acceptance. Native
+  repair/live checks still await the user's pending Google passkey handoff; the goal is active
+  and current drafts remain below the requested quality bar.

@@ -20,6 +20,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import io
 import json
 import os
 import re
@@ -128,7 +129,13 @@ from ..web_retokenize import build_web_retokenize_operations, summarize_class_pa
 from . import logo_fetch
 from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
-from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _image_observation_label, _text_block
+from .view import (
+    _VISION_MANY_IMAGE_MAX_PX,
+    _image_block,
+    _image_bytes_block,
+    _image_observation_label,
+    _text_block,
+)
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -314,6 +321,10 @@ def tailwind_runtime_path(repo_root: Path) -> Optional[Path]:
 
 # The screenshot widths captured for every render, in emission order.
 _PREVIEW_WIDTHS = (1440, 768, 375)
+# Read-only strips of an already-rendered screenshot. Crop BEFORE the shared
+# image ceiling: a 379x7464 full-page image otherwise shrinks to 102px wide.
+_PREVIEW_TILE_HEIGHT = 1200
+_PREVIEW_TILE_OVERLAP = 100
 
 # The two widths interactive STATE captures (dialog-open, accordion-expanded)
 # are taken at — desktop + mobile, the ends that break interaction layouts.
@@ -10184,7 +10195,8 @@ class LumenWebTools:
             self.record("agent", "web_view_called", input_summary=target, output_summary="doc")
             return [_text_block(self._doc_summary_text())]
         if target.startswith("preview:"):
-            width_str = target[len("preview:") :]
+            parts = target[len("preview:") :].split(":")
+            width_str = parts[0]
             if width_str not in {"1440", "768", "375"}:
                 self.record(
                     "agent", "web_view_called", input_summary=target, output_summary="unknown_width"
@@ -10195,6 +10207,23 @@ class LumenWebTools:
                         "preview:1440, preview:768, or preview:375."
                     )
                 ]
+            tile_index = None
+            if len(parts) != 1:
+                if (
+                    len(parts) != 3
+                    or parts[1] != "tile"
+                    or re.fullmatch(r"0|[1-9][0-9]{0,8}", parts[2]) is None
+                ):
+                    self.record(
+                        "agent", "web_view_called", input_summary=target,
+                        output_summary="invalid_preview_tile",
+                    )
+                    return [_text_block(
+                        "view: invalid preview tile target. Use "
+                        "preview:<1440|768|375>:tile:<index>, with a zero-based "
+                        "nonnegative integer index (at most 9 digits)."
+                    )]
+                tile_index = int(parts[2])
             width = int(width_str)
             path = self._preview_by_width.get(width)
             if path is None or not Path(path).exists():
@@ -10229,6 +10258,8 @@ class LumenWebTools:
                         "orchestrator re-renders and the reviewer judges the result."
                     )
                 ]
+            if tile_index is not None:
+                return self._view_preview_tile(width, Path(path), tile_index, target)
             self.record(
                 "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
             )
@@ -10254,10 +10285,86 @@ class LumenWebTools:
         return [
             _text_block(
                 f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
+                '"preview:768", "preview:375", "preview:<width>:tile:<n>", '
+                '"state:<n>", "asset:<asset_id>", '
                 '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
             )
         ]
+
+    def _view_preview_tile(self, width: int, path: Path, index: int, target: str) -> list:
+        """Inspect one strip from the guarded, registered preview; never render/save.
+
+        Coverage describes only this call, not what a model remembers or has
+        approved. The byte hash lets it avoid mixing observations across renders.
+        """
+        from PIL import Image
+
+        raw = path.read_bytes()
+        with Image.open(io.BytesIO(raw)) as source:
+            pixel_width, pixel_height = source.size
+            stride = _PREVIEW_TILE_HEIGHT - _PREVIEW_TILE_OVERLAP
+            tail = max(0, pixel_height - _PREVIEW_TILE_HEIGHT)
+            count = 1 + (tail + stride - 1) // stride
+            if index >= count:
+                self.record(
+                    "agent", "web_view_called", input_summary=target,
+                    output_summary="preview_tile_out_of_range",
+                )
+                return [_text_block(
+                    f"view: preview tile index {index} out of range. "
+                    f"This saved preview has {count} tiles; use indexes 0–{count - 1}."
+                )]
+            top = index * stride
+            bottom = min(top + _PREVIEW_TILE_HEIGHT, pixel_height)
+            source.seek(0)
+            tile = source.crop((0, top, pixel_width, bottom))
+            buffer = io.BytesIO()
+            tile.save(buffer, format="PNG")
+        other_ranges = []
+        if index > 0:
+            other_ranges.append([0, index - 1])
+        if index + 1 < count:
+            other_ranges.append([index + 1, count - 1])
+        metadata = {
+            "status": "ok",
+            "observation": "saved_preview_tile",
+            "document_id": self.web_doc.get("id"),
+            "page_id": self.page_id,
+            "run_id": self.run_id,
+            "persisted_revision_checked": False,
+            "source": {
+                "target": f"preview:{width}",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "pixel_width": pixel_width,
+                "pixel_height": pixel_height,
+                "render_iteration": self._preview_iteration,
+                "local_document_version": self._preview_doc_version,
+            },
+            "crop": {"x": 0, "y": top, "width": pixel_width, "height": bottom - top},
+            "tile": {
+                "index": index, "count": count,
+                "height": _PREVIEW_TILE_HEIGHT, "overlap": _PREVIEW_TILE_OVERLAP,
+            },
+            "coverage": {
+                "scope": "this_call_only",
+                "other_tile_index_ranges": other_ranges,
+                "next_target": f"preview:{width}:tile:{index + 1}" if index + 1 < count else None,
+                "complete_source_shown": count == 1,
+            },
+            "note": (
+                "Static crop of the saved full-page screenshot, before protective "
+                "image normalization; not a fresh viewport or interaction capture. "
+                "Other tile ranges were not shown by this call; this is not a "
+                "visual acceptance verdict or persisted revision check."
+            ),
+        }
+        image = _image_bytes_block(buffer.getvalue(), max_px=_VISION_MANY_IMAGE_MAX_PX)
+        self.record(
+            "agent", "web_view_called", input_summary=target,
+            output_summary=f"preview_tile={index}/{count}; blocks=2",
+            payload=metadata,
+        )
+        return [_text_block(json.dumps(metadata)), image]
 
     def _asset_id_menu(self) -> str:
         """The ids an `asset:` target can name, by source — what an unknown id
@@ -10556,7 +10663,10 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     must not tell those roles to call render_web_preview (orchestrator-only).
 
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
-    screenshot of that width as [text, image] blocks; "state:<n>" returns the
+    screenshot of that width as [text, image] blocks; "preview:<width>:tile:<n>"
+    returns one readable, zero-based strip of the same saved screenshot with
+    source/version/crop and coverage metadata, without rendering again;
+    "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
     latest render; "asset:<asset_id>" returns that asset's preview image (from
     the document's own registry, the kit manifest, or the workspace library);
@@ -10576,6 +10686,14 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     def view(target: str) -> list:
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
+        "preview:<width>:tile:<n>" returns one readable strip of that saved
+        screenshot (zero-based n; 1200px high, 100px overlap). Use tile:0 then
+        coverage.next_target to inspect tall/mobile pages. JSON reports source
+        hash/dimensions/render version, crop, tile count and other tile ranges
+        not shown by THIS call. Compare matching source hashes; coverage is not
+        cumulative or an acceptance verdict. It crops BEFORE image normalization,
+        never renders/writes, and uses the same stale-preview guards. This is a
+        static full-page crop, not a new viewport/scroll/interaction observation;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
         opened or accordions expanded) from the latest render;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE

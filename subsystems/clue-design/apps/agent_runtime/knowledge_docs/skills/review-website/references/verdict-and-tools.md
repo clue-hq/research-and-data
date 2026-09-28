@@ -13,8 +13,19 @@ The author finishes scoped writes and lets the orchestrator render and finalize.
   reviewer roles do not own the render tool. `unchanged: true` reuses current
   screenshots and permits reusing their still-applicable critique.
 - `view(target)` accepts `doc`, `brand`, `account`, `preview:1440`, `preview:768`,
-  `preview:375`, `state:<n>`, `asset:<id>`, `cloned_section:<id>`, `node:<id>`.
+  `preview:375`, `preview:<width>:tile:<n>`, `state:<n>`, `asset:<id>`,
+  `cloned_section:<id>`, `node:<id>`.
   It does not accept arbitrary file paths or a made-up source-comparison target.
+  Preview tiles are zero-based, 1200 source pixels high with 100 pixels of
+  overlap (the last may be shorter), cropped before image normalization. Each
+  call returns one image plus source hash/dimensions/render version, crop,
+  tile count, `coverage.next_target` and other tile index ranges. Coverage is
+  **this call only**, not cumulative or a quality verdict. Inspect the needed
+  tiles from the same source hash; new renders invalidate earlier observations.
+  Tiles read the current saved preview and retain stale guards; they do not
+  render, write artifacts or show fresh scroll/interaction states. A full-page
+  overview or source image in the asset registry cannot prove that a required
+  product visual actually appears in its mobile section.
   `doc` is only a section/count/asset summary. `node:<id>` returns one exact
   active-page canonical node (including rich text, fragment slots/overrides and
   component pins), parent/child IDs and local document/page/run identity. It is
@@ -29,7 +40,9 @@ The author finishes scoped writes and lets the orchestrator render and finalize.
   the existence of the files is not inspection.
 - `review_cloned_page()` returns measured `broken_clones`, advisory `page_findings`,
   capture/comparison material and observation gaps. It may write clone verdicts
-  to the library. A zero-finding response does not certify aesthetics, all states,
+  to the library. This JSON response does not itself show the model those pixels;
+  inspect current previews/tiles and exposed states through `view`. A zero-finding
+  response does not certify aesthetics, required imagery, all states,
   copy support or CTA destination. Nothing it returns alone blocks publication.
 - `provenance(action="list")` exposes known sources/citations. `action="cite"`
   requires existing `source_ids_json` and `note`, with optional current
