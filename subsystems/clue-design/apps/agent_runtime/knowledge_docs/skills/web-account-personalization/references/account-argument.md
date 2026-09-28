@@ -1,105 +1,80 @@
 # From account evidence to a page worth reading
 
-Use this for a new account page or a requested account-content adaptation. An
-exact-copy/logo-only change follows its edit scope. This guide is part of the
-existing personalization family, not a separate research agent or runtime schema.
+Use for new account pages and account-content adaptations. Exact-copy/logo-only
+edits retain their narrower scope. Work in the existing plan, not a new schema.
 
-## 1. Establish what kind of relevance is possible
+## Complete the context before choosing the angle
 
-Read project account membership and the selected account's research through the
-tools listed in [identity and evidence](identity-and-evidence.md). Query using the
-brief's actual name/domain; keep the returned entity and artifact-account IDs
-distinct. A target named in prose can lack a target card. A missing card is not
-an instruction to skip the available reads. Read only the needed claim families;
-follow pagination before declaring an entire family absent.
+Read project membership and research through [identity and evidence](identity-and-evidence.md).
+A target may lack a card; use available scoped reads. Keep research and design
+account IDs distinct. Complete the bounded **overview**: follow every returned `next_offset` until null. Receipts are not
+sections. Assemble chunks by `section_key`/`chunk_index`/`chunk_count` before using
+that section. Include committee, approach and watch-outs as well as company/fit.
+For a contact page, read available professional evidence using the returned person
+entity ID. Then read only the claim families needed for the selected argument.
+In the plan record **read coverage**: sections/contact evidence read, outstanding
+continuations and gaps. A missing/refused/unread section is not an empty finding.
+Separate source facts from analyst interpretations such as "needs a win", "empty
+evaluation slate" or "coverage gap". Permitted supplied facts can be restated
+faithfully; importing them does not make them useless or independently verified.
+Preserve their source/status internally. A report's word "verified" cannot override
+platform verification/use decisions. Exclude blocked, conflicting or unsupported
+assertions from factual copy; a plausible sales angle is not evidence of need.
+Identity alone supports a named concept. Supplied professional tasks plus seller
+proof support a task-relevant proposal. Account evidence can ground the argument;
+application remains proposed. Contact relevance also needs resolved identity and
+allowed use. No claim count makes a page specific; materiality and support do.
+If research is absent, name the required normal account preparation in the handoff.
+Design reads shared research; it does not launch discovery or invent account facts.
 
-Classify the available support in the existing plan:
+## Make a decision map, then select components
 
-| Available support | Page may say | Review must distinguish |
-|---|---|---|
-| Exact identity and logo only | Address the company; preserve an explicitly requested identity-only message | Named concept; no demonstrated account need |
-| Supplied role/task plus seller product evidence | Explain how the documented mechanism can serve that task | Task-relevant proposal; target use and need are unverified |
-| Usable current account evidence plus seller capability | Connect the supported account situation to the relevant mechanism and evaluation question | Account-grounded argument; proposed application is still a proposal |
-| Resolved contact plus allowed professional/use evidence | Adapt that argument to the person's responsibility and decision | Contact-grounded scope; omit unsupported personal facets |
+Write one compact chain in the plan: **reader/decision → selected account context
+and source/status → documented seller mechanism and source → proposed application
+→ relevant proof/fit questions → genuine next action/destination**. Separate the
+reader from their customers, account relevance from seller proof, and a contact's
+professional responsibility from assumed budget authority. Then map the material:
 
-These levels describe support, not scores or automatic acceptance. No required
-claim count or decorative news quota makes a page specific. One material source
-can be enough; ten irrelevant facts can all be omitted. Conflicting, stale or
-weakly attributed claims stay identified as such. Do not select a convenient
-claim merely because it makes the headline more dramatic.
+| Reader needs to understand | Useful material to show when supported |
+|---|---|
+| Why this is relevant here | Account initiative or operating context and the specific task worth examining |
+| What the product changes | A proposed workflow with documented product actions, inputs and human handoffs |
+| Why believe the proposal | Real product states, attributed customer evidence or a demonstration of the mechanism |
+| What to evaluate next | The reader's criteria, dependencies to establish, fit questions and genuine next action |
 
-If the account is absent or unresearched, record the exact preparation needed:
-resolve/add the intended company to this project, then use the platform's normal
-research workflow. The design role reads the shared result; it does not start
-discovery, write account facts, or build its own research pipeline. Continue a
-supported draft where useful, with missing deep personalization explicit in the
-handoff. A repeated read of the same empty account list cannot resolve this gap.
+These are **content responsibilities, not mandatory sections or a fact quota**.
+Combine/expand them for the decision. For each retained insight, record the visible
+explanation it enables and its section; give a reason for omitted material. Research
+only in the plan has not personalized the page. Unknown integrations/results can
+remain useful fit questions without deleting supported context and product detail.
+Map sections to source ancestors, text/media changes and the question each answers.
+Rebind healthy slots first; derive a variant when meaningful explanation cannot fit.
+Preserve the seller's geometry, type and imagery. Do not shrink copy into slogans.
 
-## 2. Write one short argument in the existing plan
+## Write useful visitor copy, keep the audit internal
 
-Use these six lines, supplying real excerpts/references where available:
+Maintain two outputs: an internal source/status/limits record, and the reader's
+explanation of relevance, product action, proof and evaluation. "Imported materials
+name you", "not a biography" and "no claim of live deployment" are audit language.
+Replace them with the supported application and what the reader can assess. Keep
+material proof conditions and genuine product limits visible. Removing internal
+caveats must not strengthen a claim. Job openings do not establish staffing failure;
+an initiative does not prove budget/intent; a fingerprint does not prove integration.
+A demo destination does not promise a pilot, rollout, workshop or response SLA.
 
-1. **Reader and decision:** the team/person, their relevant task, and the next
-   decision the page supports. Separate the buyer from their customers.
-2. **Account context:** the selected supported situation, source/claim reference,
-   subject, date/status, and what it does not establish.
-3. **Seller mechanism:** the evidenced feature/workflow that serves that task,
-   with its seller source. Check capabilities separately from target facts.
-4. **Connection:** why these two belong together; identify the proposed use or
-   evaluation question without converting it into a diagnosed pain or forecast.
-5. **Proof and uncertainty:** relevant product demonstration or attributed peer
-   result, its exact scope, and remaining requirements. Missing proof changes
-   the page's claim strength, not the source's factual meaning.
-6. **Action:** the actual offer, label and supported destination. A contact form
-   enables contact; it does not promise a booked workshop, trial or response SLA.
+Product media should explain the mechanism with real states and correct crop/radius/
+background. Seller demonstrations stay seller demonstrations; another customer's
+results keep attribution. Target identity is not endorsement. Personal interests
+or sensitive facets require the separate identity/use gates; omit unsupported ones.
 
-Then map each retained section to its visitor question, selected source fragment,
-the account/seller evidence it uses, and the intended text/media change. Rebind
-healthy source slots first. Change section order or derive a variant only when
-the argument needs it; retain the seller's geometry, typography and imagery.
-An account-aware page need not repeat the account name in every heading.
+## Review the page, not the plan
 
-## 3. Put useful copy on the page
-
-The visible message consists of a concrete task, a supported product mechanism,
-relevant evidence and a clear next action. Internal audit explanations belong in
-the plan/final report. Replace caveats such as "this is not a customer story" or
-"we will not invent your stack" with the supported evaluation or product value.
-Removing a caveat must not strengthen an unsupported claim.
-
-For example, assume a **test fixture** where a hotel group's official announcement
-describes centralized request routing, and seller evidence documents one inbox
-for email/WhatsApp plus routing rules. A page can explain those mechanisms in
-the context of the announced initiative and invite their evaluation. It cannot
-promise a percentage saving, a live integration, translation, or a rollout at all
-properties. For an independent-property group with different supported context,
-the appropriate emphasis may be inbox handling and a routing-fit question. Both
-can reuse the same brand components without copying the first account's initiative.
-These fixtures supply no facts about real customers.
-
-Choose media to demonstrate the selected mechanism. A product screenshot stays
-a seller demonstration; a photographed customer or customer metric retains that
-customer's attribution. Target branding is identity, not endorsement. Preserve
-the correct source crop/radius/background rather than adding unrelated target
-imagery to make the page look personalized.
-
-## 4. Verify meaning as well as pixels
-
-Before finalizing, inspect the current rendered copy and trace its factual meaning
-to the plan. Ask what would change for another account with different evidence:
-the use-case emphasis, proof, section choice or next decision should change when
-the evidence warrants it. Shared tasks can legitimately yield similar copy;
-never manufacture distinctions just to pass this test.
-
-Check that target evidence did not leak into seller proof, another target, or an
-unqualified metric. Compare requested specificity with the support actually used.
-A visually polished named concept remains a draft if deep account research was
-required and absent. Report scope and gaps through the existing finalization
-contract, alongside the current responsive/source/conversion review.
-
-An account page and a reusable template are separate deliverables. Follow
-[audience modes](audience-modes.md) for actual template/derivation markers. Swapping
-the name and logo does not make account-specific paragraphs safe for another
-company. Each derived account needs its own supported copy and resulting-page
-check; missing supported content slots are a scaling gap, not permission to reuse
-one account's facts across the list. Preserve prior drafts and frozen descendants.
+For every decision-map responsibility, point to the **actual visible explanation
+or working demonstration**. A logo, heading, generic feature label or reviewer
+assertion is not that material. Missing substance is a content defect even when
+many sections render cleanly. Check factual meaning against source scope and ask
+what different evidence would change; never manufacture differences for variety.
+A named concept is not deep personalization, and a source comparison/behavior gap
+remains a gap. Follow `review-website` for responsive, interaction and CTA checks.
+Follow [audience modes](audience-modes.md) for real template/derivation markers:
+personalized paragraphs are not reusable by swapping names. Preserve prior drafts.

@@ -10,6 +10,7 @@ hypotheses, campaign intent and relationship evidence separate. A name and logo
 establish identity; they do not establish needs, stack, results or endorsement.
 
 Read [account argument](references/account-argument.md) before selecting sections or rewriting an account page.
+Continue any truncated reference read before applying the guide.
 It turns available evidence into a reader, message, relevant product mechanism,
 proof choice and actual next step in the existing plan. Exact-copy/logo-only edits
 keep their narrower scope.

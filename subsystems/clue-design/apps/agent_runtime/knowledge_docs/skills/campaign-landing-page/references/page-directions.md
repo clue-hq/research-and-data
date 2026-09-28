@@ -8,8 +8,8 @@ This is a short addition to the existing plan, not a new runtime schema or agent
 
 For each requested page, write one row in `workspace/plan.md`:
 
-| Reader / decision | Selected evidence and limits | Central product mechanism | Opening message | Section sequence | Visual emphasis / source ancestors | Actual next action |
-|---|---|---|---|---|---|---|
+| Reader / decision | Selected evidence and limits | Central product mechanism | Opening message | Decision material visible on page | Section sequence | Visual emphasis / source ancestors | Actual next action |
+|---|---|---|---|---|---|---|---|
 
 For argument alternatives, give each page a useful reason to exist: an operator understanding a workflow,
 an evaluator inspecting fit, or a sponsor considering the scope of an evaluation.
@@ -26,6 +26,11 @@ Evidence changes the argument. A published initiative can set the evaluation
 context; it does not prove pain, purchase intent, adoption or a promised outcome.
 Use only material insights. Keep conflicting, stale, restricted or unsupported
 claims in the internal evidence notes, rather than making a longer dossier page.
+For a researched account, initiative and contact set, each page must still explain
+the product and provide enough relevant material to support its reader's decision.
+Shortening one sibling or adding a salutation does not create a different useful
+argument. Use the account decision map to identify what each reader can actually
+learn from that page; share essential product context where it is needed.
 
 ## Make the visual difference serve the decision
 

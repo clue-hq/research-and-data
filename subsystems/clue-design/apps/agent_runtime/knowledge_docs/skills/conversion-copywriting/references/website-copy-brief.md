@@ -1,66 +1,60 @@
 # Write the website copy before fitting the slots
 
-Use for a new page or substantial rewrite; exact-text edits retain their scope.
-Work inside the campaign's existing plan. The inputs are the user's intent,
-seller voice/capabilities, accessible account/contact evidence, selected source
-components and the real next action. A long research report is input, not copy.
+For a new page or substantial rewrite, use the campaign's existing plan. Exact-text
+edits retain their scope. Inputs: user intent, seller voice/capabilities, accessible
+account/contact evidence, source components and the genuine next action. A research
+report supplies material; its analyst headlines and internal notes are not page copy.
 
 ## Distill the useful argument
 
-For each material insight retained, write a compact chain:
+For each retained insight: **source/status → reader decision → documented seller
+mechanism → proposed application → proof or fit question**. Use the account skill's
+decision map: why relevant, what product actions change, what demonstrates them and
+what this reader should evaluate. Those are coverage needs, not a section quota.
+Permitted supplied facts remain useful; keep their origin and limits in the plan.
+Do not silently upgrade them to independently verified claims or override use gates.
+Separate sourced facts from analyst interpretations: openings do not prove staffing
+failure, initiatives do not prove purchase intent, fingerprints do not prove an
+integration. Conditional words do not repair invented causality. Narrow or omit
+unsupported claims while keeping the supported task/mechanism explanation useful.
+For a contact, begin with their supported professional responsibility and decision,
+then select the mechanism, demonstration and fit questions relevant to that work.
+A salutation or appointment-date biography is not a contact argument. Do not infer
+budget authority, personal frustration or private/sensitive facets from their role.
 
-**Source and status → reader's relevant decision → documented seller mechanism
-→ proposed application → proof or evaluation question.**
+## Produce the copy brief
 
-Keep the original excerpt/reference and limitations in the internal plan. Label
-supplied research as supplied; a read tool or polished account summary is not
-independent verification. A public initiative does not establish a budget or
-purchase intent. Job openings do not prove a staffing failure. A technology
-fingerprint does not prove an integration. When support is missing, use a genuine
-evaluation question or omit the claim; soft verbs do not repair invented causality.
+1. **Proposition:** what the product lets this reader do, with documented capability
+   and supported account context. State the useful idea in plain language.
+2. **Headline + support:** a concrete idea followed by mechanism/scope. Use product
+   nouns and verbs, not category slogans, forced puns or repeated account names.
+3. **Section spine:** headings form a coherent story from relevance through product
+   and evidence to action. Then write the explanation, not just headings and CTAs.
+4. **Body + proof:** state relevant context, explain the product action and its
+   application, then show what helps the reader judge it. Keep customer proof and
+   material conditions attributed; target research is not a seller outcome forecast.
+5. **Action:** actual label, destination and what happens there. A demo booking does
+   not promise a pilot, implementation, bespoke workshop or response commitment.
 
-For a contact, start from their supported professional responsibility and what
-they would need to assess. Choose the mechanism, demonstration and objection
-relevant to that work. A greeting with their name is not a contact argument.
-Do not infer buying authority from a title, diagnose personal frustrations, or
-use private/sensitive facets. Keep proposed committee roles explicitly proposed.
+Keep **internal evidence notes and visitor copy separate**. Import mechanics,
+verification caveats and editorial restrictions belong in the plan/review. Replace
+"this is not a deployment claim" with the supported application the reader can
+inspect. Retain genuine product limits and proof conditions that affect their
+choice. A bare "inspect the first pass" or "fits your published process" explains
+neither the product action nor why it matters; supply that missing meaning.
 
-## Produce a short copy brief
+Fit the brief to inspected geometry. Shorten repetition before shrinking type.
+Derive a source-based variant when material explanation cannot fit. Preserve the
+brand voice, hierarchy and real imagery; do not keep irrelevant homepage copy
+merely because a source band renders well.
 
-1. **One-sentence proposition:** what this product lets the reader do, within
-   its documented capability and the account's supported context.
-2. **Headline + support:** headline states the useful idea; support explains
-   mechanism and scope. Avoid generic category slogans, account-name repetition,
-   exaggerated certainty and headlines requiring a paragraph of explanation.
-3. **Section spine:** write the headings alone in order. They should tell a
-   coherent story from the reader's decision through mechanism/evidence to action.
-   If every heading would fit any seller, make the underlying argument concrete.
-4. **Body + proof pairs:** one job per section, short paragraphs, product evidence
-   beside its claim. Attribute customer results to that customer with material
-   conditions visible. Target research supplies relevance, not seller results.
-5. **Action and expectation:** button label, actual destination and what the
-   visitor receives there. A demo booking is not a signed pilot, implementation
-   promise or custom workshop unless that offer exists.
+## Read the rendered page as the buyer
 
-Then fit this brief to the inspected section geometry. Shorten repetition before
-shrinking type. Preserve a necessary qualification; derive a source-based variant
-if a meaningful argument cannot fit the current slots. Do not leave unrelated
-homepage feature copy untouched just because a source band already renders well.
-
-## Read the finished copy as the buyer
-
-- First screen: can they identify the product, why this page is relevant and the
-  real next step without reading the internal report?
-- Headings alone: does the sequence explain a useful decision, rather than repeat
-  "AI agents", "efficiency" and the account name?
-- Evidence: did any number, quote, customer result or relationship change owner,
-  certainty, timeframe or conditions during rewriting?
-- Contact relevance: did professional context change the explanation or proof,
-  or only the salutation? Omit unsupported personal hooks.
-- Tone: does this sound like the seller's captured voice addressing this reader?
-  Remove inflated adjectives, forced puns, accusation and internal process notes.
-
-For requested alternatives, compare the briefs using the campaign skill's page
-directions guide. Shared facts can support different decisions and compositions;
-they do not justify inventing new facts. Review copy in the current render at all
-required widths. A clear draft is useful; it is not proof of conversion lift.
+Can they identify the product, why it is relevant, how its mechanism applies and
+the real next step without the internal report? Point to the visible evidence/fit
+material; a decorative screenshot and feature labels do not explain the decision.
+Check headings as a story, every factual meaning against its source, correct proof
+ownership and professional relevance beyond the salutation. Remove accusation,
+inflated language and internal audit prose. Compare requested alternatives using
+page-directions; exact-copy visual alternatives preserve approved copy. Review the
+current render at required widths. Clear copy is not proof of conversion lift.

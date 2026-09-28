@@ -77,13 +77,21 @@ problem-aware at best; a retargeted visitor has seen the offer before.
 
 ## Step 3 — The shell judgment
 
-Every page wears chrome: a header and a footer. You have two postures
-available, and choosing between them is YOUR judgment call, made fresh per
-page — never a rule, never automatic.
+Choose the amount of chrome from the page's task; a separate navigation bar is
+not required. Make this judgment fresh per page.
 
 **The native shell** — the client's real navigation and real footer from the
 cloned library. **The minimal campaign shell** — the page-local header (logo +
-at most one CTA) and legal-only footer.
+at most one CTA) and legal-only footer. **A hero-led campaign** can integrate the
+seller identity into its opening composition and omit a separate navigation bar,
+while retaining necessary trust/legal access. Follow the tools' actual supported
+composition contracts; this choice is not a new shell-tool parameter or approval.
+
+Target identity is independent of navigation. A restrained eyebrow, opening
+account bar or contextual line can name the target before the main heading.
+"Prepared for…" in a navbar is not a required ABM convention. If the user asks
+for no navbar or a different identity placement, preserve that choice. Give the
+seller's real mark a deliberate place and avoid a partnership-style implication.
 
 Walk these questions:
 
@@ -216,6 +224,12 @@ On an existing page, act with the editing verbs you actually have:
 Page length follows decision complexity: a considered enterprise purchase may
 justify seven sections; a high-intent giveaway justifies three. Never pad a
 page to feel complete, and never cut information the decision genuinely needs.
+For an account-content build, use `web-account-personalization`'s decision map:
+research must change the visible explanation of relevance, mechanism, proof or
+evaluation. A minimal shell is not a reason to produce a thin page. If source
+slots cannot carry the necessary explanation, use the supported variant/compose
+route and preserve the brand system; report a real capability gap instead of
+silently dropping the argument.
 
 ## Step 7 — Close the loop
 

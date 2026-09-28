@@ -12,6 +12,7 @@ their existing strategy skill. The wording craft belongs here.
 
 For a new website or a substantive rewrite,
 read [website copy brief](references/website-copy-brief.md) before filling section slots.
+Continue any truncated reference read before applying the guide.
 
 Read [copy craft](references/copy-craft.md) when drafting an argument or rewriting
 copy. It retains the headline, audience vocabulary, claim/proof, tone, form and

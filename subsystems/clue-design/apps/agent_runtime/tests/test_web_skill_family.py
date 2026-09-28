@@ -77,6 +77,29 @@ def test_account_argument_guide_is_required_and_delivered_with_the_skill(tmp_pat
     )
 
 
+def test_account_review_loads_the_same_argument_contract_as_the_author(tmp_path):
+    """Review must receive the source/decision map, not just a personalization label.
+
+    This proves progressive delivery through review's real entrypoint; model
+    compliance and persuasive rendered copy need separate behavioral evidence.
+    """
+    reviewed = read_required_skill_reference(
+        tmp_path,
+        "review-website",
+        "account argument",
+        before="read ",
+        after=" and compare its decision map with the visitor-visible page.",
+    )
+    authored = read_required_skill_reference(
+        tmp_path,
+        "web-account-personalization",
+        "account argument",
+        before="Read ",
+        after=" before selecting sections or rewriting an account page.",
+    )
+    assert reviewed == authored
+
+
 def test_requested_page_directions_and_copy_brief_are_delivered(tmp_path):
     """The working guides must be reachable from the actual progressive entrypoints."""
     read_required_skill_reference(

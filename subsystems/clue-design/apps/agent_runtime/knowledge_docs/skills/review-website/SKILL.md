@@ -23,6 +23,13 @@ A successful operation, valid document or screenshot path proves none of these.
 3. Check copy against accessible evidence and inspect each primary CTA's actual
    destination/behavior. Read `web-account-personalization` when targets or personal
    facets appear. A name/logo alone is not verified relevance or relationship proof.
+   For an account-content build,
+   read [account argument](../web-account-personalization/references/account-argument.md) and compare its decision map with the visitor-visible page.
+   Verify read coverage includes relevant overview/committee/approach/watch-outs;
+   then point to the real relevance, product mechanism, evidence and evaluation
+   material. Missing substance, internal provenance/disclaimer copy, or identity
+   placement that contradicts the shell brief is an actionable request-satisfaction
+   defect. Green geometry checks do not make a thin or incoherent account page acceptable.
    For requested alternatives, compare the rendered pages against the campaign
    skill's distinct-page-directions plan. Reworded copies of one layout do not
    satisfy a request for different layouts; report undelivered pages separately.
