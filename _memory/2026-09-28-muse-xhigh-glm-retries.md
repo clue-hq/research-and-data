@@ -1,0 +1,7 @@
+# Fresh Muse xhigh / GLM medium retries
+
+User requested retries after the comprehensive model comparison. Stated scope Clue->Zafran, fixed Nick/Vari, account/person dossiers/import/narrative/reconciliation; Muse xhigh, GLM previous medium. No new research instruction changes. Both actual model requests verify those effort values; provider preflights and Langfuse initialization succeeded.
+
+Artifacts .artifacts/zafran-muse-xhigh-glm-retry-20260928/{muse-xhigh,glm53-medium}; host-mounted isolated Postgres containers clue-zafran-retry-muse-xhigh-0928 port59391/dbclue_retry_muse_xhigh and clue-zafran-retry-glm53-medium-0928 port59392/dbclue_retry_glm53_medium. Worker PIDs93464/93463, three slots each. Launched11:39:37UTC, accounts started11:39:41UTC. Current actual account status in_progress. No earlier workers/data changed.
+
+Revision24 resourcepin19d896... unchanged; reused shared brief and three retained seller context documents, verified zero target claims/contacts/evidence/jobs baseline. Runtime commitb5f0239a1 includes bde9c65f9 completion/delegation fixes; not identical backend to earlier trials. Main.env untouched, common reconciler remainsMuse separately from tested research models. Full final quality/time/cost audit pending; use each harness/pulse.py for read-only progress then export/timing/traces at settlement. No promises of a completed result yet. Do not commit private common.py/postgres.env files. No push.
