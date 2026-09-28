@@ -158,3 +158,28 @@ blocked on a database; nothing was recreated pending the founder's call.
   assert replay-only membership (the v29 pattern); recipe tests green.
 - Still uncommitted: the manual-pointer fix and this recipe fix. The live discovery run is owed
   on the merged branch.
+
+## Seventh round — merged the research line, resumed the fresh-DB setup (deployment day)
+
+- Founder: merge `codex/ai-ark-committee-discovery` (+ local) and continue the setup to find what
+  breaks. No such branch; the match is `codex/ai-ark-committee-discovery-spec` (local a08daceb9 =
+  remote 3918e1215 + 1). Pointer fix (5d9db9ffb) and fresh-DB recipe fix (d850ab23a) committed
+  first; the other session's dirty `account_research_catalog.py` edit was set aside
+  (/tmp/account_research_catalog.py.dirty-backup) and is byte-identical to the merged file.
+- Merge `541268994`: 12 conflicts. v66/v39/manual v12 + tool_manual_link kept; their
+  continuation_config plumbing, thin-response retry test and turn-budget note closure kept;
+  manual-limits v12 regenerated (their reworded finalize message), v66 re-pinned, registry digest
+  `1faebe0e…`; alembic join `d9f29ca9ca66` (97427f8eb3d6 + f3eb43c7808f). The v65 bundle was
+  byte-identical on both sides. Their 8 `.artifacts/**/*.py` eval scripts fail ruff (not product
+  code). `.env` given the 5 missing LUMEN_INGESTION_* keys.
+- clue_dubai (papeete :55040) migrated to d9f29ca9ca66; stack started via
+  scripts/dev_stack_dubai.sh on 3025/8015/8025/8035.
+- Post-merge breakage found by the full offline run (48 failures; 19 pre-existing, 29 new):
+  28 were ONE merge defect — both branches inserted `TurnBudgetMiddleware` into the Deep Agent
+  middleware tuple and git kept both; LangChain refuses duplicate middleware, so every agent turn
+  would fail at graph build. Fixed in e684d1c87 (runtime.py now == the research line's). The 29th:
+  the research line set `CLUE_ARV2_DISPLAY_MODEL=meta/muse-spark-1.3` in .env.example without
+  moving the Settings default; default now follows (founder's Muse request). All 29 green. The
+  other 33 turn-budget files were checked byte-equal to the research line (no other doubling).
+- This workspace's .env model keys aligned to Muse Spark 1.3 (was Grok/Luna, copied from jerusalem
+  before the switch); backup /tmp/dubai.env.bak2. APIs + workers restarted to load the fixes.
