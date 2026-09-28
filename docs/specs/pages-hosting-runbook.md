@@ -83,6 +83,19 @@ make pages-backfill-hostnames ARGS="--database-url $RAILWAY_DSN"
 `off_suffix` counts system rows that do not end in the configured suffix — a non-zero value means
 some process ran with the wrong `CLUE_PAGES_SYSTEM_SUFFIX`; fix the config before going further.
 
+**Since the 2026-09-28 F5 reconciliation** (`_memory/2026-09-28-custom-domain-f5-reconciliation.md`):
+
+- **`design_workspace_handle` no longer exists.** Migration `770bf20802e1` turned every F5 workspace
+  handle into that workspace's system label (`<handle>.<suffix>`, carrying the handle's lock over) and
+  dropped the table. A workspace that already had a system row kept it. The suffix the backfill wrote
+  is the `CLUE_PAGES_SYSTEM_SUFFIX` in force **when the migration ran** (`alembic/env.py` passes it to
+  SQL; unset means the settings default `pages.cluehq.ai`), so run step 4 with the production suffix —
+  a wrong one shows up as `off_suffix` above. A handle whose hostname another workspace already held
+  was skipped; step 5 allocates that workspace a label.
+- **A label locks at the workspace's first publish** (`workspace_hostname.locked_at`, set by the
+  design API's publish). After that, `PATCH /frontend/v1/settings/pages/system-hostname` is refused
+  with `label_locked`. There is no unlock route; unlocking is a deliberate operator `UPDATE`.
+
 6. Repoint the local services (platform API, design API, workers) by setting `CLUE_DATABASE_URL` in
    the checkout's `.env` to the Railway DSN, then restart the stack (`./scripts/dev_stack.sh down`
    then `up`). The local Postgres stays untouched as a fallback.

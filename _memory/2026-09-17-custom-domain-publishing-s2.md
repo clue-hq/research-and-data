@@ -104,6 +104,8 @@ Execution rulings (each with its cost-if-wrong) are in the ledger; the load-bear
 
 ## Settings-integration merge reconciliation
 
+**DONE 2026-09-28** — the settings slice arrived with the F5 merge (`22a581ea4`) and was reconciled there: its shell won, our `data/settings.fixture.ts` / `data/settings.repository.ts` / `components/settings-autosave-input.tsx` were deleted, and Pages was bound through the slice's `readSettingsSection` (`de80c454d`). Record: `_memory/2026-09-28-custom-domain-f5-reconciliation.md`. The list below is the pre-merge plan, kept as written.
+
 The settings-integration slice (Profile / Workspace / Members) is on another branch. When it merges,
 these files under `apps/frontend/src/features/settings/` are **byte-identical to the dummy**
 (port-of-spain `93c6120`, branch `codex/artifacts-page`) and should merge as a no-op — take either side:
