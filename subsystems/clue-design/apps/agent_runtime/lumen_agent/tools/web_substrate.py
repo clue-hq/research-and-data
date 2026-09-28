@@ -5239,7 +5239,7 @@ class LumenWebTools:
         for key in (
             "source_kit_id", "source_kit_version", "source_kit_bindings", "page_url",
             "section_index", "created_at", "payload_digest", "degraded",
-            "degraded_reason", "composed", "capture_evidence",
+            "degraded_reason", "composed", "capture_evidence", "behavior_evidence",
         ):
             if key in source:
                 payload[key] = source[key]

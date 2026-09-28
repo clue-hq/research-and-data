@@ -43,6 +43,16 @@ fallback and release consequences, read the
    unsupported interaction require different remedies. Do not hide a capture
    defect by changing global host CSS or shrinking every heading.
 
+Read any returned `behavior_evidence` before retaining a source product switcher.
+Stateful buttons plus hidden images are captured states, not working behavior;
+`controller_not_retained` requires a supported reconstruction or an honest static
+presentation without dead controls. Do not try to restore source event handlers
+through a raw repair: the same sanitizer removes them again. Follow
+[`web-motion-fidelity`](../web-motion-fidelity/SKILL.md) for typed tabs, custom-runtime
+asset/font limitations, and checks of every panel, keyboard access, mobile and
+reduced motion. Preserve the source images and brand treatment; do not trade a
+working generic switcher for missing media or fallback typography.
+
 ## Choose intent, lane and behavior rung
 
 If existing slots express the request, rebind them through the edit skill;

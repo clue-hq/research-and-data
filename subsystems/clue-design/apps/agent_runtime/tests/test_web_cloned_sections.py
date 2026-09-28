@@ -1488,6 +1488,9 @@ def test_source_version_evidence_survives_search_and_inspection(tmp_path: Path) 
         "created_at": "2026-09-19T00:00:00Z", "payload_digest": "a" * 64,
         "capture_evidence": {"snapshot_id": "snap_old", "dead_height_check": {
             "assessed": False, "because": "no_preview"}},
+        "behavior_evidence": {"basis": "sanitized_html_snapshot",
+                              "controller_status": "controller_not_retained",
+                              "behavior_test": "not_performed"},
     }
     registry = SourceRegistry(tmp_path)
     registry.add("frag_evidence", role="hero", label="Product hero", html=HERO_HTML)

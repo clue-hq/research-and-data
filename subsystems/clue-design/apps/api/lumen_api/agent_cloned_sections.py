@@ -79,6 +79,7 @@ from .fragments import (
     set_web_fragment_degraded,
     set_web_fragment_status,
 )
+from .fragments.behavior import inspect_fragment_behavior
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
 from .fragments.render import slot_kinds
 from .fragments.registry import create_href_repaired_fragment
@@ -754,6 +755,7 @@ class DurableAgentClonedSectionRegistry:
             "degraded_reason": row.get("degraded_reason"),
             "composed": provenance.get("composed"),
             "capture_evidence": capture_evidence,
+            "behavior_evidence": inspect_fragment_behavior(str(payload.get("html") or "")),
             "slots": _slot_summary(loaded.slot_manifest),
             "html": str(payload.get("html") or ""),
             "css": str(payload.get("css") or ""),
