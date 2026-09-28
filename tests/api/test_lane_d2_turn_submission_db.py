@@ -1331,7 +1331,10 @@ class _ReplayBeforeCompositionRunner(ProjectConversationTurnRunner):
         del args, kwargs
         raise AssertionError("committed replay must happen before current scope/card composition")
 
-    async def _complete_recipe(self, execution_id: ExecutionId) -> None:
+    async def _complete_recipe(
+        self, execution_id: ExecutionId, *, turn_id: Any, actor_id: str | None
+    ) -> None:
+        del turn_id, actor_id
         self.completed.append(execution_id)
 
 
