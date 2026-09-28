@@ -30,6 +30,20 @@ async def mark_account_import_ready(
     conn: AsyncConnection, scope: JobScope, saved: dict[str, Any]
 ) -> None:
     """Part of the import transaction. No queue/network call before commit."""
+    if releases_after_import(scope) and saved["state"] == "complete":
+        if not saved["receipt"]["complete"]:
+            raise ValueError("Cannot announce an incomplete claim import")
+        await conn.execute(
+            text("""INSERT INTO arv2_research_import_ready
+            (workspace_id,job_id,dossier_version,artifact_key)
+            VALUES(:ws,:job,:version,:key) ON CONFLICT DO NOTHING"""),
+            {
+                "ws": scope.workspace_id,
+                "job": scope.job_id,
+                "version": saved["version"],
+                "key": saved["artifact_key"],
+            },
+        )
     if scope.person_subject_id or not releases_after_import(scope) or saved["state"] != "complete":
         return
     if not saved["receipt"]["complete"]:

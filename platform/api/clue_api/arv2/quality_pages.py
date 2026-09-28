@@ -279,13 +279,14 @@ async def publish_page(
     execution_id: UUID,
     model: str,
     draft: PageDraft,
+    complete: bool = True,
 ) -> tuple[UUID, ...]:
     inputs = await page_inputs(conn, scope, context_id=context_id, page=draft.page, lock=True)
     if not advisory_research(scope) and inputs.sha256 != draft.expected_dependency_sha256:
         raise ValueError(
             "stale_page_inputs: reread page inputs and correct the draft before publishing"
         )
-    claims, people = await _validate_sections(conn, scope, inputs, draft)
+    claims, people = await _validate_sections(conn, scope, inputs, draft, complete=complete)
     raw = draft.model_dump_json(by_alias=True).encode()
     sha = content_address(raw)
     key = artifact_key(scope.workspace_id, sha)
@@ -381,7 +382,9 @@ async def publish_page(
                 "body": json.dumps(_body(section, people, draft.gaps, scope.account_id)),
                 "claims": sorted({id for s in section.sentences() for id in s.claim_ids}),
                 "model": model,
-                "manifest": json.dumps(inputs.manifest, default=str),
+                "manifest": json.dumps(
+                    section_dependencies(inputs.manifest, section, scope), default=str
+                ),
                 "key": key,
                 "execution": execution_id,
             },
@@ -465,7 +468,18 @@ async def read_page(
             title = section_titles.get(row["section_key"], "Research")
             gaps.append(f"{title}: supporting evidence needs review; refresh pending")
             continue
-        if fingerprint(row["dependency_manifest"]) != inputs.sha256:
+        stored_manifest = row["dependency_manifest"]
+        expected_manifest = section_dependencies(
+            inputs.manifest,
+            section,
+            scope,
+            force=stored_manifest.get("contract") == "research-section-dependencies-v1",
+        )
+        # Older owner pages stored the full input inventory. Compare their actual citations
+        # using the same projection; an unrelated new claim does not invalidate this section.
+        if stored_manifest.get("contract") == "research-quality-pages-v1":
+            stored_manifest = section_dependencies(stored_manifest, section, scope)
+        if fingerprint(stored_manifest) != fingerprint(expected_manifest):
             stale.append(row["section_key"])
         gaps.extend(body.get("gaps", []))
         live[row["section_key"]] = LiveBlock(
@@ -558,4 +572,27 @@ async def read_page(
         "pending": tuple(sorted(missing)),
         "generated": (),
         "degraded_reason": None,
+    }
+
+
+def section_dependencies(
+    manifest: dict[str, Any], section: PageSectionDraft, scope: JobScope, *, force: bool = False
+) -> dict[str, Any]:
+    """Owner narratives depend on cited evidence, not every concurrent generation output."""
+    from clue_api.arv2.quality_owned_narrative import owns_narrative
+
+    if not force and not owns_narrative(scope):
+        return manifest
+    cited = {str(id) for s in section.sentences() for id in s.claim_ids}
+    people = {str(id) for i in section.items for id in i.contact_ids}
+    return {
+        **{
+            k: v
+            for k, v in manifest.items()
+            if k not in ("input_revision", "claim_versions", "membership", "recipes", "contract")
+        },
+        "contract": "research-section-dependencies-v1",
+        "claim_versions": [v for v in manifest["claim_versions"] if v[0] in cited],
+        "membership": [m for m in manifest["membership"] if str(m["contact_id"]) in people],
+        "recipes": [r for r in manifest["recipes"] if r["section_key"] == section.key],
     }

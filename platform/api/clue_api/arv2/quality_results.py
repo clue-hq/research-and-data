@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -175,6 +175,7 @@ class QualityJobOutcome:
     finalization_key: str | None
     report: ResearchUnitReport | None
     failure_code: str | None
+    reconciliation_reply: dict[str, Any] | None = None
 
 
 class QualityJobRunner(Protocol):
@@ -187,4 +188,5 @@ class QualityJobRunner(Protocol):
         objective: str,
         model_id: str,
         unit_key: str | None = None,
+        reconciliation: dict[str, Any] | None = None,
     ) -> QualityJobOutcome: ...

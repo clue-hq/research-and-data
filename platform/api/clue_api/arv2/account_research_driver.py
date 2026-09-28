@@ -536,14 +536,16 @@ class Arv2AccountResearchWorkHandler:
         )
 
     async def _quality_continuation(self, work: WorkContext) -> WorkResult:
-        from clue_api.arv2.quality_generation import read_generation, reconcile_generation
+        from clue_api.arv2.quality_generation import (
+            continuation_work_id,
+            read_generation,
+            reconcile_generation,
+        )
 
         try:
             generation_id = UUID(str(work.payload["generation_id"]))
             workspace_id = str(work.payload["workspace_id"])
             revision = int(str(work.payload["input_revision"]))
-            if UUID(str(work.work_id)) != generation_id:
-                raise ValueError("continuation lease does not name its generation")
         except (KeyError, ValueError, TypeError):
             return WorkResult(
                 outcome="failed", references={"error": "invalid_quality_continuation"}
@@ -556,15 +558,30 @@ class Arv2AccountResearchWorkHandler:
             generation = await read_generation(
                 conn, workspace_id=workspace_id, generation_id=generation_id
             )
+            if UUID(str(work.work_id)) not in (generation_id, continuation_work_id(generation)):
+                return WorkResult(
+                    outcome="failed", references={"error": "invalid_continuation_lease"}
+                )
             if generation.state in {"suspended", "privacy_stopped"}:
                 return WorkResult(
                     outcome="stopped", references={"generation_id": str(generation_id)}
                 )
-            if generation.reconciled_revision >= revision or generation.input_revision != revision:
+            if generation.reconciled_revision >= revision:
                 return WorkResult(
                     outcome="completed",
                     references={"generation_id": str(generation_id), "superseded": True},
                 )
+            if generation.input_revision != revision:
+                retained = (
+                    await conn.execute(
+                        text("""SELECT EXISTS(
+                    SELECT 1 FROM arv2_narrative_reconciliation WHERE generation_id=:generation
+                      AND input_revision=:revision AND state IN ('prepared','generated'))"""),
+                        {"generation": generation_id, "revision": revision},
+                    )
+                ).scalar_one()
+                if not retained:
+                    return WorkResult(outcome="completed", references={"superseded": True})
             job = await self._store.read_job(conn, job_id=generation.initial_job_id)
             run = await self._store.read_run(conn, run_id=generation.run_id)
             if job is None or run is None or job.status not in {"completed", "needs_review"}:
@@ -576,6 +593,21 @@ class Arv2AccountResearchWorkHandler:
                     outcome="stopped", references={"generation_id": str(generation_id)}
                 )
             composition = await self._compose_quality(conn, job, run)
+            from clue_api.arv2.quality_owned_narrative import owns_narrative
+
+            focused = owns_narrative(composition.scope)
+            if focused:
+                from clue_api.arv2.quality_generation import pending_continuations
+
+                if UUID(str(work.work_id)) != continuation_work_id(generation):
+                    return WorkResult(outcome="completed", references={"superseded_lease": True})
+                pending = await pending_continuations(conn, generation_id=generation_id)
+                if not pending:
+                    return WorkResult(outcome="completed", references={"batch_not_ready": True})
+                if pending[0].input_revision != revision:
+                    return WorkResult(outcome="completed", references={"checkpoint_pending": True})
+        if focused:
+            return await self._focused_reconciliation(work, composition, generation_id, revision)
         if self._quality_runner is None or run.context_id is None:
             return WorkResult(outcome="failed", references={"error": "quality_runtime_unavailable"})
         try:
@@ -641,10 +673,137 @@ class Arv2AccountResearchWorkHandler:
                 references={"generation_id": str(generation_id), "error": type(error).__name__},
             )
 
+    async def _focused_reconciliation(
+        self, work: WorkContext, composition: _Composition, generation_id: UUID, revision: int
+    ) -> WorkResult:
+        from sqlalchemy.exc import DBAPIError
+
+        from clue_api.arv2.quality_generation import reconcile_generation
+        from clue_api.arv2.quality_reconciliation import (
+            account_research_model,
+            execution_event,
+            run_reconciliation,
+        )
+        from clue_execution import ExecutionEventType
+
+        if self._quality_runner is None:
+            return WorkResult(outcome="failed", references={"error": "quality_runtime_unavailable"})
+        scope = composition.scope
+        context_id = composition.run.context_id
+        if context_id is None:
+            return WorkResult(outcome="failed", references={"error": "research_context_missing"})
+
+        async def assert_lease(conn: AsyncConnection) -> None:
+            valid = (
+                await conn.execute(
+                    text("""SELECT 1 FROM work_lease
+                WHERE work_id=:id AND worker_id=:worker AND generation=:generation
+                  AND expires_at>clock_timestamp() FOR SHARE"""),
+                    {
+                        "id": work.work_id,
+                        "worker": work.worker_id,
+                        "generation": work.lease_generation,
+                    },
+                )
+            ).scalar_one_or_none()
+            if valid is None:
+                raise asyncio.CancelledError()
+
+        quality_runner = self._quality_runner
+
+        async def continue_account(packet: dict[str, Any]) -> dict[str, Any]:
+            outcome = await quality_runner(
+                scope=scope,
+                context_id=context_id,
+                runtime=self._tool_runtime(composition),
+                model_id=composition.model_id,
+                unit_key=f"reconcile:{generation_id}:{revision}",
+                reconciliation=packet,
+                objective=(
+                    "Continue your account investigation in its reconciliation phase. Research and "
+                    "claim import are finished. Read /work/reconciliation/input.json and "
+                    "/work/reconciliation/instructions.md; inspect further existing evidence only "
+                    "for a specific question. Incorporate useful new person findings into your "
+                    "existing account sections. Preserve useful existing wording and citations. "
+                    "Do not repeat research, claim import, nominations or contact narration. "
+                    "Write /outputs/reconciliation.json using /work/reconciliation/schema.json, "
+                    "then call finalize_turn. If validation refuses it, correct the named defects "
+                    "in that file and retry. An empty updates list is valid. Publication happens "
+                    "after validation, with version checks."
+                ),
+            )
+            if outcome.reconciliation_reply is None:
+                raise ValueError(
+                    "Account continuation produced no accepted reconciliation artifact"
+                )
+            return outcome.reconciliation_reply
+
+        try:
+            async with self._connection() as conn:
+                original_model = await account_research_model(conn, scope)
+            async with self._jobs:
+                result = await run_reconciliation(
+                    conn_factory=self._connection,
+                    storage=self._storage,
+                    scope=scope,
+                    context_id=context_id,
+                    generation_id=generation_id,
+                    revision=revision,
+                    generate=continue_account,
+                    model=original_model,
+                    stopped=lambda: work.stop_requested.is_set() or work.lease_lost.is_set(),
+                    assert_lease=assert_lease,
+                )
+            return WorkResult(
+                outcome="completed", references={"generation_id": str(generation_id), **result}
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            if isinstance(error, DBAPIError) and (
+                error.connection_invalidated
+                or str(getattr(error.orig, "sqlstate", "")).startswith("08")
+                or getattr(error.orig, "sqlstate", None) in ("40001", "40P01", "55P03", "57P01")
+            ):
+                # Keep a generated response for publication retry without another model call.
+                log.exception("arv2.reconciliation.storage_retry", generation_id=str(generation_id))
+                return WorkResult(
+                    outcome="failed",
+                    references={"error": "reconciliation_storage_retry"},
+                    requeue=True,
+                    requeue_after=timedelta(seconds=10),
+                )
+            log.exception(
+                "arv2.reconciliation.failed", generation_id=str(generation_id), revision=revision
+            )
+            async with self._connection() as conn:
+                changed = await conn.execute(
+                    text("""UPDATE arv2_narrative_reconciliation
+                    SET state='failed',completed_at=now()
+                    WHERE generation_id=:generation AND input_revision=:revision
+                      AND state NOT IN ('failed','completed') RETURNING generation_id"""),
+                    {"generation": generation_id, "revision": revision},
+                )
+                if changed.scalar_one_or_none():
+                    await execution_event(
+                        conn, generation_id, revision, ExecutionEventType.EXECUTION_FAILED
+                    )
+                # A failed update is visible, but must not immediately buy the same call again.
+                await reconcile_generation(
+                    conn,
+                    workspace_id=scope.workspace_id,
+                    generation_id=generation_id,
+                    expected_revision=revision,
+                    processed_snapshot=True,
+                    needs_review=True,
+                )
+            return WorkResult(outcome="failed", references={"error": str(error)[:400]})
+
     async def sweep_quality(self) -> int:
         """Recover result signals and lost offers; all external effects follow DB commit."""
         from clue_api.arv2.account_research_launch import QueuedJob
         from clue_api.arv2.quality_generation import (
+            continuation_work_id,
             pending_continuations,
             record_child_result,
             signal_subject_change,
@@ -674,7 +833,8 @@ class Arv2AccountResearchWorkHandler:
                 await conn.execute(
                     text("""SELECT c.workspace_id,c.job_id FROM arv2_generation_child c
                 JOIN arv2_research_job j ON j.job_id=c.job_id AND j.workspace_id=c.workspace_id
-                WHERE c.terminal_status IS NULL AND j.status IN ('completed','needs_review')
+                WHERE c.terminal_status IS NULL
+                  AND j.status IN ('completed','needs_review','failed')
                 ORDER BY j.finished_at,c.job_id LIMIT 200""")
                 )
             ).all()
@@ -715,8 +875,8 @@ class Arv2AccountResearchWorkHandler:
             offered += int(
                 await self._queue.enqueue(
                     kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
-                    work_id=WorkId(g.generation_id),
-                    dedup_key=f"arv2:quality-reconcile:{g.generation_id}:{g.input_revision}",
+                    work_id=WorkId(continuation_work_id(g)),
+                    dedup_key=f"arv2:quality-editorial:{g.generation_id}:{g.input_revision}",
                     priority=ARV2_ACCOUNT_TASK_PRIORITY,
                     payload={
                         "continuation": "quality_reconciliation",
@@ -1031,6 +1191,21 @@ class Arv2AccountResearchWorkHandler:
         }
         if bundle_pin(bundle) != (job.profile_sha256 if person else run.profile_sha256):
             raise _ProfilePinMismatch("governed research resources differ from the launch pin")
+        # Account launches pin the resource bundle but may not yet persist its recipe revision.
+        # The scheduler must read the same resolved version as the runtime, not infer legacy
+        # behavior from an empty input_refs object. Preserve every other delegation reference.
+        await conn.execute(
+            text("""UPDATE arv2_research_job SET input_refs=COALESCE(input_refs,'{}'::jsonb)
+                || jsonb_build_object('quality_recipe_version',CAST(:revision AS integer))
+                WHERE job_id=:job AND workspace_id=:ws
+                  AND (input_refs->>'quality_recipe_version') IS DISTINCT FROM :revision_text"""),
+            {
+                "job": job.job_id,
+                "ws": run.workspace_id,
+                "revision": quality_input_refs["quality_recipe_version"],
+                "revision_text": str(quality_input_refs["quality_recipe_version"]),
+            },
+        )
         if person:
             scope = await person_scope_for(
                 conn,
