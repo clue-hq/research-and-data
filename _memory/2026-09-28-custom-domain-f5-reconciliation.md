@@ -150,3 +150,18 @@ asset-enrichment lane; five Zafran account-research frontend fixture tests
 - **Owed:** the lane `.env` is far from key parity with `.env.example` (~110 keys arrived with the two
   merges; left untouched because several — the `DEV_STACK_*` block, `CLUE_SANDBOX_ENABLED=true` — would
   change this lane's runtime; the founder decides the values). Everything owed before stays owed.
+
+## Addendum 2026-09-29 — lane `.env` rebuilt from dubai's
+- `.env` copied from `../dubai/.env` (the founder's current keys) and re-pointed for this lane:
+  `clue_addis-ababa@55040`, this checkout's `.artifacts` / helper binary / font manifest,
+  `CLUE_AGENT_WORKSPACE_ROOT=/private/tmp/clue-agent-workspaces-addis-ababa`, Sentry/Langfuse env
+  `lane-addis-ababa`, and NEW lane ports **3021 / 8011 / 8021 / 8031** (frontend / design API /
+  platform API / twin) in `CLUE_APP_ORIGIN`, the Clerk authorized parties, `LUMEN_API_CORS_ORIGINS`,
+  `CLUE_DESIGN_API_BASE_URL`, `LUMEN_API_ORIGIN`, the `DEV_STACK_*` block and
+  `apps/frontend/.env.local`; the `CLUE_PAGES_*` / `CLUE_CLOUDFLARE_*` block re-appended; the retired
+  `LUMEN_PUBLIC_PAGES_*` lines dropped. Key parity with `.env.example` is now exact both ways.
+- Consequences to know: `CLUE_SANDBOX_ENABLED=true` and self-serve provisioning ON now apply here
+  (the dev stack refuses `up` without the sandbox image — `make sandbox-image`); `scripts/dev_stack.sh`
+  reads `DEV_STACK_*` from the SHELL env at script start, so start the stack with
+  `set -a; source .env; set +a; ./scripts/dev_stack.sh up` (or a lane wrapper) for the ports to apply;
+  the page origin stays on 8040.
