@@ -14,6 +14,10 @@ description: Use when changing an existing website page, selected element, compo
    Match the reported symptom to that section in the current preview at the failing
    width before editing; a remembered or recently edited product panel may be a
    different section. Record its visible neighbors so the after-check targets the same area.
+   In the existing plan, name the current pin/version, intended change and keeper
+   properties: fonts/hierarchy, background and product asset, crop/radius/layers,
+   and interaction states. Preserve unaffected pins; a stronger source band is
+   not expendable because another band needs better copy.
 2. Read [scoped editing](references/scoped-editing.md), using the relevant ladder:
    `web_ops` for a few existing-node changes; clone slots for supported content;
    a campaign variant for healthy cloned structure; repair for a real defect;
@@ -27,6 +31,10 @@ description: Use when changing an existing website page, selected element, compo
    relevant states at returned widths. Load `review-website`; keep the judgment
    scoped unless the change affects the larger page. Reuse unchanged current
    evidence. Report unrelated findings without silently expanding the edit.
+   Compare the keeper properties before/after at the affected widths. A changed
+   background, missing phone product UI or weaker type hierarchy fails the repair
+   even if its original symptom disappeared. Batch diagnosed fixes; do not spend
+   another authoring round on unchanged evidence or speculative polish.
 5. Report the exact change, checks, remaining gaps and any template/library
    effects. Preserve approval boundaries and truthful draft status. An edit to
    React-rendered WebDoc does not recover the source site's original React code.

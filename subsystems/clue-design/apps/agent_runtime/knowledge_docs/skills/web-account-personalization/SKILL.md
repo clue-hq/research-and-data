@@ -33,6 +33,9 @@ keep their narrower scope.
    Identity-only is sufficient only for an explicitly logo-only/exact-copy edit.
    Record which evidence changed the section choice, emphasis or proof; when
    nothing beyond identity changed, report that level honestly.
+   Use `web-decision-material` to turn those joins into something the visitor can
+   inspect or use. For a named person, use `web-contact-personalization` for the
+   separate contact evidence read and material difference from the account page.
 4. Use `conversion-copywriting` for visible evidence, qualification and the real
    next action/destination. Unsupported requested proof remains a review gap
    even when a useful narrower draft is possible. Keep caveats out of visitor copy.

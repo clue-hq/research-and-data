@@ -26,6 +26,19 @@ A successful operation, valid document or screenshot path proves none of these.
    The orchestrator/solo tool `review_cloned_page()` supplies measured clone
    findings and advisory page findings; missing observations remain gaps. It can record library verdicts,
    so use it within the authorized review scope, not as an assumed read-only test.
+   A walk's “6/6 observations” counts capture classes, not all tab states or all
+   responsive details. Check `reference_unavailable`, comparison abstentions and
+   unmeasured composed/draft sections even when `broken_clones` is empty. If only
+   the default and second of four panels were observed, report two states observed
+   and two unverified; never summarize that as a fully working four-panel experience.
+   `fragment.class_collision` or incomplete-isolation warnings require comparison
+   of the named bands/properties. Do not dismiss them from geometry alone or mutate
+   unrelated components merely to silence a warning. Reuse current evidence when
+   it actually covers the same property, viewport and final revision.
+   Compare affected bands with their recorded keeper properties. Preserving the
+   product asset but losing its branded background, crop, scale or phone visibility
+   is a regression. Read `web-product-story` when product staging or type hierarchy
+   is in scope; compiled tabs do not prove all their media states still work.
 3. Check copy against accessible evidence and inspect each primary CTA's actual
    destination/behavior. Read `web-account-personalization` when targets or personal
    facets appear. A name/logo alone is not verified relevance or relationship proof.
@@ -36,6 +49,12 @@ A successful operation, valid document or screenshot path proves none of these.
    material. Missing substance, internal provenance/disclaimer copy, or identity
    placement that contradicts the shell brief is an actionable request-satisfaction
    defect. Green geometry checks do not make a thin or incoherent account page acceptable.
+   For account builds, use `web-decision-material`: identify what the reader can
+   learn, inspect or decide from the exhibit beyond a company biography. For a
+   named reader, use `web-contact-personalization`: check the permitted contact
+   evidence and what materially differs from the account page. Read the campaign
+   action-selection guide when judging CTA intent; a valid URL alone cannot show
+   that a demo, assessment or download is the right promise.
    For requested alternatives, compare the rendered pages against the campaign
    skill's distinct-page-directions plan. Reworded copies of one layout do not
    satisfy a request for different layouts; report undelivered pages separately.
@@ -46,6 +65,9 @@ A successful operation, valid document or screenshot path proves none of these.
 5. Report observed defects with page/node, viewport/state and smallest repair.
    After repair, judge new current evidence. For a small edit, certify only that
    change and its affected neighbors; do not re-plan or re-generate the entire page.
+   Distinguish tool completion from request satisfaction. A saved draft can be
+   `completed_with_warnings` while required visual/interaction acceptance remains
+   open. Name those unmet requirements prominently rather than calling them polish.
 
 `finalize_web_run` records the existing outcome and summary; it is not a new visual
 acceptance gate. No skill instruction recovers missing source React/JS/WebGL,

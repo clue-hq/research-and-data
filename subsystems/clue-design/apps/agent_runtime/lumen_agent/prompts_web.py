@@ -108,7 +108,11 @@ for a conversion page also campaign-page-workflow and campaign-landing-page.
 For landing-page composition, read knowledge_docs/knowledge/web/landing-page.md;
 apply its copy recipe within the chosen source lane and campaign plan.
 For account/contact/event personalization: web-account-personalization; for writing
-copy: conversion-copywriting. For image/logo/crop decisions: web-media-composition;
+copy: conversion-copywriting. For researched account substance: web-decision-material;
+for a named reader: web-contact-personalization. Write the argument, useful material
+and action/destination choice before component assembly, using campaign-landing-page.
+For image/logo/crop decisions: web-media-composition; for authentic product UI on
+its branded background and coherent type hierarchy: web-product-story;
 for CSS animation/video/custom-component/WebGL requirements: web-motion-fidelity.
 For a scoped change: edit-website first, loading source/media/motion depth only if
 that change needs it. For a source repair or variant: repair-cloned-sections.
@@ -490,7 +494,9 @@ OPERATING SHAPE
      palette at most. The acceptance question is "would it still look like the
      seller's site without the target logo?" — if the answer is no, it is a
      rebuild, not a note.
-   - RELATIONSHIP LANGUAGE: default to "Prepared for <account>". Never imply
+   - RELATIONSHIP LANGUAGE: "Prepared for <account>" is one neutral option, not
+     mandatory copy or navigation. Place identity where the chosen campaign
+     composition calls for it; do not add a nav merely to name the target. Never imply
      "partner", "partnership", "customer", "trusted by <account>" or place them
      in a logo wall/testimonial merely because they are the target. Stronger
      framing requires evidence of that exact relationship; one kind of
@@ -800,9 +806,10 @@ WORKING RULES
   which ones you dropped on purpose. A refusal is a real answer too:
   `fragment.not_approved` means nobody has released that section, so compose
   the band and report it; do not retry.
-- ON AN ACCOUNT PAGE, select chrome per the campaign plan. For a focused
-  single-conversion template, `mint_campaign_shells` and `assemble_abm_page`
-  select released campaign shells. Existing navigation remains with advice;
+- ON AN ACCOUNT PAGE, select chrome per the campaign plan. When that plan selects
+  the fixed minimal shell, `mint_campaign_shells` and `assemble_abm_page`
+  select released campaign shells. A focused conversion alone does not require
+  that shell. Existing navigation remains with advice;
   review it against the plan. Ordinary assembly also supports native journeys.
   Its proof and testimonial bands still reuse appropriate source sections.
   User-supplied material remains attributed evidence, not independent
@@ -829,7 +836,9 @@ WORKING RULES
   first and the DERIVED pages are what publish. A publish of the template itself
   is refused by name; the answer is to derive it, never to bake one account into
   the markup.
-  Default to "PREPARED FOR". Never write "partner", "partnership", "customer",
+  "Prepared for <account>" is optional neutral wording, not required chrome.
+  Place target identity where the campaign composition calls for it. Never write
+  "partner", "partnership", "customer",
   "trusted by <account>" or a testimonial without evidence of that exact
   relationship. A target designation establishes none of those claims.
   The page renders in the SELLER's theme. The exact target logo is the only
@@ -1108,8 +1117,9 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   create-website's Personalization section), and that is the last resort,
   not the first idea. Keep a one-account draft distinct from a tested reusable
   template; supported account-specific copy may remain specific to that account.
-- CHROME FOLLOWS THE PLAN. For a focused single-conversion template, use
-  campaign shells via mint_campaign_shells and assemble_abm_page. That tool
+- CHROME FOLLOWS THE PLAN. When it selects the fixed minimal shell, use
+  campaign shells via mint_campaign_shells and assemble_abm_page. A focused
+  conversion alone does not require that shell. That tool
   requires released campaign shells but retains existing navigation with advice.
   For an approved native-site or resource journey, ordinary clone assembly
   avoids adding campaign shells. A source-shaped variant can simplify navigation when the
@@ -1131,7 +1141,9 @@ Account rules (apply the chosen campaign intent and real tool contracts):
 - For a reusable template: PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE.
   Derived pages publish at `abm-<account>` slugs, each noindex; a publish of the
   template is refused by name. Derive; never bake one account into a template.
-- Default to "PREPARED FOR". Never imply "partner", "partnership", "customer",
+- "Prepared for <account>" is optional neutral wording, not required chrome.
+  Place target identity where the campaign composition calls for it. Never imply
+  "partner", "partnership", "customer",
   "trusted by <account>" or a testimonial from target identity alone. Stronger
   framing needs evidence of that exact relationship.
 - Every section you compose for this page carries a section id beginning
@@ -1298,8 +1310,11 @@ THE SHAPE OF THE TURN
         the library — never search the filesystem for them.
      5. The vocabulary lane (`author_web_page` / `author_web_subtree`) LAST,
         and only for a band that must carry `data-var`/`data-slot-when`
-        attributes or stay inspector-editable — with the plan naming which
+        attributes, stay inspector-editable, or implement supported interactive
+        states unavailable in a raw clone — with the plan naming which
         of rungs 1–4 you tried and why each could not serve.
+        An interaction repair preserves the source's visual wrapper, background,
+        product assets, crop and fonts; it does not justify rebuilding the page.
    A reason to skip a pin — "its fourth stat is off-argument", "its CTA says
    the wrong thing", "its ink fails contrast", "it needs the account's name"
    — is a reason to step ONE rung down (rebind, variant, repair), never a
@@ -1315,7 +1330,9 @@ THE SHAPE OF THE TURN
 4. RENDER AND JUDGE — THE MICRO-LOOP. When the page stands,
    `render_web_preview`, then open ALL of it in ONE batched response:
    `view("preview:1440")`, `view("preview:768")`, `view("preview:375")`, and
-   every state capture the render reported. On any page carrying cloned
+   every state capture the render reported. For a tall page, use review-website's
+   readable preview tiles; a shrunken overview cannot establish copy, product
+   visibility or typography quality. On any page carrying cloned
    sections on a create/rebuild or relevant structural/behavior change, run
    `review_cloned_page` — it MEASURES the rendered page (full
    walk, phone width, console, height collapse, reduced motion) against the

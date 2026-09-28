@@ -7432,10 +7432,10 @@ class LumenWebTools:
     def mint_campaign_shells(self) -> str:
         """Mint this brand's ABM page shells: a minimal header and a legal-only footer.
 
-        An ABM page NEVER wears the client's cloned global navigation. Every link in a nav is a
-        way off the one page that was written for this account — the visitor leaves for pricing,
-        for careers, for the blog, and the campaign is over. An ABM page wears a page-local shell
-        instead, and this is the tool that makes it.
+        Use this optional composition when the campaign brief calls for a minimal header
+        and legal footer. A named account alone does not mandate it: campaign-landing-page
+        owns the choice of native navigation, campaign chrome or another supported composition.
+        This tool creates the fixed shell described below; it does not offer layout variants.
 
         THE HEADER is a strip, not a hero: the seller's own mark, the words "Prepared for
         <account>", the target company's logo when we hold one, and exactly ONE call to action.
@@ -7825,14 +7825,14 @@ class LumenWebTools:
     # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
     # the seller's campaign chrome around a personalized hero, with the page's other bands
     # between them — pinned clones with marker-bound slots, derived variants, and raw
-    # compositions remixing real ancestors (the vocabulary lane last, for attribute-bearing
-    # bands only; the 2026-09-04 Ramp run read an older "ordinary authoring vocabulary" wording
+    # compositions remixing real ancestors (the vocabulary lane last, for required typed
+    # behavior or attributes; the 2026-09-04 Ramp run read "ordinary authoring vocabulary"
     # here as the expected lane and built a generic page). Two of that shape's properties are the whole
     # reason this is a tool rather than a paragraph of prompt:
     #
-    #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
-    #     rule the model obeys most of the time;
-    #   * the page is a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
+    #   * this optional recipe pins released campaign chrome; ordinary assembly serves
+    #     other campaign compositions, and existing navigation is retained with advice;
+    #   * this recipe builds a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
     #     account's values — so Task 25's batch derive personalizes one document per account
     #     instead of the agent building fifty pages.
     #
@@ -7873,9 +7873,11 @@ class LumenWebTools:
         work: they are the values the derive builds. AN EMPTY TARGET LOGO IS CORRECT — we never
         invent a company's mark, and an account we hold none for renders a clean header.
 
-        `cta_href` / `cta_label` bind the header's one call to action for this campaign. Omit
-        them and the shell keeps its own default, which is page-local and can never be an escape
-        route.
+        `cta_href` / `cta_label` bind the header's one call to action for this campaign.
+        Supply both from the selected reader decision and actual destination. Omission keeps
+        compatibility defaults; it does not establish an appropriate offer or a real anchor
+        target. Inspect the result and verify the destination. For a page needing no header
+        action, choose another supported composition instead of inheriting the fallback.
 
         NEW SECTIONS ARE NAMED. Every section you compose for this page takes a section id
         beginning `abm_` (`<section id="abm_peer_proof">`), so a reviewer can tell a new band

@@ -66,9 +66,10 @@ reads only where exposed; their verified claims can ground this plan. A named
 account without research does not provide its priorities or buying intent.
 Never seed a brand pack or invent a fetch/refresh tool to fill library gaps.
 
-## Step 3 — Construct the argument
+## Step 3 — Write the argument, copy and action before building
 
-*Skill: campaign-landing-page (steps 2–6).*
+*Skills: `campaign-landing-page`, `conversion-copywriting`; for researched account
+pages `web-decision-material`, and for a named person `web-contact-personalization`.*
 
 Awareness stage → the shell judgment (native chrome vs the minimal
 campaign shell — your call, per page, never automatic) → the argument
@@ -76,6 +77,17 @@ pattern → the evidence inventory, respecting the gaps → the section
 list: one visitor question per section, ordered so the visitor's next
 unanswered question is always the next band. A section answering no
 question does not exist; a question with no section gets one.
+
+Write the copy brief and useful decision material now, before choosing slots or
+mutating the document. For a researched page, turn an account priority into a
+concrete proposed workflow, criterion-to-product demonstration or evaluation
+exhibit. An organization biography followed by generic feature labels is not
+that material. Use eligible contact evidence to change the decision and exhibit,
+not just the salutation. Select the action's purpose, promise and real destination
+using the campaign skill's action-selection guide; a homepage demo button is not
+an automatic campaign offer. Decide the copy and imagery together, then find
+source components capable of carrying them. Do not build a layout and invent its
+argument in step 8.
 
 ## Step 4 — Write the plan
 
@@ -90,7 +102,14 @@ criteria cannot be invented afterward.
 From here on the plan is the reference: update each section's status
 (planned → built → verified) as you go; a change of direction is a
 written amendment FIRST, then an act. If a plan.md already exists from
-an earlier pass, continue it — never write a competitor.
+an earlier pass, continue it — never write a competitor. Replace superseded
+requirements in its active section and retain a short change note; do not leave
+contradictory old instructions as simultaneous requirements.
+
+For each affected existing band, record the current pin/version, intended change,
+and properties to preserve: type hierarchy, background/product layers, crop/frame
+and interaction states. A strong band stays pinned unless the identified defect
+requires changing it. This small preservation record makes regressions visible.
 
 Most campaigns are one page. When this one is a small SITE, the plan says so
 first: the pages it needs, each with a name and a route (`/`, `/pricing`,
@@ -106,8 +125,8 @@ the edit-website ladders (existing page); `mint_campaign_shells` +
 account page).*
 
 On an empty document, pin the plan's keeper set in argument order in ONE
-atomic act, with slot rebinds riding the same call wherever the copy is
-already written. On an existing document, this step is the edit-website
+atomic act, with the copy from step 3 bound in the same call. On an existing
+document, this step is the edit-website
 discipline instead: smallest sufficient verbs, pinned clones preserved
 by id, no whole-page reauthor over standing work.
 
@@ -159,18 +178,19 @@ and the vocabulary lane is the last resort; remix the ancestor's real CSS,
 never imagine) → pin into the gap between real bands. Every composed band is checked against the plan's grammar audit
 before it counts as built.
 
-## Step 8 — The copy pass
+## Step 8 — Check copy fit and continuity
 
 *Skill: conversion-copywriting.*
 
-The reader test, the claim ladder (claims no stronger than their
-evidence), proof attribution, receipt CTAs ("Book the strategy
-session", never "Submit"), the slot-geometry rule (match the original's
+Check the already-written argument in its actual composition: the reader test,
+claim ladder (claims no stronger than their evidence), proof attribution,
+action/receipt alignment, and the slot-geometry rule (match the original's
 length; escalate to a variant when the argument needs more room — never
 cram). Copy lands through slot rebinds or in the pinning act itself.
-One coherent primary conversion intent; repeat primary CTAs to its real
-destination. Preserve legitimate secondary resource and legal actions when
-the selected page intent needs them; do not relabel a homepage as booking.
+Keep one coherent page intent; repeat its action only where useful. Preserve
+legitimate secondary resources and legal actions. In-page exploration can be
+the right next step for an educational draft, but is navigation, not evidence
+that a requested lead-generation flow has been delivered.
 
 ## Step 9 — Render, review, and amend
 
@@ -184,7 +204,11 @@ invented now:
 - Compare against the cloned source page: it is the acceptance
   reference for grammar, rhythm, and density.
 - The logo-off test on every composed and derived band.
-- Check primary conversion intent and every actual link/control destination.
+- Check the reader's decision, useful exhibit and every actual link/control
+  destination. A working demo link can still be the wrong action for this page.
+- Compare changed bands with their preservation record at desktop and phone
+  widths. A lost product image/background, flattened control or changed font
+  hierarchy is a regression, even if the new section compiles.
 - Every claim on the page traces to its actual evidence: attributed brief
   material, captured library content, seller knowledge, or scoped platform
   account/contact claims. Keep the subject, freshness, verification and
@@ -198,8 +222,12 @@ unreviewed second page ships unreviewed. Walk the site's own links too:
 each `href="/…"` names a route the plan actually created, and the visitor
 can get back to the page carrying the CTA.
 
-Fixes loop back to steps 5–8; each loop-back is a written amendment,
-and sections move to `verified` as their tasks pass.
+Group observed blocking fixes into a scoped amendment before changing anything.
+Reuse unchanged source/research evidence and correct bands; do not regenerate
+images or ask for a new whole page to repair copy. Fixes loop back to the affected
+steps, and sections move to `verified` as their tasks pass. If a pass changes
+nothing material or needs unavailable evidence/capture, stop with that gap;
+another generation is not a diagnosis.
 
 ## Step 10 — Finalize honestly
 

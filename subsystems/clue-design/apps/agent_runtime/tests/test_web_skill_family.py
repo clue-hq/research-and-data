@@ -22,6 +22,9 @@ SKILLS = (
     "edit-website",
     "review-website",
     "campaign-page-workflow",
+    "web-decision-material",
+    "web-contact-personalization",
+    "web-product-story",
 )
 
 
@@ -112,6 +115,15 @@ def test_requested_page_directions_and_copy_brief_are_delivered(tmp_path):
     )
 
 
+@pytest.mark.parametrize("skill,label", [
+    ("web-decision-material", "worked decision exhibit"),
+    ("web-contact-personalization", "worked contact brief"),
+    ("campaign-landing-page", "action selection"),
+])
+def test_decision_guides_reach_the_materialized_agent(tmp_path, skill, label):
+    read_required_skill_reference(tmp_path, skill, label)
+
+
 def test_materialized_planning_does_not_override_native_research_or_campaign_scope(tmp_path):
     """Catch the legacy instructions that contradicted the account workflow at runtime."""
     materialize_agent_workspace(SimpleNamespace(workspace_root=tmp_path))
@@ -152,5 +164,7 @@ def test_runtime_prompts_receive_the_same_conditional_family_router(role):
         )
     assert prompts_web.WEB_SKILL_ROUTING in prompt
     assert "For a scoped change: edit-website first" in prompt
+    for skill in ("web-decision-material", "web-contact-personalization", "web-product-story"):
+        assert skill in prompt
     assert "Re-reading a skill\n   mid-build is a defect" not in prompt
     assert "CHROME IS THE CAMPAIGN SHELLS, never" not in prompt

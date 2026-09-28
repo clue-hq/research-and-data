@@ -10,6 +10,12 @@ fidelity verdict. Establish what this turn can actually reuse before choosing
 how to build. Apply the same checks to any onboarded brand; never depend on a
 named brand pack or an evaluation snapshot being in the live library.
 
+Reuse already-returned inventory and inspected source within the current scope.
+When differently phrased searches return the same fragment IDs, stop broad
+searching and inspect the relevant candidates; that is no new evidence. Paginate
+when the tool reports unseen results, and refresh only for a specific missing
+source or changed version. Do not confuse necessary pagination with duplicate work.
+
 ## Read, classify, then choose
 
 1. Read `view("brand")` and `view("doc")`. Name the selected seller kit/version
