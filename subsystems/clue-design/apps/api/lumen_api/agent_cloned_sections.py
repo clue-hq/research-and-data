@@ -39,6 +39,7 @@ fail-closed answer an absent one gets.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
@@ -81,6 +82,7 @@ from .fragments import (
 )
 from .fragments.behavior import inspect_fragment_behavior
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
+from .fragments.isolation import IsolationFonts
 from .fragments.render import slot_kinds
 from .fragments.registry import create_href_repaired_fragment
 from .fragments.sanitize import sanitize_fragment_html
@@ -456,7 +458,13 @@ def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
 class DurableAgentClonedSectionRegistry:
     """The sole cloned-section capability exposed to one website-mode agent turn."""
 
-    def __init__(self, *, blobs: DesignBlobStore, cache_dir: str | Path) -> None:
+    def __init__(
+        self,
+        *,
+        blobs: DesignBlobStore,
+        cache_dir: str | Path,
+        isolation_fonts: Callable[[Mapping[str, Any]], IsolationFonts | None] | None = None,
+    ) -> None:
         # The byte store carries the tenant; the row store is built from it rather than
         # re-derived, so the two can never name different workspaces (the D4/D5 rule the
         # custom-component registry follows).
@@ -466,6 +474,7 @@ class DurableAgentClonedSectionRegistry:
         # own, and staging preview bytes in one tree while the runtime reads another would show
         # the agent nothing while every digest looked healthy.
         self.cache_dir = Path(cache_dir)
+        self._isolation_fonts = isolation_fonts
 
     def _repository(self) -> HybridRepository:
         return HybridRepository(self.workspace_id)
@@ -1443,12 +1452,12 @@ class DurableAgentClonedSectionRegistry:
         )
         if loaded.row.get("preview_digest"):
             return None
-        # No brand kit, for the route's own reason: a repair's artifact carries the stylesheet
-        # compiled against its kit at repair time, and handing one here would be a second opinion
-        # about how the section looks.
+        # Keep the sealed stylesheet; only its pinned kit's font-face declarations are supplied
+        # by the composition root, through the same font resolver the page render uses.
+        fonts = self._isolation_fonts(loaded.row) if self._isolation_fonts else None
         kwargs = {"shoot": shoot} if shoot is not None else {}
         png, page = render_isolation_preview(
-            core, loaded, read_blob=self.blobs.read_blob, **kwargs
+            core, loaded, read_blob=self.blobs.read_blob, fonts=fonts, **kwargs
         )
         row = attach_web_fragment_preview(
             self.blobs.storage,
