@@ -37,6 +37,7 @@ from typing import Any, ClassVar, Literal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.read_tools import READ_REFERENCES_BUDGET_BYTES
 from clue_api.design_leg_wiring import project_design_documents
 from clue_db import ConnFactory, transaction
@@ -240,8 +241,7 @@ class ReadArtifactTool(Tool):
         "section=summary gives what it is, what it is called, its status, its version and the "
         "thread it was made on; section=content adds the document's page JSON as text, capped, "
         "with body_truncated saying whether there is more. Read this before describing an "
-        "artifact or what it says. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_artifact"
+        "artifact or what it says. Effect-free. " + tool_manual_link("read_artifact")
     )
     input_model: ClassVar[type[ToolInput]] = ReadArtifactInput
     output_model: ClassVar[type[ToolOutput]] = ReadArtifactOutput

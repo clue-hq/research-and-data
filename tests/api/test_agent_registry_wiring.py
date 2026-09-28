@@ -165,7 +165,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # `manual-*@v11` bodies that state the turn limits without numbers.
         # Digest measured off this tree.
         # v66 (discovery rebuild, 2026-09-28): stage0-interview@v39 and manual-*@v12.
-        AgentRole.HEAD_OF_ABM: ("51aaa4de9bae0ac04ee187cad733a8adf814a54629a96bda6b0c38827b9dd76b"),
+        AgentRole.HEAD_OF_ABM: ("fb50edbe346e313cfe167278f7667aae6a61fc4d018348a59e1bb297719cf5fa"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
