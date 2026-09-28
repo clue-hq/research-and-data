@@ -898,6 +898,20 @@ class RecipeExecutor:
                     lease_generation=lease_generation,
                 )
                 continue
+            blocked = await self._event_node_keys(execution_id, "node.blocked")
+            if blocked:
+                # A blocked operation is permanent in the tool journal. A later gate decision
+                # can resume the execution, but cannot make that operation runnable or completed.
+                # The initial refusal still returns AWAITING_INPUT above; fail closed only when
+                # driving again, rather than replaying the same refusal without new events.
+                await self._append(
+                    runtime,
+                    event_type=ExecutionEventType.EXECUTION_FAILED,
+                    payload={"reason_code": "node_blocked", "node_keys": sorted(blocked)},
+                    worker_id=worker_id,
+                    lease_generation=lease_generation,
+                )
+                continue
             if len(completed) == len(nodes):
                 await self._append(
                     runtime,

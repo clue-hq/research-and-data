@@ -56,6 +56,8 @@ from clue_fleet import (
 from clue_toolbelt import (
     InvocationCrashHook,
     JournalParameterPolicy,
+    PreconditionFailed,
+    PreconditionFailure,
     ReplayPolicy,
     ReplaySafety,
     Tool,
@@ -140,6 +142,16 @@ class _CertifiedEcho(Tool):
         )
 
 
+class _NonnegativeEcho(_CertifiedEcho):
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> tuple[PreconditionFailure, ...]:
+        assert isinstance(inputs, _Input)
+        if inputs.value < 0:
+            return (PreconditionFailure("negative_value", "value must be nonnegative"),)
+        return ()
+
+
 def _factory(conn: AsyncConnection) -> ConnFactory:
     lock = asyncio.Lock()
 
@@ -179,10 +191,11 @@ async def _runtime(
     controls: Any | None = None,
     pre_satisfied_nodes: dict[str, dict[str, Any]] | None = None,
     parent_execution_id: ExecutionId | None = None,
+    tool: _CertifiedEcho | None = None,
 ) -> tuple[ExecutionId, RecipeExecutor, _CertifiedEcho, LeaseGeneration]:
     workspace_id = await seed_workspace(conn, "ws-c5-executor")
     factory = _factory(conn)
-    tool = _CertifiedEcho()
+    tool = tool or _CertifiedEcho()
     registry = ToolRegistry()
     registry.register(tool, make_default=True)
     descriptor = tool.descriptor
@@ -574,6 +587,85 @@ def test_bounded_interaction_child_is_durable_replayable_and_human_closable() ->
             )
             assert replayed_after_completion.replayed is True
             assert tool.calls == 1
+
+    run_async(scenario())
+
+
+def test_resumed_execution_fails_closed_on_a_permanently_blocked_interaction() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            execution_id, executor, tool, generation = await _runtime(
+                conn, interaction=True, tool=_NonnegativeEcho()
+            )
+            await executor.execute(execution_id, worker_id="worker", lease_generation=generation)
+            blocked = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-blocked",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": -1},
+                actor="human",
+            )
+            with pytest.raises(PreconditionFailed) as refused:
+                await executor.invoke_interaction_tool(blocked, inputs={"value": -1}, actor="human")
+            assert refused.value.reason_codes == ("negative_value",)
+            initial = await executor.execute(
+                execution_id, worker_id="worker", lease_generation=generation
+            )
+            assert initial.status is ExecutionStatus.AWAITING_INPUT
+            assert initial.completed_node_keys == ()
+
+            # A corrected operation is a different node; it does not erase the first refusal.
+            corrected = await executor.append_interaction_tool(
+                execution_id=execution_id,
+                workspace_id="ws-c5-executor",
+                slot_key="interactions",
+                node_key="answer-corrected",
+                tool_name=tool.name,
+                tool_version=tool.version,
+                inputs={"value": 17},
+                actor="human",
+            )
+            await executor.invoke_interaction_tool(corrected, inputs={"value": 17}, actor="human")
+            await executor.decide_gate(
+                execution_id=execution_id,
+                node_key="interactions",
+                actor="human",
+                decision="stage0_complete",
+            )
+            result = await asyncio.wait_for(
+                executor.execute(execution_id, worker_id="worker", lease_generation=generation),
+                timeout=5,
+            )
+            assert result.status is ExecutionStatus.FAILED
+            assert result.completed_node_keys == ("answer-corrected", "interactions")
+            replayed = await executor.execute(
+                execution_id, worker_id="worker", lease_generation=generation
+            )
+            assert replayed.status is ExecutionStatus.FAILED
+            assert tool.values == [17]
+            events = (
+                await conn.execute(
+                    text(
+                        "SELECT event_type, payload_json FROM execution_event "
+                        "WHERE execution_id=:id ORDER BY seq"
+                    ),
+                    {"id": execution_id},
+                )
+            ).all()
+            assert sum(row.event_type == "node.blocked" for row in events) == 1
+            assert not any(row.event_type == "execution.completed" for row in events)
+            failures = [row.payload_json for row in events if row.event_type == "execution.failed"]
+            assert failures == [{"reason_code": "node_blocked", "node_keys": ["answer-blocked"]}]
+            attempts = (
+                await conn.execute(
+                    text("SELECT count(*) FROM execution_attempt WHERE node_id=:id"),
+                    {"id": blocked.node_id},
+                )
+            ).scalar_one()
+            assert attempts == 1
 
     run_async(scenario())
 
