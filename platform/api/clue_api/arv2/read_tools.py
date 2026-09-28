@@ -50,6 +50,7 @@ from clue_api.arv2.discovery_store import (
     VERIFIED_PREDICATE,
     CandidateRow,
     list_candidates,
+    list_searches,
 )
 from clue_api.arv2.discovery_store import read_discovery_run as read_discovery_run_row
 from clue_api.arv2.display.blocks import live_blocks
@@ -806,7 +807,7 @@ class DiscoveryCandidateView(BaseModel):
         serialization_alias="pass",
     )
     #: ``arv2_discovery_candidate.disposition``: ``pending`` until verified, then ``pass`` /
-    #: ``partial`` / ``unclear`` / ``duplicate_of_existing`` / ``not_chosen_before``.
+    #: ``partial`` / ``unclear`` / ``duplicate_of_existing`` / ``found_before``.
     disposition: str
     #: The human's approval — ``approved``, or nothing at all. There is no recorded rejection.
     decision: str | None
@@ -827,6 +828,9 @@ class DiscoveryRunView:
     verified: int
     shown: int
     approved: int
+    #: The run made the relaxed search — the strict searches came up short and the run allowed
+    #: it. The name predates 2026-09-28, when a human asked for the relaxed pass separately; the
+    #: field keeps it because the read's schema is pinned by every profile that grants it.
     relaxed_requested: bool
     started_at: str | None
     finished_at: str | None
@@ -860,7 +864,7 @@ _LATEST_DISCOVERY_RUN = text(
 #: worth looking at?", "how many did we take?". "Checked" is
 #: :data:`~clue_api.arv2.discovery_store.VERIFIED_PREDICATE` — a candidate with a verdict — shared
 #: with ``status.md`` and the Target-accounts poll, because the pre-spend dispositions
-#: (``duplicate_of_existing``, ``not_chosen_before``) are stamped before any gate is asked and
+#: (``duplicate_of_existing``, ``found_before``) are stamped before any gate is asked and
 #: counting them as verified made the agent say the platform had checked companies it had skipped.
 #: Every sub-select names the tenant: ``arv2_discovery_candidate.run_id`` is a single-column FK, so
 #: nothing in the schema forces a candidate's workspace to equal its run's.
@@ -980,7 +984,9 @@ async def read_discovery_run(
         verified=int(counts["verified"]),
         shown=int(counts["shown"]),
         approved=int(counts["approved"]),
-        relaxed_requested=bool(run.relaxed_requested),
+        relaxed_requested=any(
+            search.kind == "relaxed" for search in await list_searches(conn, run_id=run_uuid)
+        ),
         started_at=None if run.started_at is None else run.started_at.isoformat(),
         finished_at=None if run.finished_at is None else run.finished_at.isoformat(),
         candidates=tuple(
@@ -1358,7 +1364,7 @@ class ReadProjectAccountsTool(Tool):
         "by name or domain to find one account; page with limit and offset when total is larger "
         "than the page you received. Read this before saying how many accounts there are, which "
         "are researched, or before proposing more discovery. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_project_accounts"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_project_accounts"
     )
     input_model: ClassVar[type[ToolInput]] = ReadProjectAccountsInput
     output_model: ClassVar[type[ToolOutput]] = ReadProjectAccountsOutput
@@ -1452,7 +1458,7 @@ class ReadAccountResearchTool(Tool):
         "'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and "
         "outreach-unsafe claims are held back and counted in 'excluded'. Read this before "
         "saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
@@ -1556,7 +1562,7 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
         "can come back shorter than limit and still name a next_offset. Sensitive, unverified "
         "tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this "
         "before saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_account_research"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV2Input
     parameter_policy = JournalParameterPolicy(
@@ -1589,11 +1595,12 @@ class ReadDiscoveryRunOutput(ToolOutput):
     #: Strict plus relaxed — the companies the run actually brought back.
     found: int
     #: How many candidates the verifier actually judged against the ICP — the ones that carry a
-    #: verdict. Companies skipped before any gate (already an account, surfaced and not chosen
-    #: before) are NOT counted here; they are in ``candidate_total``.
+    #: verdict. Companies skipped before any gate (already in this project, found by an earlier
+    #: discovery) are NOT counted here; they are in ``candidate_total``.
     verified: int
     shown: int
     approved: int
+    #: The run made the relaxed search (the name predates 2026-09-28; see ``DiscoveryRunView``).
     relaxed_requested: bool
     started_at: str | None
     finished_at: str | None
@@ -1613,7 +1620,7 @@ class ReadDiscoveryRunTool(Tool):
         "found, how many candidates the verifier judged against the ICP, how many were shown and "
         "approved, and the top candidates with their verdict. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunInput
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunOutput
@@ -1720,7 +1727,7 @@ class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
         "(default 25) and follow next_offset until it is null to see every candidate; "
         "candidate_total is the whole run on every page. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_discovery_run"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunV2Input
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV2Output
@@ -1817,7 +1824,7 @@ class ReadClaimsTool(Tool):
         "Query the live claims about one account or contact: by field family (field_prefix), "
         "source tier, verification status, or collected since a date; paged; the same display "
         "gate as the account pages. Use read_account_research for the written overview. "
-        "Effect-free. Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_claims"
+        "Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_claims"
     )
     input_model: ClassVar[type[ToolInput]] = ReadClaimsInput
     output_model: ClassVar[type[ToolOutput]] = ReadClaimsOutput

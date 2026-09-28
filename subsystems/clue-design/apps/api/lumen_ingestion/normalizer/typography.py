@@ -165,6 +165,25 @@ def weight_snap_diagnostic(family: str, role: str, declared: int, actual: int) -
     }
 
 
+#: A real style's leading, as a ratio of its font size. Outside this band the number is a unit
+#: misparse (the 2026-09-04 Apollo kit carried 4.5 = 72px / 16), never a design choice.
+LINE_HEIGHT_RATIO_RANGE: tuple[float, float] = (0.5, 2.5)
+#: Tracking beyond half an em in either direction is likewise a misparse.
+LETTER_SPACING_EM_LIMIT: float = 0.5
+
+
+def type_unit_diagnostic(role: str, field: str, value: float, locator: str) -> dict:
+    """One LUMI0233 warning per (role, field) whose harvested unit could not be a real style."""
+    return {
+        "code": "LUMI0233",
+        "severity": "warning",
+        "message": (
+            f"type.{role} {field} {value:g} (from {locator}) is outside the range a real style "
+            f"can carry; it was a unit misparse, so the role keeps its derived default"
+        ),
+    }
+
+
 def build_type_styles(
     anchors: TypeAnchors,
     cta_color: str = "text.inverse",
@@ -218,9 +237,20 @@ def build_type_styles(
             if anchor.weight:
                 final_weight = anchor.weight
             if anchor.line_height:
-                final_lh = anchor.line_height
+                lo, hi = LINE_HEIGHT_RATIO_RANGE
+                if lo <= anchor.line_height <= hi:
+                    final_lh = anchor.line_height
+                else:
+                    diagnostics.append(
+                        type_unit_diagnostic(role, "line_height", anchor.line_height, anchor.pointer.locator)
+                    )
             if anchor.letter_spacing is not None:
-                final_ls = anchor.letter_spacing
+                if abs(anchor.letter_spacing) <= LETTER_SPACING_EM_LIMIT:
+                    final_ls = anchor.letter_spacing
+                else:
+                    diagnostics.append(
+                        type_unit_diagnostic(role, "letter_spacing", anchor.letter_spacing, anchor.pointer.locator)
+                    )
         family = anchors.heading_family if role in _HEADING_ROLES else anchors.body_family
         font_asset = "brand" if role in _HEADING_ROLES else ("body" if anchors.body_family != anchors.heading_family else "brand")
 

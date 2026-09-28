@@ -75,9 +75,7 @@ export function ProjectSidebarTree({
                       ? () => controller.beginEditProject(project.id)
                       : undefined}
                     onNewChat={() => controller.createConversation(project.id)}
-                    onTogglePinned={controller.projectMutationsAvailable
-                      ? () => controller.togglePinned(project.id)
-                      : undefined}
+                    onTogglePinned={() => controller.togglePinned(project.id)}
                     project={project}
                   />
                 ) : null}

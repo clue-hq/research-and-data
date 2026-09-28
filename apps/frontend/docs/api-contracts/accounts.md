@@ -224,6 +224,7 @@ The frontend never re-derives any of these (master plan §6).
 | `fitDisposition` | on "Why they fit" items: `support` when the fit claim is satisfied, `caveat` when it is the honest negative |
 | `intro[]` | narrative sections ("What they do", "Why they fit") carry their paragraphs as `intro`; items carry the evidence rows |
 | `ResearchSection.empty` / `emptyMessage` | `empty` when the recipe matched nothing and the display model was not called; `emptyMessage` is optional server text, else the client prints "No {section} information found for {name}." Since 2026-09-16 it may instead read `"Not generated: <provider> refused (<reason>). Retries automatically."` (or `"… failing (<reason>). …"`) while a provider incident is open — see the note under the Section shape |
+| `ResearchSection.pending` | `true` while a fleet task is writing the section (plan 2026-09-21): the section is `empty`, its `emptyMessage` is the served sentence `Synthesis in progress, please wait a few seconds.`, and the client re-reads the page every 5 s while any section is pending. Never `true` for a section whose recipe matched nothing. |
 | restricted sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreachSafe=false` claims; the frontend shows them under an "Internal notes" control and the overview page omits `watch-outs` |
 | `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
 | `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text parsed out of an `h1` |
@@ -236,7 +237,7 @@ The frontend never re-derives any of these (master plan §6).
 | `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
 | `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
 | `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
-| `influence` | served; falls back to the persona-derived default table when the committee claim does not carry it (ruling S8) |
+| `influence` | legacy persona-derived default (S8); contextual unverified/excluded membership returns null |
 | `previewTitle` | `= name` in v1 (ruling S4) |
 | display gating | E2–E5 select claims through `arv2_display_allowed` (ruling S10): use-class rules and the sensitive fail-close stay, but a `WEAK` identity binding no longer hides an `outreachSafe = true` claim |
 
@@ -279,7 +280,7 @@ The Next.js `/api/source-favicon` route and the accounts layout shell stay front
 
 ```
 DisplayBlock { page ∈ insights|overview|contact, sections[] }
-  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage? }
+  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage?, pending=false }
   Item     { id, h2, body[], sendLine|null, contactRefs[], inlineLead?, fitDisposition? ∈ support|caveat,
              subject?, priority ∈ 1|2|3, newSinceLastVisit=false }
   Sentence { text, claimIds[], segments[]? { text, claimIds[] } }
@@ -302,6 +303,11 @@ backend's words (`clue_api.provider_incidents.provider_display` / `reason_words`
 renders `emptyMessage` verbatim and never parses a provider or reason out of it. Sections that this
 read *did* generate are untouched, and a page with nothing wrong keeps the client's
 "No {section} information found for {name}." default.
+
+**Shared sections (2026-09-21).** `context-only` on the insights page is the overview's
+`watch-outs` block; `contact-insights` is the committee's `why-this-person` blocks in committee
+order. Same items, same claim ids, the insights page's own `h1`/`defaultOpen`. They are never
+`pending` on the insights page — their owner page carries that.
 
 `BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
 linkedinUrl|null, whyTheyMatter }` — `persona` is served display text, e.g. `Economic buyer`, as it
@@ -414,8 +420,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | the contact's resolved name |
 | `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
 | `persona` | string | required | served display text, e.g. `Economic buyer` — never the backend vocabulary value |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
-| `influence` | `High` \| `Medium` \| `Low` | required | persona-derived default when the claim lacks it (S8) |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | null for contextual unverified/excluded membership; otherwise persona-derived default (S8) |
 | `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
 | `emailStatus` | `available` \| `lookup` | required | whether a work-email claim exists |
 | `emailLabel` | email | optional | present only when `emailStatus = available` |
@@ -436,8 +445,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | as E4 |
 | `title` | string \| null | required (nullable) | as E4 (S7) |
 | `persona` | string | required | as E4 — served display text, e.g. `Economic buyer` |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | enum (7) | required | as E4 |
-| `influence` | `High` \| `Medium` \| `Low` | required | as E4 |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | as E4 |
 | `avatarUrl` | url or path (`/…`) | optional | as E4 |
 | `emailStatus` | `available` \| `lookup` | required | as E4 |
 | `emailLabel` | email | optional | as E4 |
@@ -467,6 +479,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `contactDisplay` |
 | `contactDisplay` | DisplayBlock (`page: "contact"`) | optional | omitted when the contact page has not been generated |
 | `lastModifiedAt` | ISO-8601 datetime | required | the **contact's** own latest `verifiedAt` (R8) |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | as E1, keyed to the contact's own registry claims |
 
 The four non-Nick fixture contact pages synthesize an "Account context" section (ruling R10); that
 is fixture-only — a production page's sections come from `contactDisplay` and nothing else.
@@ -1861,3 +1874,54 @@ open thread opens the surface once (`chat-shell/model/discovery-launch-signal.ts
 the driver now lists the webset on every poll tick and verifies new items in a bounded pool
 (`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
 a row still appears only after every gate is verified.
+
+## Research quality generations — approved 2026-09-22, implemented locally; live acceptance pending
+
+The research-quality design §10.2 and its implementation authorization govern this additive
+contract. Existing account/contact layouts remain. New quality-profile reads carry `projectId`,
+`contextId`, `generationId` and `qualityState` separately from job execution status. Account,
+Insights and Contact reads accept `projectId` and `contextId`; an omitted context is resolved only
+when unambiguous and returned explicitly. Ambiguity yields `context_required` with project choices,
+never another project's narrative. Legacy unscoped output is labelled `legacy`.
+
+`researchQuality` includes those identities, `qualityState` (researching/provisional/reconciled/
+partial/needs_review/suspended/privacy_stopped/context_required/legacy), `refreshPending`, ordinary
+non-sensitive `gaps`, and `contexts` choices. `DisplayBlock` carries the same metadata. Missing or
+invalidated content remains visibly pending/qualified; privacy restrictions remain separate.
+Committee members carry `membershipState` (candidate/supported/needs_verification/excluded),
+`outreachEligible` and `membershipGaps`. Only supported current employment plus supported remit may
+be presented as an established buying role. Counts use the same assessed membership reader.
+For a contextual candidate, unverified or excluded member, `influence` is null and renders as
+Unverified; the legacy persona default must not imply a verified influence level.
+`membershipGaps` contains user-facing explanations, not internal assessment reason codes.
+
+Cited sentences additionally carry `kind` (fact/inference/quote/qualified/gap) and qualifications.
+An attributed provider report excerpt is not a primary quote. A value argument cites a narrative
+claim backed by both account claims and exact pinned seller-document passages. Invalid historical
+observations remain auditable but are unavailable to ordinary factual summaries. Stale writes are
+refused atomically; rejected claims and revoked memberships are suppressed before asynchronous
+refresh. Read requests do not invoke the old Luna writer for a quality generation.
+
+## Miscellaneous research sections — approved and integrated locally 2026-09-27
+
+Account Insights and Contact display blocks now include an owned `miscellaneous` section,
+headed **Miscellaneous**, after the existing sections. Overview is unchanged. This uses the
+existing `ResearchSection` shape; no new transport or component-specific field is needed.
+
+The section contains additional source-linked findings not represented in the main narrative.
+It is ordinary research (`restricted: false`), initially collapsed (`defaultOpen: false`),
+with the same item text, attribution, qualifications and claim/source controls as other sections.
+It is not the Internal notes surface. The narrative skills govern selection; the frontend neither
+reclassifies claims nor invents residual content. Findings already explained elsewhere need not
+be repeated, and distinctive personal interests can still receive prominence in the main narrative.
+
+Backend recipe seeding offers the section to the account and person writers through
+`read_narrative_inputs`; `write_research_narrative` stores it using the existing scoped claim-ID
+resolution and page writer. Old/in-flight narratives may omit this additive section. A quality
+page with no saved Miscellaneous block shows “No additional research findings have been published
+yet.” and does not enter a refresh loop merely because this section was introduced. Existing
+blocks still become stale when their underlying research changes. No historical content is
+automatically moved or regenerated by this change.
+
+Fixture account/contact pages expose the same empty section. The generic `ResearchDocument`
+and `ResearchStack` render it as an independent native disclosure with source controls.

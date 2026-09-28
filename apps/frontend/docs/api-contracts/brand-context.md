@@ -326,39 +326,35 @@ This section supersedes Slice 1's "Mutations — unchanged" paragraph for the tw
 mutations named here only. Rename/delete/upload/knowledge edits remain proposed
 and client-local.
 
-### Founder-ratified surface
+### Current surface (founder revision, 2026-09-21)
 
-- **Option A** is binding: the page header shows a status chip, secondary
-  **↻ Re-extract**, and primary **Approve**, immediately left of the existing
-  Light/Dark control. The row remains available in the Colors, Typography,
-  Assets, and Knowledge headers.
-- The chip reports the store without reinterpretation:
-  `draft → Draft`, `generated_unreviewed → Generated — unreviewed`, and
-  `approved → Approved`. With no kit there is no chip. After approval, Approve
-  disappears; Re-extract remains.
-- Empty Colors/Typography panels say **"Extracting your brand from your
-  website…"** while any listed job is `queued` or `running`. Otherwise they say
-  **"No colors yet."** / **"No text styles yet."** Data-bearing panels are
-  unchanged.
+The Assets header contains **Upload assets** only. Re-extract, the approval
+badge/action, and the Assets copy-link button have been removed. Its Type,
+Used as and Source filters use the shared branded SelectField; the grid/list
+control aligns with the fields, below their labels. Upload and asset-details
+selectors use the same component.
 
-### Approval
+Colors, Typography and Knowledge retain Re-extract for recovery. No Brand
+context header offers approval or rejection. Empty Colors/Typography panels
+still show extraction progress while a job is queued/running.
 
-```text
-POST /api/clue/design/brand-kits/{brand_kit_id}/approval
-{"approval_status":"approved"}
-```
+### Automatic approval
 
-The browser calls the authenticated design BFF only. On success it refreshes
-the Server Component and renders the approval state returned by the store; it
-does not optimistically claim approval. There is no un-approve affordance.
-The design API updates only the lineage's latest version and mirrors the value
-into both the row and `brand_kit_json.approval_status`.
+Successful website, PDF and asset-kit ingestion publishes an **approved**
+brand-kit version. This happens in the ingestion worker after structural
+validation, through the existing governed create/publish tool. No browser
+approval request is needed. The authoring summary is computed with the approved
+status so product-readiness diagnostics remain independent of approval.
 
-Approval and extraction share one client single-flight guard. Both controls
-remain disabled until the ingestion-job read succeeds, and Approve is disabled
-while a job is active. This is required because the approval endpoint targets
-the latest version: racing a publish could otherwise approve a newly extracted
-draft the person has not reviewed.
+Captured original website sections inherit their exact source kit version's
+approval when registered, including sections arriving after publication. The
+existing cascade continues to exclude dormant sections, deprecated sections
+and individually reviewed repairs. Existing historical kit versions are not
+rewritten. The low-level approval API remains available for compatibility.
+
+The founder explicitly extended automatic approval to ICP/product targeting in
+project chats. That flow is documented in `projects.md`: the agent applies the
+selection through `configure_project_targeting@1` without an approval card.
 
 ### Re-extract
 
@@ -372,7 +368,7 @@ POST /api/clue/design/brand-kits/ingest/website
 - `brand_kit_id` names the current lineage. If it already exists, the ingestion
   pipeline uses `design_publish_brand_kit_version` with the latest version as
   `expected_base_version`; the next number is allocated under the lineage lock
-  and the resulting version is always `draft`.
+  and the resulting version is automatically `approved`.
 - The manual wire does not accept a free-floating browser-authored `brand_id`.
   The exact join is stronger: the design DAL reads the lineage head under the
   same locked write and explicitly inherits its stored `brand_id`. A workspace
@@ -403,10 +399,9 @@ exposed and report `website_url: null`.
 A client-supplied lineage's published kit currently carries no durable
 producing-ingestion-job identifier. If a leased worker dies after publishing
 the next version but before terminalizing its job, the reaper's re-offer can
-publish one additional identical **draft** version. This is accepted for Slice
-4: nothing auto-approves, the page selects the latest version, and the human
-gate remains authoritative. Closing it later requires a durable job-to-version
-receipt (not inference from payload equality).
+publish one additional identical version. With automatic approval, this version
+is approved too. The page selects the latest version. Closing this existing
+recovery gap requires a durable job-to-version receipt (not payload equality).
 
 ---
 
@@ -617,8 +612,10 @@ banner is removed. The older O5 removal of Preview/Edit is superseded by this fo
 
 The asset dialog uses the available viewport up to 1440 × 960 px. The image fills
 its display region with proportional `contain` sizing, preserving all artwork.
-Desktop reserves 280–360 px for the description; mobile stacks the details below
-the preview. Long names wrap and long descriptions scroll within the details pane.
+Desktop reserves 340–420 px for the details; at 820 px and below, the preview and
+details stack. The details column spans the dialog height, with a fixed heading
+and close control above independently scrolling content. Long names, descriptions
+and source URLs wrap within the pane.
 This is presentation-only and does not change the asset write contract above.
 
 
@@ -642,3 +639,98 @@ drafts must return to valid Rich text before Save; editing itself may normalize 
 Code blocks stay monospaced without a language picker or line numbers and retain their
 fence metadata. Typography, colors and radii use Clue tokens; DM Mono is loaded locally.
 Long inline code, URLs and source wrap; wide tables scroll inside the document.
+
+> **Merge note (2026-09-17, PR #62 ← `research-streaming`).** The backport below was
+> written while this branch lacked the ARV2 backend. After the merge the sections above
+> govern: the Knowledge folders are served from the platform document store, and the
+> Lane 2 shared Markdown editor replaces the read-only `react-markdown` panel. The
+> asset-registry union and typeface `faces` handling from the backport remain in use.
+
+## Local backport (2026-09-13) — Brand Context presentation
+
+Adapted Aryan's `3903ae73`, `769b4994` and `79330214` changes from
+`origin/brand-context-polish` onto Design Agent V1. The existing authenticated
+brand-kit and asset read contracts remain in use; no onboarding API is added.
+
+- Asset dialogs contain the full image within a larger responsive preview and
+  keep long names/descriptions readable in the details column.
+- Typeface mapping preserves the kit's `faces` (weight, style, asset ID and source
+  URL). Stored faces use `/api/clue/design/assets/{id}/bytes`; remote fallback
+  accepts HTTP(S) only. Font-family registration is namespaced by kit/version/role.
+  A sample appears after the actual font loads, with explicit loading/unavailable
+  states instead of a silent fallback. Refreshing the kit refreshes its typefaces.
+- Knowledge uses `react-markdown` and `remark-gfm` for headings, lists, tables,
+  links and code. Existing client-local drafts are still previewable. This does
+  **not** persist edits or change the structured Design brief.
+
+The newer onboarding Knowledge tree, polling and version-checked Markdown saves
+(`2c100e8a`) depend on the upstream ARV2 backend/document store, absent on this
+branch. They are not part of this backport. Importing the full upstream branch is
+a separate contract and migration integration, not a presentation update.
+
+Presentation changes do not rerun ingestion or increase source coverage. Current
+website capture visits the entry URL plus explicitly supplied `page_urls`; it
+does not discover linked pages. Ad-library harvesting remains a separate job.
+
+## Asset context and bulk upload (ratified 2026-09-21)
+
+Implementation follows the founder-authorized
+[asset-context design](../../../../docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md).
+The engine's asset record remains authoritative for custody, licensing and placement.
+`design_asset_description` owns one generated analysis and field-level human overrides.
+
+- `GET /assets/upload-capabilities` returns `max_bytes` and supported `formats`.
+  The dialog reads the configured server limit. Advertised formats are PNG, JPEG,
+  WebP, SVG and GIF. AVIF is not advertised. Animated originals are retained;
+  visual analysis inspects the first frame and records that transformation.
+- Multipart `POST /assets` accepts `Idempotency-Key`, `creative_type`, JSON-array
+  `usage_roles`, `user_note`, and optional `brand_kit_id`. Brand association is
+  explicit and workspace-validated. Registration, overrides, enrichment job and
+  fleet offer commit together after byte custody. An identical replay returns
+  the same asset/job; changed content or metadata under that key returns 409.
+  The existing response adds `enrichment`, the effective metadata/status row.
+- `GET /assets/descriptions?asset_ids=...` adds generated `analysis`, effective
+  human-reference fields, `creative_type`, `usage_roles`, `classification_origin`,
+  `overrides`, `source_occurrences`, `agent_context`, `revision`, `status`, and
+  optional `diagnostic`. Reads batch up to 100 IDs. Legacy four-field readers remain valid.
+- `PUT /assets/{id}/description` accepts partial title/description/usage/tags,
+  type/roles, avoid/placement guidance and user note. Omitted fields survive.
+  `reset_fields` removes named overrides; unknown fields or simultaneous assign/reset
+  are rejected with 422. Changing a note marks prior analysis stale; a subsequent
+  analysis receives the updated note. Human wording/classification never blocks
+  refresh of other generated fields.
+- `POST /assets/{id}/analysis/retry` returns the durable ingestion job. Active work
+  returns 409; failed/stale assets reuse their stored originals and source history.
+  `queued`, `analyzing`, `ready`, `failed`, `unsupported` and legacy `stale` are
+  description states, independent of whether an asset's bytes are usable.
+- Browser mutations use the authenticated design BFF. `X-Expected-Workspace-Id`
+  is a precondition compared with the server-authorized workspace, never an
+  authorization selector or forwarded credential. A workspace switch returns 409
+  for pending requests selected in the previous workspace.
+
+The repository reads every registry page independently of brand-kit existence,
+joins metadata in batches, and supplies separate Type / Used as / Source filters.
+The screen owns a three-transfer queue outside the floating dialog. Closing it
+keeps transfers alive; per-file retries retain their idempotency key. Successful
+files survive another file's failure. Server analysis continues through fleet
+jobs after upload, independently of the browser. Reload reads persisted metadata.
+Fixture and HTTP adapters implement the same operations; fixtures do not simulate
+successful provider analysis.
+
+### Asset inspector refinement (2026-09-22)
+
+The inspector exposes **When to use** directly below the description, followed by
+placement/composition and avoidance guidance when present. Pending or absent usage
+guidance has an explicit empty state. Source evidence and agent interpretations
+remain separate disclosures. Type and usage-role controls use the shared brand
+controls; usage roles are native semantic checkboxes in one readable column.
+
+Title, description and user context save automatically after 500 ms without an
+edit and flush on blur. Type and role changes save immediately. There are no Save
+buttons. A workspace-owned queue serializes writes per asset, keeps newer edits
+visible while a write is pending, and preserves failed drafts with a Retry action.
+Closing the inspector (button, backdrop or Escape) flushes pending edits first;
+a failed save keeps the inspector open. Successful responses refresh effective
+metadata, and older polling responses cannot overwrite a newer revision. This
+does not add an API endpoint or change the write payload. Drafts are in-memory;
+browser/process termination is not an offline persistence mechanism.

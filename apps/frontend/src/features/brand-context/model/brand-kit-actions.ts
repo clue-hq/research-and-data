@@ -1,16 +1,7 @@
 import { z } from "zod";
 import type { BrandKitDetail } from "./brand-kit";
 
-/**
- * Slice 4: what the Brand-context page's Approve / Re-extract affordances are allowed to say
- * and do. Pure — every decision here is a function of the kit the page rendered and the
- * workspace's newest ingestion job, so the header, the panels' empty states and the tests all
- * read the same rules.
- *
- * Two rules are founder rulings and are not negotiable in code:
- * every run lands a new DRAFT version behind the approval gate, and nothing here ever approves
- * a kit on the client's behalf.
- */
+/** Extraction state and historical kit metadata. Ingestion now approves kits automatically. */
 
 /** The design API's ingestion-job DTO (`ingestion_job_dto`), narrowed to what the page uses. */
 export const IngestionJobSchema = z.object({
@@ -76,12 +67,6 @@ export function approvalChip(kit: BrandKitMeta | null): ApprovalChip | null {
   const status = kit?.approvalStatus?.trim();
   if (!status) return null;
   return RULED_CHIPS[status] ?? { label: status, tone: "neutral" };
-}
-
-/** Approve is offered for a kit that is not already approved — and never un-offered as an
- * un-approve. A kit-less page has nothing to approve. */
-export function canApprove(kit: BrandKitMeta | null): boolean {
-  return kit !== null && kit.approvalStatus?.trim() !== "approved";
 }
 
 /** A job that is still going to change what this page shows. */

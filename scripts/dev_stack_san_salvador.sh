@@ -7,6 +7,10 @@
 # with FOUR fleet worker processes at THREE drain slots each (founder ruling 2026-09-10 for the
 # exit-gate walks), the lane's own agent-workspace root, and logs under /tmp/san-salvador_*.log.
 #
+# The agent code sandbox (2026-09-20): `up`/`restart-workers` refuse until `make sandbox-image`
+# has built the image on this host, because the fleet workers below run Head-of-ABM's
+# run_python@1 in that container (CLUE_SANDBOX_ENABLED is on by default; see DEV_STACK.md).
+#
 #   ./scripts/dev_stack_san_salvador.sh up|down|restart-api|restart-workers|status
 #
 # It cannot share the box with the istanbul stack (same ports): stop one before starting the other.

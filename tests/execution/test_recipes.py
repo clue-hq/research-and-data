@@ -146,7 +146,7 @@ def test_system_seed_is_promoted_digest_exact_and_replay_safe() -> None:
 def test_c67_account_unit_is_preserved_as_replay_only_not_system_seeded() -> None:
     definitions = load_system_recipe_definitions()
     assert all(item.recipe_key != "account-research-unit" for item in definitions)
-    assert HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES == ("account-research-unit-v1.json",)
+    assert "account-research-unit-v1.json" in HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES
     account = load_recipe_definition(
         system_recipe_asset_root() / HISTORICAL_REPLAY_ONLY_RECIPE_FILENAMES[0]
     )

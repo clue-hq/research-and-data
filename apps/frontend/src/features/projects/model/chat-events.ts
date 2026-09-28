@@ -47,6 +47,19 @@ export const ChatStreamEventTypeSchema = z.enum([
   "leg.awaiting_user",
   "leg.closed",
   "leg.reopened",
+  // Scene live-streaming rung A: one committed P0.4 design checkpoint,
+  // forwarded mid-run off the design run's own outbox
+  // (`clue_api.design_fleet`). Unlike the `leg.*` frames it is not a lifecycle
+  // transition and writes nothing to the transcript — it exists so an open
+  // canvas can catch up with a version the document already has.
+  "design.checkpoint",
+  // Scene live-streaming rung B: the operations of a single mutation, streamed
+  // as the design agent makes them, with the position that batch ends at in the
+  // run's operation ledger. Unlike a checkpoint it announces work that is NOT
+  // yet durable — the canvas may render it optimistically and reconciles
+  // against the checkpoint behind it, which is why both frames report positions
+  // in the same ledger.
+  "design.op_batch",
   "stream.hello",
   "stream.reset",
 ]);
@@ -87,6 +100,56 @@ const EnvelopeSchema = z.looseObject({
   type: ChatStreamEventTypeSchema,
 });
 
+/**
+ * The mark one `design.checkpoint` frame announces.
+ *
+ * Every member is nullable **on purpose**. The platform forwarder copies across
+ * only the keys the design event actually carried
+ * (`clue_api.design_fleet._forwarded_frame`), so a partial payload is an
+ * ordinary frame rather than a broken one — and the only thing the surface
+ * decides from a checkpoint is "reload the canvas", which needs none of them.
+ * Refusing the frame over an unreadable field would trade the whole live
+ * reload for a value nothing renders.
+ */
+export interface DesignCheckpoint {
+  /** The design document the committed version belongs to. */
+  documentId: string | null;
+  /** The document version this checkpoint committed. Monotone per document. */
+  version: number | null;
+  /** How many operations the checkpoint carried. A counter, not a list. */
+  operations: number | null;
+  /** Whether the engine's preflight was clean when it committed. */
+  preflightClean: boolean | null;
+}
+
+/**
+ * One `design.op_batch` payload — a mutation's operations, mid-run.
+ *
+ * Read leniently for the same reason {@link DesignCheckpoint} is: the forwarder
+ * copies across only the keys the design event carried, and it deliberately
+ * drops `operations` (keeping `operations_total`) once a batch exceeds its size
+ * ceiling. A POSITION-ONLY frame is therefore an ordinary frame, not a broken
+ * one, and refusing it would cost the consumer the position it needs to know it
+ * has fallen behind.
+ *
+ * `operations` is validated as a whole or read as absent — never filtered. Half
+ * a batch applied to a canvas is a corrupted document, which is exactly why the
+ * platform sends a bare position rather than a truncated list; a member this
+ * build cannot read costs the batch, and the cursor waits for the next
+ * checkpoint. The members stay untyped records here: the `Operation` contract
+ * belongs to the design editor, and this is the chat stream's boundary.
+ */
+export interface DesignOpBatch {
+  /** The design document these operations edit (the leg's pinned document). */
+  documentId: string | null;
+  /** The batch, or `null` when it was absent, oversize, or unreadable. */
+  operations: readonly Record<string, unknown>[] | null;
+  /** Where this batch ENDS in the run's operation ledger. A position. */
+  operationsTotal: number | null;
+  /** The authoring iteration that produced it. */
+  iteration: number | null;
+}
+
 const CommonIdentitySchema = z.object({
   project_id: z.string().min(1),
   thread_id: z.string().min(1),
@@ -110,6 +173,10 @@ export interface ChatStreamEvent {
   deltaIndex: number | null;
   /** Present on the four `leg.*` lifecycle frames; null everywhere else. */
   legId: string | null;
+  /** Present on `design.checkpoint`; null on every other frame. */
+  checkpoint: DesignCheckpoint | null;
+  /** Present on `design.op_batch`; null on every other frame. */
+  opBatch: DesignOpBatch | null;
   type: ChatStreamEventType;
   /** Present on `part.created|updated|completed|failed`. */
   part: ChatPart | null;
@@ -129,6 +196,53 @@ export type ChatStreamEventParse =
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function optionalBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+/** Read a checkpoint's payload member-by-member; see {@link DesignCheckpoint}. */
+function readCheckpoint(raw: Record<string, unknown>): DesignCheckpoint {
+  return {
+    documentId: optionalString(raw.document_id),
+    version: optionalNumber(raw.version),
+    operations: optionalNumber(raw.operations),
+    preflightClean: optionalBoolean(raw.preflight_clean),
+  };
+}
+
+/**
+ * The streamed operations, or `null` when the frame carried none this build can
+ * read. All-or-nothing on purpose; see {@link DesignOpBatch}.
+ */
+function readOperations(
+  value: unknown,
+): readonly Record<string, unknown>[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    if (typeof (entry as Record<string, unknown>).kind !== "string") {
+      return null;
+    }
+  }
+  return value as readonly Record<string, unknown>[];
+}
+
+/** Read an op batch's payload member-by-member; see {@link DesignOpBatch}. */
+function readOpBatch(raw: Record<string, unknown>): DesignOpBatch {
+  return {
+    documentId: optionalString(raw.document_id),
+    operations: readOperations(raw.operations),
+    operationsTotal: optionalNumber(raw.operations_total),
+    iteration: optionalNumber(raw.iteration),
+  };
 }
 
 /**
@@ -218,6 +332,10 @@ export function parseChatStreamEvent(
       runId: envelope.data.run_id ?? null,
       deltaIndex: envelope.data.delta_index ?? null,
       legId: envelope.data.leg_id ?? null,
+      checkpoint:
+        envelope.data.type === "design.checkpoint" ? readCheckpoint(raw) : null,
+      opBatch:
+        envelope.data.type === "design.op_batch" ? readOpBatch(raw) : null,
       type: envelope.data.type,
       part,
       delta: typeof raw.delta === "string" ? raw.delta : null,

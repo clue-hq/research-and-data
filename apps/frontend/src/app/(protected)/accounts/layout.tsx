@@ -3,6 +3,8 @@ import { AccountsRecoveryScreen } from "@/features/accounts/components/accounts-
 import { readAccountsResult } from "@/features/accounts/data/accounts-read-result";
 import { readAccountBulkCapabilities } from "@/features/accounts/data/bulk-capabilities.repository";
 import { getWorkspaceProfile } from "@/features/accounts/data/workspace-profile.repository";
+import { getSettingsProfile } from "@/features/settings/data/profile.repository";
+import { shellProfile } from "@/features/settings/model/profile";
 import { ProtectedSessionRecoveryScreen } from "@/features/session/components/protected-session-recovery";
 import { getProtectedSessionResult } from "@/features/session/data/session-dal";
 
@@ -23,7 +25,7 @@ export default async function AccountsLayout({
   if (sessionResult.status === "recovery") {
     return <ProtectedSessionRecoveryScreen recovery={sessionResult.recovery} />;
   }
-  const profile = getWorkspaceProfile(sessionResult.session);
+  const profile = sessionResult.session ? shellProfile(await getSettingsProfile()) : getWorkspaceProfile(null);
 
   const accounts = await readAccountsResult();
   if (accounts.status === "recovery") {

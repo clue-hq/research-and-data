@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link from "./research-link";
 import { useState } from "react";
 import {
   AtSign,
@@ -30,6 +30,7 @@ import readability from "./account-readability.module.css";
 import components from "./account-components.module.css";
 import { ContactAvatar } from "./contact-avatar";
 import { FitScoreIndicator } from "./fit-score-indicator";
+import { SourceChip } from "./source-chip";
 import { useAccountOwner } from "../hooks/use-account-owner";
 import { UNASSIGNED_OWNER_LABEL } from "../model/account-owner";
 
@@ -162,7 +163,7 @@ export type AccountDetailsListData = Pick<AccountDetail,
   | "revenueLabel" | "researchStatus" | "researchStatusLabel" | "websiteUrl"
   | "websiteLabel" | "overallFit" | "fitScore" | "fitScoreLabel" | "locationsLabel"
   | "overviewDisplay" | "foundedLabel" | "fundingLabel" | "socials" | "contacts" | "customFields"
-> & { createdAt?: string; lastModifiedAt?: string };
+> & { createdAt?: string; lastModifiedAt?: string; researchEvidence?: AccountDetail["researchEvidence"] };
 
 export function AccountDetailsList({
   account,
@@ -173,6 +174,7 @@ export function AccountDetailsList({
 }) {
   const [expanded, setExpanded] = useState(false);
   const owner = useAccountOwner(account);
+  const evidenceById = new Map(account.researchEvidence?.map((record) => [record.claimId, record]));
   const primaryCustomFields = account.customFields.filter(
     (field) => field.primary,
   );
@@ -203,6 +205,9 @@ export function AccountDetailsList({
       ) : (
         <span className="min-w-0 truncate">{field.value}</span>
       )}
+      {field.claimId && evidenceById.has(field.claimId) ? (
+        <SourceChip evidence={evidenceById.get(field.claimId)!} />
+      ) : null}
     </DetailsRow>
   );
 

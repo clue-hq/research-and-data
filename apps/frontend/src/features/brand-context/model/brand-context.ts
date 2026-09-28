@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AssetContextSchema, AssetSourceSchema } from "./asset-context";
 
 export const BrandContextSectionSchema = z.enum([
   "colors",
@@ -13,6 +14,7 @@ export const BrandAssetCategorySchema = z.enum([
   "logo",
   "background",
   "mockup",
+  "upload",
   "ai-generated",
 ]);
 export const BrandAssetSortKeySchema = z.enum(["name", "type", "size", "created"]);
@@ -66,6 +68,8 @@ export const BrandAssetVisualSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const BrandAssetSchema = z.object({
+  context: AssetContextSchema.optional(),
+  sources: z.array(AssetSourceSchema).optional(),
   category: BrandAssetCategorySchema,
   createdAt: z.string(),
   createdLabel: z.string(),
@@ -73,6 +77,8 @@ export const BrandAssetSchema = z.object({
   dimensions: z.string(),
   id: z.string(),
   name: z.string(),
+  /** Where the row came from: the brand kit itself, or the workspace asset registry. */
+  origin: z.enum(["kit", "registry"]),
   sizeBytes: z.number().nonnegative(),
   sizeLabel: z.string(),
   type: z.string(),

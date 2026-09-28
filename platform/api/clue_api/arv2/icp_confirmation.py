@@ -356,6 +356,7 @@ def _confirmed_front_matter(
     confirmed_by_user_id: str,
     confirmed_at: datetime,
     product_selection_version: int | None,
+    automatic_turn_ref: str | None = None,
 ) -> dict[str, Any]:
     """The proposal's own front matter plus the §6.1 confirmation stamp."""
 
@@ -363,6 +364,12 @@ def _confirmed_front_matter(
     front["confirmed_by"] = confirmed_by_user_id
     front["confirmed_at"] = confirmed_at.isoformat()
     front["confirmed_for_project_id"] = project_id
+    if automatic_turn_ref is not None:
+        front["confirmation_mode"] = "automatic"
+        front["confirmation_turn_ref"] = automatic_turn_ref
+    else:
+        front.pop("confirmation_mode", None)
+        front.pop("confirmation_turn_ref", None)
     if product_selection_version is None:
         # No confirmed set to point at: the key is absent rather than null, so a reader never has
         # to tell "no set" from "set version unknown".
@@ -437,6 +444,7 @@ async def confirm_icp_document(
     expected_sha256: str,
     confirmed_by_user_id: str,
     product_selection_version: int | None,
+    automatic_turn_ref: str | None = None,
     now: Callable[[], datetime] = _utcnow,
 ) -> ConfirmedIcp:
     """Mint the ``confirmed`` version of ``proposed`` for one project.
@@ -492,6 +500,7 @@ async def confirm_icp_document(
                 confirmed_by_user_id=confirmed_by_user_id,
                 confirmed_at=now(),
                 product_selection_version=product_selection_version,
+                automatic_turn_ref=automatic_turn_ref,
             ),
             body=markdown,
             cost=None,

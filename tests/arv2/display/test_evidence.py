@@ -208,3 +208,52 @@ def test_refs_come_back_one_per_claim_ordered_by_claim_id() -> None:
     assert [ref.claim_id for ref in refs] == sorted(str(claim.id) for claim in claims)
     assert all(isinstance(ref, EvidenceRef) for ref in refs)
     assert resolve_evidence([]) == []
+
+
+def test_quality_report_excerpt_never_becomes_primary_quote():
+    ref = resolve_evidence(
+        [
+            _claim(
+                source_key="research:research_report",
+                write_markers={
+                    "quality_required": True,
+                    "claim_kind": "observation",
+                    "qualifications": ["Provider report; primary page not inspected"],
+                },
+            )
+        ]
+    )[0]
+    assert ref.quote is None
+    assert ref.source_excerpt == "We buy tools that show us the buyer"
+    assert ref.source_kind == "source_excerpt"
+    assert ref.qualifications == ("Provider report; primary page not inspected",)
+
+
+def test_quality_value_argument_exposes_both_support_sides():
+    ref = resolve_evidence(
+        [
+            _claim(
+                source_key="research:inference",
+                evidence_span=None,
+                write_markers={
+                    "quality_required": True,
+                    "claim_kind": "inference",
+                    "support": [
+                        {"kind": "claims", "claim_ids": ["target-claim"]},
+                        {
+                            "kind": "seller_document",
+                            "document_id": "seller-doc",
+                            "sha256": "a" * 64,
+                            "start": 0,
+                            "end": 25,
+                            "quote": "Automates referral intake",
+                        },
+                    ],
+                },
+            )
+        ]
+    )[0]
+    assert ref.quote is None
+    assert ref.source_kind == "inference"
+    assert ref.supporting_claim_ids == ("target-claim",)
+    assert ref.to_wire()["sellerPassages"][0]["quote"] == "Automates referral intake"

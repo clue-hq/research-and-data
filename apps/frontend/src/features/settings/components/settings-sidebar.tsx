@@ -11,9 +11,11 @@ import { SettingsNavIcon } from "./settings-nav-icon";
 function NavigationItems({
   activeSection,
   items,
+  onNavigate,
 }: {
   activeSection: SettingsSection;
   items: SettingsNavigationItem[];
+  onNavigate?: () => void;
 }) {
   return items.map((item) => {
     const active = item.section === activeSection;
@@ -24,6 +26,7 @@ function NavigationItems({
         className={active ? styles.navigationItemActive : styles.navigationItem}
         href={item.href}
         key={item.href}
+        onNavigate={onNavigate}
         prefetch={false}
       >
         <SettingsNavIcon name={item.icon} />
@@ -40,27 +43,49 @@ export function SettingsSidebar({
 }) {
   return (
     <aside className={styles.settingsSidebar}>
-      <nav aria-label="Settings navigation" className={styles.settingsNavigation}>
-        <Link className={styles.backItem} href="/" prefetch={false}>
-          <SettingsNavIcon name="back" />
-          <span>Back to home</span>
-        </Link>
-
-        <div className={styles.navigationGroup}>
-          <NavigationItems
-            activeSection={activeSection}
-            items={personalSettingsNavigation}
-          />
-        </div>
-
-        <div className={styles.navigationGroup}>
-          <p className={styles.navigationCaption}>Admin</p>
-          <NavigationItems
-            activeSection={activeSection}
-            items={adminSettingsNavigation}
-          />
-        </div>
-      </nav>
+      <SettingsNavigation activeSection={activeSection} />
     </aside>
+  );
+}
+
+export function SettingsNavigation({
+  activeSection,
+  onNavigate,
+}: {
+  activeSection: SettingsSection;
+  onNavigate?: () => void;
+}) {
+  return (
+    <nav
+      aria-label="Settings navigation"
+      className={styles.settingsNavigation}
+    >
+      <Link
+        className={styles.backItem}
+        href="/"
+        onNavigate={onNavigate}
+        prefetch={false}
+      >
+        <SettingsNavIcon name="back" />
+        <span>Back to home</span>
+      </Link>
+
+      <div className={styles.navigationGroup}>
+        <NavigationItems
+          activeSection={activeSection}
+          items={personalSettingsNavigation}
+          onNavigate={onNavigate}
+        />
+      </div>
+
+      <div className={styles.navigationGroup}>
+        <p className={styles.navigationCaption}>Admin</p>
+        <NavigationItems
+          activeSection={activeSection}
+          items={adminSettingsNavigation}
+          onNavigate={onNavigate}
+        />
+      </div>
+    </nav>
   );
 }

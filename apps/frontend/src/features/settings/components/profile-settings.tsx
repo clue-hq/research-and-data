@@ -1,12 +1,16 @@
-import type { SettingsWorkspace } from "../model/settings";
+"use client";
+import { shellProfile, type SettingsProfile } from "../model/profile";
+import { useSettingsProfile } from "../hooks/use-settings-profile";
 import styles from "./settings.module.css";
 import { SettingsCard, SettingsInput } from "./settings-primitives";
 
 export function ProfileSettings({
-  profile,
+  profile: initial,
 }: {
-  profile: SettingsWorkspace["profile"];
+  profile: SettingsProfile;
 }) {
+  const controller = useSettingsProfile(initial);
+  const profile = shellProfile(controller.profile);
   return (
     <SettingsCard>
       <div className={styles.profileRow}>
@@ -25,7 +29,8 @@ export function ProfileSettings({
         <SettingsInput
           ariaLabel="Full name"
           className={styles.profileInput}
-          defaultValue={profile.fullName}
+          {...controller.fullName}
+          maxLength={200}
         />
       </div>
       <div className={styles.divider} />
@@ -37,7 +42,8 @@ export function ProfileSettings({
         <SettingsInput
           ariaLabel="Display name"
           className={styles.profileInput}
-          defaultValue={profile.displayName}
+          {...controller.displayName}
+          maxLength={200}
         />
       </div>
     </SettingsCard>

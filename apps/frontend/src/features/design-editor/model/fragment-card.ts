@@ -11,9 +11,12 @@ import { z } from "zod";
  *
  * Four founder rulings shape it, and each one is why a field is here:
  *
- * * **D-F3** — a clone may be moved up or down the page and have its slot VALUES changed, and
- *   nothing else. `slots` is therefore the whole editing surface; there is no field here that
- *   describes the section's internals, because nothing may edit them.
+ * * **D-F3 (Option A) + R-A6 amendment (2026-09-04)** — a clone moves as a whole and exposes slot
+ *   values AND per-element text overrides; nothing else inside it is editable. `slots` is
+ *   therefore the whole editing surface THIS CARD carries: the text overrides are per-instance
+ *   values living on the document's fragment node (keyed by structural path), not registry facts
+ *   about the harvested artifact, so they are read from the document and never from here. There
+ *   is still no field describing the section's internals, because nothing else may edit them.
  * * **D-F6** — the degraded → repaired lineage is visible: `degraded` + what the reason MEANS,
  *   `repairsWhat` on a repair, the whole `family` under any member, and `lineageAmbiguous`
  *   when two released repairs contest the same band.

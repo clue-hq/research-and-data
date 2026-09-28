@@ -911,6 +911,13 @@ def test_a_transient_failure_reaches_the_fallback_before_it_retries(
         (ValueError(ResponseError(code="rate_limit_exceeded", message="slow down")), True),
         (ValueError(ResponseError(code="invalid_prompt", message="no")), False),
         (ValueError({"code": "server_error", "message": "blip"}), True),
+        # Seen live twice on 2026-09-04 (design solo runs 2 and 3): OpenRouter answered a
+        # 136 s and a 236 s grok generation with HTTP 200 and an in-body error whose
+        # ``code`` is the INTEGER 502, not a Responses error-code string. Each one
+        # discarded a whole web turn because nothing retried the model call.
+        (ValueError({"message": "Auth context expired", "code": 502}), True),
+        (ValueError({"message": "Auth context expired", "code": "502"}), True),
+        (ValueError({"message": "no such model", "code": 404}), False),
         (ValueError("some other programming error"), False),
         (httpx.ConnectError("connection refused"), True),
         (httpx.ReadTimeout("timed out"), True),

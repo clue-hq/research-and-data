@@ -1,13 +1,13 @@
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { SettingsWorkspace } from "../model/settings";
+import type { StaticSettings } from "../model/settings";
 import styles from "./settings.module.css";
 import { SectionLead, SettingsCard } from "./settings-primitives";
 
 function ConnectionCard({
   connection,
 }: {
-  connection: SettingsWorkspace["connections"][number];
+  connection: StaticSettings["connections"][number];
 }) {
   return (
     <SettingsCard className={styles.connectionCard}>
@@ -18,7 +18,9 @@ function ConnectionCard({
         </span>
         <div>
           <p className={styles.connectionName}>{connection.name}</p>
-          <p className={styles.connectionDescription}>{connection.description}</p>
+          <p className={styles.connectionDescription}>
+            {connection.description}
+          </p>
         </div>
       </div>
       {connection.status === "connected" ? (
@@ -39,10 +41,14 @@ function ConnectionCard({
 export function ConnectionsSettings({
   connections,
 }: {
-  connections: SettingsWorkspace["connections"];
+  connections: StaticSettings["connections"];
 }) {
-  const available = connections.filter((connection) => connection.status === "available");
-  const connected = connections.filter((connection) => connection.status === "connected");
+  const available = connections.filter(
+    (connection) => connection.status === "available",
+  );
+  const connected = connections.filter(
+    (connection) => connection.status === "connected",
+  );
 
   return (
     <div className={styles.sectionStack}>

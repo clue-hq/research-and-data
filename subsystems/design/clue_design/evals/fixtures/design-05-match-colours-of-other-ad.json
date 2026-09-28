@@ -1,0 +1,23 @@
+{
+  "name": "design-05-match-colours-of-other-ad",
+  "kind": "clearly_design",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [
+    "design \"Apollo Clinics LinkedIn ad\" (scene ad)"
+  ],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [],
+  "message": "Match the colour palette of @Apollo Clinics LinkedIn ad on this one.",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "Another design is tagged, but only as a colour reference for an edit to the current ad."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "A tagged other design used as a reference for an edit to THIS artifact keeps the session open."
+}

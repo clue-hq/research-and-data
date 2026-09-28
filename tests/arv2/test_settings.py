@@ -10,25 +10,39 @@ import pytest
 from pydantic import SecretStr
 
 from clue_config import Secrets, Settings
+from tests._model_ids import assert_well_formed_model_id
 from tests.arv2.conftest import require_secret
 
 REPO = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = REPO / ".env.example"
 
+#: Which model a step uses is an env setting, never a test expectation: these entries are
+#: checked for a well-formed id, not for a particular model (``tests/_model_ids.py``).
+MODEL_ID = object()
+#: The model fields that are OpenRouter-routed (``vendor/model``); the transcription model is
+#: addressed provider-natively, without a vendor segment.
+ROUTED_MODEL_FIELDS: dict[str, bool] = {
+    "arv2_structuring_model": True,
+    "arv2_media_short_model": True,
+    "arv2_media_transcribe_model": False,
+    "arv2_embedding_model": True,
+    "arv2_display_model": True,
+}
+
 #: Every ARV2 setting and the default the lane ships with.
 ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_account_research_enabled": True,
     "arv2_ai_ark_min_gap_s": 10.5,
-    "arv2_structuring_model": "openai/gpt-5-mini",
-    "arv2_media_short_model": "google/gemini-3.5-flash-lite",
-    "arv2_media_transcribe_model": "gemini-3.5-transcribe",
-    "arv2_embedding_model": "google/gemini-embedding-2",
+    "arv2_structuring_model": MODEL_ID,
+    "arv2_media_short_model": MODEL_ID,
+    "arv2_media_transcribe_model": MODEL_ID,
+    "arv2_embedding_model": MODEL_ID,
     "arv2_media_seconds_ceiling": 9000,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
-    "arv2_account_max_model_rounds": 100,
+    "arv2_account_max_model_rounds": 350,
     "arv2_account_max_tool_calls_per_round": 50,
-    "arv2_account_max_runtime_s": 1800,
+    "arv2_account_max_runtime_s": 0,
     "arv2_account_max_parallel_jobs": 4,
     "arv2_account_provider_concurrency": 4,
     "arv2_account_media_max_enclosure_mb": 200,
@@ -38,9 +52,9 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "unevidenced_row_purge_enabled": False,
     "interview_entailment_check": "off",
     "sensitivity_floor_enabled": True,
-    "arv2_display_model": "openai/gpt-5.6-luna",
+    "arv2_display_model": MODEL_ID,
     "arv2_display_timeout_s": 240.0,
-    "arv2_display_max_parallel": 8,
+    "arv2_display_max_parallel": 30,
     "arv2_display_client_pitch": (
         "AI-native ABM: account and committee research, personalised content, "
         "brand-aligned artifacts, scaled per account"
@@ -71,6 +85,11 @@ def unset_arv2_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_every_arv2_setting_has_its_shipped_default(unset_arv2_env: None) -> None:
     settings = Settings(_env_file=None)
     for field_name, expected in ARV2_SETTING_DEFAULTS.items():
+        if expected is MODEL_ID:
+            assert_well_formed_model_id(
+                getattr(settings, field_name), routed=ROUTED_MODEL_FIELDS[field_name]
+            )
+            continue
         assert getattr(settings, field_name) == expected, field_name
 
 
@@ -118,6 +137,13 @@ def test_env_example_documents_each_setting_with_its_default() -> None:
         value = documented.group(1).strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
+        if default is MODEL_ID:
+            # The example documents whatever the code default is today, and both are well-formed;
+            # neither this test nor the example pins which model that is.
+            code_default = Settings.model_fields[field_name].default
+            assert_well_formed_model_id(value, routed=ROUTED_MODEL_FIELDS[field_name])
+            assert value == code_default, field_name
+            continue
         shipped = str(default).lower() if isinstance(default, bool) else str(default)
         assert value == shipped, field_name
 
@@ -163,7 +189,6 @@ def test_require_secret_treats_a_blank_key_as_a_skip() -> None:
 #: ``str(default)`` rendering.
 ARV2_DISCOVERY_SETTINGS = (
     "arv2_discovery_enabled",
-    "arv2_discovery_strict_count",
     "arv2_discovery_relaxed_auto",
     "arv2_discovery_criteria_gate_keys",
     "arv2_discovery_answer_model",
@@ -182,7 +207,6 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
         monkeypatch.delenv(_env_name(field_name), raising=False)
     settings = Settings(_env_file=None)
     assert settings.arv2_discovery_enabled is False
-    assert settings.arv2_discovery_strict_count == 35
     assert settings.arv2_discovery_relaxed_auto is True
     # Empty on purpose: no deployment-wide gate set; the pinned ICP decides (ruling 2026-09-11).
     assert settings.arv2_discovery_criteria_gate_keys == ""
@@ -196,21 +220,25 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
     # Empty on purpose: no Brandfetch fallback until a Logo API client id is configured.
     assert settings.brandfetch_client_id == ""
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_ENABLED", "true")
-    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_STRICT_COUNT", "12")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS", "geography")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY", "2")
     loaded = Settings(_env_file=None)
     assert loaded.arv2_discovery_enabled is True
-    assert loaded.arv2_discovery_strict_count == 12
     assert loaded.arv2_discovery_criteria_gate_keys == "geography"
     assert loaded.arv2_discovery_verify_concurrency == 2
+
+
+def test_the_fixed_provider_ask_setting_is_gone() -> None:
+    """Founder ruling 2026-09-28: the first search asks Exa for exactly the number the human wants,
+    so a fixed provider ask (the old 35) would be a second, conflicting answer to that question."""
+    assert "arv2_discovery_strict_count" not in Settings.model_fields
+    assert "CLUE_ARV2_DISCOVERY_STRICT_COUNT" not in ENV_EXAMPLE.read_text(encoding="utf-8")
 
 
 def test_every_discovery_setting_is_in_env_example() -> None:
     example = ENV_EXAMPLE.read_text(encoding="utf-8")
     for key in (
         "CLUE_ARV2_DISCOVERY_ENABLED=false",
-        "CLUE_ARV2_DISCOVERY_STRICT_COUNT=35",
         "CLUE_ARV2_DISCOVERY_RELAXED_AUTO=true",
         "CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS=\n",
         "CLUE_ARV2_DISCOVERY_ANSWER_MODEL=exa",

@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -143,6 +144,9 @@ class ExaSearchResult:
     raw_ref: str | None
     ledger_row_id: str
     cost: CallCost
+    #: The written answer a ``type="deep-lite"`` search returns under ``output`` when the caller
+    #: sent an ``outputSchema``; ``None`` for every other search. Read with :func:`_read_output`.
+    output_text: str | None = None
 
     @property
     def n_results(self) -> int:
@@ -403,12 +407,15 @@ def search_body(
     type: str = "auto",
     num_results: int = 8,
     include_domains: Sequence[str] | None = None,
+    exclude_domains: Sequence[str] | None = None,
     include_text: Sequence[str] | None = None,
     start_published_date: str | None = None,
     end_published_date: str | None = None,
     category: str | None = None,
     text_max_chars: int = 1500,
     highlights: Mapping[str, object] | None = None,
+    output_schema: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/search`` body. Every optional key is absent unless the caller passed it.
 
@@ -424,6 +431,8 @@ def search_body(
     }
     if include_domains is not None:
         body["includeDomains"] = list(include_domains)
+    if exclude_domains is not None:
+        body["excludeDomains"] = list(exclude_domains)
     if include_text is not None:
         body["includeText"] = list(include_text)
     if start_published_date is not None:
@@ -434,6 +443,11 @@ def search_body(
         body["category"] = category
     if highlights is not None:
         body["contents"]["highlights"] = dict(highlights)
+    if extras is not None:
+        body["contents"]["extras"] = dict(extras)
+    if output_schema is not None:
+        # Copied, never aliased: the same rule ``agent_run_body`` keeps for its schema.
+        body["outputSchema"] = dict(output_schema)
     return body
 
 
@@ -443,6 +457,7 @@ def contents_body(
     text_max_chars: int = 8000,
     livecrawl: LivecrawlMode | None = None,
     highlights: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/contents`` body. No ``livecrawl`` key means Exa serves its indexed copy."""
     body: dict[str, Any] = {"urls": list(urls), "text": {"maxCharacters": text_max_chars}}
@@ -450,6 +465,8 @@ def contents_body(
         body["livecrawl"] = livecrawl
     if highlights is not None:
         body["highlights"] = dict(highlights)
+    if extras is not None:
+        body["extras"] = dict(extras)
     return body
 
 
@@ -489,6 +506,7 @@ def deep_reasoning_body(
     text_max_chars: int = 10000,
     highlights_query: str | None = None,
     highlights_max_chars: int = 2000,
+    contents: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``type="deep-reasoning"`` body.
 
@@ -515,6 +533,8 @@ def deep_reasoning_body(
             "query": highlights_query,
             "maxCharacters": highlights_max_chars,
         }
+    if contents is not None:
+        body["contents"] = deepcopy(dict(contents))
     return body
 
 
@@ -557,8 +577,21 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
     Stateless on purpose: a reader reports what it read by returning it. A body that is not JSON,
     or carries no ``costDollars`` at all, yields an empty reading — "Exa did not tell us" is a
     real answer and the wrapper records it as such, never as zero.
+
+    The exception is a 4xx. Exa refused the request before doing any work — out of credits, a key
+    it does not accept, a body it could not validate — so nothing was sold, and the reading says
+    so with an explicit zero. Left empty, the wrapper would fall back to the estimate and record a
+    charge that never happened (seven refused Answer calls at a cent each on run ``ee79d837``).
+    A 5xx keeps the empty reading: whether a failed call did billable work is not something this
+    module can know.
     """
     body = _body_json(response)
+    if 400 <= response.status < 500:
+        request_id = body.get("requestId")
+        return CostReading(
+            cost_usd=Decimal(0),
+            provider_request_id=request_id if isinstance(request_id, str) else None,
+        )
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     request_id = body.get("requestId")
@@ -780,6 +813,22 @@ def _read_report(parsed: object | None) -> str | None:
     return None
 
 
+def read_deep_report(body: Mapping[str, Any], *, text_output: bool = False) -> str | None:
+    """Read retained deep output without mistaking a JSON envelope for a text report."""
+    output_text, parsed, _ = _read_output(body)
+    report = _read_report(parsed)
+    if report is not None:
+        return report
+    if text_output and parsed is None:
+        # Missing/malformed output must not become a report containing the envelope JSON.
+        output = body.get("output")
+        if isinstance(output, str) or (
+            isinstance(output, dict) and isinstance(output.get("content"), str)
+        ):
+            return output_text
+    return None
+
+
 def is_thin_deep_response(
     *, n_results: int, cost_usd: Decimal | None, report_chars: int | None
 ) -> bool:
@@ -813,6 +862,38 @@ def _is_richer(candidate: ExaDeepResult, incumbent: ExaDeepResult) -> bool:
     )
 
 
+def _search_result(
+    body: Mapping[str, Any],
+    *,
+    status: int,
+    cost: CallCost,
+    request_id: str | None,
+    cost_usd: Decimal | None = None,
+    raw_ref: str | None = None,
+    ledger_row_id: str = "",
+) -> ExaSearchResult:
+    """Shape an :class:`ExaSearchResult` from a ``/search`` body. ``output`` is present only for a
+    deep-lite search that sent an ``outputSchema``; an empty string is reported as ``None`` so
+    callers test one thing.
+
+    ``cost_usd`` is the provider's *own reading* — ``CallResult.cost.cost_usd``, which is ``None``
+    when Exa reported no total — and is deliberately not taken from ``cost``, whose ``cost_usd``
+    is the settled ledger number that falls back to the pre-spend estimate. The two differ exactly
+    when Exa said nothing, and this field has always meant "what Exa charged, or we don't know".
+    """
+    text, _parsed, _grounding = _read_output(body)
+    return ExaSearchResult(
+        results=_hits(body.get("results")),
+        status=status,
+        cost_usd=cost_usd,
+        request_id=request_id,
+        raw_ref=raw_ref,
+        ledger_row_id=ledger_row_id,
+        cost=cost,
+        output_text=text or None,
+    )
+
+
 # -- the client --------------------------------------------------------------------------------
 
 
@@ -843,12 +924,15 @@ class ExaClient:
         type: str = "auto",
         num_results: int = 8,
         include_domains: Sequence[str] | None = None,
+        exclude_domains: Sequence[str] | None = None,
         include_text: Sequence[str] | None = None,
         start_published_date: str | None = None,
         end_published_date: str | None = None,
         category: str | None = None,
         text_max_chars: int = 1500,
         highlights: Mapping[str, object] | None = None,
+        output_schema: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-search",
         timeout_s: float = 180.0,
     ) -> ExaSearchResult:
@@ -862,25 +946,28 @@ class ExaClient:
                 type=type,
                 num_results=num_results,
                 include_domains=include_domains,
+                exclude_domains=exclude_domains,
                 include_text=include_text,
                 start_published_date=start_published_date,
                 end_published_date=end_published_date,
                 category=category,
                 text_max_chars=text_max_chars,
                 highlights=highlights,
+                output_schema=output_schema,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=SEARCH_ESTIMATE_USD),
             timeout_s=timeout_s,
         )
         body = _body_json(result.response)
-        return ExaSearchResult(
-            results=_hits(body.get("results")),
+        return _search_result(
+            body,
             status=result.response.status,
-            cost_usd=result.cost.cost_usd,
+            cost=result.call_cost,
             request_id=result.cost.provider_request_id,
+            cost_usd=result.cost.cost_usd,
             raw_ref=result.raw_ref,
             ledger_row_id=result.ledger_row_id,
-            cost=result.call_cost,
         )
 
     def contents(
@@ -890,6 +977,7 @@ class ExaClient:
         text_max_chars: int = 8000,
         livecrawl: LivecrawlMode | None = None,
         highlights: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-contents",
         timeout_s: float = 240.0,
     ) -> ExaContentsResult:
@@ -904,6 +992,7 @@ class ExaClient:
                 text_max_chars=text_max_chars,
                 livecrawl=livecrawl,
                 highlights=highlights,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=CONTENTS_ESTIMATE_USD_PER_URL * len(urls)),
             timeout_s=timeout_s,
@@ -974,6 +1063,7 @@ class ExaClient:
         text_max_chars: int = 10000,
         highlights_query: str | None = None,
         highlights_max_chars: int = 2000,
+        contents: Mapping[str, object] | None = None,
         label: str = "exa-deep",
         timeout_s: float = 1200.0,
     ) -> ExaDeepResult:
@@ -994,8 +1084,11 @@ class ExaClient:
             text_max_chars=text_max_chars,
             highlights_query=highlights_query,
             highlights_max_chars=highlights_max_chars,
+            contents=contents,
         )
-        wants_report = "report" in _schema_properties(output_schema)
+        wants_report = (
+            "report" in _schema_properties(output_schema) or output_schema.get("type") == "text"
+        )
         first = self._deep_call(body, label=label, timeout_s=timeout_s)
         report_chars = len(first.report_text or "") if wants_report else None
         if not is_thin_deep_response(
@@ -1134,7 +1227,9 @@ class ExaClient:
         return ExaDeepResult(
             output_text=output_text,
             output_object=output_object,
-            report_text=_read_report(output_object),
+            report_text=read_deep_report(
+                parsed_body, text_output=body.get("outputSchema", {}).get("type") == "text"
+            ),
             grounding=grounding,
             results=_hits(parsed_body.get("results")),
             status=result.response.status,

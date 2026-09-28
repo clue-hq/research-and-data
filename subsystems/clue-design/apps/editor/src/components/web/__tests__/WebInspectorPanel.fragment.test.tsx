@@ -73,6 +73,7 @@ function mountPanel(node: WebNode) {
       nodeInfo={null}
       pageId="home"
       page={PAGE}
+      pages={[PAGE]}
       theme={null}
       dialogs={[]}
       previewComponent={vi.fn()}

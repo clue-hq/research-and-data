@@ -243,7 +243,8 @@ CORE_PACK: tuple[SeedField, ...] = (
         tier_plan=("sumble_organizations", "exa_websets", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "string"},
-        description="Provider-sourced public company description/about text.",
+        description="What the company does, its offering and business model, grounded in "
+        "substantive research and company-page evidence, not copied enrichment-provider prose.",
         research_view_route=_account_route(
             "core.company_about", ResearchSectionKind.ABOUT, ordinal=16
         ),

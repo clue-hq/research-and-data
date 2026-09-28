@@ -48,6 +48,11 @@ from clue_api.arv2.account_research_launch import QueuedJob
 from clue_api.arv2.account_research_store import JobRow, JobSpend, RunRow
 from clue_api.arv2.account_research_tools import PERSON_TOOL_NAMES
 from clue_api.arv2.claim_writer import ClaimDraft, WriteReceipt
+from clue_api.arv2.fleet_task import (
+    ARV2_DISPLAY_DEDUP_PREFIX,
+    ARV2_DISPLAY_TASK_PRIORITY,
+    arv2_display_work_id,
+)
 from clue_api.arv2.provider_ledger import ledger_id_for
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_config import Secrets, Settings
@@ -84,6 +89,17 @@ GATED_ICP_BODY = (
 PERSONA_BODY = (
     b"---\nkind: audience-persona\nicp_key: clue-abm-buyers\n---\n\n# Personas\nVP Marketing.\n"
 )
+
+
+@pytest.fixture(autouse=True)
+def measured_failure_spend(monkeypatch):
+    """The driver double has no SQL; the real ledger join is covered by quality_driver_db."""
+    from clue_api.arv2 import quality_meter
+
+    async def usage(conn, *, workspace_id, job_id):
+        return quality_meter.QualityUsage(Decimal("2.50"), Decimal("3"), 120, 1, 0, 2, 3, 100)
+
+    monkeypatch.setattr(quality_meter, "usage", usage)
 
 
 def _run_row(*, profile_sha256: str | None = None) -> RunRow:
@@ -201,12 +217,12 @@ class FakeStore:
             ),
         )
 
-    async def read_account_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_account_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_account_catalog", {}))
         return FieldCatalog(account=(FieldSpec("core.industry", "Industry."),))
 
-    async def read_person_catalog(self, conn: Any) -> FieldCatalog:
+    async def read_person_catalog(self, conn: Any, *, workspace_id: str) -> FieldCatalog:
         del conn
         self.events.append(("read_person_catalog", {}))
         return FieldCatalog(
@@ -531,6 +547,9 @@ def test_handle_contains_a_composition_failure_as_needs_review(
 
     assert result.outcome == "needs_review"
     landed = store.named("finish_job")[0]
+    assert landed["cost_usd"] == Decimal("2.50")
+    assert landed["finalization"]["spend"]["unpriced_provider_calls"] == 1
+    assert not landed["finalization"]["spend"]["cost_complete"]
     assert landed["status"] == "needs_review"
     assert landed["failure_code"] == "ArtifactIntegrityError"
     assert "digest" in landed["failure_message"]
@@ -826,15 +845,24 @@ def test_the_enqueue_constants_are_the_ones_the_launcher_will_use() -> None:
     assert UUID(str(arv2_account_work_id(job_id))) == job_id
 
 
+@pytest.mark.parametrize(
+    ("account_name", "account_domain"),
+    [("Probook", "probook.ai"), ("Zafran Security", "zafran.io")],
+)
 def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     monkeypatch: pytest.MonkeyPatch,
+    account_name: str,
+    account_domain: str,
 ) -> None:
-    run = _run_row()
+    run = replace(
+        _run_row(),
+        directive_text="Research {{account_name}} at {{account_domain}}; focus on hiring signals",
+    )
     job = _job_row(run)
     store = FakeStore(run, job)
     _patch_reads(
         monkeypatch,
-        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        account=SimpleNamespace(canonical_name=account_name, primary_domain=account_domain),
         icp_body=GATED_ICP_BODY,
     )
     seen: dict[str, Any] = {}
@@ -848,6 +876,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     asyncio.run(handler.handle(_context(job)))
 
     prompt = "\n".join(str(message.content) for message in seen["messages"])
+    assert f"Research {account_name} at {account_domain}; focus on hiring signals" in prompt
+    assert "{{account_name}}" not in prompt and "{{account_domain}}" not in prompt
+    assert "{{account_name}}" in run.directive_text, "the shared launch brief stays unchanged"
     assert "agent-profile:arv2-account:v1" in prompt
     assert "Series A SaaS." in prompt, "the ICP body reaches the model"
     assert "VP Marketing." in prompt, "the persona document reaches the model"
@@ -1233,6 +1264,75 @@ def test_a_committee_step_that_explodes_never_costs_the_job_its_terminal_row(
 
     assert result.outcome == "completed"
     assert store.named("finish_job")[0]["status"] == "completed"
+    # No PERSON job is offered — the step that would have created their rows exploded. The
+    # account's own overview page is still offered: the account job itself finished, and the
+    # page is written from what it wrote.
+    offers = store.named("enqueue")
+    kinds = [offer["kind"] for offer in offers]
+    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH not in kinds
+    assert kinds == [FleetTaskKind.ARV2_DISPLAY_PAGE, FleetTaskKind.ARV2_DISPLAY_PAGE]
+    assert [offer["payload"]["page"] for offer in offers] == ["overview", "insights"]
+
+
+def test_an_account_job_offers_its_overview_page_after_the_committee(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Spec 2026-09-12 §2: the overview is written at settle — offered after the commit, after
+    the committee's person jobs, stamped with the account job as the page's spend."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=_RecordingQueue(store)
+    )
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "completed"
+    offers = [payload for name, payload in store.events if name == "enqueue"]
+    kinds = [offer["kind"] for offer in offers]
+    # Founder ruling 2026-09-22: BOTH account pages are written at settle — the overview first,
+    # then the insights page — each its own task, after every research offer.
+    assert kinds[-2:] == [FleetTaskKind.ARV2_DISPLAY_PAGE, FleetTaskKind.ARV2_DISPLAY_PAGE]
+    assert FleetTaskKind.ARV2_ACCOUNT_RESEARCH in kinds[:-2]
+    for page, expected_page in zip(offers[-2:], ("overview", "insights"), strict=True):
+        assert page["work_id"] == arv2_display_work_id(
+            "account", str(job.account_entity_id), expected_page
+        )
+        assert (
+            page["dedup_key"]
+            == f"{ARV2_DISPLAY_DEDUP_PREFIX}account:{job.account_entity_id}:{expected_page}"
+        )
+        assert page["priority"] == ARV2_DISPLAY_TASK_PRIORITY
+        assert page["reopen_terminal"] is True
+        assert page["payload"] == {
+            "workspace_id": job.workspace_id,
+            "subject_kind": "account",
+            "subject_id": str(job.account_entity_id),
+            "page": expected_page,
+            "job_id": str(job.job_id),
+        }
+
+
+def test_a_worker_with_no_queue_says_it_offered_no_overview_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
+    )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _conn_factory, _writer, _models = _handler(
+        store, model=_finalizes_with_a_committee(), queue=None
+    )
+    result = asyncio.run(handler.handle(_context(job)))
+    assert result.outcome == "completed"
     assert not store.named("enqueue")
 
 
@@ -1697,3 +1797,16 @@ def test_a_reporting_line_the_code_refused_reaches_the_durable_person_receipt(
     assert receipt["reports_to_written"] is False
     assert "quote" in receipt["reports_to_skipped"]
     assert [draft for draft in writer.drafts if draft.field_key == "contact.reports_to"] == []
+
+
+def test_account_brief_binding_preserves_plain_text_and_does_not_expand_values() -> None:
+    unchanged = 'Research the account; retain {"evidence": true} and {{unknown}}.'
+    assert driver._account_directive(unchanged, name="Acme", domain="acme.test") == unchanged
+    assert (
+        driver._account_directive(
+            "{{account_name}} / {{account_domain}} / {{account_name}}",
+            name="Acme {{account_domain}}",
+            domain="acme.test",
+        )
+        == "Acme {{account_domain}} / acme.test / Acme {{account_domain}}"
+    )

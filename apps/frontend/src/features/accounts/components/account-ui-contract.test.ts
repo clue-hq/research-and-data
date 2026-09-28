@@ -93,7 +93,7 @@ test("contact profiles retain workspace navigation and all account sections", ()
   assert.match(contactPage, /showDetailsToggle=\{false\}/);
   assert.match(contactPage, /copyLinkLabel="Copy contact link"/);
   assert.doesNotMatch(contactPage, /<header|<ApplicationShell/);
-  assert.match(contactRoute, /getAccountDetails\(accountId\)/);
+  assert.match(contactRoute, /getAccountDetails\(accountId, undefined, context\)/);
   assert.match(contactRoute, /if \(!account \|\| !contact\) notFound\(\)/);
   assert.match(contactRoute, /<ContactFullScreen account=\{account\} contact=\{contact\}/);
   assert.match(layout, /<ApplicationShell activeHref="\/accounts">/);
@@ -285,9 +285,10 @@ test("§6.10 no claim-id prefix is admitted to Sources", () => {
 });
 
 test("§6.11 the favicon proxy runs on sourceDomain alone", () => {
-  assert.doesNotMatch(researchContent, /if \(evidence\.faviconUrl\)/);
+  const sourceChip = readFileSync(new URL("./source-chip.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(sourceChip, /if \(evidence\.faviconUrl\)/);
   assert.match(
-    researchContent,
+    sourceChip,
     /if \(evidence\.sourceDomain\) \{/,
   );
 });

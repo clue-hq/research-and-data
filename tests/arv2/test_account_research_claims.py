@@ -834,14 +834,14 @@ def _zafran_record() -> AiArkCompany:
     )
 
 
-def test_the_record_fills_every_registered_core_field_it_carries() -> None:
-    drafts = {
-        d.field_key: d for d in ai_ark_company_claims(_zafran_record(), SCOPE, catalog=CATALOG)
-    }
+def test_company_maps_typed_facts_without_promoting_provider_description() -> None:
+    company = _zafran_record()
+    drafts = {d.field_key: d for d in ai_ark_company_claims(company, SCOPE, catalog=CATALOG)}
 
     assert drafts["core.legal_name"].value_json == "Zafran Security Ltd."
     assert drafts["core.legal_name"].markers["json_path"] == "summary.legal_name"
-    assert drafts["core.company_about"].value_json == (
+    assert "core.company_about" not in drafts
+    assert company.raw["summary"]["description"] == (
         "Zafran is an AI-native exposure management platform."
     )
     assert drafts["core.founded_year"].value_json == 2022
@@ -864,6 +864,37 @@ def test_the_record_fills_every_registered_core_field_it_carries() -> None:
         and d.markers["provider_record"] == "ai_ark"
         for d in drafts.values()
     )
+
+
+def test_researched_company_description_keeps_its_evidence_and_source_url() -> None:
+    # Descriptions remain writable from research; excluding Ark's automatic prose mapping
+    # must not remove the field or strip the original page reference carried by research.
+    output = StructuredOutput(
+        claims=(
+            StructuredClaim(
+                field_key="core.company_about",
+                value="A fixture company that builds scheduling software.",
+                evidence_span="We build scheduling software.",
+                source_url="https://example.test/company",
+                source_kind="company_primary",
+                confidence="high",
+                use_class="business_public",
+                outreach_safe=True,
+                priority=1,
+                media_timestamp=None,
+                evidence_verbatim="EXACT",
+                schema_valid=True,
+            ),
+        ),
+        proposed=(),
+        negatives=(),
+        model="fixture",
+    )
+    [draft] = structured_claims(output, scope=SCOPE, subject_url_hint=None, catalog=CATALOG)
+    assert draft.field_key == "core.company_about"
+    assert draft.source_url == "https://example.test/company"
+    assert draft.evidence_span == "We build scheduling software."
+    assert draft.extraction_method is ExtractionMethod.LLM_SYNTHESIS
 
 
 def test_the_technologies_the_record_returned_become_claims_rather_than_context() -> None:
@@ -1345,10 +1376,12 @@ def test_a_person_scope_without_a_contact_is_refused_at_construction() -> None:
 
 
 def test_the_ai_ark_person_record_maps_onto_its_registered_contact_fields() -> None:
-    drafts = {draft.field_key: draft for draft in ai_ark_person_claims(_person(), PERSON_SCOPE)}
+    person = _person()
+    drafts = {draft.field_key: draft for draft in ai_ark_person_claims(person, PERSON_SCOPE)}
 
     assert drafts["contact.current_title"].value_json == "VP of Marketing"
-    assert drafts["contact.headline"].value_json == "VP Marketing at Zafran Security"
+    assert "contact.headline" not in drafts
+    assert person.headline == "VP Marketing at Zafran Security"
     assert drafts["contact.current_location"].value_json == {
         "raw": "New York, New York, United States, North America",
         "country": "United States",
@@ -1373,7 +1406,6 @@ def test_every_ai_ark_person_claim_cites_its_raw_path_and_never_a_fabricated_url
 
     assert {key: draft.markers["json_path"] for key, draft in drafts.items()} == {
         "contact.current_title": "profile.title",
-        "contact.headline": "profile.headline",
         "contact.current_location": "location",
         "contact.network_statistics": "statistics.network",
         "contact.member_badges": "member_badges",

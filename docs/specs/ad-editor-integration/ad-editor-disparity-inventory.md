@@ -397,6 +397,19 @@ focal-point handle · select/hand tools · agent build-theater reveal chrome · 
 z-order, arrows nudge 1 / shift-arrows nudge 10, ⌘wheel zoom. (No duplicate ⌘D, no ⌘A, no
 V/H/T tool keys — on either side.)
 
+> **PARTIALLY CLOSED, 2026-08-24 (founder direction): `TextEditOverlay` is no longer a
+> disparity — it is ported.** `SceneTextEditOverlay` in
+> `apps/frontend/src/features/design-editor/components/scene-artifact-canvas.tsx` is the
+> upstream surface, presentation and all (DOM textarea over the node, style-matched, ⌘/Ctrl+
+> Enter or blur commits, Escape cancels), over pure decisions in
+> `adapter/scene-text-edit.ts`; the double-click drill-out to the top-level container came
+> with it. Plan: `docs/superpowers/plans/2026-08-24-rich-text-editing.md` (rung B). Two
+> platform gates upstream does not have ride along — a locked node opens no session, and Gate
+> G-H refuses to open one mid-turn. The rest of this line (rotate handle, marquee, snap/margin
+> guides, focal-point handle, tools, reveal chrome, the keyboard map) stays a real disparity.
+> Upstream defers span AUTHORING too, so the overlay is plain text on both sides until rung C
+> lands the range-styling toolbar.
+
 ---
 
 

@@ -222,6 +222,8 @@ class AgentRole(StrEnum):
     CONTENT_DRAFTER = "content_drafter"
     REVIEWER = "reviewer"
     ACCOUNT_RESEARCH = "account_research"
+    RESEARCH_CLAIMS = "research_claims"
+    RESEARCH_NARRATIVE = "research_narrative"
     # PD-part3 D2: the platform-facing role of the COMPOSITE design deepagent — the
     # orchestrator/author/reviewer trio stays internal to the design runtime (one leg,
     # one summarized outcome; a doorway, not a container). Deliberately absent from
@@ -259,6 +261,9 @@ class ArtifactRef(FrozenContract):
 class DomainObjectRef(FrozenContract):
     """Typed, scoped reference to domain state owned outside the agent runtime.
 
+    ``note`` carries the human's own words about this one reference — the per-element annotation
+    a marketer writes in the web editor. It is human intent about a target, never authority: it
+    selects nothing and grants nothing. Optional, so every existing construction stays valid.
     ``title`` is what the referenced object calls itself, carried so a surface can name the card it
     draws without reading the object back. Optional, and defaulted, because most refs are the
     model's own citations of things it only read — and because a finalization recorded before this
@@ -269,6 +274,7 @@ class DomainObjectRef(FrozenContract):
     object_type: StableId
     object_id: StableId
     version: int | None = Field(default=None, ge=1)
+    note: str | None = Field(default=None, max_length=2_000)
     title: str | None = Field(default=None, max_length=512)
 
 
@@ -594,6 +600,7 @@ class AgentTurnRequest(FrozenContract):
 
 
 class PlanToolStep(FrozenContract):
+    retry_of: tuple[StableId, ...] = Field(default=(), exclude_if=lambda value: not value)
     kind: Literal["tool"] = "tool"
     node_key: StableId
     depends_on: tuple[StableId, ...] = ()
@@ -732,6 +739,7 @@ class ValidatedPlan(FrozenContract):
     max_parallelism: int = Field(ge=1, le=32)
     estimated_cost_millicents: int = Field(ge=0)
     budget_limit_millicents: int = Field(ge=0)
+    budget_mode: Literal["enforced", "record_only"] = "enforced"
     validated_at: AwareDatetime
 
     @model_validator(mode="after")
@@ -775,7 +783,10 @@ class ValidatedPlan(FrozenContract):
         )
         if self.estimated_cost_millicents != operation_estimate:
             raise ValueError("validated plan estimate must equal the sum of operation estimates")
-        if self.estimated_cost_millicents > self.budget_limit_millicents:
+        if (
+            self.budget_mode == "enforced"
+            and self.estimated_cost_millicents > self.budget_limit_millicents
+        ):
             raise ValueError("validated plan estimate exceeds its budget limit")
         return self
 
@@ -873,7 +884,13 @@ class SpecialistTaskEnvelope(FrozenContract):
     """
 
     schema_version: Literal["1"] = "1"
-    role: Literal[AgentRole.RESEARCH, AgentRole.CONTENT_DRAFTER, AgentRole.REVIEWER]
+    role: Literal[
+        AgentRole.RESEARCH,
+        AgentRole.CONTENT_DRAFTER,
+        AgentRole.REVIEWER,
+        AgentRole.RESEARCH_CLAIMS,
+        AgentRole.RESEARCH_NARRATIVE,
+    ]
     goal: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_048)]
     instructions: Annotated[
         str,

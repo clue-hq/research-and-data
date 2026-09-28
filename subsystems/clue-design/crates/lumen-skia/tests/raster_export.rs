@@ -10,7 +10,7 @@ use lumen_core::{
     PageId, PagePreset, PageSize, Paint, PaintId, RasterScale, Rect, Scene, SizeSpec, TextNode,
     TextSpan, Transform, Unit, VerticalAlign,
 };
-use lumen_export::{FixtureAssetResolver, LumenExportAdapter};
+use lumen_export::{FixtureAssetResolver, LumenExportAdapter, PageRasterizer};
 use lumen_skia::{FontManager, SkiaSceneRenderer, SkiaTextMeasurer};
 use skia_safe::{surfaces, Data, Image};
 use std::sync::Arc;
@@ -188,6 +188,7 @@ fn png_export_uses_computed_xy_for_layouted_nodes() {
             width: 10.0,
             height: 10.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![solid_fill("paint_computed_rect", "#ff0000")];
     scene.nodes.insert(node.id.clone(), node);
@@ -254,6 +255,52 @@ fn png_export_rasterizes_text_nodes_with_font_fallback() {
         "unknown family must surface the fallback warning: {:?}",
         result.diagnostics
     );
+}
+
+#[test]
+fn rich_span_glyph_diagnostics_follow_the_painted_face() {
+    let (fonts, errors) = FontManager::bundled_with(vec![
+        (include_bytes!("fixtures/subset-face.ttf").to_vec(), None),
+        (include_bytes!("fixtures/subset-face-bold.ttf").to_vec(), None),
+    ]);
+    assert!(errors.is_empty());
+    let renderer = SkiaSceneRenderer::new(Arc::new(fonts));
+    let render = |base_weight, span_weight, content: &str| {
+        let mut scene = Scene::new(DocumentId::from("span_glyph"), "Span glyph");
+        scene.pages.insert(
+            PageId::from("page"),
+            custom_px_page("page", 200.0, 100.0, vec![NodeId::from("text")]),
+        );
+        let mut node = Node::new(
+            NodeId::from("text"),
+            NodeKind::Text(TextNode {
+                content: content.to_owned(),
+                font_family: "SubsetFace".to_owned(),
+                font_size: 32.0,
+                font_weight: base_weight,
+                spans: vec![TextSpan {
+                    start: 1,
+                    end: content.len(),
+                    font_weight: Some(span_weight),
+                    fill: None,
+                    underline: None,
+                    strikethrough: None,
+                    italic: None,
+                }],
+                ..TextNode::default()
+            }),
+        );
+        node.size = SizeSpec::fixed(180.0, 80.0);
+        node.fills = vec![solid_fill("ink", "#000000")];
+        scene.nodes.insert(node.id.clone(), node);
+        renderer.rasterize_page(&scene, &PageId::from("page"), 200, 100, None).unwrap()
+    };
+    let supplied = render(400, 700, "A\u{e123}");
+    assert!(!supplied.diagnostics.iter().any(|d| d.code == "LUMS0106"), "{:?}", supplied.diagnostics);
+    // The bold fixture maps U+E123 to its A outline: actual pixels must agree.
+    assert_eq!(supplied.png, render(400, 700, "AA").png);
+    let unresolved = render(700, 400, "A\u{e123}");
+    assert!(unresolved.diagnostics.iter().any(|d| d.code == "LUMS0106" && d.message.contains("U+E123")), "{:?}", unresolved.diagnostics);
 }
 
 // Moved from lumen-export: embedded asset bytes rasterize into the image
@@ -458,6 +505,7 @@ fn unresolved_token_fill_paints_visible_sentinel_and_errors() {
             width: 100.0,
             height: 100.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![Fill {
         id: PaintId::from("paint_token_fill"),

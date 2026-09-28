@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
 import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
+import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachments";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
+import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
+import { buildComposerCatalog } from "@/features/projects/model/composer-context-catalog";
 import {
   DESIGN_REFERENCE_ACCEPT,
   MAX_DESIGN_REFERENCE_ATTACHMENTS,
@@ -14,16 +17,23 @@ import {
 import type { useProjectWorkspaceController } from "@/features/projects/hooks/use-project-workspace-controller";
 import { useAddToOpenChatController } from "@/features/projects/hooks/use-add-to-open-chat-controller";
 import { ResearchProgressCard } from "@/features/projects/components/research-progress-card";
+import { openClarification } from "@/features/projects/model/clarification";
 import { useResearchProgressController } from "@/features/projects/hooks/use-research-progress-controller";
 import type {
   ProjectArtifact,
   ProjectWorkspace,
 } from "@/features/projects/model/project-workspace";
+import type { WebAnnotation } from "@/features/design-editor/adapter/annotations";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
+import { useSceneLiveReveal } from "@/features/design-editor/hooks/use-scene-live-reveal";
+import type { Operation } from "@/features/design-editor/engine/scene/contracts";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import { useArtifactRename } from "../hooks/use-artifact-rename";
 import { useEditorShellController } from "../hooks/use-editor-shell-controller";
-import { artifactToAutoOpen } from "../model/artifact-auto-open";
+import { useFileDrop } from "../hooks/use-file-drop";
+import { agentRunLockForThread } from "../model/agent-run-lock";
+import { artifactsToAutoOpen } from "../model/artifact-auto-open";
+import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
   chatDockDismissedBySubmission,
@@ -35,14 +45,20 @@ import {
 } from "../model/chat-surface-params";
 import { discoveryLaunchToOpen } from "../model/discovery-launch-signal";
 import {
+  ANNOTATIONS_ONLY_MESSAGE,
+  annotationChips,
+  annotationContextRefs,
   editTargetChips,
   editTargetContextRefs,
 } from "../model/edit-targets";
 import { galleryCardTarget } from "../model/gallery-card-target";
 import { openArtifactFromParam } from "../model/open-artifact-param";
+import { useProjectDocuments } from "@/features/projects/hooks/use-project-documents";
 import { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { ArtifactStage } from "./artifact-stage";
+import { AssetLibraryPanel } from "./asset-library-panel";
 import { ChatShellHeader } from "./chat-shell-header";
+import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
 import { WebInspector } from "./web-inspector";
@@ -166,6 +182,50 @@ export function ChatSurface({
     projectId,
     surface: urlState.surface,
   });
+  // Task 4 (scene live-streaming rung A) — THE EDITOR LOCK.
+  //
+  // Founder ruling: no mid-run manual editing, ever. Task 1 put the 409
+  // (`document.agent_run_active`) on the six manual write routes, which is the
+  // enforcement; this is the honest UX in front of it, so a control the platform
+  // is going to refuse never looks live.
+  //
+  // It is derived HERE and nowhere else, because this is the only place that can
+  // see all three facts the decision needs: the thread's turn stream (the chat
+  // controller), the document the editor has open, and the thread that document
+  // was born in. The rule itself is pure (`../model/agent-run-lock`) — this
+  // component only transports it, exactly as it does the refresh counters and
+  // the auto-open decision.
+  //
+  // Computed BEFORE the editing sessions, off the shell's active tab and the
+  // page's id map rather than off `session.activeDocumentId`: the scene session
+  // consumes the lock, so taking the document id back out of it would be a cycle.
+  const feedArtifacts = artifacts ?? NO_ARTIFACTS;
+  const activeArtifact = shell.activeArtifactId
+    ? (feedArtifacts.find(
+        (artifact) => artifact.id === shell.activeArtifactId,
+      ) ?? null)
+    : null;
+  const agentRunLock = agentRunLockForThread({
+    activeThreadId: chat.activeThreadId,
+    // The THREE-valued leg fact, not the boolean beside it: "no frame has
+    // mentioned a leg" is not "this thread has no leg", and treating it as one
+    // unlocked the editor on every cold load into a run (fix round 1, I1).
+    designLeg: chat.designLeg,
+    documentId: shell.activeArtifactId
+      ? (documentIds?.[shell.activeArtifactId] ?? null)
+      : null,
+    // The gallery card's own origin thread — the SAME binding `artifact-auto-open`
+    // trusts to decide that a born document belongs to this conversation. Null
+    // (a tab whose card is not in this feed) is fail-safe LOCKED, by the rule.
+    documentThreadId: activeArtifact?.originThreadId ?? null,
+    state: chat.agentRunLock,
+    threadBusy: chat.threadBusy,
+  });
+  // Consumed on the AD lane only. The website lane has the same exposure and no
+  // scene editor, so widening the lock to it is a separate decision with its own
+  // surfaces — not something to acquire by accident here.
+  const sceneLocked = agentRunLock.locked && shell.artifactKind === "ad";
+
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
   // own active tab and the page's id map — the hook never sees a shell
@@ -175,13 +235,34 @@ export function ChatSurface({
   // kind rides in as `enabled` — the disabled one touches no transport
   // (audit finding F3: an ad tab used to run the web theme/document fetches
   // and swallow their 409s).
+  //
+  // Slice 2 (R-A2): the comment box's "Send to chat" must go through the SAME
+  // submit path the composer's own send button does — but that closure is
+  // rebuilt on every render (it reads the live composer text, the live
+  // annotation list, the live canvas selection), while the canvas binding has
+  // to stay identity-stable or the iframe's effects would re-run on every
+  // keystroke. So the canvas gets this stable dispatcher and the latest
+  // closure lives in a ref, assigned in an effect below.
+  //
+  // The lane gate is the SAME one the chips use minus the document (which is
+  // not known until the session exists, and which the canvas implies anyway —
+  // there is no comment box without a rendered document): outside an open
+  // design leg a `design_node` ref means nothing, so rather than send a turn
+  // that silently drops its annotations, the button is simply absent.
+  const annotationLaneOpen = chat.designLegOpen && shell.artifactKind === "web";
+  const sendAnnotationRef = useRef<((note: string) => void) | null>(null);
+  const dispatchSendAnnotation = useCallback((note: string) => {
+    sendAnnotationRef.current?.(note);
+  }, []);
   const session = useWebEditingSession({
     activeArtifactId: shell.activeArtifactId,
     documentIds,
     enabled: shell.artifactKind === "web",
+    onSendAnnotation: annotationLaneOpen ? dispatchSendAnnotation : undefined,
   });
   const sceneSession = useSceneEditingSession({
     activeArtifactId: shell.activeArtifactId,
+    agentRunLocked: sceneLocked,
     documentIds,
     enabled: shell.artifactKind === "ad",
   });
@@ -189,12 +270,184 @@ export function ChatSurface({
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+  /**
+   * Task 9 (scene live-streaming rung B): the live reveal.
+   *
+   * While the agent-run lock holds over an open ad, the streamed operation
+   * batches task 8 cleared for application are drawn into the canvas on an
+   * animation clock — the design appears to draw itself in, instead of the
+   * user watching a still picture for five minutes and then a jump cut.
+   *
+   * Display state ONLY. The pump's seam is `applyStreamedOperations`, the live
+   * engine apply with no repaint and no mirror-up; it never persists, never
+   * enqueues and never touches history. Nothing here is durable — the agent's
+   * own checkpoints are, and rung A reloads the canvas from them.
+   */
+  const applyStreamedToEngine = useCallback(
+    (operations: Operation[]) =>
+      sceneSession.canvasControls.current?.applyStreamedOperations(
+        operations,
+      ) ?? null,
+    [sceneSession.canvasControls],
+  );
+  // The canvas's own "could a batch land right now" (D9 read-only answers no),
+  // asked LIVE: the engine arrives after the first paint, and a pump that can
+  // apply nothing must never be mistaken for a healthy one.
+  const engineAvailableForScene = useCallback(
+    () => sceneSession.canvasControls.current?.canApply() ?? false,
+    [sceneSession.canvasControls],
+  );
+  const engineIdentityForScene = useCallback(
+    () => sceneSession.canvasControls.current?.streamEngineIdentity?.() ?? null,
+    [sceneSession.canvasControls],
+  );
+  const sceneReveal = useSceneLiveReveal({
+    actions: chat.sceneStream.actions,
+    apply: applyStreamedToEngine,
+    engineAvailable: engineAvailableForScene,
+    engineIdentity: engineIdentityForScene,
+    documentId: sceneSession.activeDocumentId,
+    locked: sceneLocked,
+  });
+  /**
+   * Task 9 (fix 1): publish the reveal's health to the controller.
+   *
+   * The controller decides the checkpoint reload but cannot see this canvas, so
+   * the two facts that decision needs meet here — its cursor verdict, and this
+   * probe. Publishing `null` on teardown is what makes the default rung A's
+   * shipped behaviour: unknown health always reloads.
+   */
+  const publishSceneRevealHealth = chat.publishSceneRevealHealth;
+  useEffect(() => {
+    publishSceneRevealHealth(sceneReveal.isClean);
+    return () => publishSceneRevealHealth(null);
+  }, [publishSceneRevealHealth, sceneReveal.isClean]);
+  /**
+   * Task 10 (scene live-streaming rung B): THE LATE JOIN.
+   *
+   * A tab that opens — or reloads — onto a document whose run is already in
+   * flight loads the last committed version, and the stream is somewhere past
+   * it. The canvas reports the version it loaded; the controller's fold turns
+   * that into the ledger position the run says that version holds, so the
+   * cursor starts where this canvas actually stands instead of at zero, the
+   * frames the backlog already carries beyond it land at once, and the ones
+   * after that draw themselves in. Nothing is persisted anywhere to make this
+   * work: the durable version and the stream's own replayed backlog are the
+   * whole mechanism, which is why a reload is the same path as a first open.
+   *
+   * Gated on the LOCK, because the seed only means anything while a run is
+   * streaming this document — outside one, task 8's position-0 cursor is
+   * already right. Keyed on the load GENERATION as well as the version, so a
+   * rung-A reload that lands the same version is still a fresh join: it
+   * replaced the picture the pump was drawing.
+   */
+  const seedSceneStream = chat.seedSceneStream;
+  const joinedDocument = sceneLocked ? sceneSession.loadedDocument : null;
+  const joinedDocumentId = joinedDocument?.documentId ?? null;
+  const joinedVersion = joinedDocument?.version ?? null;
+  const joinedGeneration = joinedDocument?.loadGeneration ?? null;
+  /**
+   * WHICH RUN the canvas is joining (fix round 1) — the thread's running turn.
+   *
+   * That fact rather than the newest turn among the streamed frames, for two
+   * reasons. It exists on a COLD LOAD, before a single frame has arrived, which
+   * is the whole situation a late join is: the durable turn read already says
+   * which turn is running, and the lock's own floor (`threadBusy`) is derived
+   * from the same queue, so the seed and the lock can never disagree about
+   * which run is in flight. And it stays current through the stream, because
+   * the queue is computed over the turns with the streamed state overrides
+   * applied. The newest turn among replayed design frames would have been
+   * exactly the wrong answer for the defect this fixes — that newest frame can
+   * be the PREVIOUS run's checkpoint.
+   *
+   * Read through a ref, and deliberately NOT a dependency: the seed is keyed on
+   * the LOAD. A run that starts while the tab sits open must not re-seed, or the
+   * new run's first batch would be caught up on instead of drawn in — the frames
+   * themselves carry that transition (the cursor's per-turn reset), and the pump
+   * re-seats on it.
+   */
+  const runningTurnId = chat.runningTurn?.turnId ?? null;
+  /**
+   * The second source, and the reason there are two (fix round 3): the durable
+   * queue reads "running" from the TURN LIST, and a replayed `turn.accepted`
+   * marks that same turn "queued" for the renders before the `turn.started`
+   * behind it lands — a window in which `runningTurn` is null while a run is
+   * plainly in flight. The lock's own fold is not fooled by it: it holds the
+   * turns the stream has seen ACCEPTED OR STARTED and not yet seen settle. One
+   * such turn is an unambiguous answer; two are not, and are left to the
+   * durable one.
+   */
+  const observedRunTurnIds = chat.agentRunLock.activeTurnIds;
+  const joinTurnId =
+    runningTurnId ??
+    (observedRunTurnIds.size === 1
+      ? ([...observedRunTurnIds][0] ?? null)
+      : null);
+  /**
+   * One seed per LOAD, and never one that cannot name the run.
+   *
+   * A seed carries the run whose ledger the loaded version is a position in, so
+   * seeding with no run at all is not a weaker seed — it is a wrong one, and it
+   * used to undo a cursor the stream had already carried forward. So a load
+   * that lands before anything names the run WAITS, and this effect re-runs
+   * when one does (`joinTurnId` is a dependency). The ref is what keeps that
+   * dependency from re-seeding a load that has already joined: a run starting
+   * while the tab sits open must not fast-forward its first batch.
+   */
+  const seededLoadRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (joinedDocumentId === null || joinedVersion === null) return;
+    const load = `${joinedDocumentId}@${joinedGeneration}@${joinedVersion}`;
+    if (seededLoadRef.current === load) return;
+    if (joinTurnId === null) return;
+    seededLoadRef.current = load;
+    seedSceneStream(joinedDocumentId, joinedVersion, joinTurnId);
+  }, [
+    joinTurnId,
+    joinedDocumentId,
+    joinedGeneration,
+    joinedVersion,
+    seedSceneStream,
+  ]);
   const designReferencesEnabled =
     chat.designLegOpen &&
     shell.artifactKind === "ad" &&
     sceneSession.activeDocumentId !== null;
   const referenceAttachments = useDesignReferenceAttachments({
     enabled: designReferencesEnabled,
+  });
+  // The ordinary chat attachments (`.md`/`.txt`/images the turn carries). They
+  // are independent of the design leg: ruling 4 only decides which of the two
+  // hooks a dropped IMAGE belongs to while an ad leg is open.
+  const chatAttachments = useChatAttachments({
+    enabled: workspace.composerCapabilities.attachments,
+  });
+  /**
+   * The composer's ONE attachment intake — the `+` picker and (task 14) the
+   * drop target both land here, so a file takes the same route whichever
+   * gesture delivered it.
+   */
+  const handleAttachmentFiles = (files: File[]) => {
+    const routed = routeAttachmentFiles(files, designReferencesEnabled);
+    if (routed.design.length > 0) referenceAttachments.onFiles(routed.design);
+    if (routed.chat.length > 0) chatAttachments.onFiles(routed.chat);
+  };
+  /** One chip list, two owners: whichever hook holds the id removes it. */
+  const handleAttachmentRemove = (attachmentId: string) => {
+    const design = referenceAttachments.attachments.some(
+      (attachment) => attachment.id === attachmentId,
+    );
+    if (design) referenceAttachments.remove(attachmentId);
+    else chatAttachments.remove(attachmentId);
+  };
+  // Dropping a file anywhere on the chat pane lands in the SAME intake the `+`
+  // picker uses, so a dropped image still follows ruling 4's design/chat route.
+  // The gate is the button's gate, verbatim: a surface that will accept a file
+  // from the picker accepts the same file from a drop.
+  const drop = useFileDrop({
+    enabled:
+      designReferencesEnabled || workspace.composerCapabilities.attachments,
+    onFiles: handleAttachmentFiles,
   });
   // Same gate as the reference images above: a `design_node` ref only means
   // anything beside the open design leg's document, and the backend refuses a
@@ -208,6 +461,24 @@ export function ChatSurface({
   const targetChips = editTargetsEnabled
     ? editTargetChips(sceneSession.scene, sceneSession.selectedIds)
     : [];
+  // Slice 2 (R-A2), the web half of the same rule: an annotation is a noted
+  // `design_node` ref, so it rides a turn only beside the open design leg's
+  // own document.
+  const webAnnotationsEnabled =
+    annotationLaneOpen && session.activeDocumentId !== null;
+  const annotationChipList = webAnnotationsEnabled
+    ? annotationChips(session.annotations.state.items)
+    : [];
+
+  // The clarification card (spec 2026-09-20 §2.5): a design document that
+  // stopped to ask before spending. Whether anything is open is derived from
+  // the transcript by a pure function — the last settled assistant turn's
+  // `clarification` parts — so answering (which appends a user message) closes
+  // the card with no server round-trip, and a reload brings it back.
+  const clarification = useMemo(
+    () => openClarification(chat.transcript),
+    [chat.transcript],
+  );
 
   const activeThread =
     chat.threads.find((thread) => thread.id === chat.activeThreadId) ?? null;
@@ -331,7 +602,8 @@ export function ChatSurface({
   const knownArtifactIds = useRef<Set<string> | null>(null);
   const knownArtifactUpdates = useRef(new Map<string, string | undefined>());
   const openArtifact = shell.openArtifact;
-  const feedArtifacts = artifacts ?? NO_ARTIFACTS;
+  const activateArtifact = shell.activateArtifact;
+  const openArtifacts = shell.openArtifacts;
   useEffect(() => {
     const known = knownArtifactIds.current;
     if (known === null) {
@@ -345,20 +617,49 @@ export function ChatSurface({
       );
       return;
     }
-    const opening = artifactToAutoOpen({
+    const opening = artifactsToAutoOpen({
       activeThreadId: chat.activeThreadId,
       artifacts: feedArtifacts,
       knownArtifactIds: known,
       knownUpdates: knownArtifactUpdates.current,
+      // A tab change re-runs this effect too, harmlessly: by then every id
+      // of the current feed is banked below, so nothing is left to open.
+      openArtifactIds: new Set(openArtifacts.map((artifact) => artifact.id)),
     });
     // Bank everything this delivery carried — including the one being opened —
     // before acting on the decision. That is what makes a document open at
     // most once per update: a closed tab stays closed until another write, and a feed
     // refresh (the URL write-back below re-renders the page too) is inert.
     for (const artifact of feedArtifacts) { known.add(artifact.id); knownArtifactUpdates.current.set(artifact.id, artifact.updatedAt); }
-    if (opening === null) return;
-    openArtifact(opening);
-  }, [chat.activeThreadId, feedArtifacts, openArtifact]);
+    if (opening.length === 0) return;
+    // One message can birth many documents on one leg, so EVERY new document
+    // gets its own tab. The strip fills oldest-born first and the first one
+    // born is the tab left in front — the user watches the leg from its start
+    // rather than landing on whichever document happened to finish last.
+    for (const artifact of opening) openArtifact(artifact);
+    activateArtifact(opening[0].id);
+  }, [activateArtifact, chat.activeThreadId, feedArtifacts, openArtifact, openArtifacts]);
+
+  // The composer's Files and Microsites come from the same feeds the Gallery draws. The
+  // document list is fetched here unconditionally (the tabs hook fetches only while a
+  // panel is open) and re-read when this thread writes a document.
+  const composerDocuments = useProjectDocuments(projectId, {
+    active: true,
+    refreshToken: chat.planWriteRevision,
+  });
+  const composerCatalog = useMemo(
+    () =>
+      buildComposerCatalog({
+        documents: composerDocuments.documents,
+        artifacts: feedArtifacts,
+        entities: workspace.entities,
+      }),
+    [composerDocuments.documents, feedArtifacts, workspace.entities],
+  );
+  const { setCatalogEntities } = controller;
+  useEffect(() => {
+    setCatalogEntities(composerCatalog);
+  }, [composerCatalog, setCatalogEntities]);
 
   // `?open=` (2026-09-15): land with one artifact tab open. Read once (the ref), resolved against
   // the server-fetched feed, and stripped by the write-back below.
@@ -426,6 +727,131 @@ export function ChatSurface({
     router.replace(`${pathname}${next ? `?${next}` : ""}`, { scroll: false });
   }, [editParam, pathname, router, searchParams, selectionParam, surfaceParam, selectedDocumentPath]);
 
+  /**
+   * The composer's ONE submit path — the composer's own send button and the
+   * canvas comment box's "Send to chat" both land here, so a turn carries the
+   * same context refs whichever gesture sent it.
+   *
+   * `justAdded` is the annotation "Send to chat" stored a moment ago: its
+   * reducer dispatch has not rendered yet, so the annotation state visible in
+   * this closure cannot see it, and the note the user is looking at would
+   * otherwise miss the very turn it triggered.
+   */
+  const submitTurn = async (
+    prompt: string,
+    entityIds?: string[],
+    justAdded?: WebAnnotation,
+  ): Promise<boolean> => {
+    // Snapshot references synchronously before any await. A queued turn owns these
+    // exact asset ids even if uploads or selection change before the POST returns.
+    const referenceSnapshot = designReferencesEnabled
+      ? referenceAttachments.snapshotContextRefs()
+      : [];
+    if (
+      referenceAttachments.attachments.length > 0 &&
+      referenceSnapshot === null
+    ) {
+      return false;
+    }
+    // The chat attachments, snapshotted for the same reason and refused for the
+    // same one: a turn carries the files that were ready when it was sent, and
+    // an upload still in flight is not one of them.
+    const attachmentSnapshot = chatAttachments.snapshot();
+    if (chatAttachments.attachments.length > 0 && attachmentSnapshot === null) {
+      return false;
+    }
+    // Snapshot ids before the first await inside the scene session.
+    // A queued turn keeps this set even if the user changes the
+    // canvas selection while optimistic writes finish or the POST runs.
+    const editTargetSnapshot = editTargetsEnabled
+      ? await sceneSession.snapshotEditTargets()
+      : null;
+    if (targetChips.length > 0 && editTargetSnapshot === null) {
+      return false;
+    }
+    // Slice 2 (R-A2): the annotations, snapshotted for the same reason — the
+    // turn owns the notes that were on screen when it was sent.
+    const annotationItems = webAnnotationsEnabled
+      ? [...session.annotations.state.items, ...(justAdded ? [justAdded] : [])]
+      : [];
+    const annotationSnapshot =
+      webAnnotationsEnabled && session.activeDocumentId && annotationItems.length
+        ? {
+            documentId: session.activeDocumentId,
+            documentVersion:
+              session.webSelection.document?.currentVersion ?? null,
+            items: annotationItems,
+          }
+        : null;
+    const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
+      .map((id) =>
+        controller.composerEntities.find((entity) => entity.id === id),
+      )
+      .filter((entity) => entity !== undefined)
+      .map((entity) => ({
+        objectId: entity.id,
+        objectType: entity.type,
+        version: entity.version ?? null,
+      }));
+    const contextRefs = [
+      ...entityContextRefs,
+      ...editTargetContextRefs(editTargetSnapshot),
+      ...annotationContextRefs(annotationSnapshot),
+      ...(referenceSnapshot ?? []),
+    ];
+    // The annotations can BE the message: a marketer who wrote three notes and
+    // pressed send said everything in them, and the refs carry the words.
+    const message =
+      prompt.trim().length === 0 && annotationSnapshot !== null
+        ? ANNOTATIONS_ONLY_MESSAGE
+        : prompt;
+    const accepted = await chat.submitMessage(message, {
+      attachmentRefs: attachmentSnapshot ?? [],
+      contextRefs,
+      agentProfileId: workspace.composerCapabilities.agentProfileSelection
+        ? (controller.selectedModel?.id ?? null)
+        : null,
+    });
+    // R6 dismiss-on-send: a message the agent ACCEPTED closes the
+    // editing dock and restores the conversation the user is now
+    // talking in. A refused (`failed`) or empty/threadless
+    // (`not_submitted`) submit leaves them mid-edit. The rule is
+    // evaluated over the whole status union — before the early
+    // return — so the pure decision in ../model/chat-dock is the
+    // one that actually runs.
+    if (chatDockDismissedBySubmission(accepted.status)) {
+      shell.setEditing(false);
+    }
+    if (accepted.status !== "accepted") return false;
+    referenceAttachments.clear();
+    chatAttachments.clear();
+    // R-A3: the annotations are now the turn's, so the chips and the badges in
+    // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
+    // the marketer their notes.
+    session.annotations.clear();
+    controller.completeSubmissionContext(
+      entityContextRefs.map((reference) => reference.objectId),
+    );
+    return true;
+  };
+
+  // The latest submit closure, for the stable dispatcher the canvas holds.
+  // `add` returns the stored record (null only for a blank note, which the
+  // popover's Send button already refuses), and the composer's own text rides
+  // along — "Send to chat" is a send, not a second, separate channel.
+  const sendAnnotation = (note: string) => {
+    const stored = session.annotations.add(note);
+    if (stored === null) return;
+    void submitTurn(controller.prompt, controller.selectedEntityIds, stored).then(
+      (accepted) => {
+        if (accepted) controller.setPrompt("");
+      },
+    );
+  };
+  useEffect(() => {
+    sendAnnotationRef.current = sendAnnotation;
+  });
+
   return (
     <main
       className={`${styles.shell} ${shell.panelOpen ? styles.shellPanelOpen : ""} ${shell.artifactMaximized ? styles.shellArtifactMaximized : ""}`}
@@ -446,7 +872,7 @@ export function ChatSurface({
             : undefined
       }
     >
-      <section className={styles.chatPane}>
+      <section className={styles.chatPane} {...drop.handlers}>
         <ChatShellHeader
           chatId={chat.activeThreadId ?? undefined}
           onArchive={() => {
@@ -469,12 +895,19 @@ export function ChatSurface({
                 // every edit (the founder-observed defect); the controller's
                 // own state already reflects the user's edit, so re-hydration
                 // belongs to selection changes alone.
-                key={session.webSelection.selection?.node.id ?? "canvas"}
+                // The canvas key carries the theme's page surface, so the one time the
+                // theme lands after mount the canvas inspector re-seeds from it
+                // (the web lane hydrates at mount, not live).
+                key={session.webSelection.selection?.node.id ?? `canvas:${session.canvasHydrated?.backgroundColor ?? ""}`}
                 customComponentForm={session.customComponentForm}
                 error={session.inspectorError}
                 note={session.writes.note}
                 addressing={session.addressing}
-                hydrated={session.webSelection.selection?.hydrated}
+                // R-A6 (slice 3): the human's own text edits inside the selected
+                // cloned band, each with its Clear (the session decides whether
+                // the selection owns a list at all).
+                cloneTextEdits={session.cloneTextEdits}
+                hydrated={session.webSelection.selection?.hydrated ?? session.canvasHydrated}
                 layers={session.layerRows}
                 // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and
                 // the interactive components (item 33) land on the container
@@ -483,6 +916,9 @@ export function ChatSurface({
                 onReplaceImage={session.onReplaceImage}
                 onSelectLayer={session.onSelectLayer}
                 onSelectionChange={shell.selectInspectorElement}
+                // F5 task 19 (FLAGGED): the page/route controls, present only while
+                // no node is selected (the session decides).
+                pageSection={session.pageSection}
                 richTextRange={session.richTextRange}
                 selection={inspectorSelection}
                 themeColors={session.themeColors}
@@ -500,6 +936,7 @@ export function ChatSurface({
                 key={sceneSession.primaryNodeId ?? "canvas"}
                 addressing={sceneSession.addressing}
                 arrange={sceneSession.arrange}
+                assetLibrary={sceneSession.assetLibrary}
                 error={sceneSession.inspectorError}
                 fontOptions={sceneSession.fontOptions}
                 hydrated={sceneSession.hydrated}
@@ -509,19 +946,23 @@ export function ChatSurface({
                 // operate the inspector — "we cannot let humans change any
                 // value when the agents are at work with designing".
                 //
-                // `chat.threadBusy` is the controller's own already-public fact
-                // (`selectTurnQueueState`: a running turn, or one queued behind
-                // it), the same one the conversation view reads for its busy
-                // affordance. Nothing new is derived and nothing is written
-                // back: this is a READ of the chat controller, so no chat-side
-                // behaviour — composer, sending, gates, queueing, mid-turn
-                // steering — can move because of this line, in either
-                // direction (the founder's chat-status-quo addendum).
+                // TASK 4 (scene live-streaming rung A) narrows the source from
+                // the bare `chat.threadBusy` to the agent-run lock above, which
+                // is the SAME fact with the ruling's own two qualifications
+                // finally applied: "with designing" (a design leg is open) and
+                // on THIS document (its card was born in this thread). A
+                // strategy turn in a thread whose design leg has closed no
+                // longer freezes an unrelated ad — which is the ratified genweb
+                // behaviour of interleaved edits BETWEEN design turns, not a
+                // relaxation of the gate. `threadBusy` still floors it (see the
+                // derivation), so a cold load into a live run is still locked.
                 //
-                // The gate is a TURN in flight, not an open design leg: a leg
-                // stays open across turns, and interleaved manual edits BETWEEN
-                // turns are the ratified genweb feature this must not touch.
-                inspectorDisabled={chat.threadBusy}
+                // Nothing is written back: this is a READ of the chat
+                // controller, so no chat-side behaviour — composer, sending,
+                // gates, queueing, mid-turn steering — can move because of this
+                // line, in either direction (the founder's chat-status-quo
+                // addendum).
+                inspectorDisabled={sceneLocked}
                 layers={sceneSession.layerRows}
                 note={sceneSession.note}
                 onReplaceImage={sceneSession.onReplaceImage}
@@ -545,17 +986,18 @@ export function ChatSurface({
             >
               <ConversationContent
                 chat={chat}
+                contextEntities={controller.composerEntities}
                 contextHandoffError={controller.contextHandoffError}
                 onOpenPlan={(id) => void documentTabs.openById(id)}
-                projectId={projectId}
-                workspace={workspace}
               />
             </div>
           ) : null}
         </div>
         <div
           className={`${styles.composerDock} ${
-            targetChips.length ? styles.composerDockWithTargets : ""
+            targetChips.length || annotationChipList.length
+              ? styles.composerDockWithTargets
+              : ""
           } ${research.card || chat.queueControl.paused ? styles.composerDockWithResearchCard : ""}`}
         >
           <div className={styles.composerFrame}>
@@ -565,6 +1007,32 @@ export function ChatSurface({
                 headline={research.headline}
                 line={research.line}
               />
+            ) : null}
+            {/* Slice 2 (R-A2): the annotations, in badge order, above the
+                composer — the same bar the ad lane's edit targets use, so a
+                chip means the same thing in both lanes: "this turn is about
+                these". Removing one drops the badge in the canvas with it. */}
+            {annotationChipList.length ? (
+              <div aria-label="Annotations" className={styles.editTargetBar}>
+                <span className={styles.editTargetLabel}>Annotations</span>
+                <div className={styles.editTargetList}>
+                  {annotationChipList.map((chip) => (
+                    <span className={styles.editTargetChip} key={chip.n}>
+                      <span className={styles.editTargetName}>
+                        {chip.n} {chip.label}
+                      </span>
+                      <button
+                        aria-label={`Remove annotation ${chip.n}`}
+                        className={styles.editTargetRemove}
+                        onClick={() => session.annotations.remove(chip.n)}
+                        type="button"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
             ) : null}
             {targetChips.length ? (
               <div aria-label="Edit targets" className={styles.editTargetBar}>
@@ -595,34 +1063,57 @@ export function ChatSurface({
                   onClick={() => void chat.resumeQueuedTurns()}>Resume</button>
               </div>
             ) : null}
+            {clarification !== null && chat.runningTurn === null ? (
+              <ClarificationCard
+                key={clarification.turnId}
+                onSubmit={(text, contextRefs) => {
+                  void chat.submitMessage(text, { contextRefs });
+                }}
+                parts={clarification.parts}
+              />
+            ) : null}
             <ProjectComposer
               running={chat.runningTurn !== null}
               stopping={chat.stopPending}
               onStop={() => void chat.stopActiveTurn()}
-              attachmentAccept={DESIGN_REFERENCE_ACCEPT}
+              attachmentAccept={
+                designReferencesEnabled
+                  ? `${DESIGN_REFERENCE_ACCEPT},${CHAT_ATTACHMENT_ACCEPT}`
+                  : CHAT_ATTACHMENT_ACCEPT
+              }
               attachmentError={
-                designReferencesEnabled ? referenceAttachments.error : null
+                (designReferencesEnabled ? referenceAttachments.error : null) ??
+                chatAttachments.error
               }
               attachmentInputDisabled={
+                designReferencesEnabled &&
                 referenceAttachments.attachments.length >=
-                MAX_DESIGN_REFERENCE_ATTACHMENTS
+                  MAX_DESIGN_REFERENCE_ATTACHMENTS
               }
-              attachmentLabel="Attach reference images"
-              attachments={
-                designReferencesEnabled
-                  ? [...referenceAttachments.attachments]
-                  : []
-              }
+              attachmentLabel="Attach files"
+              attachments={[
+                ...(designReferencesEnabled
+                  ? referenceAttachments.attachments
+                  : []),
+                ...chatAttachments.attachments,
+              ]}
               // Never disabled while work is detached: the user keeps the wheel.
               disabled={chat.access !== null || chat.route !== null}
+              dropActive={drop.active}
               entities={controller.composerEntities}
               modelPickerOpen={controller.modelPickerOpen}
               models={workspace.models}
               onAttachmentFiles={
-                designReferencesEnabled ? referenceAttachments.onFiles : undefined
+                designReferencesEnabled ||
+                workspace.composerCapabilities.attachments
+                  ? handleAttachmentFiles
+                  : undefined
               }
               onAttachmentRemove={
-                designReferencesEnabled ? referenceAttachments.remove : undefined
+                designReferencesEnabled ||
+                workspace.composerCapabilities.attachments
+                  ? handleAttachmentRemove
+                  : undefined
               }
               onEntityRemove={
                 workspace.composerCapabilities.contextRefs
@@ -637,70 +1128,17 @@ export function ChatSurface({
               onModelPickerToggle={controller.toggleModelPicker}
               onModelSelect={controller.selectModel}
               onPromptChange={controller.setPrompt}
-              onSubmit={async (prompt, entityIds) => {
-                // Snapshot references synchronously before any await. A queued turn owns these
-                // exact asset ids even if uploads or selection change before the POST returns.
-                const referenceSnapshot = designReferencesEnabled
-                  ? referenceAttachments.snapshotContextRefs()
-                  : [];
-                if (
-                  referenceAttachments.attachments.length > 0 &&
-                  referenceSnapshot === null
-                ) {
-                  return false;
-                }
-                // Snapshot ids before the first await inside the scene session.
-                // A queued turn keeps this set even if the user changes the
-                // canvas selection while optimistic writes finish or the POST runs.
-                const editTargetSnapshot = editTargetsEnabled
-                  ? await sceneSession.snapshotEditTargets()
-                  : null;
-                if (targetChips.length > 0 && editTargetSnapshot === null) {
-                  return false;
-                }
-                const entityContextRefs = (entityIds ?? controller.selectedEntityIds)
-                  .map((id) =>
-                    controller.composerEntities.find((entity) => entity.id === id),
-                  )
-                  .filter((entity) => entity !== undefined)
-                  .map((entity) => ({
-                    objectId: entity.id,
-                    objectType: entity.type,
-                    version: entity.version ?? null,
-                  }));
-                const contextRefs = [
-                  ...entityContextRefs,
-                  ...editTargetContextRefs(editTargetSnapshot),
-                  ...(referenceSnapshot ?? []),
-                ];
-                const accepted = await chat.submitMessage(prompt, {
-                  contextRefs,
-                  agentProfileId:
-                    workspace.composerCapabilities.agentProfileSelection
-                      ? (controller.selectedModel?.id ?? null)
-                      : null,
-                });
-                // R6 dismiss-on-send: a message the agent ACCEPTED closes the
-                // editing dock and restores the conversation the user is now
-                // talking in. A refused (`failed`) or empty/threadless
-                // (`not_submitted`) submit leaves them mid-edit. The rule is
-                // evaluated over the whole status union — before the early
-                // return — so the pure decision in ../model/chat-dock is the
-                // one that actually runs.
-                if (chatDockDismissedBySubmission(accepted.status)) {
-                  shell.setEditing(false);
-                }
-                if (accepted.status !== "accepted") return false;
-                referenceAttachments.clear();
-                controller.completeSubmissionContext(
-                  entityContextRefs.map((reference) => reference.objectId),
-                );
-                return true;
-              }}
+              onSubmit={(prompt, entityIds) => submitTurn(prompt, entityIds)}
               prompt={controller.prompt}
               sendDisabled={
-                designReferencesEnabled && referenceAttachments.submissionBlocked
+                (designReferencesEnabled &&
+                  referenceAttachments.submissionBlocked) ||
+                chatAttachments.submissionBlocked
               }
+              // Slice 2 (R-A2): chips on the bar are already a message — the
+              // notes ride the refs — so Send works on an empty box and the
+              // turn reads "See annotations."
+              submittableWithoutPrompt={annotationChipList.length > 0}
               selectedEntities={controller.selectedEntities}
               selectedEntityIds={controller.selectedEntityIds}
               selectedModel={controller.selectedModel}
@@ -709,8 +1147,14 @@ export function ChatSurface({
         </div>
       </section>
       <ArtifactStage
+        annotations={session.canvasAnnotations}
         activeArtifactId={shell.activeArtifactId}
         activeDocumentId={activeDocumentId}
+        // F5 task 18: the header's page switcher and the canvas read ONE
+        // value — the web editing session's active page.
+        activePageId={session.activePageId}
+        onPageChange={session.setActivePageId}
+        pages={session.pages}
         artifacts={feedArtifacts}
         artifactKind={shell.artifactKind}
         artifactMaximized={shell.artifactMaximized}
@@ -719,8 +1163,20 @@ export function ChatSurface({
         canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
+        // The website pane's "agent is generating" motion (cofounder handoff
+        // ad4f30bb). Both halves are the controller's own already-public facts:
+        // a turn in flight on THIS thread, beside an OPEN design leg — the leg
+        // is what makes the turn about the artifact in the pane, so a plain
+        // research turn never blurs someone's page. A READ of the chat
+        // controller and nothing more: no chat-side behaviour moves because of
+        // it. The canvas decides when the blur LIFTS (its hold rule waits out
+        // the refresh the turn wrote), so this is only the arming signal.
+        generating={chat.threadBusy && chat.designLegOpen}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
+        // Clipboard Task 8: a picture dragged onto the canvas is uploaded and
+        // inserted where it was dropped, through the session's own write path.
+        onSceneDropImageFiles={sceneSession.onSceneDropImageFiles}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}
@@ -733,12 +1189,23 @@ export function ChatSurface({
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
+        // Task 9: what the ad canvas draws while the reveal pump is streaming.
+        // Null the rest of the time, and the canvas renders the document.
+        sceneDisplayScene={sceneReveal.displayScene}
         // AD4.C / Ruling C-4 — GATE G-H, the canvas half of the same ruling
-        // `inspectorDisabled` above implements, off the same already-public
-        // fact: while a turn is in flight on THIS thread the human may not
-        // change values, so drag and resize are off and the handles go with
-        // them. Selection stays live — looking is not changing.
-        sceneGestureDisabled={chat.threadBusy}
+        // `inspectorDisabled` above implements, off the same fact: while the
+        // design agent is at work on this document the human may not change
+        // values, so drag and resize are off, the handles go with them, and no
+        // caret opens. Task 4 adds the words: a press or double-click that WOULD
+        // have edited reports back, and the note says why.
+        //
+        // View, zoom, pan and selection stay live throughout — looking is not
+        // changing, which is the whole of what the ruling forbids.
+        sceneGestureDisabled={sceneLocked}
+        onSceneLockedEdit={sceneSession.onLockedEdit}
+        // Rung C / §1.6: one document, one brand palette — the caret
+        // session's colour control offers exactly what the inspector's do.
+        scenePalette={sceneSession.palette}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}
@@ -747,6 +1214,7 @@ export function ChatSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={shell.closeArtifact}
         onOpenGallery={shell.openGallery}
+        onCloneTextCommit={session.onCloneTextCommit}
         onOpenTargetAccounts={shell.openTargetAccounts}
         documentTabs={documentTabs}
         canEditDocuments={canEditDocuments}
@@ -794,7 +1262,30 @@ export function ChatSurface({
         onToggleMaximized={shell.toggleArtifactMaximized}
         onTogglePanel={shell.toggleArtifactPanel}
         onToggleEditing={() => shell.setEditing(!shell.editing)}
+        // Task 4: the Edit affordance itself. Entering edit mode is refused
+        // while the lock holds — an editor whose every control is inert is not
+        // an editor — but LEAVING it never is, or a lock engaging mid-edit would
+        // trap the user in a dock they cannot close.
+        editDisabled={sceneLocked && !shell.editing}
+        // 2026-09-04 port: the motion follows the CANVAS lock (`sceneLocked`),
+        // not the Edit pill's `editDisabled`, so it also runs when the lock
+        // engages mid-edit (leaving edit mode is never refused, so
+        // `editDisabled` is false there).
+        agentWorking={sceneLocked}
+        editDisabledReason={agentRunLock.note}
         openArtifacts={shell.openArtifacts}
+        // Replace-image Task 6: the asset-library picker floats over the stage,
+        // rendered by the surface (the stage is pass-through chrome). The Task-4
+        // binding derives `isOpen` from the armed document, so switching
+        // artifacts closes it by construction.
+        overlay={
+          sceneSession.assetLibrary?.isOpen ? (
+            <AssetLibraryPanel
+              library={sceneSession.assetLibrary}
+              onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : null
+        }
         projectTitle={workspace.title}
         projectId={projectId}
         // AD3.3: the header carries ONE pair of history-row disables, and the

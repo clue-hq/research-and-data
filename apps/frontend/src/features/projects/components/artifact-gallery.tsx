@@ -38,7 +38,7 @@ function ArtifactCard({
         </span>
         {artifact.accountLogoPath ? (
           <span className={styles.accountBadge}>
-            <Image alt="" height={16} src={artifact.accountLogoPath} width={16} />
+            <Image alt="" height={16} src={artifact.accountLogoPath} unoptimized width={16} />
           </span>
         ) : null}
       </span>

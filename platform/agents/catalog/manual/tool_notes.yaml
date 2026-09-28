@@ -7,7 +7,8 @@
 # one sentence what the agent should do about it.
 #
 # Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
-#   - Every tool granted by `head-of-abm@v57` needs an entry. A missing entry fails the build by
+#   - Every tool granted by the active `head-of-abm` profile (`PROFILE_VERSION` in
+#     `clue_agents/manual/build.py`) needs an entry. A missing entry fails the build by
 #     name, so a newly granted tool cannot ship with unexplained refusals. An entry the profile no
 #     longer grants is kept rather than deleted — the tools chapter renders the grant, so an
 #     ungranted entry disappears from the manual on its own while its history stays readable here.
@@ -84,7 +85,7 @@ launch_arv2_account_research:
     project pinned and the product set the human confirmed. A successful call means queued, never
     finished and never that anything was found. The launched-task card appears in chat on its own.
     Read the run with read_arv2_account_research_run, and the accounts with read_project_accounts.
-  skill_section: stage0-interview v33 section 7, "Launch account research".
+  skill_section: account-research-briefing v2, "Brief the account researcher" (.deepagent/skills/account-research-briefing/v2/SKILL.md); stage0-interview v38 section 7, "Launch account research".
   see_also: [siblings, gates-authority, accounts-research]
   refusals:
     arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.
@@ -103,10 +104,11 @@ launch_arv2_account_research:
 
 launch_arv2_discovery:
   afterwards: >-
-    A discovery run is queued against the ICP version the project pinned. It approves nothing: the
-    candidates land on the accounts table with a verdict each, and a human adds the ones they
-    want. Read it back with read_discovery_run before proposing another.
-  skill_section: stage0-interview v33 section 7b, "Discover accounts for this project".
+    A discovery run is queued against the ICP version the project pinned. It searches for exactly
+    target_count companies, and every company it checks joins this project's accounts with its fit
+    and its gate verdicts. Each new ask is a new run that skips every company this project's
+    earlier discoveries found. Read it back with read_discovery_run before proposing another.
+  skill_section: stage0-interview v39 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
@@ -294,10 +296,10 @@ read_claims:
 
 read_discovery_run:
   afterwards: >-
-    Nothing changes. You hold what the last discovery asked for, found, verified and had
-    approved. Say that before proposing another run; do not launch one to answer a question this
-    read already answers.
-  skill_section: stage0-interview v33 sections 7b and 7c.
+    Nothing changes. You hold what the last discovery asked for, found, verified and showed. Say
+    that before proposing another run; do not launch one to answer a question this read already
+    answers.
+  skill_section: stage0-interview v39 sections 7b and 7c.
   see_also: [discovery, accounts-research]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
@@ -351,6 +353,23 @@ request_persona_synthesis:
     brand_not_onboarded: Tell the human the brand has no completed onboarding run, so there is no company for personas to be written about.
     enqueue_failed: Nothing is running. Ask again, and if it refuses twice tell the human the queue is not accepting work.
 
+run_python:
+  afterwards: >-
+    One script has run in the sandbox over this turn's workspace and is gone. What it printed is
+    in stdout, or in the file stdout_spilled_to names when it printed more than the inline budget;
+    what it left on disk is in files_written, and anything the workspace policy took back out is
+    in files_removed. Nothing outside your own workspace changed, and runs_remaining says how many
+    runs this turn has left. A file you have not opened is a file you have not read: do not
+    describe an attachment from its name. The script itself is capped at 65,536 characters, which
+    is a validation error rather than a refusal — split the work across runs instead of writing
+    one enormous script.
+  skill_section: code-execution v1 section 1, "When to run code, when not to".
+  see_also: [workspace, limits]
+  refusals:
+    sandbox_unavailable: Tell the human you cannot open the file on this deployment, and name the file; do not describe contents you never read. No run was spent.
+    workspace_unavailable: Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools.
+    run_budget_exhausted: Say what you have read so far and what is left, and do the rest in one script on the next turn.
+
 submit_ingestion:
   afterwards: >-
     An ingestion job is queued for the uploaded file. Queued is not read: the extracted content
@@ -362,6 +381,20 @@ submit_ingestion:
     ingestion_artifact_erased: Ask the human to upload the file again before it can be ingested.
     ingestion_not_configured: Tell the human ingestion is not wired on this deployment, and say the file was not read.
     ingestion_context_invalid: Name the project for a project instruction, or the product for a product document, and call again.
+
+web_search:
+  afterwards: >-
+    Nothing changes on the platform. You hold the written answer and up to ten results with their
+    highlighted passages, and one search has been charged to the workspace. Read it as what a
+    search found today, not as a fact the platform verified: quote it as "a search found", never
+    as a claim, and never write it into a project document as if research had established it.
+    If the search did not settle the question, say so rather than searching again with the same
+    words.
+  skill_section: head-of-abm prompt v15, the paragraph "Look things up in this order".
+  see_also: [claims, accounts-research]
+  refusals:
+    exa_not_configured: Tell the human web search is not available on this deployment; do not answer the question from memory instead.
+    query_empty: Write the question you want searched, in plain words, then call again.
 
 write_project_document:
   afterwards: >-
@@ -426,3 +459,16 @@ errors:
   middleware:
     "is structurally unavailable to this exact agent profile": Call only tools your capability map lists; that name is not one of them.
     "Your previous response is not committed because it did not call finalize_turn": Call finalize_turn now and nothing else, preserving your previous answer word for word as user_message.
+
+configure_project_targeting:
+  afterwards: >-
+    The product set and exact ICP artifact are confirmed and pinned automatically. Continue the
+    user's task using the returned artifact key, digest and product selection version; do not
+    open an approval card. This call launches no research.
+  skill_section: stage0-interview v35 section 4, "Apply the products and ICP automatically".
+  see_also: [documents-decisions, gates-authority]
+  refusals:
+    targeting_turn_unavailable: Use the current durable conversation turn; never invent a reference.
+    targeting_project_unavailable: Explain that this project is unavailable in the current workspace.
+    icp_document_not_found: Read or write the intended ICP document and use its exact icp_key.
+    targeting_products_unavailable: Read the brand catalog and choose its active product ids.

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GateDecisionSchema } from "./chat-parts";
+import type { ChatAttachmentRef } from "./chat-attachments";
 import type { ChatStreamEventType } from "./chat-events";
 import {
   ChatMessageWireSchema,
@@ -101,6 +102,7 @@ const TurnViewWireSchema = z.object({
   last_event_id: z.number().int().nullable().default(null),
   generation_attempts: z.number().int().min(0).default(0),
   submission_message: ChatMessageWireSchema.nullable().default(null),
+  derivation: z.string().nullable().default(null),
   stop_request: StopRequestSchema.nullable().default(null),
 });
 
@@ -115,6 +117,11 @@ export interface ChatTurn {
   generationAttempts: number;
   /** Accepted user bytes not yet materialized into canonical thread history. */
   submissionMessage: ChatMessage | null;
+  /**
+   * Non-null when the server made this turn from the user's own message (a design-leg
+   * redelivery or first turn): the transcript renders no user bubble for it.
+   */
+  derivation: string | null;
   stopRequest?: z.infer<typeof StopRequestSchema> | null;
 }
 
@@ -136,6 +143,7 @@ export const ChatTurnListResponseSchema = z
         lastEventId: item.last_event_id,
         generationAttempts: item.generation_attempts,
         stopRequest: item.stop_request,
+        derivation: item.derivation,
         submissionMessage:
           item.submission_message === null
             ? null
@@ -225,6 +233,7 @@ export interface MessageSubmissionAttempt {
 export type TurnContextObjectType =
   | "account"
   | "contact"
+  | "project_document"
   | "design_document"
   | "design_node"
   | "design_asset";
@@ -233,6 +242,11 @@ export interface TurnContextReference {
   objectId: string;
   objectType: TurnContextObjectType;
   version: number | null;
+  /** Slice 2 (R-A2): the marketer's own words about THIS object — the note a
+   * web annotation carries, numbered so the turn's prose ("annotation 2") and
+   * the badge in the canvas name the same element. Optional and omitted from
+   * the wire when absent, so every existing ref shape is byte-identical. */
+  note?: string;
 }
 
 /** Block only a duplicate of the exact message request currently in flight. */
@@ -244,6 +258,7 @@ export class MessageSubmissionGuard {
     submission: {
       message: string;
       contextRefs: readonly TurnContextReference[];
+      attachmentRefs: readonly ChatAttachmentRef[];
       agentProfileId: string | null;
     },
     createIdempotencyKey: () => string,
@@ -338,6 +353,7 @@ export type TurnSubmission =
       kind: "message";
       message: string;
       contextRefs?: readonly TurnContextReference[];
+      attachmentRefs?: readonly ChatAttachmentRef[];
       agentProfileId?: string | null;
     }
   | { kind: "gate_response"; response: GateResponse };
@@ -351,8 +367,16 @@ export function turnRequestBody(submission: TurnSubmission): unknown {
         object_type: reference.objectType,
         object_id: reference.objectId,
         version: reference.version,
+        ...(reference.note !== undefined ? { note: reference.note } : {}),
       })),
-      attachment_refs: [],
+      attachment_refs: (submission.attachmentRefs ?? []).map((attachment) => ({
+        upload_id: attachment.uploadId,
+        artifact_key: attachment.artifactKey,
+        sha256: attachment.sha256,
+        media_type: attachment.mediaType,
+        byte_count: attachment.byteCount,
+        filename: attachment.filename,
+      })),
       agent_profile_id: submission.agentProfileId ?? null,
     };
   }

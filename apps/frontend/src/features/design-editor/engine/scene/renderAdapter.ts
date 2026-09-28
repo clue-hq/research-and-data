@@ -20,6 +20,7 @@ import type {
   VerticalAlign
 } from "./contracts";
 import { isNodeLayoutManaged } from "./sceneQueries";
+import { namesTokenRef } from "./textSpans";
 import {
   oklchToHexCss,
   resolveTokenColor,
@@ -945,9 +946,27 @@ export function resolveTokenNumber(token: string): number | null {
   return tokenNumbers[stripTokenPrefix(token)] ?? null;
 }
 
+/** A manual typography edit must not bake unresolved skeleton values. Always
+ * use the selected document's maps here, never the active canvas's globals. */
+export function textTypographyResolves(
+  text: Parameters<typeof resolvedTextFields>[0],
+  maps?: Pick<KitTokenMaps, "typography" | "numbers"> | null,
+): boolean {
+  let family = text.font_family;
+  if (text.style_token) {
+    const role = stripTokenPrefix(text.style_token);
+    if (!maps || !Object.hasOwn(maps.typography, role)) return false;
+    family = maps.typography[role].fontFamily ?? family;
+  }
+  if (namesTokenRef(family)) return false;
+  return [text.font_size_token, text.line_height_token, text.letter_spacing_token]
+    .every((token) => !token || (maps != null && Object.hasOwn(maps.numbers, stripTokenPrefix(token))
+      && Number.isFinite(maps.numbers[stripTokenPrefix(token)])));
+}
+
 /**
  * K1.5: a text node's EFFECTIVE fields — the kit style_token's values (with
- * individual `*_token` overrides) over the node's literals, mirroring the
+ * a size-token override) over the node's literals, mirroring the
  * engine's resolve_text_style precedence. When a token is present but not
  * yet resolvable client-side, the literal is kept — the pre-existing
  * skeleton behavior, and honest about what the canvas will show.
@@ -962,6 +981,8 @@ export function resolvedTextFields(text: {
   font_size_token?: string | null;
   line_height_token?: string | null;
   letter_spacing_token?: string | null;
+}, maps: Pick<KitTokenMaps, "typography" | "numbers"> = {
+  typography: tokenTextStyles, numbers: tokenNumbers,
 }): {
   fontFamily: string;
   fontSize: number;
@@ -969,20 +990,22 @@ export function resolvedTextFields(text: {
   lineHeight: number;
   letterSpacing: number;
 } {
-  const style = text.style_token ? tokenTextStyles[stripTokenPrefix(text.style_token)] : undefined;
-  const sizeOverride = text.font_size_token ? resolveTokenNumber(text.font_size_token) : null;
+  const style = text.style_token ? maps.typography[stripTokenPrefix(text.style_token)] : undefined;
+  const number = (token: string) => maps.numbers[stripTokenPrefix(token)] ?? null;
+  const sizeOverride = text.font_size_token ? number(text.font_size_token) : null;
   const lineHeightOverride = text.line_height_token
-    ? resolveTokenNumber(text.line_height_token)
+    ? number(text.line_height_token)
     : null;
   const letterSpacingOverride = text.letter_spacing_token
-    ? resolveTokenNumber(text.letter_spacing_token)
+    ? number(text.letter_spacing_token)
     : null;
   return {
     fontFamily: style?.fontFamily ?? text.font_family,
     fontSize: sizeOverride ?? style?.fontSize ?? text.font_size,
     fontWeight: style?.fontWeight ?? text.font_weight,
-    lineHeight: lineHeightOverride ?? style?.lineHeight ?? text.line_height ?? 1.2,
-    letterSpacing: letterSpacingOverride ?? style?.letterSpacing ?? text.letter_spacing ?? 0
+    // Core resolves leading/tracking first, then the role, then the size token.
+    lineHeight: style?.lineHeight ?? lineHeightOverride ?? text.line_height ?? 1.2,
+    letterSpacing: style?.letterSpacing ?? letterSpacingOverride ?? text.letter_spacing ?? 0
   };
 }
 

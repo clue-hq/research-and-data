@@ -5,6 +5,8 @@ import {
   getBrandContextRepository,
   httpBrandContextRepository,
 } from "./brand-context.repository";
+import { brandKitAssetIds } from "../model/brand-context-mapping";
+import { BrandKitDetailSchema } from "../model/brand-kit";
 import { HARVESTED_ASSET_RECORDS, HARVESTED_BRAND_KIT } from "./__fixtures__/harvest";
 
 const KIT_ID = "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a";
@@ -186,8 +188,37 @@ test("a workspace with no kit gets the designed empty states, never fixture data
   assert.deepEqual(workspace.knowledgeFolders, []);
   assert.notEqual(workspace.id, brandContextFixture.id);
   assert.equal(kit, null);
-  // Nothing beyond the list is fetched when there is nothing to fetch.
-  assert.deepEqual(requested, ["/brand-kits"]);
+  // The workspace library is independent of kit existence.
+  assert.equal(requested.filter(path => path.startsWith("/assets?")).length, 3);
+});
+
+test("a no-kit library reads past page one and batches metadata for older assets", async () => {
+  const records = Array.from({length: 251}, (_, index) => ({id: `asset_${index}`,
+    kind: "raster_image", status: "ready", source: {kind: "uploaded"}, label: `Image ${index}`}));
+  const pages: number[] = [], batches: number[] = [];
+  const fetchImpl: typeof fetch = async input => {
+    const url = new URL(String(input), "https://design.example");
+    if (url.pathname === "/brand-kits") return Response.json([]);
+    if (url.pathname === "/assets") {
+      if (url.searchParams.get("kind") !== "raster_image") return Response.json({assets: []});
+      const offset = Number(url.searchParams.get("offset")); pages.push(offset);
+      return Response.json({assets: records.slice(offset, offset + 200)});
+    }
+    if (url.pathname === "/assets/descriptions") {
+      const ids = url.searchParams.get("asset_ids")!.split(","); batches.push(ids.length);
+      return Response.json({descriptions: Object.fromEntries(ids.map(id => [id, {asset_id: id,
+        title: "Historical image", creative_type: "photo", usage_roles: ["card_image"], status: "ready"}]))});
+    }
+    throw new Error(`Unexpected per-asset read: ${url.pathname}`);
+  };
+  const view = await httpBrandContextRepository({designFetch: () => fetchImpl, clueFetch: () => noPlatformRead}).getWorkspace();
+  assert.equal(view.kit, null);
+  assert.deepEqual(pages, [0, 200]); assert.deepEqual(batches, [100, 100, 51]);
+  assert.equal(view.workspace.assets.length, 251);
+  const older = view.workspace.assets.find(asset => asset.id === "asset_250")!;
+  assert.equal(older.name, "Historical image");
+  assert.deepEqual(older.context?.usage_roles, ["card_image"]);
+  assert.deepEqual(older.sources, ["user_upload"]);
 });
 
 test("a design-API refusal renders the empty states rather than failing the page", async () => {
@@ -269,6 +300,97 @@ test("with a configured transport the page reads the real store", async () => {
     if (configured === undefined) delete process.env.CLUE_API_BASE_URL;
     else process.env.CLUE_API_BASE_URL = configured;
   }
+});
+
+/**
+ * `GET /assets` per image kind — the workspace registry read the Assets section
+ * unions with the kit. The stub matches on the EXACT path, so these keys are
+ * the exact query strings the repository asks for.
+ */
+// The harvest is exported as `unknown` on purpose — a raw wire capture is
+// parsed, never trusted — so these two tests read it through its own schema.
+const HARVESTED_KIT = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
+
+function registryRoutes(records: unknown[]): Record<string, { body: unknown }> {
+  const page = (kind: string) => ({
+    body: {
+      assets: records.filter((r) => (r as { kind: string }).kind === kind),
+      count: 0,
+      limit: 200,
+      offset: 0,
+    },
+  });
+  return {
+    "/assets?kind=raster_image&include_archived=false&limit=200&offset=0": page("raster_image"),
+    "/assets?kind=vector&include_archived=false&limit=200&offset=0": page("vector"),
+    "/assets?kind=logo&include_archived=false&limit=200&offset=0": page("logo"),
+  };
+}
+
+test("the Assets section lists the kit's items plus workspace uploads, deduped, categorized", async () => {
+  const upload = {
+    id: "asset_upl_1",
+    kind: "raster_image",
+    label: "team.jpg",
+    status: "ready",
+    source: { kind: "uploaded", filename: "team.jpg", uploaded_by: null },
+    media: { mime_type: "image/jpeg", byte_length: 1234, filename: "team.jpg" },
+    provenance: { created_at: "2026-09-01T10:00:00Z" },
+  };
+  const generated = {
+    id: "asset_gen_1",
+    kind: "raster_image",
+    label: "generated hero",
+    status: "ready",
+    source: { kind: "generated", request_id: null, model: "x" },
+  };
+  const kitLogoId = brandKitAssetIds(HARVESTED_KIT)[0];
+  assert.ok(kitLogoId, "the harvested kit must carry at least one asset");
+  const kitDup = {
+    id: kitLogoId,
+    kind: "logo",
+    label: "dup of kit logo",
+    status: "ready",
+    source: { kind: "uploaded", filename: null, uploaded_by: null },
+  };
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [HARVESTED_KIT.brand_kit] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+    ...assetRoutes(),
+    ...registryRoutes([upload, generated, kitDup]),
+  });
+
+  const { workspace } = await httpBrandContextRepository({
+    designFetch: () => fetchImpl,
+  }).getWorkspace();
+
+  const byId = new Map(workspace.assets.map((a) => [a.id, a]));
+  assert.equal(byId.get("asset_upl_1")?.category, "upload");
+  assert.equal(byId.get("asset_upl_1")?.origin, "registry");
+  assert.equal(byId.get("asset_upl_1")?.name, "team.jpg");
+  assert.equal(byId.get("asset_gen_1")?.category, "ai-generated");
+  // The kit wins the dedupe: one row, still badged as the brand's own.
+  assert.equal(byId.get(kitLogoId)?.origin, "kit");
+  assert.equal(workspace.assets.filter((a) => a.id === kitLogoId).length, 1);
+  assert.ok(
+    workspace.assets.findIndex((a) => a.origin === "kit") <
+      workspace.assets.findIndex((a) => a.id === "asset_upl_1"),
+  );
+});
+
+test("a failed registry read leaves the kit's assets intact", async () => {
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [HARVESTED_KIT.brand_kit] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+    ...assetRoutes(),
+  });
+
+  const { workspace } = await httpBrandContextRepository({
+    designFetch: () => fetchImpl,
+  }).getWorkspace();
+
+  assert.ok(workspace.assets.length > 0);
+  assert.ok(workspace.assets.every((a) => a.origin === "kit"));
 });
 
 test("the platform's Knowledge folders list before the kit's Design folder", async () => {

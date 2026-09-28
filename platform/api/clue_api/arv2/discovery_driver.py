@@ -1,6 +1,8 @@
-"""One ARV2 discovery run on the fleet: the long list, the verifier, the candidate accounts.
+"""One ARV2 discovery run on the fleet: up to three searches, the verifier, the candidate accounts.
 
-This is spec §2–§4 executed in order, once per ``arv2_discovery`` task:
+This is spec §2–§4 executed in order, once per ``arv2_discovery`` task, in the shape the founder
+ruled on 2026-09-28
+(``docs/superpowers/plans/2026-09-28-arv2-discovery-exact-count-and-find-more.md``):
 
 1. **Claim the run** (``begin_discovery_run``). A run another worker is driving, or one that has
    already landed, is not this task's to run — the task completes without spending a cent.
@@ -10,20 +12,24 @@ This is spec §2–§4 executed in order, once per ``arv2_discovery`` task:
    questions the first attempt asked even if a human has since repinned the project onto a newer
    ICP. Reading the project's *current* pin instead would grade one run's candidates against two
    different documents; the digest that no longer matches refuses by name instead.
-3. **The strict pass** — one webset with the full criteria, polled to ``idle`` under a wall clock,
-   then read once. Skipped entirely when the human asked for a relaxed pass on a run that already
-   bought its long list: a second webset would be a second bill for the same companies.
+3. **Up to three searches, each a webset of its own, one after another.** Search 1 asks Exa for
+   exactly the number the human asked for. If our checks removed some of what Exa found (a company
+   this project already has, one an earlier discovery of the project found, a website nobody could
+   confirm) while Exa did fill its ask, search 2 asks again with the same criteria for the missing
+   number. If the run is still short and the relaxed search is allowed, search 3 drops the
+   criterion search 1's own success rates show was starving it and asks for what is still missing.
+   Every search tells Exa to skip the websets before it — this run's, and every earlier discovery
+   run's of the project — so no company is found, or paid for, twice. A whole webset is the
+   smallest thing Exa's ``exclude`` accepts, which is why every search is a webset of its own.
+   Each search asks only for the shortfall, and Exa lists a company only once it matches every
+   criterion, so a run never shows more companies than the human asked for.
 4. **The verifier, per candidate** — first the company's own website (Websets gave ``probook.com``
    for a company whose site is ``probook.ai``, and everything downstream keys on the verified
    domain), then one Answer call per hard gate, each graded by
    :func:`~clue_api.arv2.discovery_verifier.apply_guards`. The fit is ``passes / gates`` with an
-   unclear counted as half, and it is written as an ``account.scoring.fit`` claim on a new
-   ``candidate`` account.
-5. **The relaxed pass**, only when the run came up short of the number the human asked for and the
-   run allows it: a second search on the *same* webset, excluding the strict search's results, with
-   the criterion the strict search's own success rates proved was starving it dropped.
-6. **The receipt** — asked, found, analyzed, Exa's recall estimate, the guard counts, the money.
-   A short list is information, never padded (§4).
+   unclear counted as half, and it is written as an ``account.scoring.fit`` claim on the account.
+5. **The receipt** — asked, found, analyzed, Exa's recall estimate, every search, the guard counts,
+   the money. A short list is information, never padded (§4).
 
 Two laws shape the code below.
 
@@ -38,11 +44,12 @@ Two laws shape the code below.
   the run ``needs_review`` with a named reason on its receipt, and the candidates already verified
   are kept — they were paid for.
 
-**No spend on a company we already have, or already showed.** A verified domain that is already an
-account of this workspace is ``duplicate_of_existing``; one an earlier run of this project showed
-and the human did not tick is ``not_chosen_before`` (ruling 1′: unapproved is not rejected). Both
-are recorded as candidates and cost exactly the one website answer that identified them — never a
-gate.
+**No gate is asked about a company this project already has, or already found.** A verified domain
+already among this project's accounts is ``duplicate_of_existing``; one an earlier discovery run
+of this project found is ``found_before``. Both are recorded as candidates and cost exactly the one
+website answer that identified them. A company that is an account of the workspace but not of this
+project IS verified against this project's ICP and joins this project on its existing account row
+(founder ruling 2026-09-28).
 """
 
 from __future__ import annotations
@@ -53,7 +60,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue, SecretStr
@@ -65,7 +72,14 @@ from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
 from clue_api.arv2.discovery_brief import DiscoveryBrief, compile_brief
 from clue_api.arv2.discovery_launch import read_icp_document
-from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow, Disposition, Pass
+from clue_api.arv2.discovery_store import (
+    CandidateRow,
+    DiscoveryRunRow,
+    Disposition,
+    Pass,
+    SearchKind,
+    SearchRow,
+)
 from clue_api.arv2.discovery_verifier import (
     OUTPUT_SCHEMA,
     WEBSITE_SCHEMA,
@@ -82,7 +96,7 @@ from clue_api.arv2.exa_client import ExaAnswerResult, ExaClient
 from clue_api.arv2.exa_websets_client import (
     ExaWebsetsClient,
     WebsetItem,
-    WebsetSearchView,
+    WebsetItemsResult,
     WebsetView,
 )
 from clue_api.arv2.fleet_task import arv2_discovery_work_id
@@ -126,8 +140,11 @@ PROVIDER_HALTED = "provider_halted"
 #: The failure a task whose work id disagrees with its payload records.
 INVALID_TASK_PAYLOAD = "invalid_task_payload"
 
-#: The failure a webset whose strict search cannot be named records.
-WEBSET_SEARCH_AMBIGUOUS = "webset_search_ambiguous"
+#: The failure a Websets call Exa refused (a non-2xx other than a refusal to sell) records.
+WEBSET_REFUSED = "websets_request_refused"
+
+#: The three searches a run may make, in order, with the pass their companies are recorded under.
+_SEARCHES: tuple[tuple[int, SearchKind], ...] = ((1, "strict"), (2, "strict_topup"), (3, "relaxed"))
 
 #: The candidate id is derived from ``(run, domain)``, so a resumed run re-addresses the row it
 #: already wrote instead of racing its own ``ON CONFLICT`` for a second id.
@@ -157,11 +174,23 @@ _REVENUE_BANDS: tuple[tuple[int | None, str], ...] = (
 #: The dispositions that mean "the human is being shown this company" — what §4's *shown* counts.
 _SHOWN: frozenset[str] = frozenset({"pass", "partial", "unclear"})
 
-#: Every live account domain of one workspace: the always-on local dedupe (§2), read once per run.
-_WORKSPACE_DOMAINS = text(
+#: Every live account of one workspace by domain, oldest first: a company found here that is not
+#: yet in this project joins it on this row instead of getting a second account.
+_WORKSPACE_ACCOUNTS = text(
     """
-    SELECT primary_domain FROM account_entity
+    SELECT primary_domain, id FROM account_entity
     WHERE workspace_id = :workspace_id AND merged_into IS NULL AND primary_domain IS NOT NULL
+    ORDER BY created_at, id
+    """
+)
+
+#: The domains of this project's accounts — the companies a run never spends a gate on.
+_PROJECT_DOMAINS = text(
+    """
+    SELECT a.primary_domain FROM project_account p
+    JOIN account_entity a ON a.id = p.account_entity_id AND a.workspace_id = p.workspace_id
+    WHERE p.workspace_id = :workspace_id AND p.project_id = :project_id
+      AND a.primary_domain IS NOT NULL
     """
 )
 
@@ -191,17 +220,14 @@ class _WallExceeded(Arv2Error):
     """The webset did not reach ``idle`` inside the run's wall clock."""
 
 
-class _SearchAmbiguous(Arv2Error):
-    """The webset carries more than one search and nothing says which is the strict one.
+class _WebsetRefused(Arv2Error):
+    """Exa answered a Websets call with a non-2xx that is not a refusal to sell.
 
-    Only reachable on a run whose ``strict_search_id`` was never recorded (an attempt that died
-    between ``create`` and ``record_webset``) and whose webset has since grown a second search.
-    Guessing by array position is what this refusal exists to prevent: the wrong guess excludes
-    the wrong search when widening, mislabels every candidate's pass, and drops a criterion using
-    another search's success rates. A human relaunches; nothing is bought.
+    Named rather than read as an empty answer: the old widening search was refused with a 400 on
+    every run for weeks and read as a search that found nobody.
     """
 
-    code = WEBSET_SEARCH_AMBIGUOUS
+    code = WEBSET_REFUSED
 
 
 @dataclass
@@ -211,41 +237,54 @@ class _RunState:
     run: DiscoveryRunRow
     brief: DiscoveryBrief
     today: date
+    #: The current search's wall clock (the limit applies per search, founder ruling 2026-09-28).
     deadline: datetime
-    #: Workspace accounts (the local dedupe set) and the domains this run has already looked at.
-    existing: set[str]
-    unapproved: frozenset[str]
+    #: This project's accounts by domain: no gate is spent on them (``duplicate_of_existing``).
+    project_domains: set[str]
+    #: Every company an earlier discovery run of this project found (``found_before``).
+    found_before: frozenset[str]
+    #: Every live account of the workspace by domain: a company found here that is not in this
+    #: project is verified against this project's ICP and joins it on this account.
+    workspace_accounts: dict[str, UUID]
+    #: Every webset an earlier discovery run of this project bought — each search skips them all.
+    prior_websets: tuple[str, ...]
     seen: set[str] = field(default_factory=set)
     #: The human who owns and created every account this run lands (founder ruling 2026-09-11:
     #: creator is owner) — the run's requester when that id is a real platform user, else
     #: ``None``. A deepagent-launched run records the fleet's service principal as its requester,
     #: which is nobody's owner and no FK target, so it is resolved once here rather than trusted.
     owner_user_id: str | None = None
+    #: This run's searches by ordinal, as recorded.
+    searches: dict[int, SearchRow] = field(default_factory=dict)
+    #: The webset the current search is reading, and its status as Exa last reported it. Anything
+    #: but ``idle`` means Exa may still be finding — and charging for — companies, which is what
+    #: :meth:`Arv2DiscoveryWorkHandler._stop_webset` is for.
     webset_id: str | None = None
-    strict_search_id: str | None = None
-    #: Set once the widening search has been bought — the relaxed pass then READS it rather than
-    #: buying a second one (which would exclude only the strict search and re-charge for the first
-    #: widening's results).
-    relaxed_search_id: str | None = None
-    #: Every webset row this run has already been charged for. A webset is read again on every
-    #: resume and again after a widening search, and each read returns every row, so without this
-    #: the strict pass's rows are priced onto the ledger two or three times — on the exact number
-    #: §8's exit gate divides by.
+    webset_status: str | None = None
+    #: This run cancelled a webset because it stopped reading before Exa was done, and how many
+    #: rows the read after the cancel put on the ledger that no earlier read had.
+    webset_stopped: bool = False
+    rows_priced_at_stop: int = 0
+    #: Every webset row this run has already been charged for. A webset is read on every poll and
+    #: again on every resume, and each read returns every row, so without this a row would be
+    #: priced onto the ledger many times — on the exact number §8's exit gate divides by.
     priced_item_ids: set[str] = field(default_factory=set)
+    #: Search 1's per-criterion success rates: what the relaxed search's dropped criterion is
+    #: chosen from.
     strict_rates: tuple[tuple[str, float | None], ...] = ()
-    asked: int | None = None
     recall_estimate: int | None = None
-    analyzed: int = 0
-    found_strict: int = 0
-    found_relaxed: int = 0
+    #: What each search's webset holds and how many companies Exa analyzed for it, by ordinal.
+    found_by_search: dict[int, int] = field(default_factory=dict)
+    analyzed_by_search: dict[int, int] = field(default_factory=dict)
     shown: int = 0
     duplicates: int = 0
-    not_chosen_before: int = 0
+    found_before_count: int = 0
+    #: Companies another project already had that this run verified and added to this project.
+    from_other_projects: int = 0
     unresolvable: int = 0
     guards: dict[str, int] = field(default_factory=dict)
     #: One entry per company that was on the list and could not be finished, with the named reason.
     candidate_failures: list[dict[str, str]] = field(default_factory=list)
-    criteria_relaxed: tuple[str, ...] | None = None
     cost_usd: Decimal = Decimal(0)
     #: The one cap on verification hops in flight (Task 3): candidates verify in a pool and a
     #: candidate's gates are asked together, all under this semaphore. Built in ``_compose``.
@@ -256,6 +295,26 @@ class _RunState:
 
     def count_guard(self, guard: str) -> None:
         self.guards[guard] = self.guards.get(guard, 0) + 1
+
+    @property
+    def found_strict(self) -> int:
+        return sum(
+            found
+            for ordinal, found in self.found_by_search.items()
+            if self.searches[ordinal].kind != "relaxed"
+        )
+
+    @property
+    def found_relaxed(self) -> int:
+        return sum(
+            found
+            for ordinal, found in self.found_by_search.items()
+            if self.searches[ordinal].kind == "relaxed"
+        )
+
+    @property
+    def analyzed(self) -> int:
+        return sum(self.analyzed_by_search.values())
 
 
 class Arv2DiscoveryWorkHandler:
@@ -343,13 +402,7 @@ class Arv2DiscoveryWorkHandler:
         state = await self._compose(run)
         status, failure = "completed", None
         try:
-            if run.webset_id:
-                # A webset this run already paid for is never bought twice — not on a plain
-                # resume (a lost lease, a stop, a worker restart), and not on a relaxed request.
-                await self._resume_webset(state, verify=not run.relaxed_requested)
-            else:
-                await self._strict_pass(state)
-            await self._relaxed_pass(state)
+            await self._search(state)
         except _WallExceeded as exceeded:
             status, failure = "needs_review", (WEBSET_WALL_EXCEEDED, str(exceeded))
         except ProviderHalted as halted:
@@ -360,6 +413,12 @@ class Arv2DiscoveryWorkHandler:
                 reason=halted.reason_code,
             )
             status, failure = "needs_review", (PROVIDER_HALTED, str(halted))
+        except Exception:
+            # ``handle`` contains this and lands the run; the webset must stop first.
+            await self._stop_webset(state)
+            raise
+        if failure is not None:
+            await self._stop_webset(state)
         if status == "completed" and state.candidate_failures:
             # Every other candidate landed and every counter is kept; the run still asks for a
             # human, because a company that was on the list and has no verdict is not a finished
@@ -382,13 +441,21 @@ class Arv2DiscoveryWorkHandler:
                 artifact_sha256=run.icp_artifact_sha256,
             )
             brief = compile_brief(icp.front, icp.body, criteria_gate_keys=run.criteria_gate_keys)
-            existing = await self._workspace_domains(conn, run.workspace_id)
-            unapproved = await self._store.unapproved_domains(
+            workspace_accounts = await self._workspace_accounts(conn, run.workspace_id)
+            project_domains = await self._project_domains(conn, run)
+            found_before = await self._store.project_found_domains(
                 conn,
                 workspace_id=run.workspace_id,
                 project_id=run.project_id,
                 before_run_id=run.run_id,
             )
+            prior_websets = await self._store.project_webset_ids(
+                conn,
+                workspace_id=run.workspace_id,
+                project_id=run.project_id,
+                before_run_id=run.run_id,
+            )
+            searches = await self._store.list_searches(conn, run_id=run.run_id)
             already = await self._store.list_candidates(conn, run_id=run.run_id)
             owner_user_id = await self._owner_user(conn, run.requested_by_user_id)
         state = _RunState(
@@ -396,18 +463,20 @@ class Arv2DiscoveryWorkHandler:
             brief=brief,
             today=now.date(),
             deadline=now + timedelta(seconds=self._settings.arv2_discovery_wall_s),
-            existing=existing,
-            unapproved=frozenset(unapproved),
+            project_domains=project_domains,
+            found_before=frozenset(found_before),
+            workspace_accounts=workspace_accounts,
+            prior_websets=tuple(prior_websets),
             owner_user_id=owner_user_id,
-            webset_id=run.webset_id,
-            strict_search_id=run.strict_search_id,
-            relaxed_search_id=run.relaxed_search_id,
-            asked=run.asked,
+            searches={search.ordinal: search for search in searches},
             recall_estimate=run.recall_estimate,
-            found_strict=run.found_strict or 0,
-            found_relaxed=run.found_relaxed or 0,
             hops=asyncio.Semaphore(self._settings.arv2_discovery_verify_concurrency),
         )
+        for search in searches:
+            if search.found is not None:
+                state.found_by_search[search.ordinal] = search.found
+            if search.analyzed is not None:
+                state.analyzed_by_search[search.ordinal] = search.analyzed
         # What an earlier attempt of this run already verified is neither re-asked nor re-billed.
         # A candidate still ``pending`` is the exception: an attempt that died between writing the
         # row and recording its verdicts bought nothing that survives, so skipping it would strand
@@ -429,136 +498,228 @@ class Arv2DiscoveryWorkHandler:
                 state.priced_item_ids.add(item_id)
         return state
 
-    # -- step one: the long list ---------------------------------------------------------------
+    # -- step one: the searches ------------------------------------------------------------------
 
-    async def _strict_pass(self, state: _RunState) -> None:
-        """Buy one webset with the full criteria, wait for it, and verify everything it found."""
-        run = state.run
-        title = f"ARV2 discovery {run.project_id} {run.icp_key}@{run.icp_version}"
-        view = await self._hop(
-            state,
-            lambda caller: self._clients.websets(caller).create(
-                query=state.brief.query,
-                count=run.strict_count,
-                criteria=state.brief.criteria,
-                external_id=f"arv2-discovery:{run.run_id}",
-                title=title,
-            ),
-        )
-        state.webset_id = view.webset_id
-        state.asked = run.strict_count
-        self._read_searches(state, view)
-        async with self._connection() as conn:
-            await self._store.record_webset(
-                conn,
-                run_id=run.run_id,
-                webset_id=view.webset_id,
-                asked=run.strict_count,
-                recall_estimate=state.recall_estimate,
-                # The create response names the one search this webset has, so the strict id is
-                # durable from the first write — a resumed attempt never has to guess it.
-                strict_search_id=state.strict_search_id,
-            )
-        await self._watch_and_verify(state, view.webset_id, pass_="strict")
+    async def _search(self, state: _RunState) -> None:
+        """Run the searches in order until the run holds its number or has nothing left to ask.
 
-    async def _resume_webset(self, state: _RunState, *, verify: bool) -> None:
-        """Pick a recorded webset back up instead of buying a second one.
-
-        Two callers, one rule — ``webset_id`` set means *never create*:
-
-        * ``verify=False`` is the human's relaxed request on a run that already finished. Only the
-          free read: the webset's searches are what the relaxed pass excludes and what its criteria
-          choice is made from, and every candidate the strict pass produced is already recorded.
-        * ``verify=True`` is a plain resume — the attempt that bought this webset was suspended,
-          stopped or lost its lease part-way through verifying it. The list is polled and read
-          again and every company this run has not already *finished* verifying is verified now.
-          A candidate left ``pending`` is re-verified on purpose: its verdicts never landed, so
-          skipping it would strand a company with no verdict and no account (see :meth:`_compose`).
+        A search this run already finished is skipped; one it started — bought, or only recorded —
+        is picked back up rather than bought again (see :meth:`_run_search`). A search not yet
+        started starts only while the run is short, and only when :meth:`_criteria_for` says it
+        should run at all.
         """
-        webset_id = str(state.webset_id)
-        if not verify:
+        run = state.run
+        for ordinal, kind in _SEARCHES:
+            search = state.searches.get(ordinal)
+            if search is not None and search.finished_at is not None:
+                continue
+            if search is None:
+                if state.shown >= run.target_count:
+                    return
+                criteria = await self._criteria_for(state, kind)
+                if criteria is None:
+                    continue
+                search = await self._open_search(state, ordinal, kind, criteria)
+            await self._run_search(state, search)
+
+    async def _criteria_for(self, state: _RunState, kind: SearchKind) -> tuple[str, ...] | None:
+        """The criteria a search of this kind sends, or ``None`` when it should not run.
+
+        * ``strict`` — the brief's criteria, always.
+        * ``strict_topup`` — the same criteria, but only when Exa FILLED search 1 and our own checks
+          (a company this project has, one found before, an unconfirmable website) removed some of
+          it. When Exa found fewer than it was asked for it has run out: the same search again finds
+          nothing new, so the run goes straight to the relaxed search (founder ruling 2026-09-28).
+        * ``relaxed`` — the criteria minus the one search 1 satisfied least often, only when the run
+          allows it and something is left to send.
+        """
+        run = state.run
+        if kind == "strict":
+            return state.brief.criteria
+        first = state.searches.get(1)
+        if first is None:
+            return None
+        if kind == "strict_topup":
+            exa_filled = state.found_by_search.get(1, 0) >= first.asked
+            return state.brief.criteria if exa_filled else None
+        if not run.relaxed_enabled:
+            log.info(
+                "arv2.discovery_relaxed_skipped",
+                run_id=str(run.run_id),
+                shown=state.shown,
+                target=run.target_count,
+            )
+            return None
+        if not state.strict_rates and first.webset_id is not None:
+            # A resumed run that finished search 1 in an earlier attempt re-reads its success rates
+            # (a free read) rather than choosing the dropped criterion blind.
+            webset_id = first.webset_id
             view = await self._hop(
                 state, lambda caller: self._clients.websets(caller).get(webset_id)
             )
-            self._read_searches(state, view)
-            log.info(
-                "arv2.discovery_relaxed_resume",
-                run_id=str(state.run.run_id),
-                webset_id=webset_id,
-                already=state.shown,
-            )
-            return
-        log.info(
-            "arv2.discovery_resume",
-            run_id=str(state.run.run_id),
-            webset_id=webset_id,
-            already=len(state.seen),
+            self._require(view)
+            self._read_view(state, first, view, current=False)
+        criteria = relaxed_criteria(first.criteria, state.strict_rates)
+        return criteria or None
+
+    async def _open_search(
+        self, state: _RunState, ordinal: int, kind: SearchKind, criteria: tuple[str, ...]
+    ) -> SearchRow:
+        """Record the next search — before anything is bought — asking only for the shortfall.
+
+        It skips every webset this project's earlier discovery runs bought and every webset this
+        run has bought so far, so no company is found, or charged for, a second time.
+        """
+        run = state.run
+        own = tuple(
+            search.webset_id
+            for _, search in sorted(state.searches.items())
+            if search.webset_id is not None
         )
-        await self._watch_and_verify(state, webset_id, pass_="resume")
+        row = SearchRow(
+            run_id=run.run_id,
+            ordinal=ordinal,
+            kind=kind,
+            external_id=f"arv2-discovery:{run.run_id}:{ordinal}",
+            asked=run.target_count - state.shown,
+            criteria=tuple(criteria),
+            exclude_webset_ids=tuple(dict.fromkeys(state.prior_websets + own)),
+        )
+        async with self._connection() as conn:
+            held: SearchRow = await self._store.create_search(conn, row)
+        state.searches[ordinal] = held
+        log.info(
+            "arv2.discovery_search_opened",
+            run_id=str(run.run_id),
+            ordinal=ordinal,
+            kind=kind,
+            asked=held.asked,
+            excluded_websets=len(held.exclude_webset_ids),
+        )
+        return held
+
+    async def _run_search(self, state: _RunState, search: SearchRow) -> None:
+        """Buy this search's webset if nobody has yet, verify everything it finds, then close it.
+
+        A row with no ``webset_id`` is either a search never created or one whose create answered
+        after the attempt died: the webset is looked up by ``external_id`` first, so only the
+        former is bought. The wall clock is this search's own (founder ruling 2026-09-28).
+        """
+        run = state.run
+        state.deadline = self._clock() + timedelta(seconds=self._settings.arv2_discovery_wall_s)
+        if search.webset_id is None:
+            external_id = search.external_id
+            view = await self._hop(
+                state, lambda caller: self._clients.websets(caller).find(external_id)
+            )
+            if view is None:
+                title = (
+                    f"ARV2 discovery {run.project_id} {run.icp_key}@{run.icp_version} "
+                    f"search {search.ordinal}"
+                )
+                view = await self._hop(
+                    state,
+                    lambda caller: self._clients.websets(caller).create(
+                        query=state.brief.query,
+                        count=search.asked,
+                        criteria=search.criteria,
+                        external_id=external_id,
+                        title=title,
+                        exclude_webset_ids=search.exclude_webset_ids,
+                        # The pool-size estimate is asked once, of the first search: it is what
+                        # tells "Exa ran out" apart from "our checks removed some".
+                        recall=search.ordinal == 1,
+                    ),
+                )
+            self._require(view)
+            search = replace(search, webset_id=view.webset_id)
+            state.searches[search.ordinal] = search
+            self._read_view(state, search, view)
+            async with self._connection() as conn:
+                await self._store.record_search_webset(
+                    conn,
+                    run_id=run.run_id,
+                    ordinal=search.ordinal,
+                    webset_id=view.webset_id,
+                    recall_estimate=state.recall_estimate if search.ordinal == 1 else None,
+                )
+        else:
+            log.info(
+                "arv2.discovery_search_resumed",
+                run_id=str(run.run_id),
+                ordinal=search.ordinal,
+                webset_id=search.webset_id,
+            )
+        state.webset_id = search.webset_id
+        await self._watch_and_verify(state, search)
+        async with self._connection() as conn:
+            await self._store.finish_search(
+                conn,
+                run_id=run.run_id,
+                ordinal=search.ordinal,
+                found=state.found_by_search.get(search.ordinal, 0),
+                analyzed=state.analyzed_by_search.get(search.ordinal),
+                recall_estimate=state.recall_estimate if search.ordinal == 1 else None,
+            )
+        state.searches[search.ordinal] = replace(
+            search,
+            found=state.found_by_search.get(search.ordinal, 0),
+            finished_at=self._clock(),
+        )
 
     @staticmethod
-    def _is_strict_item(state: _RunState, item: WebsetItem) -> bool:
-        """Did the strict search find this item? An item Exa did not attribute counts as strict —
-        the strict search is the only one a run is guaranteed to have made."""
-        if item.search_id is None or state.strict_search_id is None:
-            return True
-        return item.search_id == state.strict_search_id
+    def _require(view: WebsetView) -> None:
+        """A view Exa answered with a non-2xx describes nothing; say so by name."""
+        if view.error is not None:
+            raise _WebsetRefused(f"exa websets refused webset {view.webset_id}: {view.error}")
 
     async def _read_items(self, state: _RunState, webset_id: str) -> tuple[WebsetItem, ...]:
-        """The billed read of the long list. ``all_green`` is Exa's *bill*, never a verdict.
+        """The billed read of one webset. ``all_green`` is Exa's *bill*, never a verdict.
 
-        A webset is read again on every resume and again after the widening search, and each read
-        returns the WHOLE webset — so the rows this run has already been charged for are named to
-        the client and priced at zero. The bill for one row is paid once per run, which is what
-        makes the receipt's ``cost_usd`` (and §8's cost-per-approved-account) mean what it says.
+        A webset is read on every poll and again on every resume, and each read returns the WHOLE
+        webset — so the rows this run has already been charged for are named to the client and
+        priced at zero. The bill for one row is paid once per run, which is what makes the
+        receipt's ``cost_usd`` (and §8's cost-per-approved-account) mean what it says.
         """
         priced = frozenset(state.priced_item_ids)
-        result = await self._hop(
+        result: WebsetItemsResult = await self._hop(
             state,
             lambda caller: self._clients.websets(caller).items(webset_id, priced_item_ids=priced),
         )
         state.priced_item_ids.update(result.priced_item_ids)
+        if result.error is not None:
+            raise _WebsetRefused(f"exa websets refused the items of {webset_id}: {result.error}")
         log.info(
             "arv2.discovery_items",
             run_id=str(state.run.run_id),
+            webset_id=webset_id,
             items=len(result.items),
             credits_est=result.credits_est,
             newly_priced=len(result.priced_item_ids),
         )
         return result.items
 
-    async def _watch_and_verify(
-        self, state: _RunState, webset_id: str, *, pass_: Literal["strict", "relaxed", "resume"]
-    ) -> None:
-        """Poll the webset to ``idle`` and verify every new item on every tick (spec §2).
+    async def _watch_and_verify(self, state: _RunState, search: SearchRow) -> None:
+        """Poll one search's webset to ``idle`` and verify every new item on every tick (spec §2).
 
         Each tick lists the webset (a row is priced once per run, so re-listing costs nothing),
         hands every unclaimed item to a task, records the counters, and sleeps. On ``idle`` one
-        last list catches stragglers, and the pool is drained before returning. ``pass_`` decides
-        the candidate's recorded pass: a resume labels each item by the search that found it.
+        last list catches stragglers, and the pool is drained before returning.
 
         A company is claimed **at dispatch**, by item id and by registrable domain: two rows of one
-        company — the same row re-listed on the next tick, or the strict row the widened webset
-        returns again — must never be two verifications, which would be two bills and two accounts.
+        company must never be two verifications, which would be two bills and two accounts.
 
-        Containment is per task (``_verify_contained``); ``ProviderHalted`` and the wall clock
-        are not contained — the first of either cancels the pool and re-raises, so ``_run`` lands
-        the run ``needs_review`` exactly as it does today.
+        Containment is per task (``_verify_contained``); ``ProviderHalted``, a refused Websets call
+        and the wall clock are not contained — the first of them cancels the pool and re-raises, so
+        ``_run`` lands the run ``needs_review``.
         """
+        webset_id = str(search.webset_id)
+        pass_: Pass = "relaxed" if search.kind == "relaxed" else "strict"
         tasks: set[asyncio.Task[None]] = set()
-
-        def _label(item: WebsetItem) -> Pass:
-            if pass_ == "resume":
-                return "strict" if self._is_strict_item(state, item) else "relaxed"
-            return pass_
 
         async def _tick(final: bool) -> None:
             items = await self._read_items(state, webset_id)
-            # What the list HOLDS, not what this attempt happened to verify — and monotonic, so a
-            # tick that lists fewer rows than the one before it cannot walk a counter backwards.
-            strict = [item for item in items if self._is_strict_item(state, item)]
-            state.found_strict = max(state.found_strict, len(strict))
-            state.found_relaxed = max(state.found_relaxed, len(items) - len(strict))
+            self._count_found(state, search, items)
             for item in items:
                 domain = registrable_domain(item.url) or ""
                 if item.item_id in state.claimed:
@@ -568,9 +729,7 @@ class Arv2DiscoveryWorkHandler:
                 state.claimed.add(item.item_id)
                 if domain:
                     state.seen.add(domain)
-                tasks.add(
-                    asyncio.create_task(self._verify_contained(state, item, pass_=_label(item)))
-                )
+                tasks.add(asyncio.create_task(self._verify_contained(state, item, pass_=pass_)))
             async with self._connection() as conn:
                 await self._store.record_discovery_progress(
                     conn,
@@ -594,7 +753,8 @@ class Arv2DiscoveryWorkHandler:
                 view = await self._hop(
                     state, lambda caller: self._clients.websets(caller).get(webset_id)
                 )
-                self._read_searches(state, view)
+                self._require(view)
+                self._read_view(state, search, view)
                 if view.status == "idle":
                     await _tick(final=True)
                     return
@@ -633,18 +793,77 @@ class Arv2DiscoveryWorkHandler:
         await asyncio.gather(*tasks)
         tasks.clear()
 
-    def _read_searches(self, state: _RunState, view: WebsetView) -> None:
-        """Keep the strict search's id, rates and counters from the view that last reported them."""
+    def _count_found(
+        self, state: _RunState, search: SearchRow, items: Sequence[WebsetItem]
+    ) -> None:
+        """What the search's webset HOLDS, not what this attempt happened to verify — and
+        monotonic, so a read that lists fewer rows than the one before cannot walk it backwards."""
+        state.found_by_search[search.ordinal] = max(
+            state.found_by_search.get(search.ordinal, 0), len(items)
+        )
+
+    async def _stop_webset(self, state: _RunState) -> None:
+        """Cancel a webset this run stopped reading before Exa was done, then read it once more.
+
+        Exa charges for a company when it finds it; the ledger prices a company when this run
+        reads it. A run that ends early — a provider halt, the wall clock, an uncontained error —
+        would otherwise leave its webset finding (and billing) up to ``count`` companies nobody
+        ever reads: run ``ee79d837`` stopped at 7 of 35 and Exa went on to find all 35. The cancel
+        stops the finding; the read puts on the ledger every row Exa had already found.
+
+        A webset already ``idle`` has nothing to stop, and its last read priced every row. A
+        suspended run is not stopped either: its resume reads the same webset. Never raises — the
+        run is already ending, and a failure here is logged rather than replacing its reason.
+        """
+        if state.webset_id is None or state.webset_status == "idle":
+            return
+        webset_id = state.webset_id
+        try:
+            view = await self._hop(
+                state, lambda caller: self._clients.websets(caller).cancel(webset_id)
+            )
+            state.webset_status = view.status
+            state.webset_stopped = True
+        except Exception:  # noqa: BLE001 — the run's own failure stays the reason on its receipt
+            log.exception("arv2.discovery_webset_cancel_failed", run_id=str(state.run.run_id))
+        try:
+            already = len(state.priced_item_ids)
+            items = await self._read_items(state, webset_id)
+            state.rows_priced_at_stop += len(state.priced_item_ids) - already
+            current = next(
+                (search for search in state.searches.values() if search.webset_id == webset_id),
+                None,
+            )
+            if current is not None:
+                self._count_found(state, current, items)
+        except Exception:  # noqa: BLE001 — as above
+            log.exception("arv2.discovery_webset_final_read_failed", run_id=str(state.run.run_id))
+        log.info(
+            "arv2.discovery_webset_stopped",
+            run_id=str(state.run.run_id),
+            webset_id=webset_id,
+            cancelled=state.webset_stopped,
+            rows_priced_at_stop=state.rows_priced_at_stop,
+        )
+
+    def _read_view(
+        self, state: _RunState, search: SearchRow, view: WebsetView, *, current: bool = True
+    ) -> None:
+        """Keep what a poll of a search's webset reports: its status (for the current search), how
+        many companies Exa analyzed, and — for search 1 — the criteria's success rates and the
+        pool-size estimate. Each webset holds exactly one search."""
+        if current:
+            state.webset_status = view.status
         if not view.searches:
             return
-        strict = _strict_search(view, state.strict_search_id)
-        if strict is not None:
-            state.strict_search_id = strict.search_id
-            if strict.criteria_success_rates:
-                state.strict_rates = strict.criteria_success_rates
-            if strict.recall_estimate is not None:
-                state.recall_estimate = strict.recall_estimate
-        state.analyzed = sum(search.analyzed or 0 for search in view.searches)
+        reported = view.searches[0]
+        if reported.analyzed is not None:
+            state.analyzed_by_search[search.ordinal] = reported.analyzed
+        if search.ordinal == 1:
+            if reported.criteria_success_rates:
+                state.strict_rates = reported.criteria_success_rates
+            if reported.recall_estimate is not None:
+                state.recall_estimate = reported.recall_estimate
 
     # -- step two: the verifier ----------------------------------------------------------------
 
@@ -731,21 +950,28 @@ class Arv2DiscoveryWorkHandler:
         fit = fit_score(verdicts)
         outcome = disposition(verdicts)
         logo = await self._resolve_logo(state, item=item, verified=verified)
+        # An account of the workspace that is not in this project (founder ruling 2026-09-28) is
+        # checked against THIS project's ICP like any other company, and joins this project on its
+        # own row — a second account for one domain would split its research in two.
+        existing_account = state.workspace_accounts.get(verified)
         async with self._connection() as conn:
-            account_id = await insert_account_entity(
-                conn,
-                canonical_name=item.name,
-                primary_domain=verified,
-                workspace_id=run.workspace_id,
-                status=AccountStatus.CANDIDATE,
-                # Founder ruling 2026-09-11: the creator is the owner by default — the human who
-                # launched the discovery made these accounts exist and owns them until an
-                # ownership mechanism says otherwise. Only a real platform user is stamped: a run
-                # the deepagent launched on the fleet records the service principal as its
-                # requester, and that id is no owner (and no FK target).
-                owner_user_id=state.owner_user_id,
-                created_by_user_id=state.owner_user_id,
-            )
+            if existing_account is not None:
+                account_id = EntityId(existing_account)
+            else:
+                account_id = await insert_account_entity(
+                    conn,
+                    canonical_name=item.name,
+                    primary_domain=verified,
+                    workspace_id=run.workspace_id,
+                    status=AccountStatus.CANDIDATE,
+                    # Founder ruling 2026-09-11: the creator is the owner by default — the human
+                    # who launched the discovery made these accounts exist and owns them until an
+                    # ownership mechanism says otherwise. Only a real platform user is stamped: a
+                    # run the deepagent launched on the fleet records the service principal as its
+                    # requester, and that id is no owner (and no FK target).
+                    owner_user_id=state.owner_user_id,
+                    created_by_user_id=state.owner_user_id,
+                )
             await self._write_claims(
                 conn,
                 state,
@@ -778,7 +1004,10 @@ class Arv2DiscoveryWorkHandler:
                 account_entity_ids=[UUID(str(account_id))],
                 added_via="discovered",
             )
-        state.existing.add(verified)
+        state.project_domains.add(verified)
+        state.workspace_accounts[verified] = UUID(str(account_id))
+        if existing_account is not None:
+            state.from_other_projects += 1
         if outcome in _SHOWN:
             state.shown += 1
         log.info(
@@ -787,6 +1016,7 @@ class Arv2DiscoveryWorkHandler:
             domain=verified,
             disposition=outcome,
             fit=fit,
+            from_other_project=existing_account is not None,
         )
 
     async def _verify_website(
@@ -807,13 +1037,18 @@ class Arv2DiscoveryWorkHandler:
         return answered or websets_domain, evidence_url
 
     def _pre_spend_disposition(self, state: _RunState, verified: str) -> Disposition | None:
-        """What this company is *before* a gate is asked, or ``None`` when it is worth verifying."""
-        if verified in state.existing:
+        """What this company is *before* a gate is asked, or ``None`` when it is worth verifying.
+
+        Already one of this project's accounts, or found by an earlier discovery run of this
+        project: nothing to ask. An account of ANOTHER project is worth verifying — against this
+        project's ICP — and is not refused here.
+        """
+        if verified in state.project_domains:
             state.duplicates += 1
             return "duplicate_of_existing"
-        if verified in state.unapproved:
-            state.not_chosen_before += 1
-            return "not_chosen_before"
+        if verified in state.found_before:
+            state.found_before_count += 1
+            return "found_before"
         return None
 
     async def _verify_gates(
@@ -1024,84 +1259,6 @@ class Arv2DiscoveryWorkHandler:
             markers=dict(markers),
         )
 
-    # -- step three: the relaxed pass ----------------------------------------------------------
-
-    async def _relaxed_pass(self, state: _RunState) -> None:
-        """A second search on the same webset when the run is short — §4's honest widening.
-
-        The dropped criterion is the one the strict search's own success rates say was starving it,
-        never a guess. Every company it returns is verified on **all** the gates, exactly like a
-        strict one, so it lands with an honestly weaker score rather than a hidden one.
-
-        **The widening is bought once.** ``relaxed_search_id`` set on the run row means this run
-        already paid for its second search, so a redelivered task (a lost lease, a repeated relaxed
-        request) polls and reads it instead of calling ``add_search`` again — a second call would
-        exclude only the *strict* search, so Exa would re-find and re-charge for everything the
-        first widening returned, once per retry.
-        """
-        run = state.run
-        if state.shown >= run.target_count:
-            return
-        if not (run.relaxed_enabled or run.relaxed_requested):
-            log.info(
-                "arv2.discovery_relaxed_skipped",
-                run_id=str(run.run_id),
-                shown=state.shown,
-                target=run.target_count,
-            )
-            return
-        if state.webset_id is None:
-            log.info("arv2.discovery_relaxed_unavailable", run_id=str(run.run_id))
-            return
-        webset_id = state.webset_id
-        if state.relaxed_search_id is None:
-            if state.strict_search_id is None:
-                log.info("arv2.discovery_relaxed_unavailable", run_id=str(run.run_id))
-                return
-            await self._buy_relaxed_search(state, webset_id, state.strict_search_id)
-        else:
-            log.info(
-                "arv2.discovery_relaxed_already_bought",
-                run_id=str(run.run_id),
-                webset_id=webset_id,
-                relaxed_search_id=state.relaxed_search_id,
-            )
-        await self._watch_and_verify(state, webset_id, pass_="relaxed")
-
-    async def _buy_relaxed_search(
-        self, state: _RunState, webset_id: str, strict_search_id: str
-    ) -> None:
-        """Add the widening search to this webset and record its id before reading a single row."""
-        run = state.run
-        criteria = relaxed_criteria(state.brief.criteria, state.strict_rates)
-        state.criteria_relaxed = criteria
-        shortfall = run.target_count - state.shown
-        view = await self._hop(
-            state,
-            lambda caller: self._clients.websets(caller).add_search(
-                webset_id,
-                query=state.brief.query,
-                count=shortfall,
-                criteria=criteria,
-                exclude_search_ids=[strict_search_id],
-            ),
-        )
-        relaxed_search_id = _relaxed_search_id(view, strict_search_id)
-        if relaxed_search_id is None:
-            # The purchase happened; only its id is missing, so the read below still runs. What is
-            # lost is the "bought already" fact, which is stated rather than hidden.
-            log.warning(
-                "arv2.discovery_relaxed_search_unnamed",
-                run_id=str(run.run_id),
-                webset_id=webset_id,
-            )
-            return
-        state.relaxed_search_id = relaxed_search_id
-        async with self._connection() as conn:
-            await self._store.record_relaxed_search(
-                conn, run_id=run.run_id, relaxed_search_id=relaxed_search_id
-            )
-
     # -- landing ---------------------------------------------------------------------------------
 
     async def _land(
@@ -1109,25 +1266,36 @@ class Arv2DiscoveryWorkHandler:
     ) -> None:
         """Write the run's terminal row: the §4 counters and the receipt behind them."""
         receipt: dict[str, JsonValue] = {
-            "asked": state.asked,
+            "asked": sum(search.asked for search in state.searches.values()) or None,
             "recall_estimate": state.recall_estimate,
             "shown": state.shown,
             "target_count": state.run.target_count,
             "criteria": list(state.brief.criteria),
-            # ``criteria_relaxed`` is what THIS attempt sent, so it is null on an attempt that
-            # found the widening already bought and only read it. ``relaxed_search_id`` is what
-            # says a widening happened at all, so the pair is never silent about one.
-            "criteria_relaxed": (
-                list(state.criteria_relaxed) if state.criteria_relaxed is not None else None
-            ),
-            "relaxed_search_id": state.relaxed_search_id,
+            # Every search this run made, in order: what it asked for, what it sent, what it found.
+            "searches": [
+                {
+                    "ordinal": search.ordinal,
+                    "kind": search.kind,
+                    "asked": search.asked,
+                    "criteria": list(search.criteria),
+                    "excluded_websets": len(search.exclude_webset_ids),
+                    "webset_id": search.webset_id,
+                    "found": state.found_by_search.get(search.ordinal),
+                }
+                for _, search in sorted(state.searches.items())
+            ],
             "guards": dict(state.guards),
             "cost_usd": str(state.cost_usd),
             # States the assumption behind the number above: a webset row is priced once per run,
-            # not once per read, so a resumed or widened run does not over-report its own spend.
+            # not once per read, so a resumed run does not over-report its own spend.
             "credits_priced_once": True,
+            # The run ended before a webset did, so it cancelled it (see ``_stop_webset``), and
+            # this many rows reached the ledger only through the read after the cancel.
+            "webset_stopped": state.webset_stopped,
+            "rows_priced_at_stop": state.rows_priced_at_stop,
             "duplicates": state.duplicates,
-            "not_chosen_before": state.not_chosen_before,
+            "found_before": state.found_before_count,
+            "from_other_projects": state.from_other_projects,
             "unresolvable_domain": state.unresolvable,
             "candidate_failures": [dict(failure) for failure in state.candidate_failures],
         }
@@ -1237,16 +1405,30 @@ class Arv2DiscoveryWorkHandler:
         async with self._conn_factory() as conn:
             yield conn
 
-    async def _workspace_domains(self, conn: AsyncConnection, workspace_id: str) -> set[str]:
-        """Every live account domain of the workspace — the local dedupe set, read once per run."""
-        rows = await conn.execute(_WORKSPACE_DOMAINS, {"workspace_id": workspace_id})
-        domains: set[str] = set()
+    async def _workspace_accounts(
+        self, conn: AsyncConnection, workspace_id: str
+    ) -> dict[str, UUID]:
+        """Every live account of the workspace by folded domain, read once per run. When two
+        accounts share a domain the oldest is the one a found company joins."""
+        rows = await conn.execute(_WORKSPACE_ACCOUNTS, {"workspace_id": workspace_id})
+        accounts: dict[str, UUID] = {}
         for row in rows:
-            raw = str(row[0] or "")
-            folded = registrable_domain(raw) or raw.strip().lower()
-            if folded:
-                domains.add(folded)
-        return domains
+            folded = _fold(row[0])
+            if folded and folded not in accounts:
+                accounts[folded] = UUID(str(row[1]))
+        return accounts
+
+    async def _project_domains(self, conn: AsyncConnection, run: DiscoveryRunRow) -> set[str]:
+        """The folded domains of this project's accounts, read once per run."""
+        rows = await conn.execute(
+            _PROJECT_DOMAINS, {"workspace_id": run.workspace_id, "project_id": run.project_id}
+        )
+        return {folded for row in rows if (folded := _fold(row[0]))}
+
+
+def _fold(domain: object) -> str:
+    raw = str(domain or "")
+    return registrable_domain(raw) or raw.strip().lower()
 
 
 def relaxed_criteria(
@@ -1268,43 +1450,6 @@ def relaxed_criteria(
         if worst is None or score <= worst:
             worst, worst_index = score, index
     return tuple(criterion for index, criterion in enumerate(criteria) if index != worst_index)
-
-
-def _strict_search(view: WebsetView, known: str | None) -> WebsetSearchView | None:
-    """The run's strict search, looked up by id — never by array position once the id is known.
-
-    The id is durable from the moment the webset was created (``record_webset``), so a view that
-    lists the relaxed search first cannot repoint what the exclusion excludes, what
-    ``_is_strict_item`` labels, or whose success rates choose the dropped criterion.
-
-    With no known id, one search is unambiguous — it is the strict one, because it is the only one
-    a run is guaranteed to have made. Two are not, and the guess is refused
-    (:class:`_SearchAmbiguous`) rather than made.
-    """
-    if known is not None:
-        for search in view.searches:
-            if search.search_id == known:
-                return search
-        return None
-    if len(view.searches) > 1:
-        raise _SearchAmbiguous(
-            f"webset {view.webset_id} carries {len(view.searches)} searches and this run recorded "
-            "no strict search id; which search is the strict one cannot be guessed"
-        )
-    return view.searches[0]
-
-
-def _relaxed_search_id(view: WebsetView, strict_search_id: str) -> str | None:
-    """The id of the search ``add_search`` just created: the one that is not the strict one.
-
-    ``POST /websets/{id}/searches`` answers with the bare search it made, but a re-read of the
-    whole webset answers with every search, and both shapes arrive here as ``view.searches`` — so
-    the relaxed search is identified by *not being* the strict one rather than by position.
-    """
-    for search in view.searches:
-        if search.search_id and search.search_id != strict_search_id:
-            return search.search_id
-    return None
 
 
 def _snapshot_item_id(candidate: CandidateRow) -> str | None:

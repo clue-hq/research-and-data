@@ -65,7 +65,27 @@ SKILLS_ROOT = CATALOG_ROOT / "skills"
 #: Unmoved again at `head-of-abm@v57`, which changes no resource at all: it raises the turn caps
 #: and re-mints the manual at `manual-*@v4`, and a chapter's version lives in its path, not in the
 #: summary this block measures. 4427 bytes against the 4608 already allowed.
-SKILLS_BLOCK_MAX_BYTES = 4608
+#:
+#: Moved 4608 -> 5120 at `head-of-abm@v58` (2026-09-19), on the same terms as the last move: one
+#: RESOURCE joins the disclosed library — `code-execution@v1`, the skill that teaches the sandbox
+#: — and its address, summary and path cost 256 bytes no shortening wins back. The Stage-0 skill's
+#: own summary grew with it (v33 -> v34, the attachments sentence). The block measures 4711 bytes
+#: against the 5120 now allowed. Adding a resource is what is supposed to move this number; a
+#: summary that sprawls is what it is here to catch.
+#:
+#: Unmoved at `head-of-abm@v59` and again at `@v60`: neither adds or removes a disclosed resource.
+#: v59 moves one TOOL address (`open_design_leg` @4 -> @5) and v60 changes only the prompt, and
+#: the manual re-mint both of them carry lives in the path this block prints, not in the summary
+#: it measures.
+#: Unmoved at head-of-abm@v61: no disclosed resource joins (a tool grant is not a resource).
+SKILLS_BLOCK_MAX_BYTES = 5120
+
+#: The hand-written skill that teaches `run_python@1`. It is not a manual chapter — it carries a
+#: tool grant and versions on its own clock — but it is founder-reviewed prose that states rules
+#: to the same reader, so the authority-mark audit below covers it too. Bump the version here
+#: when the skill re-mints.
+CODE_EXECUTION_SKILL = "code-execution"
+CODE_EXECUTION_VERSION = "v1"
 
 #: A rule sentence must say which half of the platform holds it: code, or only the prose.
 AUTHORITY_MARKS = ("(enforced)", "(asked of you)")
@@ -563,17 +583,33 @@ def test_the_builder_renders_the_active_head_of_abm_profile() -> None:
 
 
 def test_every_rule_line_says_whether_it_is_enforced(chapters: dict[str, str]) -> None:
-    """The manual's central promise: a rule nothing enforces is marked as merely asked of you."""
+    """The manual's central promise: a rule nothing enforces is marked as merely asked of you.
+
+    ``code-execution`` is audited beside the two chapters because it is the same kind of prose
+    for the same reader: it tells the agent what the sandbox refuses and what is merely asked of
+    it, and the two are indistinguishable to the model unless the line says which it is.
+    """
+
+    bodies = {f"manual-{name}": chapters[name] for name in ("gates-authority", "turn")}
+    bodies[CODE_EXECUTION_SKILL] = _skill_body(CODE_EXECUTION_SKILL, CODE_EXECUTION_VERSION)
 
     problems: list[str] = []
-    for name in ("gates-authority", "turn"):
-        for lineno, text, default_marked in _rule_lines(chapters[name]):
+    for name, body in bodies.items():
+        for lineno, text, default_marked in _rule_lines(body):
             if not any(word in text.lower() for word in RULE_WORDS):
                 continue
             if default_marked or any(mark in text for mark in AUTHORITY_MARKS):
                 continue
-            problems.append(f"manual-{name} line {lineno} carries no authority mark: {text!r}")
+            problems.append(f"{name} line {lineno} carries no authority mark: {text!r}")
     assert not problems, "; ".join(problems)
+
+
+def _skill_body(name: str, version: str) -> str:
+    """One non-manual catalog skill's body, front matter stripped."""
+
+    path = SKILLS_ROOT / name / version / "SKILL.md"
+    assert path.is_file(), f"{name} is missing at {path}"
+    return _parse_frontmatter(path.read_bytes(), address=f"skill:{name}")[1]
 
 
 def _rule_lines(body: str) -> Iterator[tuple[int, str, bool]]:

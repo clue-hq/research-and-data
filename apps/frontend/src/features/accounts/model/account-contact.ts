@@ -1,3 +1,4 @@
+import { AccountCustomFieldSchema } from "./account";
 import { z } from "zod";
 import {
   HttpUrlSchema,
@@ -29,8 +30,11 @@ export const AccountContactSummarySchema = z.object({
   name: z.string().min(1),
   title: z.string().min(1).nullable(), // D0 ruling S7
   persona: z.string().min(1),
+  membershipState: z.enum(["candidate", "supported", "needs_verification", "excluded"]).nullish(),
+  outreachEligible: z.boolean().optional(),
+  membershipGaps: z.array(z.string()).optional(),
   personaTone: ContactPersonaToneSchema,
-  influence: z.enum(["High", "Medium", "Low"]),
+  influence: z.enum(["High", "Medium", "Low"]).nullable(),
   avatarUrl: z
     .string()
     .refine(
@@ -81,6 +85,7 @@ export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
   overviewParagraphs: z.array(z.string().min(1)).default([]), // D0 ruling S5
   evidence: z.array(ContactEvidenceSchema),
   researchEvidence: z.array(ResearchEvidenceSchema).default([]),
+  customFields: z.array(AccountCustomFieldSchema).default([]),
   contactDisplay: ResearchDisplayBlockSchema.optional(),
   lastModifiedAt: z.string().datetime(), // D0 ruling R8 (the contact's own latest verifiedAt)
 });

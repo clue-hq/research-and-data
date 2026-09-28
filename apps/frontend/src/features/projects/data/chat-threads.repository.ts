@@ -139,6 +139,10 @@ export function createFixtureChatThreadsRepository(): ChatThreadsRepository {
         projectId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        // A locally-created thread has no durable speaker projection behind it
+        // yet, and `null` is exactly that: not derived. Never `{state: null}`,
+        // which would be a positive claim that this thread holds no design leg.
+        designLeg: null,
       });
     },
     async update({ threadId, title, pinned }) {

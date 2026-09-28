@@ -445,6 +445,30 @@ def test_arv2_discovery_handler_is_composed_when_given_and_kind_guarded() -> Non
         )
 
 
+def test_arv2_display_page_handler_is_composed_when_given_and_kind_guarded() -> None:
+    # Spec 2026-09-12: the display-page drain joins on the same terms as its neighbours — optional
+    # (a deployment with the display flag off, or no model key, composes none) and kind-guarded at
+    # construction, so a handler wired to the wrong keyword fails here rather than at claim time.
+    graph = _CompositionHandler(FleetTaskKind.EXECUTE_GRAPH)
+    handler = _CompositionHandler(FleetTaskKind.ARV2_DISPLAY_PAGE)
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=graph,
+        arv2_display_page_handler=handler,
+        worker_id="shared-worker",
+    )
+    assert worker._handlers[FleetTaskKind.ARV2_DISPLAY_PAGE] is handler
+
+    with pytest.raises(ValueError, match="arv2_display_page_handler must own"):
+        build_multi_work_worker(
+            _settings(),
+            driver=build_fleet_run_driver(),
+            graph_handler=graph,
+            arv2_display_page_handler=_CompositionHandler(FleetTaskKind.ARV2_DISCOVERY),
+        )
+
+
 def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_set(
     tmp_path: Path,
 ) -> None:
@@ -637,6 +661,44 @@ def test_the_design_handler_is_off_unless_the_runtime_switch_is_set() -> None:
     enabled = build_design_job_handler(enabled=True)
     assert enabled is not None
     assert enabled.kind is FleetTaskKind.DESIGN_JOB
+
+
+def test_the_design_handler_puts_the_platform_reads_factory_on_the_host_it_builds() -> None:
+    """Design note 2026-09-19: the platform's reads reach the design turn the same way the
+    scoped-preference resolver does — a factory on the host, never a value in the frozen job.
+
+    Both factories are independent switches, so the host must be built when EITHER is present:
+    a deployment with design memory off still composes the reads, and one with no reads still
+    composes the resolver.
+    """
+    from clue_api.design_fleet import build_design_job_handler
+
+    reads = object()
+    prefs = object()
+
+    only_reads = build_design_job_handler(enabled=True, platform_reads_factory=reads)
+    assert only_reads is not None
+    host = only_reads._host_provider()
+    assert host.platform_reads_factory is reads
+    assert host.preference_resolver_factory is None
+
+    both = build_design_job_handler(
+        enabled=True, platform_reads_factory=reads, preference_resolver_factory=prefs
+    )
+    assert both is not None
+    host = both._host_provider()
+    assert (host.platform_reads_factory, host.preference_resolver_factory) == (reads, prefs)
+
+
+def test_the_design_leg_lane_forwards_the_platform_reads_factory() -> None:
+    """The inline leg lane and the queued drain handler must see the SAME reads — a leg turn
+    driven inline and one taken over by a design_job worker are the same unit of work."""
+    from clue_api.design_fleet import build_design_leg_lane_driver
+
+    reads = object()
+    lane = build_design_leg_lane_driver(enabled=True, platform_reads_factory=reads)
+    assert lane is not None
+    assert lane._handler._host_provider().platform_reads_factory is reads
 
 
 # --- the resume-surface helper (spec §2.4): re-driving is a fresh enqueue_drive -------------------

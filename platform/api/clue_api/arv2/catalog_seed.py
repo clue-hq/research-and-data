@@ -65,6 +65,14 @@ _PROF = UseClass.PROFESSIONAL_PUBLIC.value
 _PERS = UseClass.PERSONAL_PUBLIC_NON_SENSITIVE.value
 
 ARV2_PACK: tuple[SeedField, ...] = (
+    _row(
+        "account.committee_search_assessment",
+        "object",
+        _OBJ,
+        "The account agent's buying-role hypothesis and search rationale, with evidence and "
+        "provider-result references. An assessment, not a provider-certified responsibility.",
+        ttl_days=30,
+    ),
     # --- account: the master plan's new fields ---
     _row(
         "account.open_requisitions",
@@ -438,3 +446,9 @@ ARV2_FIELD_KEYS: frozenset[str] = frozenset(str(seed.field_def.field_key) for se
 async def load_arv2_pack(conn: AsyncConnection) -> None:
     """Register the ARV2 pack (idempotent — register_field is a no-op on an identical row)."""
     await load_pack(conn, ARV2_PACK)
+    from clue_api.arv2.quality_relationships import load_relationship_fields
+
+    await load_relationship_fields(conn)
+    from clue_research.narrative.fields import load_narrative_pack
+
+    await load_narrative_pack(conn)

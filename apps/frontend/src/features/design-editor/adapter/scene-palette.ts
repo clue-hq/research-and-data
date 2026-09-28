@@ -97,8 +97,8 @@ const RAMP_PREFIX = "palette.";
  * One brand-kit detail payload → the ad lane's colour vocabulary, or `null`
  * when the kit defines no colours at all (no kit attached, a fetch that
  * failed, a kit with an empty catalog). `null` is the honest "this lane has no
- * brand vocabulary": the picker then falls back to the dummy's fixture palette
- * exactly as it does today (`resolveInspectorThemeColors`), and every token
+ * brand vocabulary": the picker then shows an empty Theme tab
+ * (`resolveInspectorThemeColors`; no fixture palette exists), and every token
  * WRITE refuses, because a label validated against nothing is not a token.
  */
 export function buildScenePalette(
@@ -151,9 +151,8 @@ export function scenePaletteColor(
  * `ColorControl` reports the label of the row that was clicked, so the only
  * labels this can legitimately see are ones `options` supplied. Validating
  * against that list is therefore not defensive noise — it is what stops the
- * DUMMY's fallback palette from writing phantom tokens: with no kit attached
- * the Theme tab still renders `INSPECTOR_THEME_COLORS` ("Primary", "Dark", …),
- * and `{kind:"token", token:"Primary"}` is a binding no kit can resolve. Same
+ * picker from writing phantom tokens: a label that is not in the kit's list
+ * (`{kind:"token", token:"Primary"}`, say) is a binding no kit can resolve. Same
  * hazard the web lane's chip comment names ("never a fixture-palette popover
  * that would write phantom tokens"), refused here at the write gate instead.
  */

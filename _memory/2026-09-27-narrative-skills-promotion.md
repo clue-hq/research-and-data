@@ -1,0 +1,9 @@
+# Approved narrative skills promoted locally
+
+- Founder accepted the latest account/contact narrative trial and asked to proceed with the reviewed skills. Promoted their exact bytes, with no further editorial rewrite.
+- New quality launch/recipe revision 23 and profiles v23/v23-person pin account/person narrative v2 plus shared editorial v1. Existing v22 system-prompt templates resolve the selected skills through placeholders. Research/tool/model/workspace/delegation settings and recipe graph remain unchanged.
+- Default new-launch resource version is 23; historical pins still load their prior resources, including revision 22 narrative v1. No service restart, workers, paid calls, DB changes, deployment or push.
+- Dedicated Miscellaneous is still absent from production page recipes. Explicitly disclosed this to the founder during promotion. The reviewed skill fallback preserves residual entries in the workspace review file and reports the missing surface; this is not equivalent to displaying the trial's Miscellaneous UI. Frontend contract/renderer work remains separate.
+- Verified byte equality with all three approved trial skill snapshots; validated both new default launch manifests and unchanged recipe graph apart from revision. Added two real-profile regressions covering nested shared-skill resolution, materialization/cold verification, historical pin recovery and unchanged non-editorial profile fields.
+- Focused skill-reference, owned-narrative and JSON-dossier suites: 17 passed. Targeted Ruff and diff whitespace checks passed. Unrelated dirty files left untouched.
+- Updated the narrative design handoff with current activation status and explicitly historical checkpoints. Current promoted behavior still carries the previously reviewed latency and trace-export limitations; neither was changed in this slice.

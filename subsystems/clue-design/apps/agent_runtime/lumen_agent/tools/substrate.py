@@ -3,31 +3,60 @@ from __future__ import annotations
 import base64
 import copy
 import functools
+import hashlib
 import inspect
 import io
 import json
+import re
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
 
 from py_lumen_obs import bind_run_id, get_logger, log_span
+from pydantic import StrictInt
 
 from lumen_api.core import CoreClient, CoreError
-from lumen_api.export_policy import partition_export_diagnostics
+from lumen_api.export_policy import draft_verification_note, partition_export_diagnostics
+from ..native_copy import (
+    NativeCopyReviewProfile,
+    native_nominal_em_at_width,
+    observe_native_text,
+)
+from ..paths import to_virtual
 
 try:  # the real Python text-to-image seam, shared with the /assets/generate route
     from lumen_api import image_provider
+    from lumen_api.image_provider import image_request_receipt_fields as _image_receipt_fields
 except Exception:  # pragma: no cover - keeps the runtime importable without the API package
     image_provider = None  # type: ignore[assignment]
+
+    def _image_receipt_fields(record: dict) -> dict:
+        return {}
 
 try:  # generation cache (request -> asset), so the loop doesn't re-pay per iteration
     from lumen_api import image_cache
 except Exception:  # pragma: no cover
     image_cache = None  # type: ignore[assignment]
 
+#: Editor Quality Plan 2 (item C): the asset tools refuse on a pageless scene BEFORE they spend.
+#: Registering an asset needs a page (engine rule LUMV0100); paying a model or a vendor first
+#: and discovering that afterwards cost `run_0452aae9…` ~10 minutes and its repair round.
+PAGE_REQUIRED_CODE = "scene.page_required"
+
 from ..autofix import AutofixResult, run_autofix
 from ..config import AgentRuntimeConfig
 from ..critique_fidelity import stamp_reference_fidelity
+from ..models.creative_direction import (
+    CREATIVE_DIRECTION_FILENAME,
+    CreativeDirection,
+    canonical_direction_digest,
+    direction_review_requirements,
+)
+from ..image_crop import (
+    ImageCropError, crop_source_pixels, has_generated_image_origin, require_supported_crop_origin,
+)
 from ..retokenize import (
     build_logo_placement_operations,
     build_retokenize_operations,
@@ -37,7 +66,7 @@ from ..brand_card import build_brand_card
 from ..knowledge import BRAND_APPLICATION_PATH, DIRECTIVES_PATH, read_task_knowledge
 from ..paths import normalize_agent_key
 from . import logo_fetch
-from .asset_preview import asset_preview_path, blob_path_for_digest
+from .asset_preview import PREVIEWABLE_MIME_TYPES, asset_preview_path, blob_path_for_digest
 from ..run_metrics import RunMetrics
 from ..text_clearance import collision_advisory
 from pydantic import ValidationError
@@ -60,6 +89,7 @@ from ..models.schemas import (
     PreviewArtifact,
     RepairClass,
     RepairRequest,
+    SceneVisualCritique,
     StopReason,
     ToolStatus,
     VisualCritique,
@@ -218,6 +248,22 @@ def _tool_span(method):
     return wrapper
 
 
+def _scene_mutation(method):
+    """Keep a local scene read, helper response, and ledger/receipt commit indivisible.
+
+    The helper returns a whole scene by value. Locking only the subprocess or
+    the response assignment still permits a stale response to erase another
+    tool's edits. Provider work must stay outside these bounded transactions.
+    Reentrancy lets compile/preflight register assets within the same mutation.
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._scene_mutation_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class _CoreHelperProxy:
     """Single-seam ``log_span`` wrapper around the core-helper client (deliverable 5).
 
@@ -289,7 +335,11 @@ class LumenDesignTools:
         # append + event_sink push) so trace lines never interleave and in-process
         # event order stays deterministic.
         self._record_lock = threading.Lock()
-        self.run_id = new_run_id()
+        # ToolNode may batch any author tools, not only image registrations.
+        # Every scene mutation shares this per-run transaction lock; paid
+        # generation/editing and remote logo fetching remain parallel outside it.
+        self._scene_mutation_lock = threading.RLock()
+        self.run_id = config.run_id or new_run_id()
         self.iteration = 0
         # Fast-loop v1 §7: per-run summary counters, started at the earliest
         # moment of the run so `wall_time_ms` measures the whole turn. The three
@@ -304,10 +354,32 @@ class LumenDesignTools:
         # attribute always exists (a config swapped mid-run must not AttributeError).
         self._fast_loop_round = 0
         self._fast_loop_round_compiles = 0
-        self.trace_dir = config.trace_dir / self.run_id
-        self.iterations_dir = self.trace_dir / "iterations"
-        self.trace_dir.mkdir(parents=True, exist_ok=True)
+        # Solo construction/review share this runtime. Notes may arrive later
+        # in a parallel tool batch, so they cannot own its repair allowance.
+        self._solo_construction_round = 0
+        self._solo_repair_pending = False
+        # Design session continuity (2026-09-18). Two branches, side by side:
+        #   * no session (editor preview, CLI, fixtures) — the run owns its own
+        #     folder and `turn_dir` IS `trace_dir`, byte-identical to before;
+        #   * a session (a leg turn on a pinned document) — `trace_dir` is the
+        #     PERSISTENT session folder, shared by every turn (the agent-visible
+        #     `workspace/` and the component projection live there), and this
+        #     turn's harness-owned outputs go under `turns/<run_id>`.
+        session_dir = config.session_dir()
+        if session_dir is None:
+            self.trace_dir = config.trace_dir / self.run_id
+            self.turn_dir = self.trace_dir
+            self.workspace_scope_id = self.run_id
+        else:
+            self.trace_dir = session_dir
+            self.turn_dir = session_dir / "turns" / self.run_id
+            self.workspace_scope_id = f"sessions/{config.session_id}"
+        self.iterations_dir = self.turn_dir / "iterations"
+        self.turn_dir.mkdir(parents=True, exist_ok=True)
         self.iterations_dir.mkdir(parents=True, exist_ok=True)
+        # Rounds are numbered across the whole session: a second turn's first round follows the
+        # highest round directory the workspace already holds.
+        self.round_base = self._highest_round_dir()
         # Bind run_id ONCE, at the moment the run dir exists (deliverable 4): from
         # here on every obs event in this run's context carries it via
         # merge_contextvars, so the CLI viewer and run.jsonl can group by run
@@ -342,6 +414,10 @@ class LumenDesignTools:
         # every applied scene mutation — the proposal's op source of truth
         # (see _log_scene_operations).
         self.operations_ledger: list[JsonObject] = []
+        #: Plan 2 Task 5: how much of `operations_ledger` the stream has carried. The client's
+        #: cursor applies a frame only when it BEGINS where the cursor stands, so a frame must
+        #: carry every ledger entry since the last frame — see `_contiguous_sink_extra`.
+        self._streamed_ledger_len = 0
         self.effective_brand_context: Optional[JsonObject] = None
         # K1: compact brand context card, built once from the by-value kit in
         # config (None without a kit). Injected via load_knowledge and
@@ -352,6 +428,7 @@ class LumenDesignTools:
             # W1.3: pixel dimensions for the image/logo rows — they live on the
             # by-value asset records, never on the kit's own asset entries.
             asset_manifest=config.brand_kit_assets,
+            scene_dsl=config.scene_skill_bundle == "candidate",
         )
         self.dsl_session: Optional[JsonObject] = None
         self.latest_export_summary: Optional[JsonObject] = None
@@ -360,17 +437,16 @@ class LumenDesignTools:
         # yet. Recorded on every checkpoint so a reader can tell a clean round's
         # commit from one taken with diagnostics still standing.
         self.latest_preflight_has_errors: Optional[bool] = None
-        # Staleness contract (sweep A3): the scene-mutation count captured the
-        # last time a valid preview was rendered. `view("preview")` compares it
-        # against the current count so it never silently serves a render that
-        # predates a scene edit. None = nothing rendered yet.
+        # Keep the operation counter for diagnostics. Preview freshness binds
+        # actual content: failed/no-op core responses can increment the counter.
         self._preview_scene_version: Optional[int] = None
+        self._preview_scene_stamp: Optional[str] = None
         # L4b unchanged-scene re-review guard: the iteration at which the last
         # valid preview was rendered, stamped alongside _preview_scene_version.
         # None = nothing rendered yet. Names "round N" in the unchanged fact
         # export_preview_bundle surfaces when re-rendering byte-identical pixels.
         self._preview_rendered_iteration: Optional[int] = None
-        # Deterministic logo placement is PLACE-ONCE (sweep A3 re-injection fix):
+        # Legacy logo placement is PLACE-ONCE (sweep A3 re-injection fix):
         # once a kit logo has been present (author-placed or our auto-overlay),
         # a later removal is the author's choice and must be respected, not undone.
         self._brand_logo_seen: bool = False
@@ -383,8 +459,22 @@ class LumenDesignTools:
         # accepted run that still carries a BLOCKING export error. None means
         # preflight has not run this turn (distinct from `[]`, "ran, clean").
         self._latest_preflight_diagnostics: Optional[list[JsonObject]] = None
+        # Runtime-owned receipts bind acceptance to the exact reviewed scene
+        # and bytes. Agent-authored JSON alone cannot certify a new render.
+        self._preflight_scene_stamp: str | None = None
+        self._preflight_iteration: int | None = None
+        self._preview_receipt: JsonObject | None = None
+        self._review_receipt: JsonObject | None = None
+        self._review_iteration: int | None = None
+        self._latest_visual_critique: JsonObject | None = None
+        # A restarted substrate must validate its own direction. Production
+        # checkpoint takeover restarts the turn; graph history is not a receipt.
+        self._validated_direction: CreativeDirection | None = None
+        self._validated_direction_digest: str | None = None
+        self._selected_reference_ids: set[str] = set()
+        self._pending_pruned_pages: list[str] = []
         self._write_json(
-            self.trace_dir / "input.json",
+            self.turn_dir / "input.json",
             {
                 "run_id": self.run_id,
                 "prompt": prompt,
@@ -462,7 +552,7 @@ class LumenDesignTools:
                 snippet["path"], self.config.workspace_root
             )
         self.loaded_knowledge = payload["snippets"]
-        self._write_json(self.trace_dir / "knowledge.json", payload)
+        self._write_json(self.turn_dir / "knowledge.json", payload)
         self.record(
             "coordinator",
             "knowledge_loaded",
@@ -473,15 +563,48 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     # --- fast loop §5.2: the per-round inner-iteration cap -------------------
-    def _fast_loop_round_number(self) -> int:
-        """The newest `rounds/round_N` directory number, or 0.
+    @property
+    def solo_rounds_executed(self) -> int | None:
+        """Executed candidate-solo rounds; None retains delegated file custody."""
+        if (
+            self.config.scene_solo
+            and self.config.scene_skill_bundle == "candidate"
+            and self.config.fast_loop
+        ):
+            return self._solo_construction_round
+        return None
 
-        Mirrors `tools.render.tools_current_round` deliberately rather than
-        importing it: `render` imports THIS module, so the import would be a
-        cycle. `workspace.workspace_root(tools)` is the canonical spelling of
-        the path below (`trace_dir / "workspace"`) and is likewise unimportable
-        here for the same reason.
+    def _begin_solo_construction(self) -> None:
+        """Called inside the scene transaction, before charging a compile.
+
+        A registered rejection arms one repair; actual construction consumes
+        it. Merely writing a note, reviewing or finalizing a draft does not.
+        Page-only source preparation before validated direction stays round 0.
         """
+        current = self.solo_rounds_executed
+        if current is None or self._validated_direction_digest is None:
+            return
+        if current == 0:
+            next_round = 1
+        elif current == 1 and self._solo_repair_pending:
+            next_round = 2
+        else:
+            return
+        # The directory name continues the SESSION's numbering (`round_base` is
+        # the highest round an earlier turn left behind); the counter itself
+        # stays per-turn, so this turn's caps are unchanged.
+        recorded = self.round_base + next_round
+        path = self.trace_dir / "workspace" / "rounds" / f"round_{recorded}"
+        path.mkdir(parents=True, exist_ok=True)
+        self._solo_construction_round = next_round
+        self._solo_repair_pending = False
+        self.record(
+            "coordinator", "construction_round_started",
+            output_summary=f"round {recorded}", payload={"round": recorded},
+        )
+
+    def _highest_round_dir(self) -> int:
+        """The highest ``round_N`` directory the workspace holds, or 0."""
         rounds = self.trace_dir / "workspace" / "rounds"
         highest = 0
         try:
@@ -493,6 +616,12 @@ class LumenDesignTools:
         except OSError:
             return 0
         return highest
+
+    def _fast_loop_round_number(self) -> int:
+        """Runtime round for solo; newest round directory for delegated runs."""
+        if self.solo_rounds_executed is not None:
+            return self.round_base + self.solo_rounds_executed
+        return self._highest_round_dir()
 
     def _inner_iteration_refusal(self) -> Optional[str]:
         """Refuse a compile past the round's inner-iteration cap, or None.
@@ -510,9 +639,8 @@ class LumenDesignTools:
         exception would take the turn down and lose the perfectly good scene the
         author already compiled. The cap does not roll back anything.
 
-        The count is per ROUND — a new `rounds/round_N` directory resets it — so
-        the orchestrator's one permitted repair round gets a full budget of its
-        own.
+        The count is per ROUND. Solo construction owns its transition; delegated
+        rounds retain filesystem custody. A repair gets its own fresh budget.
         """
         cap = int(getattr(self.config, "fast_loop_inner_iterations", 0) or 0)
         if cap <= 0:
@@ -531,16 +659,28 @@ class LumenDesignTools:
             output_summary=f"round {round_number}: {cap} compiles used",
             payload={"round": round_number, "cap": cap},
         )
+        recovery = (
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains). The canonical file write "
+            "registers the review. After a registered round-1 rejection, the next "
+            "construction tool starts the one repair round automatically; note "
+            "files do not grant compile allowance. Otherwise call finalize_run "
+            "with an honest outcome; acceptance still "
+            "requires a current preflight, preview and registered review. The "
+            "runtime already journals the DSL and diagnostics. "
+            if self.config.scene_solo else
+            "write an HONEST critique.json naming every issue still standing "
+            "(accepted:false if any blocker remains), save dsl.lumen / "
+            "diagnostics.json / author_report.md, and return. The orchestrator "
+            "decides whether to open a repair round — that round gets its own "
+            "fresh budget of iterations. "
+        )
         return self._tool_error(
             "compile.inner_iteration_cap",
             f"REFUSED: this round has used its {cap} inner iterations (fast loop "
             "§5.2). Nothing was rolled back — the scene from your last successful "
             "compile stands. Stop compiling now: render_preview(), view(\"preview\"), "
-            "write an HONEST critique.json naming every issue still standing "
-            "(accepted:false if any blocker remains), save dsl.lumen / "
-            "diagnostics.json / author_report.md, and return. The orchestrator "
-            "decides whether to open a repair round — that round gets its own "
-            "fresh budget of iterations. If you were making one property edit per "
+            f"{recovery}If you were making one property edit per "
             "compile, that is the pattern this cap exists to stop: batch every "
             "planned fix into ONE whole-scene reconcile next time.",
             round=round_number,
@@ -549,8 +689,10 @@ class LumenDesignTools:
         )
 
     @_tool_span
+    @_scene_mutation
     def compile_dsl_block(self, source: str) -> str:
         """Compile a Lumen DSL block and update the scene only from core output."""
+        self._begin_solo_construction()
         # Fast loop §5.2. Checked BEFORE the iteration bump so a refused compile
         # costs nothing: no iteration number, no metrics compile, no scene touch.
         # `fast_loop_inner_iterations` is only non-zero under the flag, so this is
@@ -603,11 +745,14 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         try:
+            brand_source, brand_kit, _ = self._effective_brand_kit()
             response = self.core.compile_dsl_into_scene(
                 self.scene,
                 source,
                 dsl_session=self.dsl_session,
                 protected_node_ids=self.protected_node_ids,
+                brand_kit=brand_kit,
+                mode=self._brand_context(brand_source, brand_kit)["mode"],
             )
         except CoreError as error:
             summary = CompileSummary(
@@ -681,14 +826,28 @@ class LumenDesignTools:
             # ride the proposal ledger above. A blocking-diagnostic (or rejected/
             # failed) compile streams nothing to the canvas: the user never
             # watches a draft that got refused (D1).
+            #
+            # Rung B: an op-bearing frame also states WHERE its batch sits in the
+            # run's operation ledger — `operations_total` is the ledger length
+            # AFTER `_log_scene_operations` appended this batch (the append is
+            # immediately above, so reading it here is post-append). It is the
+            # same quantity `checkpoint_scene` puts on a `design.checkpoint`
+            # frame, so a checkpoint at N and an op frame at N describe the same
+            # point and the client can drop already-committed batches by
+            # subtraction. Refused compiles push neither key — there is no
+            # position for operations that never joined the ledger.
             sink_extra=(
-                {"operations": compile_output.get("operations", [])}
+                {
+                    "operations": compile_output.get("operations", []),
+                    "operations_total": len(self.operations_ledger),
+                }
                 if summary.status == ToolStatus.ok
                 else None
             ),
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def apply_operations(self, operations_json: str) -> str:
         """Apply checked core operations. The input must be a JSON operation list."""
         try:
@@ -721,7 +880,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(response, "apply_operations", operations)
+        self._replace_scene_from_core_response(response, "apply_operations", operations, construction=True)
         self.dsl_session = None
         diagnostics = diagnostics_from(response.get("diagnostics", []))
         summary = OperationApplicationSummary(
@@ -739,6 +898,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def apply_structured_edit(self, edit_json: str) -> str:
         """Apply a typed targeted edit through the Rust edit builder.
 
@@ -767,7 +927,11 @@ class LumenDesignTools:
             if not isinstance(edit, dict):
                 raise ValueError("edit_json must decode to an object")
             scope = edit.pop("scope", None)
-            response = self.core.apply_structured_edit(self.scene, edit, scope=scope)
+            brand_source, brand_kit, _ = self._effective_brand_kit()
+            response = self.core.apply_structured_edit(
+                self.scene, edit, scope=scope, brand_kit=brand_kit,
+                mode=self._brand_context(brand_source, brand_kit)["mode"],
+            )
         except (CoreError, ValueError, json.JSONDecodeError) as error:
             diagnostics = []
             if isinstance(error, CoreError):
@@ -802,7 +966,7 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         self._replace_scene_from_core_response(
-            response, "apply_structured_edit", response.get("operations") or []
+            response, "apply_structured_edit", response.get("operations") or [], construction=True
         )
         if edit.get("kind") in {
             "delete",
@@ -837,6 +1001,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def generate_qr(
         self,
         data: str,
@@ -849,7 +1014,12 @@ class LumenDesignTools:
         and register it in the scene. Use print_media=True for physical
         artifacts (error correction H); declare target_width_mm so print
         scannability diagnostics can fire. Place the returned asset with a
-        place_asset_in_node/place_asset_in_slot operation."""
+        place_asset_in_node/place_asset_in_slot operation. The scene must already
+        contain a page/artboard: on a pageless scene this tool REFUSES before
+        generating (error `scene.page_required`) — author the page first."""
+        refused = self._refuse_without_page("generate_qr")
+        if refused is not None:
+            return refused
         asset_id = f"asset_qr_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
         try:
             response = self.core.generate_qr(
@@ -915,7 +1085,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(
-            apply_response, "generate_qr", [{"kind": "upsert_asset", "asset": record}]
+            apply_response, "generate_qr", [{"kind": "upsert_asset", "asset": record}], construction=True
         )
 
         diagnostics = diagnostics_from(response.get("diagnostics", []))
@@ -961,6 +1131,10 @@ class LumenDesignTools:
         transparent_background: bool = False,
         label: Optional[str] = None,
         condition_on_references: bool = True,
+        reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
     ) -> str:
         """Generate a raster image asset from a text prompt and register it in the
         scene. Pass target_node_id (or target_slot_id) so the aspect ratio is
@@ -969,11 +1143,14 @@ class LumenDesignTools:
         when available, otherwise a deterministic placeholder so the design still
         composes offline. When this turn has attached reference images, generated
         imagery is AUTOMATICALLY conditioned on them (their palette/texture/mood
-        anchor the style) — describe the SUBJECT in the prompt, not the reference
-        style. Set condition_on_references=false only when the brief demands imagery
-        that deliberately diverges from the references. The scene must already
-        contain a page/artboard (author the layout first) or registration fails with
-        a retryable error. Returns the asset_id; place it with place_asset_in_node /
+        anchor the style). `reference_asset_ids` explicitly selects up to four
+        inspected inputs from the frozen attachments, kit, library or current
+        scene; [] selects none. Omission keeps automatic turn attachments. Exact
+        UI/logo pixels belong in separate source layers, not generated artwork.
+        The scene must already
+        contain a page/artboard: on a pageless scene this tool REFUSES before
+        generating (error `scene.page_required`) — author the page first.
+        Returns the asset_id; place it with place_asset_in_node /
         place_asset_in_slot (a generated image is not auto-placed).
 
         Generation NEVER blocks the turn. If the model fails, you still get an
@@ -983,7 +1160,10 @@ class LumenDesignTools:
         ground and use a flat brand-token ground instead. `image.actual_width` /
         `actual_height` report what the model really returned, which can differ from
         the aspect ratio you asked for."""
-        asset_id = f"asset_img_{self.run_id[:8]}_{len(self.scene.get('assets', {}))}"
+        refused = self._refuse_without_page("generate_image")
+        if refused is not None:
+            return refused
+        asset_id = f"asset_img_{self.run_id[:8]}_{uuid4().hex}"
         width, height, aspect_ratio = self._image_constraints(
             target_node_id, target_slot_id, width, height, aspect_ratio
         )
@@ -1000,6 +1180,10 @@ class LumenDesignTools:
             brand_notes=notes,
             transparent_background=transparent_background,
             condition_on_references=condition_on_references,
+            reference_asset_ids=reference_asset_ids,
+            reference_roles=reference_roles,
+            reference_framing=reference_framing,
+            operation=operation,
         )
         diagnostics = diagnostics_from(raw_diagnostics)
         if record is None:
@@ -1022,9 +1206,28 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         try:
-            apply_response = self.core.apply_operations(
-                self.scene, [{"kind": "upsert_asset", "asset": record}]
-            )
+            with self._scene_mutation_lock:
+                assets = self.scene.get("assets") or {}
+                existing = assets.get(record.get("id"))
+                if existing is not None and existing != record:
+                    # Legacy cache entries can share an ID despite holding
+                    # different bytes. Keep cached custody/provenance intact,
+                    # changing only the Scene registration ID. Find an earlier
+                    # remap first so identical free retries keep a stable ID.
+                    reused_id = next(
+                        (
+                            candidate_id
+                            for candidate_id, candidate in assets.items()
+                            if candidate == {**record, "id": candidate_id}
+                        ),
+                        asset_id,
+                    )
+                    record = {**record, "id": reused_id}
+                operations = [{"kind": "upsert_asset", "asset": record}]
+                apply_response = self.core.apply_operations(self.scene, operations)
+                self._replace_scene_from_core_response(
+                    apply_response, "generate_image", operations, construction=True
+                )
         except CoreError as error:
             payload = {
                 "image": {
@@ -1052,10 +1255,6 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(
-            apply_response, "generate_image", [{"kind": "upsert_asset", "asset": record}]
-        )
-
         image: JsonObject = {
             "status": "ok",
             "asset_id": record.get("id"),
@@ -1068,7 +1267,10 @@ class LumenDesignTools:
             "provenance": record.get("provenance"),
             "source": record.get("source"),
             "license": (record.get("license") or {}).get("name"),
+            **_image_receipt_fields(record),
         }
+        if "reference_inputs" in meta:
+            image["reference_inputs"] = meta["reference_inputs"]
         # W1.7(b): `width`/`height`/`aspect_ratio` above are the REQUEST. When the
         # model returned something else, say so rather than let the ask stand in
         # for the answer — cover-fit placement still works, but an agent choosing
@@ -1113,6 +1315,27 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
+        """Search all frozen workspace images by type, usage, source, text or exact id.
+
+        Returns bounded metadata. Use view('asset:<id>') for pixels and detailed context,
+        then asset(action='use_brand_asset', asset_id=...) to place the chosen image.
+        """
+        from .asset_catalog import rank_assets, asset_summary
+        if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
+            return json.dumps({"status": "error", "message": "Supply a query and limit 1..20"})
+        candidates = {}
+        for manifest, origin in ((self.config.brand_kit_assets or {}, "brand_kit"),
+                                 (self.config.asset_library or {}, "library")):
+            for asset_id, entry in manifest.items():
+                candidates.setdefault(asset_id, (entry, origin))
+        results = [{"asset_id": aid, "origin": origin, "title": entry.get("title"),
+                    "description": entry.get("description"), "usage": entry.get("usage"),
+                    "view": f"asset:{aid}", **asset_summary(entry)}
+                   for aid, entry, origin, _, _ in rank_assets(candidates, q.strip().lower(), (kind or "").lower())[:limit]]
+        return json.dumps({"status": "ok", "results": results, "count": len(results),
+                           "inventory_count": len(candidates)})
+
     def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
         """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.
 
@@ -1146,8 +1369,11 @@ class LumenDesignTools:
         entry = self._library_asset_entry(asset_id)
         if entry is None:
             return None
+        from .asset_catalog import materialize_asset
+        materialize_asset(self.config, entry["record"])
         return copy.deepcopy(entry["record"])
 
+    @_scene_mutation
     def _register_referenced_brand_assets(self, origin: str) -> None:
         """K2 root fix: a DSL author naturally writes `image asset(<id>)` with
         an asset_id straight from the brand card — a form the compiler accepts
@@ -1229,6 +1455,7 @@ class LumenDesignTools:
                 },
             )
 
+    @_scene_mutation
     def use_brand_asset(
         self,
         asset_id: str,
@@ -1304,7 +1531,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
         self._replace_scene_from_core_response(
-            apply_response, "use_brand_asset", [{"kind": "upsert_asset", "asset": record}]
+            apply_response, "use_brand_asset", [{"kind": "upsert_asset", "asset": record}], construction=True
         )
         self.record(
             "coordinator",
@@ -1330,35 +1557,62 @@ class LumenDesignTools:
             "action='use_brand_asset' requires `node_id` or `slot_id`.",
         )
 
-    def fetch_logo(self, domain: str, company_name: Optional[str] = None) -> str:
-        """Fetch a company's REAL logo from its website and register it here.
+    def fetch_logo(
+        self,
+        domain: str,
+        company_name: Optional[str] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """Fetch a company's REAL logo family and register it here.
 
         Use this whenever the design shows a company that is not us — the target
         account, a named customer, a partner. Pass their domain
         (`goodmancampbell.com`) or any URL on their site; pass `company_name`
         too when you know it, because it sharpens the identity check.
 
-        Returns the asset ids it registered, one per slot it could fill:
-        `light` (for light backgrounds), `dark` (a reversed/white asset for dark
-        backgrounds), `mark` (the symbol alone) and `wordmark`. Place them with
-        `asset(action="place", ...)` like any other registered asset. A slot is
-        missing when the brand publishes nothing for it — that is a real answer,
-        and it is never filled by recoloring another slot.
+        Returns the asset ids it registered, one per FAMILY CELL of a 2x2:
+        theme (`light_*` = for light backgrounds, `dark_*` = for dark) x
+        completeness (`*_lockup` = the full logo, `*_mark` = the bare symbol).
+        The four cells are `light_lockup`, `dark_lockup`, `light_mark` and
+        `dark_mark`. Place them with `asset(action="place", ...)` like any other
+        registered asset. A cell is missing when the brand publishes nothing for
+        it — that is a real answer, and it is never filled by recoloring
+        another cell.
+
+        Each cell is the best PROVEN asset from two sources — Brandfetch and a
+        scrape of the company's own site — judged by measured ink colour for the
+        surface, completeness, format and size. Every asset says which source
+        served it. `alternatives` lists every other real asset found for the
+        company (a vendor icon, a short form, a losing candidate), each
+        registered too and each saying why it is not in a cell. Use a cell
+        first; reach for an alternative only when the cell does not fit the
+        placement — for example when the dark lockup turns out to be only a
+        symbol — and say so. Results
+        are cached per workspace+company, so asking twice in a project costs
+        one fetch — pass `force_refresh=True` only when the user says the logo
+        is wrong or outdated, which refetches and replaces the cached family.
 
         In an account-personalized or co-branded design, the OTHER company's
-        logo must be its COMPLETE lockup — symbol + wordmark together (the
-        `light`/`dark` slot for the surface you are placing on). The bare
-        `mark` is a fallback for when the brand publishes no lockup, or the
-        placement is genuinely too small to hold one — never the first choice:
-        a naked symbol does not identify an account the way its full logo does.
+        logo must be its COMPLETE lockup — the `light_lockup`/`dark_lockup`
+        cell for the surface you are placing on. The bare `*_mark` is a
+        fallback for when the brand publishes no lockup, or the placement is
+        genuinely too small to hold one — never the first choice: a naked
+        symbol does not identify an account the way its full logo does.
 
         If it comes back `needs_review`, nothing was registered because no asset
         could be attributed to that company with confidence. Say so and ask for
         the file. Never draw, recolor or approximate a logo.
 
-        Static fetch only: a site that builds its header in JavaScript has no
-        logo to read here, and reports that plainly.
+        Static fetch only on the ladder fallback: a site that builds its header
+        in JavaScript has no logo to read there, and reports that plainly.
+
+        The scene must already contain a page/artboard: on a pageless scene this
+        tool REFUSES before fetching (error `scene.page_required`) — author the
+        page first.
         """
+        refused = self._refuse_without_page("fetch_logo")
+        if refused is not None:
+            return refused
         requested = (domain or "").strip()
         if not requested:
             return self._tool_error(
@@ -1366,7 +1620,10 @@ class LumenDesignTools:
             )
         try:
             outcome = logo_fetch.fetch_logo_family(
-                requested, company_name=(company_name or "").strip() or None
+                requested,
+                company_name=(company_name or "").strip() or None,
+                force_refresh=force_refresh,
+                cache=getattr(self.config, "logo_family_cache", None),
             )
         except ValueError as error:
             return self._tool_error("logo_fetch.bad_request", str(error))
@@ -1389,7 +1646,7 @@ class LumenDesignTools:
                 "coordinator",
                 "logo_fetch_needs_review",
                 input_summary=requested[:500],
-                output_summary=(outcome.notes[0] if outcome.notes else "no slot filled")[:500],
+                output_summary=(outcome.notes[0] if outcome.notes else "no cell filled")[:500],
             )
             return json.dumps(logo_fetch.review_payload(outcome), indent=2)
 
@@ -1400,22 +1657,20 @@ class LumenDesignTools:
             ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
             if not ingest.get("ok"):
                 detail = (ingest.get("error") or {}).get("message", "unknown error")
-                failures.append({"slot": prepared.slot, "error": detail})
+                failures.append({"cell": prepared.cell, "error": detail})
                 continue
             record = (ingest.get("asset") or {}).get("record") or {}
             # SCENE op key is "asset"; the web lane's is "record". Same engine
             # asset table, two operation schemas.
             operations = [{"kind": "upsert_asset", "asset": record}]
             try:
-                apply_response = self.core.apply_operations(self.scene, operations)
+                self._apply_scene_operations("fetch_logo", operations)
             except CoreError as error:
-                failures.append({"slot": prepared.slot, "error": error.message})
+                failures.append({"cell": prepared.cell, "error": error.message})
                 continue
-            self._replace_scene_from_core_response(
-                apply_response, "fetch_logo", operations
-            )
             placed.append({
-                "slot": prepared.slot,
+                "cell": prepared.cell,
+                "source": prepared.source,
                 "asset_id": record.get("id") or prepared.asset_id,
                 **prepared.evidence,
             })
@@ -1427,28 +1682,70 @@ class LumenDesignTools:
                 failures=failures,
             )
 
+        # The other real assets found for this company, registered the same way.
+        # A failed alternative is dropped and named; only `placed` decides success.
+        alternatives: list[JsonObject] = []
+        failed_alternatives: list[JsonObject] = []
+        for prepared in outcome.alternatives:
+            ingest = self.core.ingest_asset(**prepared.ingest_kwargs(store_root))
+            if not ingest.get("ok"):
+                detail = (ingest.get("error") or {}).get("message", "unknown error")
+                failed_alternatives.append({"cell": prepared.cell, "error": detail})
+                continue
+            record = (ingest.get("asset") or {}).get("record") or {}
+            operations = [{"kind": "upsert_asset", "asset": record}]
+            try:
+                self._apply_scene_operations("fetch_logo", operations)
+            except CoreError as error:
+                failed_alternatives.append({"cell": prepared.cell, "error": error.message})
+                continue
+            alternatives.append({
+                "asset_id": record.get("id") or prepared.asset_id,
+                "source": prepared.source,
+                "competed_for": prepared.evidence.get("competed_for"),
+                "reason": prepared.evidence.get("reason"),
+                **prepared.evidence,
+            })
+
         payload: JsonObject = {
             "status": outcome.status,
             "site": outcome.site,
             "identity": outcome.identity,
             "lockup_completeness": outcome.lockup_completeness,
+            "cache_hit": outcome.cache_hit,
             "logos": placed,
+            "alternatives": alternatives,
             "notes": outcome.notes[:4],
             "next": (
                 "Place one with asset(action='place', asset_id=..., node_id=... or "
-                "slot_id=...). Use `dark` on dark surfaces and `light` on light ones."
+                "slot_id=...). Match the cell to the placement: *_lockup is the full "
+                "logo (first choice on any surface that fits it), *_mark is the bare "
+                "symbol (small placements only). Use dark_* cells on dark surfaces, "
+                "light_* on light ones. `alternatives` are other real assets found "
+                "for this company, also registered: use a cell first; pick an "
+                "alternative only when the cell does not fit the placement, and say so."
             ),
         }
+        if self.config.scene_skill_bundle == "candidate":
+            from ..prompts import SCENE_LOGO_SELECTION_GUIDANCE
+
+            payload["next"] = payload["next"].replace(
+                "*_lockup is the full logo (first choice on any surface that fits it), "
+                "*_mark is the bare symbol (small placements only).",
+                SCENE_LOGO_SELECTION_GUIDANCE,
+            )
         if failures:
-            payload["failed_slots"] = failures
+            payload["failed_cells"] = failures
+        if failed_alternatives:
+            payload["failed_alternatives"] = failed_alternatives
         self.record(
             "coordinator",
             "logo_fetched",
             input_summary=requested[:500],
             output_summary=(
-                f"{outcome.site}: " + ", ".join(p["slot"] for p in placed)
+                f"{outcome.site}: " + ", ".join(p["cell"] for p in placed)
             )[:500],
-            payload={"site": outcome.site, "slots": [p["slot"] for p in placed]},
+            payload={"site": outcome.site, "cells": [p["cell"] for p in placed]},
         )
         return json.dumps(payload, indent=2)
 
@@ -1491,6 +1788,82 @@ class LumenDesignTools:
             digests.append(digest)
         return (images or None), (digests or None)
 
+    def _collect_selected_reference_previews(self, asset_ids: list[str]):
+        """Resolve only this run's authorized IDs to verified conditioning bytes.
+
+        Library rasters use full source pixels, not contact-sheet thumbnails.
+        Vectors need an existing raster preview; generation never vectorizes.
+        Explicit selection fails as a unit instead of silently dropping an input.
+        The legacy automatic-attachment path retains its existing skip behavior.
+        """
+
+        def refuse(reason: str, detail: str):
+            return None, None, None, (f"image.reference_{reason}", detail)
+
+        if not isinstance(asset_ids, list) or any(
+            not isinstance(item, str) or not item for item in asset_ids
+        ):
+            return refuse("invalid", "reference_asset_ids must be a list of asset IDs.")
+        ids = list(dict.fromkeys(asset_ids))
+        if len(ids) > 4:
+            return refuse("limit", "Select at most four relevant reference assets per image.")
+        images, digests, receipt = [], [], []
+        store_root = self.config.effective_asset_store_root
+        for asset_id in ids:
+            attached = (self.config.reference_assets or {}).get(asset_id)
+            if attached is not None:
+                digest = attached.get("preview_digest")
+                mime = attached.get("mime_type") or "image/png"
+            else:
+                record = (self.scene.get("assets") or {}).get(asset_id)
+                if record is None:
+                    entry = (
+                        (self.config.brand_kit_assets or {}).get(asset_id)
+                        or (self.config.asset_library or {}).get(asset_id)
+                        or {}
+                    )
+                    record = entry.get("record")
+                if (
+                    not isinstance(record, dict)
+                    or record.get("id") != asset_id
+                    or record.get("status") != "ready"
+                ):
+                    return refuse(
+                        "unavailable", f"{asset_id} is not a ready asset in this run's context."
+                    )
+                media = record.get("media") or {}
+                mime = media.get("mime_type")
+                if mime in PREVIEWABLE_MIME_TYPES:
+                    digest = (media.get("digest") or {}).get("value")
+                else:
+                    preview = asset_preview_path(record, store_root)
+                    digest = Path(preview[0]).name if preview else None
+                    mime = (media.get("thumbnail") or {}).get("mime_type") or "image/png"
+            if (
+                not isinstance(digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                or mime not in PREVIEWABLE_MIME_TYPES
+            ):
+                return refuse(
+                    "invalid", f"{asset_id} has no valid raster reference digest and MIME type."
+                )
+            try:
+                pixels = blob_path_for_digest(store_root, digest).read_bytes()
+            except OSError:
+                return refuse(
+                    "missing",
+                    f"Selected reference {asset_id} has no materialized bytes; "
+                    "choose another available source.",
+                )
+            if hashlib.sha256(pixels).hexdigest() != digest:
+                return refuse(
+                    "corrupt", f"Selected reference {asset_id} does not match its frozen digest."
+                )
+            images.append((pixels, mime))
+            digests.append(digest)
+            receipt.append({"asset_id": asset_id, "digest": digest, "mime_type": mime})
+        return images or None, digests or None, receipt, None
+
     def _produce_image_asset(
         self,
         *,
@@ -1503,6 +1876,10 @@ class LumenDesignTools:
         brand_notes: List[str],
         transparent_background: bool,
         condition_on_references: bool = True,
+        reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
     ) -> tuple[Optional[JsonObject], JsonObject, List[JsonObject], Optional[tuple]]:
         """Produce + ingest one image asset record. Prefers the configured T2I
         model; on a missing config or any model/ingest failure it falls back to the
@@ -1521,6 +1898,35 @@ class LumenDesignTools:
         string. `meta["fallback"]` is absent on the success path."""
         diagnostics: List[JsonObject] = []
         fallback: Optional[JsonObject] = None
+        selected_receipt = None
+        if reference_roles is not None and reference_asset_ids is not None and (
+            len(reference_asset_ids) != len(set(reference_asset_ids))
+        ):
+            return None, {}, diagnostics, (
+                "image.reference_invalid", "Role-aware selections require distinct asset IDs."
+            )
+        if reference_asset_ids is not None:
+            reference_images, reference_digests, selected_receipt, error = (
+                self._collect_selected_reference_previews(reference_asset_ids)
+            )
+            if error:
+                # A bad selection is a correctable tool error, not permission
+                # to spend on unconditioned imagery or mutate the scene.
+                return None, {}, diagnostics, error
+        else:
+            reference_images, reference_digests = self._collect_reference_previews(
+                condition_on_references, diagnostics
+            )
+        if reference_roles is not None or reference_framing is not None:
+            try:
+                from lumen_api.image_provider import resolve_reference_framing
+                resolve_reference_framing(
+                    reference_images or [], reference_roles, reference_framing
+                )
+            except Exception as error:
+                return None, {}, diagnostics, ("image.reference_invalid", str(error))
+        if selected_receipt:
+            self._selected_reference_ids.update(item["asset_id"] for item in selected_receipt)
 
         # 1) Real text-to-image model, when configured.
         if image_provider is not None and image_provider.is_configured():
@@ -1529,9 +1935,6 @@ class LumenDesignTools:
             # preview bytes (order-sorted) so the style rides the model call and
             # the cache keys on their pixel digests. No references / opt-out →
             # (None, None) and the request is byte-identical to a plain generation.
-            reference_images, reference_digests = self._collect_reference_previews(
-                condition_on_references, diagnostics
-            )
             # Generation cache: re-use the asset an identical earlier request
             # produced (the loop re-requests the same hero each iteration) instead
             # of re-paying the model. Checked BEFORE the provider call.
@@ -1547,12 +1950,24 @@ class LumenDesignTools:
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
                     reference_digests=reference_digests,
+                    reference_roles=reference_roles,
+                    reference_framing=reference_framing,
+                    operation=operation,
                 )
                 cached = image_cache.lookup(store_root, cache_key)
                 if cached:
                     return (
                         cached,
-                        {"mode": "cached", "model": (cached.get("source") or {}).get("model")},
+                        {
+                            "mode": "cached",
+                            "model": (cached.get("source") or {}).get("model"),
+                            **_image_receipt_fields(cached),
+                            **(
+                                {"reference_inputs": selected_receipt}
+                                if selected_receipt is not None
+                                else {}
+                            ),
+                        },
                         diagnostics,
                         None,
                     )
@@ -1565,6 +1980,11 @@ class LumenDesignTools:
                     aspect_ratio=aspect_ratio,
                     transparent_background=transparent_background or None,
                     reference_images=reference_images,
+                    **{key: value for key, value in {
+                        "reference_roles": reference_roles,
+                        "reference_framing": reference_framing,
+                        "operation": operation,
+                    }.items() if value is not None},
                     request_id=asset_id,
                 )
                 if reference_digests:
@@ -1603,8 +2023,12 @@ class LumenDesignTools:
                             "model": result.model,
                             "actual_width": getattr(result, "width", None),
                             "actual_height": getattr(result, "height", None),
-                            "aspect_ratio_honored": getattr(
-                                result, "aspect_ratio_honored", None
+                            "aspect_ratio_honored": getattr(result, "aspect_ratio_honored", None),
+                            **_image_receipt_fields(record),
+                            **(
+                                {"reference_inputs": selected_receipt}
+                                if selected_receipt is not None
+                                else {}
                             ),
                         },
                         diagnostics,
@@ -1649,7 +2073,7 @@ class LumenDesignTools:
                 "reason": "not_configured",
                 "error_code": "image_model.not_configured",
                 "detail": "text-to-image model is not configured (set IMAGE_MODEL_*)",
-                "conditioning_lost": False,
+                "conditioning_lost": bool(selected_receipt),
             }
             diagnostics.append(
                 _image_warning(
@@ -1743,10 +2167,12 @@ class LumenDesignTools:
         alt: Optional[str] = None,
         preserve_transparency: Optional[bool] = None,
     ) -> str:
-        """Place an existing asset (generated or library) into an image node with a
-        fit mode (default cover, so the frame fills without stretching), a
-        normalized focal point (0..1, default centered) that controls the cover
-        crop, and alt text. Reversible — re-place or remove to change it."""
+        """Place a real asset into an existing image or reserved empty leaf frame.
+        Raster/logo placement converts an empty `fr` to an image in place,
+        preserving its ID and geometry. A container with children cannot be
+        consumed; missing node/asset IDs remain errors. Path-backed vectors stay
+        native vectors. Use fit (default cover), a normalized focal point (0..1,
+        default centered) for the cover crop, and alt text. Reversible."""
         return self._place_asset(
             "place_asset_in_node", "node_id", node_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
         )
@@ -1767,6 +2193,7 @@ class LumenDesignTools:
             "place_asset_in_slot", "slot_id", slot_id, asset_id, fit, focal_x, focal_y, alt, preserve_transparency
         )
 
+    @_scene_mutation
     def _place_asset(
         self,
         kind: str,
@@ -1819,7 +2246,7 @@ class LumenDesignTools:
             )
             return json.dumps(payload, indent=2)
 
-        self._replace_scene_from_core_response(apply_response, kind, [operation])
+        self._replace_scene_from_core_response(apply_response, kind, [operation], construction=True)
         diagnostics = diagnostics_from(apply_response.get("diagnostics", []))
         payload = {
             "placement": {
@@ -1844,10 +2271,19 @@ class LumenDesignTools:
             # single op logged to the proposal ledger via
             # `_replace_scene_from_core_response(..., [operation])` above — rides
             # the sink so the canvas can render the asset dropping into its node.
-            sink_extra={"operations": [operation]},
+            # Rung B: `operations_total` is the ledger length AFTER that append
+            # (the append is above), i.e. the position this batch ends at — the
+            # same counter a `design.checkpoint` frame reports, so the client can
+            # drop batches an already-reloaded checkpoint version covers. A
+            # refused placement returns early above and pushes neither key.
+            sink_extra={
+                "operations": [operation],
+                "operations_total": len(self.operations_ledger),
+            },
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def _register_library_asset_for_placement(self, asset_id: str, kind: str) -> None:
         """Upsert a workspace-library record into the scene so a placement can bind.
 
@@ -1868,7 +2304,7 @@ class LumenDesignTools:
             response = self.core.apply_operations(self.scene, [operation])
         except CoreError:
             return
-        self._replace_scene_from_core_response(response, kind, [operation])
+        self._replace_scene_from_core_response(response, kind, [operation], construction=True)
         entry = self._library_asset_entry(asset_id) or {}
         self.record(
             "coordinator",
@@ -1899,6 +2335,133 @@ class LumenDesignTools:
         root; a None result is a record with no usable raster preview (an SVG with
         no derived thumbnail), which the caller skips and counts in `_omitted`."""
         return asset_preview_path(record, self.config.effective_asset_store_root)
+
+    def _crop_source_record(self, asset_id: str) -> Optional[JsonObject]:
+        """Resolve crop custody only within this run's authorized records."""
+        record = (self.scene.get("assets") or {}).get(asset_id)
+        if record is None:
+            for manifest in (
+                self.config.brand_kit_assets, self.config.asset_library, self.config.reference_assets
+            ):
+                entry = (manifest or {}).get(asset_id)
+                if isinstance(entry, dict) and isinstance(entry.get("record"), dict):
+                    record = entry["record"]
+                    break
+        return record if isinstance(record, dict) and record.get("id") == asset_id else None
+
+    def _original_raster_source(self, asset_id: str) -> tuple[JsonObject, bytes, str, str]:
+        """Read verified original bytes by authorized ID; never substitute a preview.
+
+        Viewing needs no modification license. The caller that derives a new asset
+        owns that permission and ancestry check before invoking the crop decoder.
+        """
+        record = self._crop_source_record(asset_id)
+        if (
+            not isinstance(record, dict)
+            or record.get("id") != asset_id
+            or record.get("status") != "ready"
+        ):
+            raise ImageCropError(
+                "asset.crop_unavailable", "Source is not a ready asset in this run's context."
+            )
+        media = record.get("media") or {}
+        digest = (media.get("digest") or {}).get("value")
+        mime = media.get("mime_type")
+        if (
+            record.get("kind") not in {"raster_image", "logo"}
+            or mime not in PREVIEWABLE_MIME_TYPES
+            or (media.get("digest") or {}).get("algorithm") != "sha256"
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            raise ImageCropError(
+                "asset.crop_invalid_source",
+                "Requires an original raster with a valid SHA-256 digest.",
+            )
+        try:
+            source_path = blob_path_for_digest(self.config.effective_asset_store_root, digest)
+            source_bytes = source_path.read_bytes()
+        except OSError as error:
+            raise ImageCropError(
+                "asset.crop_missing", "Original source bytes are not materialized."
+            ) from error
+        if hashlib.sha256(source_bytes).hexdigest() != digest:
+            raise ImageCropError(
+                "asset.crop_corrupt", "Source bytes do not match their frozen digest."
+            )
+        return record, source_bytes, mime, digest
+
+    def crop_image(
+        self, asset_id: str, crop_rect: Any, label: str | None = None,
+        frame_index: StrictInt | None = None,
+    ) -> str:
+        """Register a lossless source rectangle as a separate, unplaced image."""
+        refusal = self._refuse_without_page("crop_image")
+        if refusal is not None:
+            return refusal
+        try:
+            record = self._crop_source_record(asset_id)
+            if record is not None:
+                require_supported_crop_origin(record, self._crop_source_record)
+            record, source_bytes, mime, _digest = self._original_raster_source(asset_id)
+            license = record.get("license")
+            # Mirror AssetRecord::allows_modification: absent license permits; a
+            # present license with a missing flag defaults to false in the engine.
+            if license is not None and license.get("allow_modification") is not True:
+                raise ImageCropError(
+                    "asset.crop_license", "The source license does not permit modification."
+                )
+            cropped = crop_source_pixels(
+                source_bytes, source_asset_id=asset_id, mime_type=mime, rect=crop_rect,
+                source_generated=has_generated_image_origin(record), frame_index=frame_index,
+            )
+        except ImageCropError as error:
+            return self._tool_error(error.code, str(error))
+        derived_id = f"asset_crop_{self.run_id[:12]}_{uuid4().hex}"
+        provenance = copy.deepcopy(record.get("provenance") or {})
+        provenance["notes"] = [
+            *(provenance.get("notes") or []),
+            "asset_derivation=" + json.dumps(cropped.receipt, sort_keys=True),
+        ]
+        try:
+            ingested = self.core.ingest_asset(
+                store_root=str(self.config.effective_asset_store_root),
+                bytes_base64=base64.b64encode(cropped.png_bytes).decode("ascii"),
+                asset_id=derived_id,
+                label=label or f"Crop of {record.get('label') or asset_id}",
+                declared_mime_type="image/png",
+                kind="raster_image",
+                filename=f"{derived_id}.png",
+                license=copy.deepcopy(license),
+                provenance=provenance,
+                # `edited` means MODEL-edited in the existing engine schema.
+                # A deterministic crop has no model; its lineage is the receipt.
+                source={"kind": "manual", "label": f"deterministic crop of {asset_id}"},
+                tags=[*(record.get("tags") or []), "crop"],
+            )
+            derived = ingested["asset"]["record"]
+            with self._scene_mutation_lock:
+                operations = [{"kind": "upsert_asset", "asset": derived}]
+                response = self.core.apply_operations(self.scene, operations)
+                self._replace_scene_from_core_response(response, "crop_image", operations, construction=True)
+        except CoreError as error:
+            return self._tool_error(error.code, error.message)
+        payload = {
+            "image_crop": {
+                "status": "ok", "asset_id": derived_id, "mode": "deterministic",
+                "crop_receipt": cropped.receipt,
+            },
+            "diagnostics": ingested.get("diagnostics") or [],
+            "next": (
+                "Inspect the new asset, then place it explicitly in an independent image node "
+                "with asset(action='place')."
+            ),
+        }
+        self.record(
+            "coordinator", "image_cropped", input_summary=asset_id,
+            output_summary=derived_id, payload=payload,
+        )
+        return json.dumps(payload, indent=2)
 
     def _resolve_node_image_source(
         self, node_id: str
@@ -1956,6 +2519,7 @@ class LumenDesignTools:
         prompt: str,
         remove_background: bool = False,
         label: Optional[str] = None,
+        operation: str | None = None,
     ) -> str:
         """Edit the raster image currently placed in `node_id` with a text
         instruction (Phase 3c) — recolor / adjust warmth / remove or replace the
@@ -2015,11 +2579,15 @@ class LumenDesignTools:
                     model=model_id(),
                     transparent_background=transparent,
                     source_digest=source_digest,
+                    operation=operation,
                 )
                 cached = image_cache.lookup(store_root, cache_key)
                 if cached:
                     record = cached
-                    meta = {"mode": "cached", "model": (cached.get("source") or {}).get("model")}
+                    meta = {
+                        "mode": "cached", "model": (cached.get("source") or {}).get("model"),
+                        **_image_receipt_fields(cached),
+                    }
             if record is None:
                 try:
                     result = image_provider.edit(
@@ -2027,6 +2595,7 @@ class LumenDesignTools:
                         source_images=[(source_bytes, source_mime)],
                         transparent_background=transparent,
                         request_id=asset_id,
+                        **({"operation": operation} if operation is not None else {}),
                     )
                     ingest = self.core.ingest_asset(
                         store_root=store_root,
@@ -2050,7 +2619,9 @@ class LumenDesignTools:
                         diagnostics.extend(_as_diag_list(ingest.get("diagnostics")))
                         if cache_key is not None and image_cache is not None:
                             image_cache.store(store_root, cache_key, record)
-                        meta = {"mode": "model", "model": result.model}
+                        meta = {
+                            "mode": "model", "model": result.model, **_image_receipt_fields(record)
+                        }
                     else:
                         detail = (ingest.get("error") or {}).get("message", "unknown error")
                         edit_error = ("image_edit.ingest_failed", f"edited image could not be ingested ({detail})")
@@ -2088,8 +2659,8 @@ class LumenDesignTools:
         # Register the edited asset through the canonical upsert path (guarded — a
         # scene without a page/artboard fails here, same as generate_image).
         try:
-            apply_response = self.core.apply_operations(
-                self.scene, [{"kind": "upsert_asset", "asset": record}]
+            self._apply_scene_operations(
+                "edit_image", [{"kind": "upsert_asset", "asset": record}]
             )
         except CoreError as reg_error:
             payload = {
@@ -2112,9 +2683,6 @@ class LumenDesignTools:
                 payload=payload,
             )
             return json.dumps(payload, indent=2)
-        self._replace_scene_from_core_response(
-            apply_response, "edit_image", [{"kind": "upsert_asset", "asset": record}]
-        )
 
         # Re-place the edited asset into the SAME node, preserving the current
         # placement (fit / focal point / alt) so the composition is untouched.
@@ -2144,6 +2712,7 @@ class LumenDesignTools:
                 "provenance": record.get("provenance"),
                 "source": record.get("source"),
                 "placement": place_result.get("placement"),
+                **_image_receipt_fields(record),
             },
             "diagnostics": [d.model_dump(mode="json") for d in diags],
         }
@@ -2170,8 +2739,7 @@ class LumenDesignTools:
             asset_id = (node.get("kind") or {}).get("asset_id")
             if not asset_id:
                 continue
-            source_kind = ((assets.get(asset_id) or {}).get("source") or {}).get("kind")
-            if source_kind in ("generated", "edited"):
+            if has_generated_image_origin(assets.get(asset_id) or {}):
                 return True
         return False
 
@@ -2274,6 +2842,36 @@ class LumenDesignTools:
         payload.update(extra)
         return json.dumps(payload, indent=2)
 
+    def _refuse_without_page(self, tool: str) -> Optional[str]:
+        """The pre-spend page guard: a JSON refusal when the scene has no page, else None.
+
+        Checked at the TOP of generate_image / generate_qr / fetch_logo, before any provider,
+        core or vendor call. The engine would refuse the registration anyway (LUMV0100); this
+        moves that answer in front of the spend, so a misordered author loses one tool call
+        and nothing else. The hint names the fix in the author's own vocabulary.
+        """
+        if self.scene.get("pages"):
+            return None
+        payload: JsonObject = {
+            "status": "error",
+            "error_code": PAGE_REQUIRED_CODE,
+            "message": (
+                f"{tool} refused: the scene has no page/artboard yet, so nothing can be "
+                "registered in it."
+            ),
+            "hint": (
+                "Author the page first — compile_dsl_block with a `page <id> size(...)` line, "
+                f"the whole design in one block — then call {tool} again."
+            ),
+        }
+        self.record(
+            "coordinator",
+            f"{tool}_refused_pageless",
+            output_summary=payload["message"],
+            payload=payload,
+        )
+        return json.dumps(payload, indent=2)
+
     @_tool_span
     def asset(
         self,
@@ -2302,6 +2900,14 @@ class LumenDesignTools:
         alt: Optional[str] = None,
         preserve_transparency: Optional[bool] = None,
         label: Optional[str] = None,
+        reference_asset_ids: list[str] | None = None,
+        reference_roles: list[str] | None = None,
+        reference_framing: str | None = None,
+        operation: str | None = None,
+        # Preserve raw element types through tool validation; crop_source_pixels
+        # refuses bools/floats instead of Pydantic coercing them to integers.
+        crop_rect: list[Any] | None = None,
+        frame_index: StrictInt | None = None,
     ) -> str:
         """Generate or place a design asset. Pick `action`:
 
@@ -2310,28 +2916,68 @@ class LumenDesignTools:
           (or `target_slot_id`) so the aspect is derived from that frame's geometry —
           images are cropped to fill, never stretched. Optional `aspect_ratio` /
           `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+          `reference_asset_ids` selects up to four inspected style inputs by ID
+          from this run's attachments, brand kit, workspace library or scene.
+          Omit it to use turn attachments; [] uses no references. A selection
+          replaces automatic attachments. Source pixels and their digest are
+          verified before spending; unavailable selections return an error.
+          Optional reference_roles align with selected IDs: source, treatment,
+          composition. reference_framing states what to preserve/vary; operation
+          records intent such as close_companion. These participate in caching.
+          Successful model/cache results report exact `reference_inputs` and
+          persisted provider `image_request_receipt` when available.
+          Viewing an asset alone does not attach it. Keep exact UI and logos as
+          separate source layers; this action produces a new raster component.
         - `action="edit_image"` — edit the image already placed in `node_id` with a
           text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT
           changing the composition; the edited result re-enters the same node with its
           current placement preserved. Set `transparent_background=True` to remove the
           background. Prefer this over a full regenerate when the image is right-but-flawed.
+          This source-only route does not accept reference_asset_ids, reference_roles
+          or reference_framing. For selected-reference changes, generate_image with
+          those inputs, inspect the result and place it explicitly.
+        - `action="crop_image"` — extract an exact rectangle from an inspected
+          original raster `asset_id`, without a model or resampling. `crop_rect`
+          is four integers [left, top, right, bottom] in ORIGINAL source pixels,
+          half-open; right/bottom excluded. Use original dimensions, not preview
+          dimensions. Bounds must be nonempty and inside the source. Nonidentity
+          EXIF orientation and unsupported images are refused. Animated cropping
+          requires an explicit nonnegative integer `frame_index` (GIF only); use
+          view(target="asset:<id>", frame_index=...) to inspect that original
+          frame first. Coordinates are its decoded composited full-frame pixels,
+          not a thumbnail or smaller GIF patch. Omitting the index refuses animation.
+          Preserves decoded pixels/alpha and original asset; returns a separate image asset
+          and crop_receipt with source digest/rect. Inspect, then explicitly place
+          it in an independent image node. Cannot recover occluded or absent UI,
+          nor remove backgrounds baked inside the selected rectangle.
         - `action="generate_qr"` — generate a deterministic QR asset from `data`
           (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
           so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
         - `action="place"` — place an existing asset (`asset_id`: one you generated
           this run, or one from this workspace's asset library — a library asset is
           registered into the scene for you)
-          into either an image node (`node_id`) or a bound image slot (`slot_id`) with a
-          `fit` (default cover), normalized focal point (`focal_x`/`focal_y`, 0..1,
-          default centered), `alt` text, and optional `preserve_transparency`. Reversible.
+          into an existing image or intentionally reserved empty leaf `fr`
+          (`node_id`), or a bound image slot (`slot_id`). Raster/logo placement
+          converts the leaf to an image in place, preserving its ID and geometry;
+          path-backed vectors stay native. Containers with children cannot be
+          consumed; missing node/asset IDs remain errors. No assetless image
+          declaration is needed. Use `fit` (default cover), normalized focal point
+          (`focal_x`/`focal_y`, 0..1, default centered), `alt` text, and optional
+          `preserve_transparency`. Reversible.
         - `action="use_brand_asset"` — register one of the attached Brand Kit's assets
           (a logo variant or brand image; `asset_id` from the brand context card's
           inventory) into the scene with brand_guide provenance and place it into
-          `node_id` or `slot_id`. Logos place with fit `contain` (never cropped);
+          the same supported `node_id` target or `slot_id` as `place`.
+          Logos place with fit `contain` (never cropped);
           pick the variant by background (reversed on dark fields). Requires an
           attached kit — without one this action errors.
 
         Every action mutates the scene only through the canonical core operation path."""
+        if frame_index is not None and action != "crop_image":
+            return self._tool_error(
+                "asset.frame_unsupported_action",
+                "frame_index is only supported by action='crop_image'.",
+            )
         if action == "generate_image":
             if not prompt:
                 return self._tool_error(
@@ -2347,8 +2993,22 @@ class LumenDesignTools:
                 brand_notes,
                 transparent_background,
                 label,
+                reference_asset_ids=reference_asset_ids,
+                reference_roles=reference_roles,
+                reference_framing=reference_framing,
+                operation=operation,
             )
         if action == "edit_image":
+            if (
+                reference_asset_ids is not None
+                or reference_roles is not None
+                or reference_framing is not None
+            ):
+                return self._tool_error(
+                    "asset.bad_request",
+                    "edit_image uses only the placed source; reference_asset_ids/roles/framing "
+                    "require generate_image followed by explicit placement.",
+                )
             if not node_id:
                 return self._tool_error(
                     "asset.bad_request", "action='edit_image' requires `node_id`."
@@ -2357,7 +3017,13 @@ class LumenDesignTools:
                 return self._tool_error(
                     "asset.bad_request", "action='edit_image' requires `prompt`."
                 )
-            return self.edit_image(node_id, prompt, transparent_background, label)
+            return self.edit_image(
+                node_id, prompt, transparent_background, label, operation=operation
+            )
+        if action == "crop_image":
+            if not asset_id:
+                return self._tool_error("asset.bad_request", "action='crop_image' requires `asset_id`.")
+            return self.crop_image(asset_id, crop_rect, label, frame_index=frame_index)
         if action == "generate_qr":
             if not data:
                 return self._tool_error(
@@ -2418,6 +3084,7 @@ class LumenDesignTools:
             valid_actions=[
                 "generate_image",
                 "edit_image",
+                "crop_image",
                 "generate_qr",
                 "place",
                 "use_brand_asset",
@@ -2560,7 +3227,7 @@ class LumenDesignTools:
                 if not source.exists():
                     continue
                 suffix = artifact.get("format", export_format)
-                destination = self.trace_dir / (
+                destination = self.turn_dir / (
                     f"instance_{binding.get('binding_set_id', 'preview')}"
                     f"_{len(preview_paths)}.{suffix}"
                 )
@@ -2596,11 +3263,15 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     @_tool_span
+    @_scene_mutation
     def preflight_design(self) -> str:
         """Run canonical brand/token/layout preflight using the effective Brand Kit
         (the kit passed by value in config — the document's attached kit — or the
         platform default)."""
         iteration_dir = self._iteration_dir()
+        self._preflight_scene_stamp = None
+        self._preflight_iteration = self.iteration
+        self._latest_preflight_diagnostics = None
         try:
             # K2 belt: catch kit-asset references that arrived via structured
             # edits / raw operations (compile has its own reconcile pass).
@@ -2641,48 +3312,34 @@ class LumenDesignTools:
                         # A rejected rebind never blocks the turn; preflight
                         # proceeds on the unmodified scene.
                         pass
-                # Deterministic logo presence (same philosophy as the token
-                # rebind): authoring adoption is coin-flip and repair-scope
-                # constraints make instructions unactionable — so the loop
-                # PLACES the mark once, as a page overlay the agent may then
-                # move/restyle and the critic judges. K2 preflight
-                # auto-register upserts the record from the manifest.
-                #
-                # PLACE-ONCE / respect-removal (sweep A3 re-injection fix): the
-                # earlier code re-ran `build_logo_placement_operations` on EVERY
-                # preflight, so any preflight where the scene TRANSIENTLY lacked
-                # a kit logo re-injected `brand_logo_auto` — even right after the
-                # author deleted it, or after a full recreate wiped the mark
-                # (A3 shipped a re-injected `brand_logo_auto` the author had
-                # explicitly removed). Root cause: the mechanism only asked "is
-                # a logo present NOW?", never "was one ever present and removed?"
-                # Fix: once a kit logo has been present (author-placed or our own
-                # overlay), remember it and never re-inject — a removal is the
-                # author's decision. We place at most once, when a logo has
-                # never been present in this run.
-                if scene_has_kit_logo(self.scene, brand_kit):
-                    self._brand_logo_seen = True
-                elif not self._brand_logo_seen:
-                    placement_ops = build_logo_placement_operations(
-                        self.scene, brand_kit
-                    )
-                    if placement_ops:
-                        try:
-                            placed = self.core.apply_operations(
-                                self.scene, placement_ops
-                            )
-                            self._replace_scene_from_core_response(
-                                placed, "place_brand_logo", operations=placement_ops
-                            )
-                            self._brand_logo_seen = True
-                            self.record(
-                                "coordinator",
-                                "brand_logo_placed",
-                                output_summary="kit mark auto-placed (page overlay)",
-                                payload={"operation_count": len(placement_ops)},
-                            )
-                        except CoreError:
-                            pass
+                # Candidate identity is authored composition: a target-only or
+                # deliberately unbranded scene must not acquire a hidden overlay.
+                # Legacy keeps PLACE-ONCE / respect-removal: after either an
+                # authored or automatic kit logo has existed, never re-inject it.
+                if self.config.scene_skill_bundle != "candidate":
+                    if scene_has_kit_logo(self.scene, brand_kit):
+                        self._brand_logo_seen = True
+                    elif not self._brand_logo_seen:
+                        placement_ops = build_logo_placement_operations(
+                            self.scene, brand_kit
+                        )
+                        if placement_ops:
+                            try:
+                                placed = self.core.apply_operations(
+                                    self.scene, placement_ops
+                                )
+                                self._replace_scene_from_core_response(
+                                    placed, "place_brand_logo", operations=placement_ops
+                                )
+                                self._brand_logo_seen = True
+                                self.record(
+                                    "coordinator",
+                                    "brand_logo_placed",
+                                    output_summary="kit mark auto-placed (page overlay)",
+                                    payload={"operation_count": len(placement_ops)},
+                                )
+                            except CoreError:
+                                pass
             # K4: brand governance judges the AUTHORED scene — resolution
             # deliberately CONSUMES token bindings (resolution-once: the
             # resolved scene is fully literal, style_token = None), so any
@@ -2725,7 +3382,7 @@ class LumenDesignTools:
                 diagnostics=[diag.model_dump(mode="json") for diag in summary.diagnostics],
                 payload=payload,
             )
-            return json.dumps(payload, indent=2)
+            return self._preflight_model_result(payload, iteration_dir)
 
         self._replace_scene_from_core_response(response, "preflight_design")
         raw_diagnostics = list(response.get("diagnostics", []) or [])
@@ -2803,6 +3460,7 @@ class LumenDesignTools:
                 payload["text_collisions"] = advisory
                 output_summary = f"{output_summary}; text collisions advised"
         self.latest_preflight_has_errors = bool(summary.has_errors)
+        self._preflight_scene_stamp = self._scene_stamp()
         self._write_json(iteration_dir / "preflight.json", payload)
         self.record(
             "coordinator",
@@ -2811,8 +3469,27 @@ class LumenDesignTools:
             diagnostics=[diag.model_dump(mode="json") for diag in diagnostics],
             payload=payload,
         )
+        return self._preflight_model_result(payload, iteration_dir)
+
+    def _preflight_model_result(self, payload: JsonObject, iteration_dir: Path) -> str:
+        """Keep the full saved/trace report; shorten only candidate model delivery."""
+        if self.config.scene_skill_bundle == "candidate":
+            payload = {
+                **payload,
+                "full_report_path": to_virtual(iteration_dir / "preflight.json", self.config),
+            }
+            if "raw_preflight" in payload:
+                raw = dict(payload["raw_preflight"])
+                counts = {}
+                for key in ("token_operations", "layout_operations"):
+                    if isinstance(raw.get(key), list):
+                        counts[key] = len(raw.pop(key))
+                if counts:
+                    raw["operation_counts"] = counts
+                payload["raw_preflight"] = raw
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def _run_autofix(
         self,
         raw_diagnostics: list[JsonObject],
@@ -2878,6 +3555,7 @@ class LumenDesignTools:
             # the editor's Accept replays THAT list onto the document and never
             # sees this scene, so an unlogged autofix would silently vanish at
             # accept (the K2 defect `_log_scene_operations` exists to prevent).
+            self._begin_solo_construction()
             self.scene = result.scene
             self.scene_update_sources.append("autofix")
             self._log_scene_operations(
@@ -2951,7 +3629,7 @@ class LumenDesignTools:
         ]
         self._baseline_diagnostics = diagnostics
         self._write_json(
-            self.trace_dir / "baseline_preflight.json",
+            self.turn_dir / "baseline_preflight.json",
             {"baseline_diagnostics": diagnostics},
         )
         self.record(
@@ -3008,6 +3686,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def export_preview(self, export_format: Optional[str] = None) -> str:
         """Export and validate an SVG or PNG preview for visual critique.
 
@@ -3085,6 +3764,7 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def export_preview_bundle(
         self,
         critic_format: Optional[str] = None,
@@ -3111,7 +3791,7 @@ class LumenDesignTools:
         # the inner export_preview calls re-stamp them, so we can tell whether
         # this successful export re-renders byte-identical pixels (no mutation
         # since the last render → re-reviewing yields no new information).
-        prev_preview_version = self._preview_scene_version
+        prev_preview_stamp = self._preview_scene_stamp
         prev_preview_iteration = self._preview_rendered_iteration
         desired_critic_format = (critic_format or self.config.preview_format).lower()
         refusal = self._unresolved_token_paint_refusal(desired_critic_format)
@@ -3182,6 +3862,17 @@ class LumenDesignTools:
             self.latest_preview_bundle = payload["reviewer"]
             self.latest_export_summary = payload["reviewer"]
             self._stamp_preview_rendered()
+        elif (
+            not debug_only
+            and desired_critic_format == "png"
+            and checkpoint_acceptance(canonical_summary, critic_summary).accepted
+        ):
+            # Keep the existing narrow SVG font-embedding exception: the valid
+            # PNG is reviewable and exportable. The bundle still reports the
+            # canonical SVG refusal above; no other export error is excused.
+            self.latest_preview_bundle = critic_summary
+            self.latest_export_summary = critic_summary
+            self._stamp_preview_rendered()
         else:
             self.latest_preview_bundle = None
             self.latest_export_summary = None
@@ -3222,8 +3913,8 @@ class LumenDesignTools:
         if (
             not debug_only
             and payload["reviewer"]["status"] == ToolStatus.ok.value
-            and prev_preview_version is not None
-            and self._scene_mutation_count() == prev_preview_version
+            and prev_preview_stamp is not None
+            and self._scene_stamp() == prev_preview_stamp
         ):
             render_label = (
                 f"the previous render (iteration {prev_preview_iteration})"
@@ -3436,11 +4127,24 @@ class LumenDesignTools:
         )
         return json.dumps(payload, indent=2)
 
+    @_scene_mutation
     def submit_visual_critique(self, critique_json: str) -> str:
         """Persist structured reviewer output and fail closed on malformed critique JSON."""
         iteration_dir = self._iteration_dir()
+        self._latest_visual_critique = None
+        self._review_receipt = None
+        self._review_iteration = None
+        self._solo_repair_pending = False
         try:
-            critique = VisualCritique.model_validate_json(critique_json)
+            if self.config.reference_assets or self._selected_reference_ids:
+                critique_json = json.dumps(stamp_reference_fidelity(json.loads(critique_json)))
+            critique_model = (
+                SceneVisualCritique if self.config.scene_skill_bundle == "candidate" else VisualCritique
+            )
+            critique = critique_model.model_validate_json(critique_json)
+            direction_error = self._direction_review_error(critique)
+            if direction_error:
+                raise ValueError(direction_error)
         except Exception as error:  # pydantic raises provider/version-specific errors.
             raw_payload = parse_json_object(critique_json)
             message = (
@@ -3466,6 +4170,10 @@ class LumenDesignTools:
             return json.dumps(payload, indent=2)
 
         payload = {"status": ToolStatus.ok.value, "critique": critique.model_dump(mode="json")}
+        self._latest_visual_critique = payload["critique"]
+        self._review_receipt = self._review_receipt_for(self._current_preview_receipt())
+        self._review_iteration = self.iteration
+        self._solo_repair_pending = self.solo_rounds_executed == 1 and not critique.accepted
         self._write_json(iteration_dir / "critique.json", payload)
         self.record(
             "visual-reviewer",
@@ -3477,6 +4185,294 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    @_scene_mutation
+    def observe_written_critique(self, path: Path, content: str) -> str | None:
+        """Register the canonical self-review; return rejection to the file tool."""
+        workspace = self.trace_dir / "workspace"
+        round_number = self._fast_loop_round_number()
+        expected = (
+            workspace / "rounds" / f"round_{round_number}" / "critique.json"
+            if round_number else workspace / "critique.json"
+        )
+        if path.resolve() != expected.resolve():
+            return
+        result = json.loads(self.submit_visual_critique(content))
+        if result["status"] == ToolStatus.error.value:
+            return result["message"]
+        return None
+
+    @_scene_mutation
+    def validate_creative_direction(self, revision_reason: str = "") -> str:
+        """Validate this run's creative-direction.json against its delivered catalog.
+
+        Checks the compact handoff and source availability, not visual quality
+        or truth of model-authored evidence excerpts. Writes no scene geometry.
+        Candidate revisions after validation need a concise revision_reason;
+        unchanged canonical content preserves the digest and existing review.
+        """
+        from ..materialize import scene_view_manifest
+        from ..models.creative_direction import (
+            PlaybookEvidenceRequirements,
+        )
+
+        path = self.trace_dir / "workspace" / CREATIVE_DIRECTION_FILENAME
+        try:
+            direction = CreativeDirection.model_validate_json(path.read_text())
+            descriptor = self.config.workspace_root / ".deepagent/knowledge-view.json"
+            manifest = (
+                json.loads(descriptor.read_text()) if descriptor.is_file() else scene_view_manifest()
+            )
+            if not isinstance(manifest, dict):
+                raise ValueError("Delivered scene catalog must be an object.")
+            if direction.playbook not in manifest.get("playbooks", []):
+                raise ValueError("Playbook is not in the delivered scene catalog.")
+            direction.validate_evidence_requirements(
+                PlaybookEvidenceRequirements.model_validate(
+                    manifest.get("playbook_requirements", {}).get(direction.playbook, {})
+                )
+            )
+            available = {
+                **(self.config.reference_assets or {}),
+                **(self.config.brand_kit_assets or {}),
+                **(self.config.asset_library or {}),
+                **(self.scene.get("assets") or {}),
+            }
+            unknown = sorted({item.asset_id for item in direction.source_roles} - set(available))
+            if unknown:
+                raise ValueError(f"Sources are unavailable in this run: {', '.join(unknown)}")
+            candidate = self.config.scene_skill_bundle == "candidate"
+            review_profile = self._native_copy_review_profile() if candidate else None
+            digest = canonical_direction_digest(direction)
+            previous_digest = self._validated_direction_digest
+            changed = previous_digest is not None and previous_digest != digest
+            if candidate and changed and not revision_reason.strip():
+                raise ValueError("A changed validated direction requires a concise revision_reason.")
+        except (OSError, ValueError) as error:
+            self.record("coordinator", "creative_direction_invalid", output_summary=str(error))
+            return self._tool_error("direction.invalid", str(error))
+        payload = {
+            "status": "ok",
+            "direction": direction.model_dump(mode="json"),
+            "source_ids": [item.asset_id for item in direction.source_roles],
+            "evidence_verified": False,
+        }
+        if candidate:
+            self._validated_direction = direction
+            self._validated_direction_digest = digest
+            payload.update(
+                direction_digest=digest,
+                previous_direction_digest=previous_digest,
+                revision_reason=revision_reason.strip(),
+                review_requirements=direction_review_requirements(direction),
+                visual_accuracy_verified=False,
+                native_copy_review_profile=review_profile,
+            )
+        self.record("coordinator", "creative_direction_validated", payload=payload)
+        return json.dumps(payload, indent=2)
+
+    def _direction_review_error(self, critique: VisualCritique) -> str | None:
+        """Candidate coverage/freshness only; notes remain model judgments."""
+        if self.config.scene_skill_bundle != "candidate":
+            return None
+        review = getattr(critique, "direction_review", None)
+        if review is None:
+            return "The candidate review needs direction_review coverage." if critique.accepted else None
+        if self._validated_direction is None or self._validated_direction_digest is None:
+            return "Validate this run's creative direction before reviewing it."
+        try:
+            current = CreativeDirection.model_validate_json(
+                (self.trace_dir / "workspace" / CREATIVE_DIRECTION_FILENAME).read_text()
+            )
+        except (OSError, ValueError):
+            return "The creative direction is missing or invalid; validate it before review."
+        if canonical_direction_digest(current) != self._validated_direction_digest:
+            return "The creative direction changed since validation; revise and validate it explicitly."
+        if review.direction_digest != self._validated_direction_digest:
+            return "The critique reviews an earlier direction; review the current validated direction."
+        if review.scope == "scoped_edit" and (
+            not self.seeded_from_initial_scene or self._validated_direction.intent != "edit"
+        ):
+            return "A scoped_edit review requires a seeded scene and a validated edit direction."
+        required = {
+            (item["section"], item["index"])
+            for item in direction_review_requirements(self._validated_direction)
+        }
+        provided = {(check.section, check.index) for check in review.checks}
+        if provided - required:
+            return "The critique contains unknown direction review indices."
+        if critique.accepted:
+            if provided != required:
+                return "Accepted review must cover every preserve and review_needs item."
+            if any(check.status != "met" for check in review.checks):
+                return "Direction deviations or unverified requirements remain; repair or explicitly revise the direction."
+        return self._copy_review_error(critique)
+
+    def _native_copy_review_profile(self) -> JsonObject | None:
+        """Caller-owned viewing assumptions from this run's delivered catalog."""
+        profile_id = self.config.scene_review_profile.strip()
+        if self.config.scene_skill_bundle != "candidate" or not profile_id:
+            return None
+        from ..materialize import scene_view_manifest
+
+        descriptor = self.config.workspace_root / ".deepagent/knowledge-view.json"
+        manifest = (
+            json.loads(descriptor.read_text()) if descriptor.is_file() else scene_view_manifest()
+        )
+        if not isinstance(manifest, dict):
+            raise ValueError("Delivered scene catalog must be an object.")
+        profiles = manifest.get("review_profiles", {})
+        if not isinstance(profiles, dict):
+            raise ValueError("Delivered scene review profiles must be an object.")
+        profile = profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Unknown caller-selected scene review profile: {profile_id}")
+        return {"id": profile_id, **NativeCopyReviewProfile.model_validate(profile).model_dump()}
+
+    def _native_copy_inventory(self) -> JsonObject:
+        """Observe exact text in current exported pages without another core call."""
+        scene_stamp = self._scene_stamp()
+        receipt = self._current_preview_receipt()
+        payload = {
+            "status": "unavailable", "scene_stamp": scene_stamp,
+            "direction_digest": self._validated_direction_digest,
+            "preview_receipt": receipt,
+            "occurrences": [], "excluded": [], "unresolved": [],
+            "evidence_verified": False,
+            "limits": (
+                "Native text only; instances are not expanded. Clipping, occlusion, "
+                "off-canvas placement and text inside images are not measured. "
+                "Support and placement readability remain model judgments; source/excerpt "
+                "strings are model-authored declarations, not independently verified evidence."
+            ),
+        }
+        if self._preflight_scene_stamp != scene_stamp or self._latest_preflight_diagnostics is None:
+            payload["reason"] = "No current resolved preflight."
+            return payload
+        if receipt is None or receipt != self._preview_receipt:
+            payload["reason"] = "No current preview bound to these scene contents and bytes."
+            return payload
+        try:
+            profile = self._native_copy_review_profile()
+        except (OSError, ValueError, RuntimeError) as error:
+            payload["reason"] = f"Native copy review profile unavailable: {error}"
+            return payload
+        if profile is not None:
+            payload["review_profile"] = profile
+            payload["limits"] += (
+                " The caller-selected profile checks normalized native nominal em, "
+                "not rendered glyph height or a platform font rule. Its width is an "
+                "explicit viewing assumption, not inferred from page units. Passing "
+                "the minimum does not establish readability; transformed and raster "
+                "text still need visual review."
+            )
+        artifacts = (self.latest_export_summary or {}).get("artifacts") or []
+        page_ids = [item.get("page_id") for item in artifacts]
+        if not page_ids or any(not isinstance(page_id, str) or not page_id for page_id in page_ids):
+            payload["reason"] = "Rendered page association is missing."
+            return payload
+        for page_id in sorted(set(page_ids)):
+            observed = observe_native_text(self.scene, page_id)
+            if profile is not None:
+                for row in observed["occurrences"]:
+                    measured = native_nominal_em_at_width(
+                        self.scene, page_id, row, profile["display_width_px"],
+                    )
+                    measured["passes_minimum"] = (
+                        measured["nominal_em_px"] >= profile["minimum_nominal_em_px"]
+                        if measured["status"] == "ok" else None
+                    )
+                    row["nominal_size_review"] = measured
+            for key in ("occurrences", "excluded", "unresolved"):
+                payload[key].extend(observed[key])
+        payload["status"] = "ok"
+        return payload
+
+    def _copy_review_error(self, critique: SceneVisualCritique) -> str | None:
+        """Verify exact bindings/coverage and cited IDs, never semantic entailment."""
+        review = critique.direction_review
+        if not critique.accepted and not review.copy_occurrences:
+            return None
+        inventory = self._native_copy_inventory()
+        if inventory["status"] != "ok":
+            return f"Native copy review inventory unavailable: {inventory['reason']}"
+        if critique.accepted and review.scope == "whole_creative" and inventory["unresolved"]:
+            return f"Native copy observation is unresolved: {inventory['unresolved']}"
+        actual = {(row["page_id"], row["node_id"]): row for row in inventory["occurrences"]}
+        declared = {block.id: block for block in self._validated_direction.copy_blocks}
+        covered_nodes, covered_copy = set(), set()
+
+        def words(text: str) -> str:
+            return " ".join(text.split())
+
+        for occurrence in review.copy_occurrences:
+            block = declared.get(occurrence.copy_id)
+            if block is None:
+                return f"Unknown declared copy_id: {occurrence.copy_id}"
+            parts = []
+            for fragment in occurrence.fragments:
+                key = (fragment.page_id, fragment.node_id)
+                row = actual.get(key)
+                if row is None:
+                    return (
+                        "Native copy binding is absent, hidden, empty or outside "
+                        f"the exported pages: {key}"
+                    )
+                if not words(fragment.text) or words(fragment.text) != words(row["text"]):
+                    return f"Native copy binding does not match the current words: {key}"
+                if critique.accepted and row["binding_issue"]:
+                    return f"Native copy observation is unresolved for {key}: {row['binding_issue']}"
+                if (
+                    critique.accepted and review.scope == "whole_creative"
+                    and inventory.get("review_profile") is not None
+                ):
+                    measured = row["nominal_size_review"]
+                    profile = inventory["review_profile"]
+                    if measured["status"] != "ok":
+                        return f"Native copy size is unavailable for {key}: {measured['reason']}"
+                    if not measured["passes_minimum"]:
+                        return (
+                            f"Native copy {key} is below caller-selected {profile['id']}: "
+                            f"{measured['nominal_em_px']:.6g}px normalized nominal em at "
+                            f"{profile['display_width_px']:g}px width; minimum "
+                            f"{profile['minimum_nominal_em_px']:g}px. Recompose or simplify "
+                            "the copy and inspect a fresh preview; "
+                            "a readable label cannot waive this check."
+                        )
+                parts.append(fragment.join_before + fragment.text)
+                covered_nodes.add(key)
+            if critique.accepted and words("".join(parts)) != words(block.text):
+                return (
+                    f"Bound native copy differs from declared copy {block.id}; "
+                    "revise and validate the direction."
+                )
+            support, readability = occurrence.support, occurrence.readability
+            if support and not set(support.evidence_refs) <= set(block.evidence_refs):
+                return f"Copy {block.id} cites evidence not declared for that copy block."
+            if critique.accepted:
+                if support is None or support.status not in {"supported", "nonfactual"}:
+                    return f"Copy {block.id} needs a passing support judgment for this occurrence."
+                if support.status == "supported" and not support.evidence_refs:
+                    return f"Supported factual copy {block.id} requires cited declared evidence."
+                if support.source_gaps is None:
+                    return (
+                        f"Copy {block.id} needs an explicit source_gaps assessment "
+                        "for this occurrence."
+                    )
+                if support.source_gaps:
+                    gaps = "; ".join(f"{gap.kind}: {gap.reason}" for gap in support.source_gaps)
+                    return f"Copy {block.id} has unresolved source gaps: {gaps}"
+                if readability is None or readability.status != "readable":
+                    return f"Copy {block.id} needs a readable placement judgment for this occurrence."
+            covered_copy.add(block.id)
+        if critique.accepted and review.scope == "whole_creative":
+            if covered_copy != set(declared):
+                return (
+                    "Accepted review must bind every declared copy ID to its actual native occurrences."
+                )
+            if covered_nodes != set(actual):
+                return "Accepted review leaves extra native copy occurrences unreviewed."
+        return None
 
     def recommend_edit_surface(self, intent: str, context_json: str = "{}") -> str:
         """Recommend a conservative edit surface for an agent repair or creation step.
@@ -3606,7 +4602,7 @@ class LumenDesignTools:
         )
         payload = gap.model_dump(mode="json")
         self.gaps.append(payload)
-        self._write_json(self.trace_dir / "gaps.json", {"gaps": self.gaps})
+        self._write_json(self.turn_dir / "gaps.json", {"gaps": self.gaps})
         self.record(
             "coordinator",
             "gap_recorded",
@@ -3650,22 +4646,69 @@ class LumenDesignTools:
         )
 
     @_tool_span
-    def inspect(self, view: str, target: Optional[str] = None) -> str:
+    def inspect(
+        self,
+        view: str,
+        target: str | None = None,
+        foreground_color: str | None = None,
+        region: list[float] | None = None,
+    ) -> str:
         """Read-only inspection of the in-memory scene. Pick `view`:
 
         - `view="scene"` — document, pages, counts, slots, effective brand.
         - `view="page"` (target=page_id) — page node tree with geometry + slot bindings.
         - `view="node_tree"` (target=page_id) — the node hierarchy for one page.
         - `view="slots"` — every slot key → bound nodes.
+        - `view="copy_review"` — candidate-only, complete current exported native
+          text inventory for direction_review bindings; includes observation limits.
         - `view="geometry"` (target=node_id) — stored computed geometry + declared
           transform/size for one node.
         - `view="slot_bindings"` (target=slot_key) — binding details for a semantic slot.
+        - `view="image_contrast"` (target=asset_id, foreground_color="#RRGGBB",
+          region=[left,top,right,bottom]) — measure an opaque text color over
+          actual image pixels. Region is normalized 0..1 in SOURCE coordinates;
+          account for placement cropping. Returns sampled ratios and threshold
+          checks. Excludes overlaid plates, glyphs, opacity and effects; inspect
+          the final composition too. Transparent/profiled sources return a gap.
 
         Use it to confirm a node/page/slot id before targeting a repair. Never mutates."""
         if view == "scene":
             return self.summarize_scene()
         if view == "slots":
             return self.summarize_slots()
+        if view == "copy_review" and self.config.scene_skill_bundle == "candidate":
+            with self._scene_mutation_lock:
+                inventory = self._native_copy_inventory()
+                # The inventory has a fresh receipt; only the model-facing copy
+                # uses virtual paths. Internal custody keeps its host paths.
+                for artifact in (inventory.get("preview_receipt") or {}).get("artifacts", []):
+                    artifact["path"] = to_virtual(artifact["path"], self.config)
+                return json.dumps(inventory, indent=2)
+        if view == "image_contrast":
+            from ..image_contrast import measure_image_contrast
+
+            if not target or foreground_color is None or region is None:
+                return self._tool_error(
+                    "inspect.bad_request",
+                    "image_contrast requires target=asset_id, foreground_color and region.",
+                )
+            images, _, receipt, error = self._collect_selected_reference_previews([target])
+            if error:
+                return self._tool_error(*error)
+            try:
+                measured = measure_image_contrast(images[0][0], foreground_color, region)
+            except (ValueError, OSError) as error:
+                return self._tool_error("inspect.image_contrast_unavailable", str(error))
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "asset_id": target,
+                    "source_digest": receipt[0]["digest"],
+                    "foreground_color": foreground_color,
+                    "region": region,
+                    "contrast": measured,
+                }
+            )
         if view == "page":
             if not target:
                 return self._tool_error(
@@ -3693,7 +4736,15 @@ class LumenDesignTools:
         return self._tool_error(
             "inspect.unknown_view",
             f"unknown view '{view}'.",
-            valid_views=["scene", "page", "node_tree", "slots", "geometry", "slot_bindings"],
+            valid_views=[
+                "scene",
+                "page",
+                "node_tree",
+                "slots",
+                "geometry",
+                "slot_bindings",
+                "image_contrast",
+            ],
         )
 
     def curated_context(
@@ -4096,6 +5147,7 @@ class LumenDesignTools:
             capped.append(item)
         return capped
 
+    @_scene_mutation
     def start_fresh_rewrite_scene(self, reason: str) -> None:
         """Reset the live authoring scene for a director-approved rewrite.
 
@@ -4236,7 +5288,7 @@ class LumenDesignTools:
             "gaps": self.gaps,
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
         }
-        self._write_json(self.trace_dir / "final.json", payload)
+        self._write_json(self.turn_dir / "final.json", payload)
         self.record(
             "coordinator",
             "clarification_requested",
@@ -4271,6 +5323,7 @@ class LumenDesignTools:
         return "\n".join(lines)
 
     @_tool_span
+    @_scene_mutation
     def finalize_run(
         self,
         status: str,
@@ -4282,6 +5335,10 @@ class LumenDesignTools:
         accommodation_json: str = "null",
     ) -> str:
         """Write the final run summary in a later-API-compatible local format.
+
+        Omit `critique_json` to use the latest registered visual review; do not
+        rewrite its JSON. Acceptance still checks that review, current scene,
+        preflight and rendered bytes. Omission never creates a passing review.
 
         `ops_valid_through_iteration` names the last iteration whose applied
         operations are part of the returned draft scene (the keep-best snapshot
@@ -4295,7 +5352,16 @@ class LumenDesignTools:
         the turn caused or must fix them. `"null"` (default) means either an
         unseeded run or a run with no unaddressed baseline issues.
         """
-        critique = json.loads(critique_json) if critique_json.strip() else {}
+        if status in {"succeeded", "success", "completed"}:
+            status = "accepted"
+        try:
+            critique = json.loads(critique_json) if critique_json.strip() else {}
+        except (ValueError, TypeError):
+            return self._finalize_refusal("critique_json must be valid JSON.")
+        if not isinstance(critique, dict):
+            return self._finalize_refusal("critique_json must be an object.")
+        if not critique and self._latest_visual_critique is not None:
+            critique = dict(self._latest_visual_critique)
         # RC (D5; adversarial-gate F1 — the deterministic anti-rubber-stamp
         # guard, the tool-level twin of the edit-scoped acceptance refusal):
         # a REFERENCE turn can never finalize as "accepted" without an explicit
@@ -4312,25 +5378,20 @@ class LumenDesignTools:
         # re-serialized on the way here. `stamp_reference_fidelity` only ever
         # promotes a score the author WROTE — an unjudged self-audit stamps
         # `score: 0`, which this gate refuses exactly as an omission did.
-        if self.config.reference_assets or {}:
+        if self.config.reference_assets or self._selected_reference_ids:
             critique = stamp_reference_fidelity(critique)
-        if status == "accepted" and (self.config.reference_assets or {}):
-            fidelity = (critique or {}).get("reference_fidelity") or {}
-            score = fidelity.get("score")
-            if not isinstance(score, int) or score <= 1:
-                reason = (
-                    "no reference_fidelity judgment in the critique"
-                    if not fidelity
-                    else f"reference_fidelity score is {score!r}"
-                )
+        if status == "accepted":
+            reason = self._reference_fidelity_error(critique)
+            if reason:
                 self.record(
                     "coordinator",
                     "finalize_refused_reference_fidelity",
                     output_summary=reason,
                 )
-                return (
-                    "REFUSED: this turn has user-attached references, and a run "
-                    f"cannot finalize as accepted with {reason}. Send the "
+                return self._finalize_refusal(
+                    "this turn has selected image references, and a run "
+                    f"cannot finalize as accepted with {reason}.",
+                    fallback="Send the "
                     "reviewer back for an explicit reference_fidelity judgment "
                     "(view each reference:<n> against the preview); accept only "
                     "at score >= 2, or finalize honestly with a non-accepted "
@@ -4393,12 +5454,49 @@ class LumenDesignTools:
         # NEVER silently: the pruned ids are announced in the result summary.
         # Never remove the last remaining page (a design must keep one page).
         pruned_pages = self._prune_empty_pages()
-        if pruned_pages:
+        self._pending_pruned_pages.extend(pruned_pages)
+        if self._pending_pruned_pages:
             note = (
-                f"Pruned {len(pruned_pages)} empty page(s) with no children "
-                f"before finalizing: {', '.join(pruned_pages)}."
+                f"Pruned {len(self._pending_pruned_pages)} empty page(s) with no children "
+                f"before finalizing: {', '.join(self._pending_pruned_pages)}."
             )
             summary = f"{summary}\n{note}" if summary else note
+        if status in {"accepted", "succeeded", "success", "completed"}:
+            refusal = self._acceptance_error(critique)
+            if refusal:
+                self.record("coordinator", "finalize_refused", output_summary=refusal)
+                return self._finalize_refusal(refusal)
+        verification = self.draft_verification()
+        historical_critique = None
+        if status != "accepted":
+            if critique and (
+                verification["review"]["status"] != "current"
+                or critique != self._latest_visual_critique
+            ):
+                registered = critique == self._latest_visual_critique
+                historical_critique = {
+                    "critique": critique,
+                    "status": verification["review"]["status"] if registered else "unbound",
+                    "scene_stamp": (self._review_receipt or {}).get("scene") if registered else None,
+                    "iteration": self._review_iteration if registered else None,
+                }
+            critique = (
+                dict(self._latest_visual_critique or {})
+                if verification["review"]["status"] == "current" else {}
+            )
+            if status == "completed_with_warnings":
+                note = draft_verification_note(verification)
+                # Agent prose may repeat an earlier review's failure. Retain
+                # that feedback above and in trace, never as the current verdict.
+                if verification["review"]["status"] == "current":
+                    summary = f"{note} {critique.get('summary', '')}".strip()
+                else:
+                    summary = note
+                if self._pending_pruned_pages:
+                    summary += (
+                        f"\nPruned {len(self._pending_pruned_pages)} empty page(s) "
+                        f"before finalizing: {', '.join(self._pending_pruned_pages)}."
+                    )
         payload = {
             "run_id": self.run_id,
             "status": status,
@@ -4408,20 +5506,23 @@ class LumenDesignTools:
             "effective_brand": self.effective_brand_context,
             "preview_paths": self.preview_paths,
             "critique": critique,
+            "historical_critique": historical_critique,
+            "draft_verification": verification,
             "gaps": self.gaps,
             "scene_update_sources": self.scene_update_sources,
             "seeded_from_initial_scene": self.seeded_from_initial_scene,
             "ops_valid_through_iteration": ops_valid_through_iteration,
             "baseline_advisory": baseline_advisory,
             "accommodation": accommodation,
+            "acceptance_receipt": self._review_receipt if status == "accepted" else None,
         }
-        self._write_json(self.trace_dir / "final.json", payload)
+        self._write_json(self.turn_dir / "final.json", payload)
         # Persist the FULL final scene (not just the summary) so offline tooling — the
         # imagery-quality eval runner in particular — can deterministically score the
         # design's use of imagery (node kinds, asset_placement, asset records, page
         # sizes) without re-running the agent or recompiling the DSL.
         if isinstance(self.scene, dict):
-            self._write_json(self.trace_dir / "final_scene.json", self.scene)
+            self._write_json(self.turn_dir / "final_scene.json", self.scene)
         self.record(
             "coordinator",
             "run_finalized",
@@ -4429,6 +5530,67 @@ class LumenDesignTools:
             payload=payload,
         )
         return json.dumps(payload, indent=2)
+
+    def _reference_fidelity_error(self, critique: JsonObject) -> str | None:
+        """Shared reference gate for finalization and payload-recovery advice."""
+        if not (self.config.reference_assets or self._selected_reference_ids):
+            return None
+        fidelity = critique.get("reference_fidelity") or {}
+        if not isinstance(fidelity, dict) or not fidelity:
+            return "no reference_fidelity judgment in the critique"
+        score = fidelity.get("score")
+        if not isinstance(score, int) or isinstance(score, bool) or score <= 1:
+            return f"reference_fidelity score is {score!r}"
+        if fidelity.get("regressed_to_house_style"):
+            return "the reference review reports a regression to house style"
+        return None
+
+    def _finalize_refusal(self, reason: str, *, fallback: str | None = None) -> str:
+        """Distinguish a review-copy error from evidence that needs repair."""
+        registered = self._latest_visual_critique
+        if (
+            registered is not None
+            and self._reference_fidelity_error(registered) is None
+            and self._acceptance_error(registered) is None
+        ):
+            recovery = (
+                "The current registered review is valid. Retry finalize_run without "
+                "critique_json to use it; the same acceptance checks will run. "
+                "This payload error does not require a new render or review."
+            )
+        else:
+            recovery = fallback or (
+                "Repair and re-run preflight, render, and review, or preserve the "
+                "draft with a non-accepted status."
+            )
+        return f"REFUSED: {reason} {recovery}"
+
+    def _contiguous_sink_extra(self, sink_extra: JsonObject) -> JsonObject:
+        """Make an op-bearing sink push begin where the client's cursor stands.
+
+        `operations_ledger` grows at ~20 sites (asset registration, autofix, pruning, …) but only
+        the authoring mutations push a frame. The frontend cursor (`scene-stream-cursor.ts`,
+        rule 5) applies a frame only when `operations_total - len(operations)` equals the
+        position it has been shown up to; a gap makes it dirty and it drops every frame until
+        a checkpoint. Live-proven 2026-09-04: two auto-registered kit assets (ledger 1–2, no
+        frame) left the fresh Apollo/Ramp document's first batch beginning at 2, and the stage
+        showed nothing for nine minutes. So every frame prepends the ledger entries streamed
+        since the last frame, and a checkpoint (which re-seats the client) advances the marker.
+        """
+        operations = sink_extra.get("operations")
+        total = sink_extra.get("operations_total")
+        if not isinstance(operations, list) or not isinstance(total, int):
+            return sink_extra
+        begin = total - len(operations)
+        if begin > self._streamed_ledger_len:
+            missing = [
+                entry["operation"]
+                for entry in self.operations_ledger[self._streamed_ledger_len : begin]
+                if isinstance(entry, dict) and "operation" in entry
+            ]
+            operations = missing + list(operations)
+        self._streamed_ledger_len = max(self._streamed_ledger_len, total)
+        return {**sink_extra, "operations": operations}
 
     def record(
         self,
@@ -4450,7 +5612,7 @@ class LumenDesignTools:
             diagnostics=diagnostics or [],
             payload=payload or {},
         )
-        path = self.trace_dir / "trace.jsonl"
+        path = self.turn_dir / "trace.jsonl"
         # Serialize the whole record body under one lock (L2 thread-safety):
         # batched reads call this from concurrent ToolNode threads, so the jsonl
         # append and the event_sink push must never interleave with another
@@ -4477,11 +5639,12 @@ class LumenDesignTools:
                         "diagnostic_count": len(diagnostics or []),
                     }
                     if sink_extra:
-                        push.update(sink_extra)
+                        push.update(self._contiguous_sink_extra(sink_extra))
                     self.event_sink(event, push)
                 except Exception:
                     pass
 
+    @_scene_mutation
     def _prune_empty_pages(self) -> list[str]:
         """Remove pages that carry zero children from the working scene, via the
         core `remove_page` op so the deletion rides the operations ledger (and
@@ -4525,28 +5688,170 @@ class LumenDesignTools:
         return empty_ids
 
     def _scene_mutation_count(self) -> int:
-        """Monotonic count of applied scene mutations. `scene_update_sources`
-        grows on every `_replace_scene_from_core_response` and never on export,
-        so it is the cheapest honest 'has the scene changed since render?'
-        signal the staleness contract (view("preview")) needs."""
+        """Core response/update counter for diagnostics, including no-op responses.
+
+        Freshness decisions use `_scene_stamp`, not this activity counter.
+        """
         return len(self.scene_update_sources)
 
     def _stamp_preview_rendered(self) -> None:
-        """Record the scene-mutation count at the moment a valid preview was
-        rendered. view("preview") refuses to serve the PNG once the scene has
-        been mutated past this stamp (sweep A3 stale-black-frame contract)."""
+        """Bind a valid preview to current scene content and rendered bytes."""
         self._preview_scene_version = self._scene_mutation_count()
+        self._preview_scene_stamp = self._scene_stamp()
         self._preview_rendered_iteration = self.iteration
+        self._preview_receipt = self._current_preview_receipt()
+
+    def _scene_stamp(self) -> str:
+        # A director repeats preflight after the author's review. The helper
+        # returns a scene even when nothing changed; that must preserve review
+        # validity. Acceptance binds content and rendered bytes, not call count.
+        content = json.dumps(self.scene, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    def draft_verification(self) -> JsonObject:
+        """Report evidence freshness without spending, mutating, or accepting.
+
+        A retained warning draft can be unverified or blocked. Historical
+        preflight diagnostics do not describe the current scene; preview and
+        review validity also require the original rendered bytes to survive.
+        """
+        scene_stamp = self._scene_stamp()
+        preflight_current = (
+            self._preflight_scene_stamp == scene_stamp
+            and self._latest_preflight_diagnostics is not None
+        )
+        current_preview = self._current_preview_receipt()
+        preview_current = current_preview is not None and current_preview == self._preview_receipt
+        current_review = self._review_receipt_for(current_preview)
+        review_current = (
+            preview_current
+            and self._latest_visual_critique is not None
+            and current_review is not None
+            and self._review_receipt == current_review
+        )
+        blocking, advisory = partition_export_diagnostics(self._latest_preflight_diagnostics or [])
+        return {
+            "scene_stamp": scene_stamp,
+            "preflight": {
+                "status": "current" if preflight_current else ("stale" if self._preflight_scene_stamp else "missing"),
+                "scene_stamp": self._preflight_scene_stamp,
+                "iteration": self._preflight_iteration,
+                "has_blocking_errors": (
+                    bool(blocking or (self.latest_preflight_has_errors and not advisory))
+                    if preflight_current else None
+                ),
+                "diagnostics": (
+                    [diag.model_dump(mode="json") for diag in diagnostics_from(self._latest_preflight_diagnostics)]
+                    if preflight_current else []
+                ),
+            },
+            "preview": {
+                "status": "current" if preview_current else ("stale" if self._preview_receipt else "missing"),
+                "scene_stamp": (self._preview_receipt or {}).get("scene"),
+                "iteration": self._preview_rendered_iteration,
+            },
+            "review": {
+                "status": "current" if review_current else ("stale" if self._review_receipt else "missing"),
+                "scene_stamp": (self._review_receipt or {}).get("scene"),
+                "iteration": self._review_iteration,
+            },
+        }
+
+    def _review_receipt_for(self, preview: JsonObject | None) -> JsonObject | None:
+        try:
+            profile = self._native_copy_review_profile()
+        except (OSError, ValueError, RuntimeError):
+            return None
+        receipt = {"scene": self._scene_stamp(), "preview": preview}
+        if profile is not None:
+            receipt["native_copy_review_profile"] = profile
+        return receipt
+
+    def _current_preview_receipt(self) -> JsonObject | None:
+        summary = self.latest_export_summary or {}
+        artifacts = summary.get("artifacts") or []
+        if not artifacts or any(not item.get("valid") for item in artifacts):
+            return None
+        digests = []
+        try:
+            for item in artifacts:
+                path = Path(item["path"]).resolve()
+                path.relative_to(self.trace_dir.resolve())
+                data = path.read_bytes()
+                if not data:
+                    return None
+                digests.append({"path": str(path), "sha256": hashlib.sha256(data).hexdigest()})
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        return {"scene": self._scene_stamp(), "artifacts": digests}
+
+    def _acceptance_error(self, critique: JsonObject) -> str | None:
+        """Check evidence at the final write boundary, independent of agent prose."""
+        try:
+            critique_model = (
+                SceneVisualCritique if self.config.scene_skill_bundle == "candidate" else VisualCritique
+            )
+            typed = critique_model.model_validate(critique)
+        except ValidationError:
+            return "A complete typed visual critique is required for acceptance."
+        if not typed.accepted or any(
+            issue.severity in {DiagnosticSeverity.error, DiagnosticSeverity.blocker}
+            for issue in typed.issues
+        ):
+            return "The visual critique rejected this creative or contains blocking issues."
+        if typed.model_dump(mode="json") != self._latest_visual_critique:
+            return "The final critique differs from the registered visual review."
+        direction_error = self._direction_review_error(typed)
+        if direction_error:
+            return direction_error
+        if (
+            getattr(typed, "direction_review", None)
+            and typed.direction_review.scope != "whole_creative"
+        ):
+            return (
+                "Whole-creative acceptance requires a whole_creative review; "
+                "scoped_edit can only support edit_applied."
+            )
+        if self._preflight_scene_stamp != self._scene_stamp():
+            return "The current scene has no fresh preflight."
+        diagnostics = self._latest_preflight_diagnostics
+        if diagnostics is None:
+            return "Preflight did not complete."
+        blocking, advisory = partition_export_diagnostics(diagnostics)
+        if blocking or (self.latest_preflight_has_errors and not advisory):
+            return "Blocking preflight errors remain."
+        current = self._current_preview_receipt()
+        if current is None or current != self._preview_receipt:
+            return "The preview is missing, changed, or does not represent the current scene."
+        if self._review_receipt != self._review_receipt_for(current):
+            return "The registered critique does not review the current scene and preview bytes."
+        return None
+
+    @_scene_mutation
+    def _apply_scene_operations(self, source: str, operations: list[JsonObject]) -> JsonObject:
+        """Register results after remote work without holding its transaction open."""
+        response = self.core.apply_operations(self.scene, operations)
+        self._replace_scene_from_core_response(response, source, operations, construction=True)
+        return response
 
     def _replace_scene_from_core_response(
         self,
         response: JsonObject,
         source: str,
         operations: Optional[list[JsonObject]] = None,
+        *,
+        construction: bool = False,
     ) -> None:
+        # The caller must hold _scene_mutation_lock from BEFORE reading the
+        # scene passed to the helper through this replacement and ledger write.
         scene = response.get("scene")
         if not isinstance(scene, dict):
             raise CoreError("helper.scene_missing", f"{source} did not return a scene")
+        if construction and self.solo_rounds_executed is not None and scene != self.scene:
+            # Checked operations, crops and asset placement can repair without
+            # a DSL compile. Normalization and final cleanup never own a round,
+            # even when their helper response changes scene content.
+            self._begin_solo_construction()
         self.scene = scene
         self.scene_update_sources.append(source)
         if operations:
@@ -4571,10 +5876,11 @@ class LumenDesignTools:
             for operation in operations
         )
         self._write_json(
-            self.trace_dir / "operations_ledger.json",
+            self.turn_dir / "operations_ledger.json",
             {"entries": self.operations_ledger},
         )
 
+    @_scene_mutation
     def checkpoint_scene(self, reason: str) -> None:
         """P0.4 — hand this round's work to the checkpoint sink so it becomes
         durable NOW instead of only at finalize.
@@ -4631,6 +5937,9 @@ class LumenDesignTools:
             )
             return
         self._checkpointed_operations = len(operations)
+        # Plan 2 Task 5: the checkpoint re-seats the client at this position (rung A reloads
+        # the version it names), so nothing before it needs to ride a later frame.
+        self._streamed_ledger_len = max(self._streamed_ledger_len, len(operations))
         self.record(
             "coordinator",
             "scene_checkpointed",
@@ -5053,24 +6362,106 @@ def combined_preview_artifacts(
     return canonical_artifacts + list(critic_summary.get("artifacts", []))
 
 
+def _summary_status_error(label: str, summary: JsonObject) -> Optional[str]:
+    """The one error a summary's STATUS contributes, or None when it is ok.
+
+    Split out of `bundle_validation_errors` so `checkpoint_acceptance` can tell a
+    summary's status restatement apart from the errors that actually name a
+    fault; the reviewer's error list is unchanged (status line first, then the
+    named errors, canonical before critic)."""
+    if summary.get("status") != ToolStatus.ok.value:
+        return f"{label} preview status is {summary.get('status')}"
+    return None
+
+
+def _summary_named_errors(label: str, summary: JsonObject) -> list[str]:
+    """Every error a summary NAMES — its own, then its artifacts'."""
+    errors: list[str] = [
+        f"{label}: {error}" for error in summary.get("validation_errors", [])
+    ]
+    for artifact in summary.get("artifacts", []):
+        errors.extend(
+            f"{label} {artifact.get('format')}: {error}"
+            for error in artifact.get("validation_errors", [])
+        )
+    return errors
+
+
 def bundle_validation_errors(
     canonical_summary: JsonObject,
     critic_summary: JsonObject,
 ) -> list[str]:
     errors: list[str] = []
     for label, summary in (("canonical", canonical_summary), ("critic", critic_summary)):
-        if summary.get("status") != ToolStatus.ok.value:
-            errors.append(f"{label} preview status is {summary.get('status')}")
-        errors.extend(
-            f"{label}: {error}"
-            for error in summary.get("validation_errors", [])
-        )
-        for artifact in summary.get("artifacts", []):
-            errors.extend(
-                f"{label} {artifact.get('format')}: {error}"
-                for error in artifact.get("validation_errors", [])
-            )
+        status_error = _summary_status_error(label, summary)
+        if status_error is not None:
+            errors.append(status_error)
+        errors.extend(_summary_named_errors(label, summary))
     return errors
+
+
+# The lumen-export refusal (crates/lumen-export/src/svg.rs) raised when a brand
+# face cannot be license-checked for embedding — WOFF2 containers, which are 367
+# of the 517 stored brand faces. It arrives as an `ExportError` whose structured
+# `code` the Python export summary does not carry (`export_preview` records only
+# `CoreError.message`), so this leading marker — the constant half of the
+# formatted message, before the page id — is the stable key.
+# Since option A (2026-09-02) new ingests never store WOFF2, so this marker only fires for
+# faces the backfill (scripts/decode_stored_web_fonts.py) has not reached. Delete the excuse
+# once every environment has been backfilled.
+SVG_FONT_EMBEDDING_REFUSAL_MARKER = "SVG font embedding failed"
+
+
+@dataclass(frozen=True)
+class CheckpointAcceptance:
+    """Was this round ACCEPTED — i.e. is its scene worth making durable?"""
+
+    accepted: bool
+    blocking_errors: list[str]
+
+
+def checkpoint_acceptance(
+    canonical_summary: JsonObject,
+    critic_summary: JsonObject,
+) -> CheckpointAcceptance:
+    """The P0.4 checkpoint predicate: round acceptance, not export perfection.
+
+    Deliberately NOT `reviewer.status == "ok"` (controller ruling 2026-09-02).
+    The reviewer verdict folds BOTH exports together, and the canonical SVG
+    export refuses to embed a font container whose fsType it cannot read — every
+    round, for every WOFF2 brand — while the critic PNG renders clean. That is an
+    export-FORMAT limitation, not a rejected design, and gating checkpoints on it
+    meant no WOFF2-brand run ever persisted a mid-run version.
+
+    So the RASTER is the acceptance proof: the critic summary must be clean, and
+    a canonical failure is excused only when every error it names is that font-
+    embedding refusal. Any other canonical error — an unparseable SVG root, an
+    empty artifact, a failure that names nothing at all — still blocks, and says
+    so in `blocking_errors`.
+
+    `reviewer.status` / `reviewer.validation_errors` are untouched by this: the
+    agent loop reads them, and a round whose SVG did not embed its fonts should
+    still tell the orchestrator so."""
+    blocking: list[str] = []
+
+    critic_status_error = _summary_status_error("critic", critic_summary)
+    if critic_status_error is not None:
+        blocking.append(critic_status_error)
+    blocking.extend(_summary_named_errors("critic", critic_summary))
+
+    canonical_errors = _summary_named_errors("canonical", canonical_summary)
+    blocking.extend(
+        error
+        for error in canonical_errors
+        if SVG_FONT_EMBEDDING_REFUSAL_MARKER not in error
+    )
+    canonical_status_error = _summary_status_error("canonical", canonical_summary)
+    if canonical_status_error is not None and not canonical_errors:
+        # A canonical failure that names nothing cannot be classified as the
+        # embedding refusal, so it is not excused.
+        blocking.append(canonical_status_error)
+
+    return CheckpointAcceptance(accepted=not blocking, blocking_errors=blocking)
 
 
 def reviewer_bundle_status(
@@ -5222,6 +6613,11 @@ def diagnostics_from(raw_diagnostics: Any) -> list[DiagnosticSummary]:
     for raw in raw_diagnostics:
         if not isinstance(raw, dict):
             continue
+        # Rust DSL diagnostics wrap the core diagnostic beside its source span;
+        # preflight diagnostics are flat. Preserve both contracts at this seam.
+        nested = raw.get("diagnostic")
+        if isinstance(nested, dict):
+            raw = {**raw, **nested}
         span = raw.get("span") or {}
         subject = raw.get("subject") or {}
         target_page_id = None

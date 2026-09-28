@@ -27,6 +27,7 @@ import {
   EMPTY_SCENE_PRESS,
   SCENE_PAGE_ORIGIN,
   cornerHandleAtPoint,
+  freezeMotionReport,
   freezeOperationsToPersist,
   pressArmedAfterFreeze,
   sceneDescriptorPoint,
@@ -1172,6 +1173,7 @@ test("the selection outline follows the preview box while a gesture runs", () =>
     width: 1056,
     height: 676,
     rotation: 0,
+    frame: null,
   });
   assert.deepEqual(
     at({
@@ -1179,7 +1181,15 @@ test("the selection outline follows the preview box while a gesture runs", () =>
       box: { x: 112, y: 482, width: 1056, height: 676 },
       rotation: 0,
     }),
-    { nodeId: "image_hero", x: 112, y: 482, width: 1056, height: 676, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 112,
+      y: 482,
+      width: 1056,
+      height: 676,
+      rotation: 0,
+      frame: null,
+    },
   );
   // A preview for some OTHER node never moves this outline.
   assert.deepEqual(
@@ -1188,7 +1198,15 @@ test("the selection outline follows the preview box while a gesture runs", () =>
       box: { x: 0, y: 0, width: 10, height: 10 },
       rotation: 0,
     }),
-    { nodeId: "image_hero", x: 72, y: 452, width: 1056, height: 676, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 72,
+      y: 452,
+      width: 1056,
+      height: 676,
+      rotation: 0,
+      frame: null,
+    },
   );
 });
 
@@ -1210,7 +1228,15 @@ test("the preview outline honours `unitScale` the same way the document box does
       selectedNodeId: "image_hero",
       viewport: UNIT_VIEWPORT,
     }),
-    { nodeId: "image_hero", x: 96, y: 192, width: 960, height: 480, rotation: 0 },
+    {
+      nodeId: "image_hero",
+      x: 96,
+      y: 192,
+      width: 960,
+      height: 480,
+      rotation: 0,
+      frame: null,
+    },
   );
 });
 
@@ -1313,4 +1339,132 @@ test("G-H still hides a freezable node's handles mid-turn — a freeze is a writ
     }),
     false,
   );
+});
+
+/* -------------------------------------------------------------------------
+ * The runtime zero-motion report (Task 5)
+ * ---------------------------------------------------------------------- */
+
+/** The harvested ad with THREE solved boxes — a text node, an image and the
+ * auto-layout row — so a case can move each class independently. */
+function solvedFreezeScene(): Scene {
+  const scene = managedHeadlineScene();
+  scene.nodes.image_hero.computed = {
+    layout_bounds: { ...HERO_BOUNDS },
+    render_bounds: { ...HERO_BOUNDS },
+  };
+  scene.nodes.auto_row_copy.computed = {
+    layout_bounds: { ...ROW_BOX },
+    render_bounds: { ...ROW_BOX },
+  };
+  return scene;
+}
+
+/** The copy row's solved box — a container, so NO height tolerance. */
+const ROW_BOX = { x: 44, y: 40, width: 600, height: 200 };
+
+/** The same scene with one node's solved box nudged. */
+function movedBy(
+  nodeId: string,
+  delta: { x?: number; y?: number; width?: number; height?: number },
+): Scene {
+  const scene = solvedFreezeScene();
+  const was = scene.nodes[nodeId].computed!.layout_bounds;
+  const now = {
+    x: was.x + (delta.x ?? 0),
+    y: was.y + (delta.y ?? 0),
+    width: was.width + (delta.width ?? 0),
+    height: was.height + (delta.height ?? 0),
+  };
+  scene.nodes[nodeId].computed = { layout_bounds: now, render_bounds: now };
+  return scene;
+}
+
+test("a freeze that moved nothing reports nothing", () => {
+  // The contract the engine's own real-ad tests pin offline: post-freeze
+  // geometry is the pre-freeze geometry, box for box.
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), solvedFreezeScene()).moved,
+    [],
+  );
+});
+
+test("a freeze that moved ONE node names it, with both boxes", () => {
+  // The 2026-09-20 defect's shape: the bake snapped a row to the artboard
+  // edge, so the ad jumped under the finger that fired the freeze.
+  const report = freezeMotionReport(
+    solvedFreezeScene(),
+    movedBy("auto_row_copy", { x: 28 }),
+  );
+  assert.deepEqual(report.moved, [
+    {
+      id: "auto_row_copy",
+      before: { ...ROW_BOX },
+      after: { ...ROW_BOX, x: ROW_BOX.x + 28 },
+    },
+  ]);
+});
+
+test("every axis of every class is watched to 1e-6 — x, y and width on a text node too", () => {
+  for (const axis of ["x", "y", "width"] as const) {
+    const report = freezeMotionReport(
+      solvedFreezeScene(),
+      movedBy("text_headline", { [axis]: 0.001 }),
+    );
+    assert.deepEqual(
+      report.moved.map((entry) => entry.id),
+      ["text_headline"],
+      `a ${axis} drift on a text node is motion`,
+    );
+  }
+  // …and a drift under the floating-point floor is not motion at all.
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), movedBy("image_hero", { x: 1e-9 }))
+      .moved,
+    [],
+  );
+});
+
+test("only a TEXT node's height gets the 1px slack — the hug the freeze deliberately leaves un-baked", () => {
+  // A hug-height text node re-measures within a pixel of its whole-pixel-
+  // rounded Stack height (the engine's documented rounding residual), so a
+  // sub-pixel height difference there is not a defect…
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), movedBy("text_headline", { height: 0.71 }))
+      .moved,
+    [],
+  );
+  // …but a whole pixel and a half is.
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), movedBy("text_headline", { height: 1.5 }))
+      .moved.map((entry) => entry.id),
+    ["text_headline"],
+  );
+  // The slack is the TEXT class's alone: a container's or an image's height is
+  // a baked Fixed extent, so the same 0.71px there is a real regression.
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), movedBy("auto_row_copy", { height: 0.71 }))
+      .moved.map((entry) => entry.id),
+    ["auto_row_copy"],
+  );
+  assert.deepEqual(
+    freezeMotionReport(solvedFreezeScene(), movedBy("image_hero", { height: 0.71 }))
+      .moved.map((entry) => entry.id),
+    ["image_hero"],
+  );
+});
+
+test("a node with no solved box on either side is ignored, not reported", () => {
+  // The harvest carries `computed: null` on most nodes, and the freeze does
+  // not place a node it never solved — an absent box is not a moved one.
+  const before = solvedFreezeScene();
+  const after = solvedFreezeScene();
+  delete after.nodes.image_hero;
+  after.nodes.text_headline.computed = null;
+  assert.deepEqual(freezeMotionReport(before, after).moved, []);
+  // Symmetrically, a node the AFTER scene has and the BEFORE one does not.
+  const born = solvedFreezeScene();
+  born.nodes.text_born = { ...born.nodes.text_headline, id: "text_born" };
+  delete before.nodes.text_born;
+  assert.deepEqual(freezeMotionReport(before, born).moved, []);
 });

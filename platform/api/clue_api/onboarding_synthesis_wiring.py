@@ -100,6 +100,9 @@ from clue_core import (
     AssemblyRequest,
     ExecutionId,
     MemoryBundle,
+    MemorySelectionPin,
+    MemorySelectionStale,
+    MemorySelectionUnavailable,
     operation_id_from_key,
 )
 from clue_db import ConnFactory, transaction
@@ -226,14 +229,17 @@ async def ensure_onboarding_project(
 
     ``agent_turn.project_id`` and ``execution.project_id`` are real foreign keys, so a governed
     turn always belongs to a project. Onboarding is not a marketing motion, so the row is born
-    ``archived`` and carries no product: it is a scope anchor, never something a marketer opens.
+    ``kind = 'system'`` and ``archived`` (with its ``archived_at``) and carries no product: it is
+    a scope anchor, never something a marketer opens — and ``kind`` is what keeps it out of the
+    projects directory without anyone having to read its id prefix.
     """
 
     project_id = onboarding_project_id(workspace_id=workspace_id, brand_id=brand_id)
     await conn.execute(
         text(
-            "INSERT INTO project (project_id, workspace_id, brand_id, name, status) "
-            "VALUES (:project_id, :workspace_id, :brand_id, :name, 'archived') "
+            "INSERT INTO project (project_id, workspace_id, brand_id, name, status, kind, "
+            "archived_at) "
+            "VALUES (:project_id, :workspace_id, :brand_id, :name, 'archived', 'system', now()) "
             "ON CONFLICT (project_id) DO NOTHING"
         ),
         {
@@ -440,9 +446,23 @@ class OnboardingSynthesisStepPinProvider(StepPinProvider):
 
 
 class _NoMemoryContext:
+    """The memory seam with memory switched off: no bodies, no pins, no journal."""
+
     async def assemble(self, request: AssemblyRequest) -> MemoryBundle | None:
         del request
         return None
+
+    async def select(
+        self, request: AssemblyRequest
+    ) -> MemorySelectionPin | MemorySelectionUnavailable:
+        del request
+        return MemorySelectionUnavailable(reason="memory_disabled")
+
+    async def resolve(
+        self, request: AssemblyRequest, pin: MemorySelectionPin
+    ) -> MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable:
+        del request, pin
+        return MemorySelectionUnavailable(reason="memory_disabled")
 
 
 def onboarding_synthesis_context_policy() -> ContextAssemblyPolicy:
@@ -1365,17 +1385,37 @@ class OnboardingSynthesisLauncher:
                 )
                 version = int(lineage["next_version"])
                 supersedes = lineage["supersedes_document_id"]
+                source_icp_sha256 = None
+                if kind == "audience-persona" and icp is not None:
+                    source_icp_sha256 = (
+                        await conn.execute(
+                            text(
+                                "SELECT artifact_sha256 FROM brand_knowledge_document "
+                                "WHERE document_id=:doc AND workspace_id=:ws AND brand_id=:brand "
+                                "AND kind='icp-definition' "
+                                "AND project_id IS NOT DISTINCT FROM :project"
+                            ),
+                            {
+                                "doc": icp.document_id,
+                                "ws": workspace_id,
+                                "brand": brand_id,
+                                "project": project_id,
+                            },
+                        )
+                    ).scalar_one()
+                    if source_icp_sha256 is None:
+                        raise ValueError("persona source ICP has no artifact digest")
                 await conn.execute(
                     text(
                         "INSERT INTO brand_knowledge_document ("
                         "  document_id, workspace_id, brand_id, project_id, folder, path, kind, "
                         "  version, status, artifact_key, artifact_sha256, produced_by_turn_id, "
-                        "  supersedes_document_id"
+                        "  supersedes_document_id, source_icp_document_id, source_icp_sha256"
                         ") VALUES ("
                         "  :document_id, :workspace_id, :brand_id, :project_id, 'audience', "
                         "  :path, :kind, "
                         "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, "
-                        "  :supersedes"
+                        "  :supersedes, :source_icp_document_id, :source_icp_sha256"
                         ") ON CONFLICT (document_id) DO NOTHING"
                     ),
                     {
@@ -1390,6 +1430,10 @@ class OnboardingSynthesisLauncher:
                         "artifact_key": ref.artifact_key,
                         "artifact_sha256": ref.sha256,
                         "turn_id": turn_id,
+                        "source_icp_document_id": icp.document_id
+                        if source_icp_sha256 is not None and icp is not None
+                        else None,
+                        "source_icp_sha256": source_icp_sha256,
                         # A replayed launch re-reads a chain it already wrote, so the row it would
                         # name is its own; the ON CONFLICT above makes that a no-op either way.
                         "supersedes": None if supersedes == document_id else supersedes,

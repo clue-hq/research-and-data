@@ -18,6 +18,17 @@ Page = Literal["overview", "insights", "contact"]
 PAGES: tuple[Page, ...] = ("overview", "insights", "contact")
 RECIPE_VERSION = 1
 RESTRICTED_SECTION_KEYS = frozenset({"context-only", "watch-outs", "do-not-mention"})
+# Additive sections must not invalidate a saved/in-flight narrative from before their rollout.
+OPTIONAL_SECTION_KEYS = frozenset({"miscellaneous"})
+
+#: Which subject kind each page is about. A contact page about an account is a caller bug.
+#: It lives here rather than beside the page machinery because it is pure data about the page
+#: grammar, and a shared section has to know whose page its owner is before anything is read.
+PAGE_SUBJECT_KIND: dict[str, Literal["account", "contact"]] = {
+    "overview": "account",
+    "insights": "account",
+    "contact": "contact",
+}
 
 
 @dataclass(frozen=True)
@@ -32,6 +43,11 @@ class SectionRecipe:
     instruction_version: str = "v1"
     narrative: bool = False  # code-side: prose goes to intro[] (what-they-do, why-they-fit)
     workspace_id: str = ""
+    #: Spec 2026-09-12 §3: ``(page, section_key)`` of the recipe whose stored block this section
+    #: renders under its own ``h1``/``position``/``default_open``. A recipe with ``shared_from``
+    #: owns no block, is never gathered, never written and never scanned for staleness of its own;
+    #: it is stale when its owner is. ``allowed_field_keys`` are documentary (the owner's).
+    shared_from: tuple[Page, str] | None = None
 
 
 _UNSAFE_CONTEXT = ("account.reputation_risk", "account.resonance.attrition_signal")
@@ -104,8 +120,24 @@ SYSTEM_RECIPES: tuple[SectionRecipe, ...] = (
             "contact.facet.certifications",
             "contact.facet.career_history",
         ),
+        shared_from=("contact", "why-this-person"),
     ),
-    SectionRecipe("insights", "context-only", "Context only", 5, _UNSAFE_CONTEXT, restricted=True),
+    SectionRecipe(
+        "insights",
+        "context-only",
+        "Context only",
+        5,
+        _UNSAFE_CONTEXT,
+        restricted=True,
+        shared_from=("overview", "watch-outs"),
+    ),
+    SectionRecipe(
+        "insights",
+        "miscellaneous",
+        "Miscellaneous",
+        6,
+        ("account.product_packaging", "core.founded_year", "account.strategic_moves"),
+    ),
     # ---- overview -----------------------------------------------------------------------------
     SectionRecipe(
         "overview",
@@ -279,6 +311,13 @@ SYSTEM_RECIPES: tuple[SectionRecipe, ...] = (
         restricted=True,
         default_open=True,
     ),
+    SectionRecipe(
+        "contact",
+        "miscellaneous",
+        "Miscellaneous",
+        5,
+        ("contact.facet.career_history", "contact.facet.publications", "contact.facet.hobby"),
+    ),
 )
 
 
@@ -292,24 +331,29 @@ _UPSERT = text(
     """
     INSERT INTO display_section_recipe
         (page, section_key, workspace_id, h1, position, allowed_field_keys,
-         restricted, default_open, instruction_version)
+         restricted, default_open, instruction_version,
+         shared_from_page, shared_from_section_key)
     VALUES
         (:page, :section_key, '', :h1, :position, :allowed_field_keys,
-         :restricted, :default_open, :instruction_version)
+         :restricted, :default_open, :instruction_version,
+         :shared_from_page, :shared_from_section_key)
     ON CONFLICT (page, section_key, workspace_id) DO UPDATE SET
         h1 = EXCLUDED.h1,
         position = EXCLUDED.position,
         allowed_field_keys = EXCLUDED.allowed_field_keys,
         restricted = EXCLUDED.restricted,
         default_open = EXCLUDED.default_open,
-        instruction_version = EXCLUDED.instruction_version
+        instruction_version = EXCLUDED.instruction_version,
+        shared_from_page = EXCLUDED.shared_from_page,
+        shared_from_section_key = EXCLUDED.shared_from_section_key
     """
 )
 
 _SELECT = text(
     """
     SELECT page, section_key, workspace_id, h1, position, allowed_field_keys,
-           restricted, default_open, instruction_version
+           restricted, default_open, instruction_version,
+           shared_from_page, shared_from_section_key
     FROM display_section_recipe
     WHERE page = :page AND workspace_id IN ('', :workspace_id)
     """
@@ -330,6 +374,8 @@ async def load_display_recipes(conn: AsyncConnection) -> None:
                 "restricted": recipe.restricted,
                 "default_open": recipe.default_open,
                 "instruction_version": recipe.instruction_version,
+                "shared_from_page": recipe.shared_from[0] if recipe.shared_from else None,
+                "shared_from_section_key": recipe.shared_from[1] if recipe.shared_from else None,
             },
         )
 
@@ -369,5 +415,10 @@ async def read_recipes(
             instruction_version=row["instruction_version"],
             narrative=narrative_by_key[section_key],
             workspace_id=row["workspace_id"],
+            shared_from=(
+                (cast(Page, row["shared_from_page"]), row["shared_from_section_key"])
+                if row["shared_from_page"]
+                else None
+            ),
         )
     return tuple(sorted(by_key.values(), key=lambda recipe: (recipe.position, recipe.section_key)))

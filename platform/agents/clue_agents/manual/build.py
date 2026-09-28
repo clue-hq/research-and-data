@@ -36,8 +36,8 @@ from clue_agents.runtime import (
     _FINALIZE_TOOL_NAME,
     _FRAMEWORK_TOOL_NAMES,
     _MAX_FINALIZE_REPAIRS,
-    superstep_ceiling,
 )
+from clue_agents.tool_recovery import MAX_TOOL_REPAIR_ROUNDS
 from clue_config import Settings
 from clue_toolbelt.envelope import ToolEffectClass
 from clue_toolbelt.registry import ToolRegistry
@@ -71,11 +71,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v4"
+MANUAL_VERSION = "v12"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v57"
+PROFILE_VERSION = "v66"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -121,8 +121,8 @@ _CHAPTER_SUMMARIES: Mapping[str, str] = {
         "and the one next move for each."
     ),
     "limits": (
-        "Manual: the turn's hard numbers. Rounds, supersteps, wall clock, output tokens, the two "
-        "repair budgets, receipt and read bounds, quotas, retention."
+        "Manual: what bounds one turn. Round and time limits, output tokens, the two repair "
+        "budgets, receipt and read bounds, quotas, retention."
     ),
 }
 
@@ -181,7 +181,6 @@ class CodeFacts:
 
     settings: Settings
     trusted_turn_field_key: str
-    max_governed_tool_failures: int
     failure_message_limit: int
     governed_tool_repair_help: str
     governed_failure_fields: tuple[tuple[str, str], ...]
@@ -795,9 +794,11 @@ def build_errors_chapter(notes: Mapping[str, Any], facts: CodeFacts) -> Chapter:
         [
             "## What a refusal costs you",
             "",
-            "Refused governed calls are counted for the whole turn, not per tool: "
-            f"{facts.max_governed_tool_failures} come back to you, and the next one ends the",
-            "turn with nothing shown to the human. Calls refused in the same round each count.",
+            "A refused governed call comes back to you with its reasons. The cost is counted in",
+            "rounds, not calls. A round in which one or more calls were refused spends one repair",
+            "round. It is charged only after every call in that round has returned.",
+            f"{MAX_TOOL_REPAIR_ROUNDS} repair rounds come back to you. The next one ends the turn",
+            "with nothing shown to the human.",
             f"`finalize_turn` has its own separate budget of {_MAX_FINALIZE_REPAIRS} repairs.",
             "Those numbers and the rest of the turn's limits are manual:limits.",
             "",
@@ -819,24 +820,28 @@ def build_limits_chapter(
     """Rounds, clocks, caps, quotas and retention, from the profile and the named constants."""
 
     workspace = profile.workspace
-    rounds = profile.max_model_rounds
 
     lines = [
         f"# Limits: what bounds one turn of {profile.name}@{profile.version}",
         "",
-        "Every number here is enforced. None of them is advisory, and none of them is visible to",
-        "you at run time, so plan the turn against them rather than discovering them.",
+        "Every limit here is enforced. The round limit and the time limit are set by the",
+        "deployment, so this page does not state them as numbers. The platform tells you when you",
+        "are near either one. Save your work as you go, so that a turn that ends early still",
+        "leaves everything you found.",
         "",
         "## The turn",
         "",
         "| Limit | Value | What happens at the edge |",
         "| --- | --- | --- |",
-        f"| Model rounds | {rounds} | A round is one model call. |",
-        f"| Graph supersteps | {superstep_ceiling(rounds)} | Two a round plus headroom. This, not "
-        "any plan ceiling, is what actually stops a chat turn: every governed call you make is "
-        "its own one-step plan. |",
-        f"| Wall clock | {profile.turn_timeout_s:g} s | A hard timeout around the whole turn. "
-        "Nothing is finalized, so the human sees nothing. |",
+        "| Model rounds | Set by the deployment. A round is one model call. | Three rounds before "
+        "the end, a platform notice tells you how many rounds are left. Use them to save what "
+        "you have not saved. After that, only `finalize_turn` is offered. If the work is not "
+        "finished, finalize with status `awaiting_input`, say in `user_message` what you "
+        "completed, list what remains in `next_actions`, and tell the user they can reply "
+        '"continue". |',
+        "| Wall clock | Set by the deployment. There may be no time limit at all. | When there "
+        "is one, the same notice starts about three minutes before it. In the last minute, only "
+        "`finalize_turn` is offered. |",
         f"| Output tokens per call | {profile.model.max_output_tokens:,} | A longer answer is cut. "
         "Say less per round rather than more. |",
         f"| Plan nodes | {profile.max_plan_nodes} | A proposal over the ceiling is rejected "
@@ -852,10 +857,10 @@ def build_limits_chapter(
         "",
         "| Budget | Value | What the last one does |",
         "| --- | --- | --- |",
-        f"| Refused governed calls | {facts.max_governed_tool_failures} per turn, shared by every "
-        "tool | The next refusal is not returned to you: the turn ends and the human sees "
-        "nothing. Parallel calls each count, so three refusals in one round spend the whole "
-        "budget. |",
+        f"| Rounds with a refused governed call | {MAX_TOOL_REPAIR_ROUNDS} per turn. A round "
+        "counts once, however many of its calls were refused, and it is counted only after every "
+        "call in that round has returned. | The next such round ends the turn, and the human "
+        "sees nothing. |",
         f"| Refused finalizations | {_MAX_FINALIZE_REPAIRS} per turn, counted separately | The "
         "last refusal ends the turn with nothing committed. |",
         "",
@@ -948,7 +953,7 @@ def render_skill(chapter: Chapter, *, version: str, links: Mapping[str, str]) ->
             "",
         ]
     )
-    return header + body
+    return (header + body).rstrip() + "\n"
 
 
 def chapter_path(catalog_root: Path, name: str, version: str) -> Path:

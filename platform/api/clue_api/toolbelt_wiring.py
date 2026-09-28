@@ -91,7 +91,7 @@ from clue_api.coverage_tools import (
     build_research_account_gaps_v2_tool,
 )
 from clue_api.design_leg_tools import build_design_leg_tools
-from clue_api.design_tools import build_design_tools
+from clue_api.design_tools import build_design_tools, is_default_design_tool
 from clue_api.discovery_configuration import ConfirmedDiscoveryPreflight
 from clue_api.discovery_seal import DbSealedDiscoveryAccountManifestReader
 from clue_api.dynamic_client_kb import DynamicClientKbMaterializer
@@ -128,7 +128,14 @@ from clue_api.project_document_tools import (
     build_project_document_tools,
 )
 from clue_api.project_execution_router import ProjectExecutionRouter
-from clue_api.project_tools import RenameProjectTool
+from clue_api.project_targeting_tools import ConfigureProjectTargetingTool
+from clue_api.project_tools import (
+    CreateProjectTool,
+    RenameProjectTool,
+    SetProjectArchivedTool,
+    SetProjectPinnedTool,
+    UpdateProjectDetailsTool,
+)
 from clue_api.proposal_tools import (
     DecideFieldProposalTool,
     DecideSourceProposalTool,
@@ -143,6 +150,8 @@ from clue_api.prose_synthesis_tools import (
 )
 from clue_api.research_directive_tools import build_research_directive_tools
 from clue_api.research_view_tools import build_research_view_tools
+from clue_api.run_python_tool import build_run_python_tools
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_inspection_tools import build_stage0_inspection_tools
 from clue_api.stage0_project_tools import stage0_project_tools
 from clue_api.stage0_tools import stage0_tools
@@ -183,6 +192,7 @@ from clue_api.value_narrative_tools import (
     build_value_narrative_tools,
 )
 from clue_api.verification import build_verification_phase_handler
+from clue_api.web_search_tool import build_web_search_tools
 from clue_config import (
     DEFAULT_STAGE0_POLICY,
     Secrets,
@@ -2667,6 +2677,7 @@ def build_toolbelt(
     persona_requests: PersonaRequestService | None = None,
     project_documents: ProjectDocumentService | None = None,
     prose_synthesis: ProseSynthesisServices | None = None,
+    sandbox_workspaces: SandboxWorkspaces | None = None,
     value_narrative: ValueNarrativeServices | None = None,
 ) -> ToolRegistry:
     """Construct + register the concrete toolbelt over the existing capabilities (spec §2 slice 2).
@@ -2847,6 +2858,15 @@ def build_toolbelt(
     # together with the manual chapter that teaches it and the recipe revision that admits it.
     for tool in build_artifact_read_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)
+    # The code sandbox (spec 2026-09-19 §3.4). Registered on every deployment like its
+    # neighbours above so the write surface and the authority audit stay complete; composed
+    # only where turns are driven, because ``sandbox_workspaces`` is the registry the turn
+    # worker binds one execution's host directories into. Without it — and on a host with no
+    # sandbox image, or with ``CLUE_SANDBOX_ENABLED`` off — it refuses
+    # ``sandbox_unavailable`` before it reaches for a container. Registered UNGRANTED: the
+    # grant is a reviewed head-of-abm profile bump, never a dict edit.
+    for tool in build_run_python_tools(settings=resolved_settings, workspaces=sandbox_workspaces):
+        registry.register(tool, make_default=True)
     # ICP authoring: the surface a brand-level or project-local ICP proposal comes *from*, beside
     # the gate that confirms one. Registered on every deployment for the same reason as its
     # neighbours above; composed wherever the knowledge documents' storage is (``fleet_main`` and
@@ -2944,6 +2964,16 @@ def build_toolbelt(
     # module per the chokepoint protocol.
     register_thread_tools(registry, conn_factory=conn_factory)
     registry.register(RenameProjectTool(conn_factory=conn_factory), make_default=True)
+    # Projects directory (2026-09-19): the four project-row tools the directory and the
+    # project header drive. Registered like every other write path, granted to no role —
+    # filing, pinning and archiving a project are the human's decisions.
+    for tool in (
+        CreateProjectTool(conn_factory=conn_factory),
+        UpdateProjectDetailsTool(conn_factory=conn_factory),
+        SetProjectPinnedTool(conn_factory=conn_factory),
+        SetProjectArchivedTool(conn_factory=conn_factory),
+    ):
+        registry.register(tool, make_default=True)
     # FI Lane D D4 / §3-P5(a): the durable confirmation gate is opened through a governed tool for
     # the same reason, and from its own wiring module for the same one.
     register_agent_gate_tools(
@@ -2967,6 +2997,9 @@ def build_toolbelt(
         storage=storage,
     ):
         registry.register(tool, make_default=True)
+    registry.register(
+        ConfigureProjectTargetingTool(conn_factory=conn_factory, storage=storage), make_default=True
+    )
     # FI-4 slice 3: recon field progress commits on its OWN connection so the setup screen sees
     # motion while the lane runs (the lane's own transaction stays uncommitted until it ends).
     # That second checkout is only safe against the real pooled factory — an injected
@@ -3102,6 +3135,12 @@ def build_toolbelt(
         ),
     ):
         registry.register(tool, make_default=True)
+    # web_search@1 (spec 2026-09-22). Registers in EVERY composition like its neighbour above —
+    # the C6 authority audit needs one registry shape — and a missing Exa key is refused in
+    # `preconditions`, never by absence. Registered UNGRANTED here: the grants are the reviewed
+    # `head-of-abm@v62` and `design@v3` bumps, never a dict edit.
+    for tool in build_web_search_tools(secrets=secrets):
+        registry.register(tool, make_default=True)
     # Lane E E3. Same everywhere-registered posture as the prose surface above, with one extra
     # gate: the positioning services are composed only when `value_narrative_synthesis_enabled`,
     # so a flag-off deployment registers the name and refuses `value_narrative_not_composed`.
@@ -3121,7 +3160,7 @@ def build_toolbelt(
         enabled=resolved_settings.design_runtime_enabled,
         storage=storage,
     ):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=is_default_design_tool(tool))
     # P3.4 (PD-part3 §1-D1/§2.3): the head-of-abm's delegation entry onto the design leg.
     # Registered unconditionally for the same audit reason, and gated on the SAME runtime
     # switch as the design_* set (the thread-wedge guard, adversarial-review fix): a leg

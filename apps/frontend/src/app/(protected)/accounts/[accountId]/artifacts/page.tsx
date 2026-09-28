@@ -1,3 +1,5 @@
+import { ResearchNavigationProvider } from "@/features/accounts/components/research-link";
+import { researchContextQuery } from "@/features/accounts/model/research-context";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AccountArtifactsScreen } from "@/features/accounts/components/account-workspace-screens";
@@ -12,13 +14,15 @@ export const dynamic = "force-dynamic";
 
 export default async function AccountArtifactsPage({
   params,
+  searchParams,
 }: PageProps<"/accounts/[accountId]/artifacts">) {
   const { accountId } = await params;
+  const context = researchContextQuery(await searchParams);
   const [account, workspace] = await Promise.all([
-    getAccountDetails(accountId),
-    getAccountWorkspace(accountId),
+    getAccountDetails(accountId, undefined, context),
+    getAccountWorkspace(accountId, undefined, context),
   ]);
 
   if (!account || !workspace) notFound();
-  return <AccountArtifactsScreen account={account} workspace={workspace} />;
+  return <ResearchNavigationProvider accountId={accountId} context={context}><AccountArtifactsScreen account={account} workspace={workspace} /></ResearchNavigationProvider>;
 }

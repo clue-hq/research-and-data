@@ -61,6 +61,12 @@ Request (snake_case, matching the backend model):
 `job_role` is a self-described title, never the authorization `role_key`. `company_website`
 is normalized server-side (scheme-less input gains `https://`; non-http(s) refused).
 
+`company_name` is **optional** (`string | null`; an empty string is refused — send `null`).
+The workspace and its first brand are named by this precedence: the typed company name when
+one is given, otherwise the canonical name of the company website's domain. The profile
+screen says so under the field ("Leave blank to use your website's name"), which is why the
+website itself stays required.
+
 One replay-safe backend transaction: links the Clerk identity to a Clue `platform_user`,
 creates the workspace (name = company_name), creates its **first brand** (name =
 company_name), makes the user the workspace **owner**, persists the profile

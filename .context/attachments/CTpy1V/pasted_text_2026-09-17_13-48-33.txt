@@ -1,0 +1,853 @@
+The cleanest way to understand this is to separate four systems that people casually lump together as “the domain”:
+
+1. **DNS gives a name an address.**
+2. **TLS proves that the server is allowed to answer for that name.**
+3. **Cloudflare receives and routes the request.**
+4. **Railway runs the application that produces the page.**
+
+Our database provides a fifth piece: **which Clue workspace owns the hostname?**
+
+---
+
+## 1. Domain names and hostnames
+
+Take this URL:
+
+```text
+https://go.acme.com/annual-report
+```
+
+It has several parts:
+
+```text
+https://  go.acme.com  /annual-report
+   │           │              │
+ protocol   hostname        path/route
+```
+
+### Domain
+
+`acme.com` is the registered domain. Acme controls the namespace beneath it.
+
+### Hostname
+
+`go.acme.com` is a specific hostname inside that namespace.
+
+Other hostnames could be:
+
+```text
+www.acme.com
+mail.acme.com
+api.acme.com
+pages.acme.com
+```
+
+A hostname is the complete name that a browser connects to.
+
+### Subdomain
+
+`go` is a subdomain beneath `acme.com`, making the full hostname `go.acme.com`.
+
+Similarly:
+
+```text
+acme.pages.cluehq.ai
+```
+
+has several levels:
+
+```text
+ai
+└── cluehq
+    └── pages
+        └── acme
+```
+
+The exact hostname is `acme.pages.cluehq.ai`.
+
+### Apex or root domain
+
+The bare registered domain is called the apex:
+
+```text
+acme.com
+```
+
+This is different from:
+
+```text
+go.acme.com
+```
+
+Supporting the apex is harder because it is commonly already serving the company’s primary website, and traditional DNS does not permit an ordinary CNAME at the apex.
+
+That is why our recommended v1 supports a customer-owned subdomain such as `go.acme.com`, not the bare `acme.com`.
+
+---
+
+## 2. DNS does not understand page routes
+
+DNS only handles this:
+
+```text
+go.acme.com
+```
+
+DNS never sees or resolves:
+
+```text
+/annual-report
+/pricing
+/john-smith
+```
+
+Therefore, both of these URLs have the same DNS destination:
+
+```text
+https://go.acme.com/annual-report
+https://go.acme.com/pricing
+```
+
+After the request reaches our application, the backend uses the path to select the page.
+
+In our design:
+
+- The hostname selects the workspace.
+- The path selects the page inside that workspace.
+
+```text
+go.acme.com       → Acme workspace
+/annual-report    → Acme's annual-report page
+```
+
+---
+
+## 3. What is a DNS zone?
+
+The global DNS system is organized like a tree:
+
+```text
+.
+└── ai
+    └── cluehq.ai
+        ├── app.cluehq.ai
+        ├── api.cluehq.ai
+        └── pages.cluehq.ai
+```
+
+A **DNS zone** is the portion of this tree that one DNS authority manages.
+
+Our `cluehq.ai` zone is effectively a file or database containing records such as:
+
+```text
+app.cluehq.ai       → frontend destination
+api.cluehq.ai       → backend destination
+pages.cluehq.ai     → published-pages destination
+```
+
+Because Cloudflare is the authoritative DNS provider for `cluehq.ai`, Cloudflare holds and answers questions about that zone.
+
+That does not necessarily mean Cloudflare is the registrar where we purchased the domain. These are separate roles:
+
+| Role | Meaning |
+|---|---|
+| Registrar | Where the domain registration is maintained |
+| Authoritative DNS provider | Stores and answers the domain’s DNS records |
+| Edge/CDN/proxy | Receives web traffic before the application |
+| Hosting provider | Runs the actual application |
+
+For us:
+
+```text
+Authoritative DNS and edge: Cloudflare
+Application hosting:        Railway
+```
+
+Acme has its own separate `acme.com` zone, controlled by Acme through whichever DNS provider it uses.
+
+---
+
+## 4. What a DNS record does
+
+A DNS zone contains records. The important ones for this feature are CNAME and TXT.
+
+### CNAME record
+
+A CNAME says:
+
+> This name is an alias for another name.
+
+Acme would add this to the `acme.com` zone:
+
+```text
+go.acme.com  CNAME  pages.cluehq.ai
+```
+
+Conceptually:
+
+```text
+go.acme.com → pages.cluehq.ai → Cloudflare
+```
+
+This is not an HTTP redirect.
+
+A redirect would change the browser’s address bar:
+
+```text
+go.acme.com → acme.pages.cluehq.ai
+```
+
+A CNAME does not. The browser continues to display:
+
+```text
+go.acme.com
+```
+
+The CNAME only helps the browser find the infrastructure that should handle that hostname.
+
+### TXT record
+
+A TXT record contains text rather than an address.
+
+Cloudflare can ask Acme to add something like:
+
+```text
+_cf-custom-hostname.go.acme.com
+    TXT
+"random-verification-token"
+```
+
+That proves Acme controls the DNS for `go.acme.com`.
+
+Without this proof, one Clue customer might attempt to connect a hostname belonging to someone else.
+
+---
+
+## 5. What happens when the browser connects
+
+Suppose the DNS records are ready and someone opens:
+
+```text
+https://go.acme.com/annual-report
+```
+
+### Step 1: DNS lookup
+
+The browser asks:
+
+> Where should I send traffic for `go.acme.com`?
+
+The CNAME says:
+
+```text
+go.acme.com → pages.cluehq.ai
+```
+
+Because `pages.cluehq.ai` is proxied through Cloudflare, DNS ultimately returns Cloudflare network addresses.
+
+### Step 2: Secure connection
+
+The browser connects to Cloudflare and says:
+
+> I want `go.acme.com`.
+
+Before normal HTTP traffic can begin, Cloudflare must present a valid TLS certificate for `go.acme.com`.
+
+This is why DNS alone is insufficient. Pointing the hostname at our system does not automatically authorize our system to serve HTTPS for that name.
+
+Cloudflare for SaaS handles the certificate:
+
+```text
+Browser: “Prove that you can serve go.acme.com.”
+Cloudflare: presents certificate for go.acme.com
+Browser: certificate checks pass
+```
+
+### Step 3: HTTP request
+
+Once the secure connection exists, the browser sends approximately:
+
+```http
+GET /annual-report HTTP/1.1
+Host: go.acme.com
+```
+
+The `Host` header is crucial. Thousands of domains may resolve to Cloudflare’s network, so Cloudflare and our backend need the hostname to know which site the visitor requested.
+
+Modern TLS also sends the desired server name earlier through SNI, allowing Cloudflare to select the correct certificate before HTTP begins.
+
+---
+
+## 6. What “Cloudflare for SaaS” adds
+
+Ordinary Cloudflare configuration covers names inside our own zone, such as:
+
+```text
+app.cluehq.ai
+pages.cluehq.ai
+```
+
+But `go.acme.com` belongs to someone else’s zone.
+
+Cloudflare for SaaS lets us register `go.acme.com` as a **custom hostname** attached to our SaaS service.
+
+This tells Cloudflare:
+
+> If traffic for `go.acme.com` enters through our SaaS target, accept it, provision its certificate, and route it through the Clue publishing system.
+
+Creating a Cloudflare custom-hostname object does not modify Acme’s DNS. It prepares our side. Acme must still add the CNAME in its own zone.
+
+So connecting a domain requires cooperation between two zones:
+
+```text
+Acme's DNS zone:
+go.acme.com → pages.cluehq.ai
+
+Our Cloudflare zone:
+pages.cluehq.ai → Clue page-delivery system
+```
+
+---
+
+## 7. Edge, proxy, Worker and origin
+
+These terms describe different places in the request journey.
+
+### Edge
+
+Cloudflare has servers around the world. These are its edge network: the first part of our infrastructure that visitors reach.
+
+### Reverse proxy
+
+Cloudflare acts as a reverse proxy:
+
+```text
+Visitor → Cloudflare → our application
+```
+
+The visitor talks to Cloudflare. Cloudflare privately talks to our application and returns the result.
+
+### Worker
+
+A Cloudflare Worker is a small program that runs at that edge.
+
+For us, its job is intentionally narrow:
+
+1. Receive a page request.
+2. Remember the public hostname requested by the visitor.
+3. Forward the request to the one Railway page origin.
+4. Return Railway’s response to the visitor.
+
+### Origin
+
+The origin is the application that ultimately generates or retrieves the response.
+
+In our design, Railway hosts the origin:
+
+```text
+page-origin.cluehq.ai
+```
+
+Cloudflare is the front door; Railway is where the page-serving backend actually runs.
+
+---
+
+## 8. Why we need the Worker
+
+If Cloudflare forwarded the request unchanged, Railway might receive:
+
+```http
+Host: go.acme.com
+```
+
+Railway does not know that hostname because we have not registered every customer domain individually with Railway. It may refuse the request before our application can process it.
+
+The Worker changes the origin-facing request into something Railway recognizes:
+
+```http
+Host: page-origin.cluehq.ai
+X-Clue-Public-Host: go.acme.com
+```
+
+So Railway sees its one registered origin:
+
+```text
+page-origin.cluehq.ai
+```
+
+Our backend still learns that the visitor originally requested:
+
+```text
+go.acme.com
+```
+
+The conceptual flow is:
+
+```text
+Browser
+  │
+  │ https://go.acme.com/annual-report
+  ▼
+Cloudflare
+  │
+  │ Validates TLS for go.acme.com
+  ▼
+Worker
+  │
+  │ Sends request to page-origin.cluehq.ai
+  │ X-Clue-Public-Host: go.acme.com
+  ▼
+Railway
+  │
+  ▼
+Clue page backend
+```
+
+The visitor never sees `page-origin.cluehq.ai`.
+
+---
+
+## 9. The trusted-header requirement
+
+The backend must not trust any random request containing:
+
+```http
+X-Clue-Public-Host: go.acme.com
+```
+
+Otherwise, an attacker could contact Railway directly and pretend that the Worker forwarded the request.
+
+Therefore the Worker should:
+
+- Delete any incoming copy of the original-host header.
+- Write the correct value itself.
+- Add a secret edge-authentication header.
+- Forward only to the dedicated Railway origin.
+
+The Railway application should reject public-page requests without valid edge authentication.
+
+Conceptually:
+
+```http
+X-Clue-Public-Host: go.acme.com
+X-Clue-Edge-Auth: secret-known-only-to-worker-and-origin
+```
+
+A stronger future form could use authenticated origin connections, but a carefully managed secret is sufficient for the initial architecture.
+
+---
+
+## 10. How the backend knows which workspace to serve
+
+Cloudflare only gets the request to our system. It should not own our product-level tenant mapping.
+
+The Clue backend owns a hostname registry:
+
+| Hostname | Workspace | Kind | Status |
+|---|---|---|---|
+| `acme.pages.cluehq.ai` | Acme | system | active |
+| `go.acme.com` | Acme | custom | active |
+| `northstar.pages.cluehq.ai` | Northstar | system | active |
+| `pages.northstar.com` | Northstar | custom | pending |
+
+When the backend receives:
+
+```text
+hostname = go.acme.com
+path = /annual-report
+```
+
+it performs:
+
+```text
+go.acme.com
+    ↓
+Acme workspace
+    ↓
+published page with slug annual-report
+```
+
+The hostname mapping is the load-bearing seam because every public request begins there.
+
+Cloudflare should not receive a separate Railway origin for each workspace. Every workspace shares the delivery infrastructure; the database performs the tenant selection.
+
+---
+
+## 11. Why Clue and custom hostnames use the same path
+
+Acme always gets a permanent Clue hostname:
+
+```text
+acme.pages.cluehq.ai
+```
+
+It may additionally connect:
+
+```text
+go.acme.com
+```
+
+Both become registry entries for the same workspace:
+
+```text
+acme.pages.cluehq.ai ─┐
+                      ├──→ Acme workspace
+go.acme.com ──────────┘
+```
+
+Therefore these can display the same page:
+
+```text
+https://acme.pages.cluehq.ai/annual-report
+https://go.acme.com/annual-report
+```
+
+That is what we mean when we say tenant subdomains and customer domains are “one path, not two.”
+
+We are not building:
+
+- One publishing system for Clue domains.
+- Another publishing system for customer domains.
+
+We are building one hostname-aware page-delivery system.
+
+---
+
+## 12. How `<workspace>.pages.cluehq.ai` works
+
+DNS needs a way to send many workspace names to the same service:
+
+```text
+acme.pages.cluehq.ai
+northstar.pages.cluehq.ai
+probook.pages.cluehq.ai
+```
+
+A wildcard DNS record can do this:
+
+```text
+*.pages.cluehq.ai → Cloudflare page service
+```
+
+The `*` means any single label in that position.
+
+But wildcard DNS and wildcard certificates are separate things:
+
+- Wildcard DNS makes names resolve to an address.
+- A wildcard TLS certificate proves the server may securely answer for those names.
+
+A certificate for:
+
+```text
+*.cluehq.ai
+```
+
+covers:
+
+```text
+app.cluehq.ai
+pages.cluehq.ai
+```
+
+It does not cover:
+
+```text
+acme.pages.cluehq.ai
+```
+
+That hostname is one level deeper.
+
+We consequently need specific certificate coverage for:
+
+```text
+*.pages.cluehq.ai
+```
+
+Cloudflare documents advanced certificates or Total TLS for deeper subdomains on a fully managed zone. This is why the certificate option must be confirmed in the real Cloudflare dashboard before implementation.
+
+---
+
+## 13. The domain-connection lifecycle
+
+When a user enters `go.acme.com`, our backend should not immediately mark it connected.
+
+### 1. Validate the requested hostname
+
+We check that:
+
+- It is syntactically valid.
+- It is a subdomain rather than the apex.
+- It is not already connected to another workspace.
+- It is not beneath `cluehq.ai`.
+- It is not one of our reserved internal hostnames.
+- This workspace does not already have another custom hostname.
+
+### 2. Reserve it locally
+
+Create a pending database record:
+
+```text
+hostname: go.acme.com
+workspace: Acme
+status: provisioning
+```
+
+The uniqueness constraint prevents two workspaces from claiming the same hostname.
+
+### 3. Register it with Cloudflare
+
+Call the Cloudflare API to create a custom hostname for:
+
+```text
+go.acme.com
+```
+
+Cloudflare returns its identifier and verification information.
+
+### 4. Show DNS instructions
+
+Settings displays the exact records Acme must create:
+
+```text
+CNAME:
+go → pages.cluehq.ai
+
+TXT:
+verification name → verification token
+```
+
+The UI should show required and observed values side by side.
+
+### 5. Poll Cloudflare
+
+There are several different facts to monitor:
+
+```text
+Ownership verified?
+Hostname active?
+Certificate active?
+DNS pointing to pages.cluehq.ai?
+```
+
+Cloudflare distinguishes hostname status from certificate status. Production traffic is ready only after both are active and DNS points to the SaaS target.
+
+### 6. Activate locally
+
+Only then do we set:
+
+```text
+status = active
+```
+
+### 7. Serve traffic
+
+Requests for `go.acme.com` now map to the Acme workspace.
+
+---
+
+## 14. Suggested states in the product
+
+The UI should communicate the actual lifecycle:
+
+```text
+Not connected
+    ↓
+Waiting for DNS
+    ↓
+Verifying ownership
+    ↓
+Issuing certificate
+    ↓
+Active
+```
+
+Error states might include:
+
+```text
+CNAME incorrect
+TXT record missing
+Certificate blocked by CAA
+Hostname already connected
+Verification expired
+Cloudflare provisioning error
+```
+
+“DNS found” should not be displayed as “Active.” The browser still cannot safely visit the domain until the certificate is ready.
+
+---
+
+## 15. Why we keep the Clue URL alive
+
+The permanent workspace URL is valuable before, during and after custom-domain setup:
+
+```text
+acme.pages.cluehq.ai
+```
+
+It provides:
+
+- An immediate publishing address.
+- A preview address.
+- A fallback while DNS propagates.
+- A recovery path if the customer misconfigures DNS.
+- A working address after the custom domain is removed.
+
+A custom hostname is therefore an additional entrance, not a replacement for the system hostname.
+
+---
+
+## 16. What “fallback” means in two different places
+
+There are two unrelated uses of “fallback” in this design.
+
+### Cloudflare fallback origin
+
+This means:
+
+> Where should Cloudflare send custom-hostname traffic by default?
+
+For us, the Worker/page origin is the infrastructure fallback origin.
+
+### Workspace fallback URL
+
+This means:
+
+> Where should a visitor go if they request an unpublished or unknown page?
+
+For example:
+
+```text
+go.acme.com/nonexistent-page
+    ↓
+https://www.acme.com
+```
+
+One is infrastructure routing. The other is customer-facing product behavior. They should not be represented by the same field.
+
+---
+
+## 17. Published HTML and assets
+
+A webpage usually includes several resources:
+
+```text
+HTML
+CSS
+JavaScript
+images
+fonts
+```
+
+Suppose our published HTML contains this absolute asset address:
+
+```html
+<script src="https://page-origin.cluehq.ai/assets/123.js"></script>
+```
+
+The page can still work, but the custom-domain page now depends visibly on a different origin. That complicates CSP, CORS, caching and security rules.
+
+A cleaner design is to produce host-independent paths:
+
+```html
+<script src="/assets/123.js"></script>
+```
+
+Then the browser automatically requests:
+
+```text
+https://go.acme.com/assets/123.js
+```
+
+or:
+
+```text
+https://acme.pages.cluehq.ai/assets/123.js
+```
+
+Both requests travel through the same Cloudflare → Worker → Railway route.
+
+This lets the page use a simple CSP such as `self` and avoids republishing the HTML whenever a workspace changes domains.
+
+Therefore, before custom domains work reliably, publishing must stop baking the request-time origin into permanent HTML.
+
+---
+
+## 18. Removing a domain safely
+
+Removal should be an ordered operation:
+
+1. Mark the local record as disconnecting.
+2. Delete the custom hostname from Cloudflare.
+3. Confirm deletion.
+4. Remove or deactivate the local hostname row.
+5. Keep `<workspace>.pages.cluehq.ai` active.
+
+Why Cloudflare first?
+
+If we remove our database row while Cloudflare still considers the customer hostname attached to our SaaS service, requests can continue reaching us without a valid workspace mapping. Keeping the local record until the provider deletion succeeds also lets us retry safely.
+
+If Cloudflare is temporarily unavailable, the row remains in `disconnecting` rather than leaving the two systems silently inconsistent.
+
+---
+
+## 19. The complete proposed architecture
+
+```text
+                    DNS layer
+          ┌──────────────────────────┐
+          │ go.acme.com              │
+          │ CNAME pages.cluehq.ai    │
+          └─────────────┬────────────┘
+                        │
+                        ▼
+                Cloudflare edge
+          ┌──────────────────────────┐
+          │ Custom hostname          │
+          │ TLS certificate          │
+          │ DDoS/WAF/cache           │
+          └─────────────┬────────────┘
+                        │
+                        ▼
+                Cloudflare Worker
+          ┌──────────────────────────┐
+          │ Preserve public hostname │
+          │ Authenticate to origin   │
+          │ Forward request          │
+          └─────────────┬────────────┘
+                        │
+                        ▼
+                  Railway origin
+          ┌──────────────────────────┐
+          │ page-origin.cluehq.ai    │
+          │ One registered origin    │
+          └─────────────┬────────────┘
+                        │
+                        ▼
+                   Clue backend
+          ┌──────────────────────────┐
+          │ Hostname → workspace     │
+          │ Path → published page    │
+          │ Return HTML/assets       │
+          └──────────────────────────┘
+```
+
+## 20. The main v1 product rules
+
+The proposed first version is:
+
+- Every workspace receives one permanent `<workspace>.pages.cluehq.ai` hostname.
+- Every workspace may connect one customer-owned hostname.
+- The customer hostname must be a subdomain such as `go.acme.com`.
+- Bare apex domains such as `acme.com` are refused with a clear explanation.
+- Customer hostnames beneath `cluehq.ai` are refused.
+- A hostname can belong to only one workspace.
+- The domain becomes active only when ownership, DNS and TLS are ready.
+- Both the Clue hostname and custom hostname use the same backend delivery path.
+- The Clue hostname remains permanently available.
+- Removing a custom domain removes the Cloudflare configuration before the local binding.
+- HTML and assets must be host-independent.
+- Railway accepts page traffic only from the trusted Cloudflare edge path.
+
+The essence is:
+
+> DNS brings the visitor to Cloudflare. TLS lets Cloudflare securely answer for the customer’s hostname. The Worker funnels every hostname into one Railway origin. The backend uses the original hostname to choose the workspace and the URL path to choose the page.

@@ -32,8 +32,8 @@ from urllib.parse import urlsplit
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.render import render_value_text
-from clue_core import Claim, ClaimId, ExtractionMethod
-from clue_research.claimstore import WorkspaceScope, claims_by_ids
+from clue_core import Claim, ExtractionMethod
+from clue_research.claimstore.quality import inspectable_claims_by_ids
 
 #: The favicon service the drawer's source chip uses. A url, never a fetch.
 FAVICON_TEMPLATE = "https://www.google.com/s2/favicons?domain={domain}&sz=32"
@@ -115,6 +115,11 @@ class EvidenceRef:
     media_timestamp: str | None
     provider: str | None
     outreach_safe: bool
+    source_kind: str | None = None
+    source_excerpt: str | None = None
+    qualifications: tuple[str, ...] = ()
+    supporting_claim_ids: tuple[str, ...] = ()
+    seller_passages: tuple[dict[str, object], ...] = ()
 
     def to_wire(self) -> dict[str, object]:
         """The camelCase contract shape. ``researchExcerpt`` appears only when there is one."""
@@ -132,6 +137,14 @@ class EvidenceRef:
             "provider": self.provider,
             "outreachSafe": self.outreach_safe,
         }
+        if self.source_kind is not None:
+            wire.update(
+                sourceKind=self.source_kind,
+                sourceExcerpt=self.source_excerpt,
+                qualifications=list(self.qualifications),
+                supportingClaimIds=list(self.supporting_claim_ids),
+                sellerPassages=list(self.seller_passages),
+            )
         if self.research_excerpt is not None:
             wire["researchExcerpt"] = self.research_excerpt
         return wire
@@ -140,10 +153,64 @@ class EvidenceRef:
 def _evidence_ref(claim: Claim) -> EvidenceRef:
     value = claim.value_json
     domain = source_domain(claim.source_url)
-    quote = claim.evidence_span or None
+    markers = claim.write_markers or {}
+    quality = bool(markers.get("quality_required"))
+    kind = (
+        (
+            "inference"
+            if markers.get("claim_kind") == "inference"
+            else "primary_quote"
+            if claim.source_key in ("research:web_snapshot", "research:transcript")
+            and claim.evidence_span
+            else "source_excerpt"
+            if claim.evidence_span
+            else "provider_record"
+        )
+        if quality
+        else None
+    )
+    media = markers.get("media")
+    if (
+        quality
+        and isinstance(media, dict)
+        and claim.entity_type.value == "contact"
+        and (media.get("attribution") != "evidence_backed")
+    ):
+        kind = "source_excerpt"
+    quote = (claim.evidence_span or None) if kind in (None, "primary_quote") else None
+    support = markers.get("support")
+    supports = [s for s in support if isinstance(s, dict)] if isinstance(support, list) else []
     is_record = claim.extraction_method is ExtractionMethod.API and claim.source_url is None
     seen = claim.observed_at or claim.collected_at
     media_timestamp = _string_entry(value, ("media_timestamp",))
+    raw_qualifications = markers.get("qualifications")
+    qualifications = (
+        [str(q) for q in raw_qualifications] if isinstance(raw_qualifications, list) else []
+    )
+    if quality and isinstance(media, dict):
+        raw_segments = media.get("segments")
+        segments = raw_segments if isinstance(raw_segments, list) else []
+        stamps = [s for s in segments if isinstance(s, dict) and s.get("time_s") is not None]
+        media_timestamp = (
+            f"{stamps[0]['time_s']}s ({str(stamps[0].get('timing', 'unknown')).replace('_', ' ')})"
+            if stamps
+            else None
+        )
+        qualifications.append(
+            f"Transcript version {media.get('version_ref')}; "
+            f"characters {media.get('start')}–{media.get('end')}."
+        )
+        if not stamps:
+            qualifications.append("Timestamp unavailable.")
+    if quality and claim.field_key == "account.open_requisitions" and isinstance(value, list):
+        from clue_api.arv2.quality_hiring import current_hiring_state
+
+        qualifications.extend(
+            f"Hiring: {current_hiring_state(row)}; observed {row.get('observed_on', 'unknown')}."
+            for row in value
+            if isinstance(row, dict)
+        )
+    claim_support_ids = [s.get("claim_ids") for s in supports if s.get("kind") == "claims"]
     return EvidenceRef(
         claim_id=str(claim.id),
         source_url=claim.source_url,
@@ -158,6 +225,25 @@ def _evidence_ref(claim: Claim) -> EvidenceRef:
         media_timestamp=media_timestamp,
         provider=claim.source_key,
         outreach_safe=claim.outreach_safe,
+        source_kind=kind,
+        source_excerpt=claim.evidence_span if kind == "source_excerpt" else None,
+        qualifications=tuple(str(q) for q in qualifications)
+        if isinstance(qualifications, list)
+        else (),
+        supporting_claim_ids=tuple(
+            str(id) for ids in claim_support_ids if isinstance(ids, list) for id in ids
+        ),
+        seller_passages=tuple(
+            {
+                "documentId": s["document_id"],
+                "sha256": s["sha256"],
+                "quote": s["quote"],
+                "start": s["start"],
+                "end": s["end"],
+            }
+            for s in supports
+            if s.get("kind") == "seller_document"
+        ),
     )
 
 
@@ -177,6 +263,7 @@ async def evidence_for_ids(
     """
     if not claim_ids:
         return []
-    ids = [ClaimId(uuid.UUID(claim_id)) for claim_id in claim_ids]
-    found = await claims_by_ids(conn, ids, scope=WorkspaceScope.for_workspace(workspace_id))
+    found = await inspectable_claims_by_ids(
+        conn, workspace_id=workspace_id, claim_ids=[uuid.UUID(id) for id in claim_ids]
+    )
     return resolve_evidence(list(found.values()))

@@ -340,7 +340,12 @@ class Settings(BaseSettings):
     # **default True since the R2 exit gate passed on 2026-09-08** (founder instruction
     # 2026-09-07: flip once R2 is over). A worker missing a credential still composes no handler.
     # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
+    # New launches use the discovery-first v4 Deep Agent (founder ruling 2026-09-24).
+    # Historical jobs still resolve their pinned catalog, including legacy v1 rows.
+    arv2_research_catalog_version: Literal["v1", "v2", "v3", "v4"] = "v4"
     arv2_account_research_enabled: bool = True
+    # Durable quality continuation/outbox recovery; no effect when no quality generation exists.
+    arv2_quality_reconcile_interval_s: float = Field(default=10.0, gt=0)
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5
@@ -353,7 +358,18 @@ class Settings(BaseSettings):
     # **Native Gemini** model id — the one ARV2 call that bypasses OpenRouter, because OpenRouter
     # serves neither this transcription model nor a file upload. It reads
     # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
+    arv2_media_video_model: str = "gemini-3.5-flash-lite"
     arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
+    # Active recording ASR is Deepgram Nova-3; Gemini fields above serve legacy callers.
+    # en matches the trial; auto detects dominant language; multi permits code-switching.
+    arv2_deepgram_language: str = "en"
+    # PAYG prerecorded list rates; computed USD is an estimate, not invoice metering.
+    arv2_deepgram_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0043"), ge=0, allow_inf_nan=False
+    )
+    arv2_deepgram_multi_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0052"), ge=0, allow_inf_nan=False
+    )
     # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
     # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.
     arv2_embedding_model: str = "google/gemini-embedding-2"
@@ -369,14 +385,19 @@ class Settings(BaseSettings):
     arv2_raw_root: str = ".artifacts/arv2"
 
     # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------
-    # Model rounds per account job. A ceiling ends the loop and the driver finalizes with what
-    # was written; it is a safety net, never a budget. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
-    arv2_account_max_model_rounds: int = Field(default=100, ge=1)
+    # Model rounds per research job (account and person), 350 by founder ruling 2026-09-27. The
+    # agent is told to wrap up three rounds before the end and finalizes ``blocked`` with what it
+    # saved; it is a safety net, never a budget. The upper bound is the runtime's own ceiling
+    # (``clue_agents.execution.MAX_RUNTIME_MODEL_ROUNDS``), so a value the runtime would refuse
+    # is refused here, at start-up. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
+    arv2_account_max_model_rounds: int = Field(default=350, ge=1, le=500)
     # Tool calls the model may issue in ONE round; the excess receive a recoverable refusal.
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
     arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
-    # Wall clock per account job, seconds. Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
-    arv2_account_max_runtime_s: int = Field(default=1800, ge=60)
+    # Wall clock per research job, seconds; 0 means no timeout (founder ruling 2026-09-27).
+    # ``agent_long_turn_alert_s`` still warns when a job runs long.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
+    arv2_account_max_runtime_s: int = Field(default=0, ge=0)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
@@ -385,6 +406,20 @@ class Settings(BaseSettings):
     # Largest podcast enclosure the media tool downloads, MiB.
     # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
     arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
+
+    # --- Deep Agent turn limits (founder ruling 2026-09-27) -----------------------------------
+    # Operator settings, not profile content: changing one never mints a profile version.
+    # Model rounds per Head-of-ABM chat turn. As with research, the agent is told to wrap up
+    # three rounds before the end and then finalizes ``awaiting_input`` ("reply continue").
+    # Env: ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``.
+    head_of_abm_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Wall clock per Head-of-ABM chat turn, seconds; 0 means no timeout. When set, the agent is
+    # told to wrap up about three minutes before it. Env: ``CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S``.
+    head_of_abm_turn_timeout_s: float = Field(default=0.0, ge=0)
+    # A Head-of-ABM turn or research job still running after this many seconds logs a warning,
+    # flags its Langfuse trace and sends one Sentry warning (when Sentry is installed); 0 turns
+    # the alert off. It never stops the turn. Env: ``CLUE_AGENT_LONG_TURN_ALERT_S``.
+    agent_long_turn_alert_s: float = Field(default=3600.0, ge=0)
 
     # --- ARV2 R3 person agent (master plan §9 R3) ---------------------------------------------
     # Media items ONE person job may read (podcast episodes, conference talks, YouTube
@@ -397,9 +432,9 @@ class Settings(BaseSettings):
     # Off by default: a worker composes the discovery handler only when this is on AND
     # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
     arv2_discovery_enabled: bool = False
-    #: The strict pass's Websets ask (ruling 4: 35 for a target of 20 while precision is measured).
-    arv2_discovery_strict_count: int = Field(default=35, ge=1)
-    #: Run the relaxed pass automatically when the strict pass falls short (ruling, rev 5).
+    #: Allow the relaxed search when the strict searches fall short, for a run whose caller did not
+    #: say (the agent's tool always says). There is no provider-ask setting: the first search asks
+    #: Exa for exactly the number the human wants (founder ruling 2026-09-28).
     arv2_discovery_relaxed_auto: bool = True
     #: Operator override only — empty by default (founder ruling 2026-09-11: no deployment-wide
     #: default gate set; every ICP decides its own). Empty means the pinned ICP document chooses
@@ -412,7 +447,8 @@ class Settings(BaseSettings):
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).
     arv2_discovery_poll_interval_s: float = Field(default=15.0, gt=0)
-    #: Wall clock for one discovery run, seconds (spec §3).
+    #: Wall clock for one discovery SEARCH, seconds — a run makes up to three, one after another
+    #: (founder ruling 2026-09-28).
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
@@ -489,7 +525,7 @@ class Settings(BaseSettings):
     arv2_display_timeout_s: float = 240.0
     # How many sections of one page are in flight at once (one ProviderCaller each).
     # Env: ``CLUE_ARV2_DISPLAY_MAX_PARALLEL``.
-    arv2_display_max_parallel: int = 8
+    arv2_display_max_parallel: int = 30
     # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
     # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
     arv2_display_client_pitch: str = (
@@ -509,6 +545,17 @@ class Settings(BaseSettings):
     # Env: ``CLUE_ARV2_FIT_MEDIUM_THRESHOLD``.
     arv2_fit_medium_threshold: float = 0.40
 
+    # --- Conversation naming (spec 2026-09-18-conversation-naming-design §4.8) ---------------
+    # One cheap call names the chat (and, on the Home path, the project) once the first agent
+    # reply exists. Off keeps the placeholders. Env: ``CLUE_CONVERSATION_NAMING_ENABLED``.
+    conversation_naming_enabled: bool = True
+    # OpenRouter model id for the naming call. Env: ``CLUE_CONVERSATION_NAMING_MODEL``.
+    conversation_naming_model: str = "openai/gpt-5.6-luna"
+    # The naming call's HTTP timeout. The turn never waits this long — the engine waits
+    # ``NAMING_GRACE_S`` and lets a slower call finish detached (§4.1).
+    # Env: ``CLUE_CONVERSATION_NAMING_TIMEOUT_S``.
+    conversation_naming_timeout_s: float = 60.0
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
@@ -516,6 +563,10 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Staged until output-history erasure closure and explicit preference writes are validated.
+    # Gates only production scene preference selection/resolution, not ordinary platform memory.
+    # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
+    design_preference_context_enabled: bool = False
     # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
     # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
     # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
@@ -662,6 +713,32 @@ class Settings(BaseSettings):
     # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
     # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
     chat_turn_stop_poll_interval_s: float = 0.25
+    # Chat attachments (spec 2026-09-18). Per-message ceilings the upload route and the
+    # submission route both enforce, and the number of prior-turn images re-sent to the model
+    # as image parts on every later turn of a thread (``0`` = no cap). Env:
+    # ``CLUE_CHAT_ATTACHMENT_MAX_FILES`` / ``_MAX_TOTAL_BYTES`` / ``_IMAGE_MAX_BYTES`` /
+    # ``_TEXT_MAX_BYTES`` / ``_HISTORY_IMAGES_MAX``.
+    chat_attachment_max_files: int = Field(default=10, ge=1)
+    chat_attachment_max_total_bytes: int = Field(default=150 * 1024 * 1024, ge=1)
+    chat_attachment_image_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    chat_attachment_text_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
+    chat_attachment_history_images_max: int = Field(default=20, ge=0)
+    # Document attachments (spec 2026-09-19 §3.1): the per-file cap of the document family
+    # (PDF, DOCX, PPTX, XLSX, CSV, JSON). Env: ``CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES``.
+    chat_attachment_document_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
+    # The code sandbox (spec 2026-09-19 §3.4): on by default (founder, 2026-09-20) — one container
+    # per run with these bounds. The image must exist on the worker host (`make sandbox-image`);
+    # without it, or with the flag off, run_python refuses ``sandbox_unavailable`` and a binary
+    # attachment is unreadable to the agent. Env: ``CLUE_SANDBOX_ENABLED`` /
+    # ``_IMAGE`` / ``_TIMEOUT_S`` / ``_CPUS`` / ``_MEMORY_MB`` / ``_MAX_RUNS_PER_TURN`` /
+    # ``_MAX_OUTPUT_BYTES``.
+    sandbox_enabled: bool = True
+    sandbox_image: str = "clue-agent-sandbox:latest"
+    sandbox_timeout_s: float = Field(default=60.0, gt=0)
+    sandbox_cpus: float = Field(default=1.0, gt=0)
+    sandbox_memory_mb: int = Field(default=1024, ge=64)
+    sandbox_max_runs_per_turn: int = Field(default=10, ge=1)
+    sandbox_max_output_bytes: int = Field(default=1_048_576, ge=1024)
     # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
     # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
     # pruning inside the replay horizon promises a replay the table can no longer serve (still
@@ -730,6 +807,8 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # Public frontend origin used for settings invitation links. Env: CLUE_APP_ORIGIN.
+    app_origin: str = "http://localhost:3020"
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session

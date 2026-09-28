@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProjectEntitySchema } from "./project-workspace";
+import { ProjectEntitySchema, ProjectEntityTypeSchema } from "./project-workspace";
 
 export const CHAT_CONTEXT_HANDOFF_TTL_MS = 30 * 60 * 1_000;
 const CHAT_CONTEXT_HANDOFF_SCHEMA_VERSION = 1;
@@ -7,7 +7,7 @@ const CHAT_CONTEXT_HANDOFF_PREFIX = "clue:chat-context-handoff:";
 
 export const ChatContextRefSchema = z.object({
   objectId: z.string().min(1).max(200),
-  objectType: z.enum(["account", "contact"]),
+  objectType: ProjectEntityTypeSchema,
   version: z.number().int().positive().nullable().default(null),
 }).strict();
 

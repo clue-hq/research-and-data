@@ -26,6 +26,44 @@ ARV2_ACCOUNT_PROFILE_REF = f"agent-profile:arv2-account:{ARV2_ACCOUNT_CATALOG_VE
 ARV2_PERSON_CATALOG_VERSION = "v1"
 ARV2_PERSON_PROFILE_REF = f"agent-profile:arv2-person:{ARV2_PERSON_CATALOG_VERSION}"
 
+CONTACT_ENRICHMENT_POLICY = (
+    "Current contact-enrichment policy supersedes older catalog instructions: enrich work email "
+    "only. Paid phone enrichment is unavailable; do not request it or treat its absence as a "
+    "research gap. Existing phone findings remain readable."
+)
+
+
+RESEARCH_PROVIDER_POLICY = (
+    "Current provider policy supersedes older catalog guidance: AI Ark supplies basic typed "
+    "company/person facts and work email, not descriptive prose or qualitative research. "
+    "Keep its original responses inspectable; summaries, biographies and headlines are not "
+    "research evidence. Synthesize core.company_about from Exa research and company website "
+    "evidence, with AI Ark typed facts adding context and source references preserved; never "
+    "copy its description as the answer. If research is missing, record the gap and continue. "
+    "Use Exa primarily for "
+    "substantive account/person research; directly fetched pages, hiring evidence and media "
+    "remain research sources. Interpret fit, pain and buying roles using that research and "
+    "seller/ICP/persona context; typed enrichment alone does not establish those conclusions. "
+    "Choose either web search or AI Ark SMART for people discovery as appropriate; neither is "
+    "only a fallback. Combine references and reuse acquired profiles for work-email enrichment."
+)
+
+
+# Explicit versions prevent future bundles silently falling back to v1 behavior.
+CATALOG_CAPABILITIES = {
+    "v1": frozenset(),
+    "v2": frozenset({"committee_discovery"}),
+    "v3": frozenset({"committee_discovery", "media_research"}),
+    "v4": frozenset({"committee_discovery", "media_research", "research_quality"}),
+}
+
+
+def has_capability(version: str, capability: str) -> bool:
+    try:
+        return capability in CATALOG_CAPABILITIES[version]
+    except KeyError as exc:
+        raise ValueError(f"unsupported ARV2 catalog version: {version}") from exc
+
 
 def arv2_catalog_root(agent: Arv2Agent, version: str) -> Path:
     """The directory holding the five files of one agent's catalog version."""
@@ -43,29 +81,29 @@ def arv2_person_catalog_root(version: str = ARV2_PERSON_CATALOG_VERSION) -> Path
     return arv2_catalog_root("arv2-person", version)
 
 
-def arv2_account_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched account job records beside :data:`ARV2_ACCOUNT_PROFILE_REF`.
+def catalog_version(profile_ref: str | None) -> str:
+    """Legacy rows explicitly retain v1; unknown authority is refused."""
+    if profile_ref is None:
+        return "v1"
+    if profile_ref in {
+        f"agent-profile:{agent}:{version}"
+        for agent in ("arv2-account", "arv2-person")
+        for version in CATALOG_CAPABILITIES
+    }:
+        return profile_ref.rsplit(":", 1)[1]
+    raise ValueError(f"unsupported ARV2 profile reference: {profile_ref}")
 
-    Deliberately the *same* computation :func:`load_account_resources` makes, not a second one over
-    the same file: the launch pins this value and the driver compares the bundle's against it, so
-    two digest paths (raw bytes here, decoded text there) is a relaunch loop waiting for the first
-    profile written with CRLF line endings.
-    """
-    base = root or arv2_account_catalog_root()
-    return _resource(
-        "profile", ARV2_ACCOUNT_PROFILE_REF, base / "profile.md", ARV2_ACCOUNT_CATALOG_VERSION
-    ).sha256
+
+def bundle_pin(bundle: ResourceBundle) -> str:
+    return bundle.profile.sha256 if bundle.profile.version == "v1" else bundle.manifest_sha256()
 
 
-def arv2_person_profile_sha256(root: Path | None = None) -> str:
-    """The digest a launched person job records beside :data:`ARV2_PERSON_PROFILE_REF`.
+def arv2_account_profile_sha256(root: Path | None = None, *, version: str = "v1") -> str:
+    return bundle_pin(load_account_resources(root, version=version))
 
-    Same one-computation rule as the account pin, for the same reason.
-    """
-    base = root or arv2_person_catalog_root()
-    return _resource(
-        "profile", ARV2_PERSON_PROFILE_REF, base / "profile.md", ARV2_PERSON_CATALOG_VERSION
-    ).sha256
+
+def arv2_person_profile_sha256(root: Path | None = None, *, version: str = "v1") -> str:
+    return bundle_pin(load_person_resources(root, version=version))
 
 
 @dataclass(frozen=True)
@@ -116,6 +154,12 @@ def _resource(
 
 def _load_resources(agent: Arv2Agent, version: str, root: Path | None) -> ResourceBundle:
     """Read one agent's five files and pin each one by digest."""
+    if has_capability(version, "research_quality"):
+        if root is not None:
+            raise ValueError("quality resources use their governed pinned catalog")
+        from clue_api.arv2.quality_catalog import load_quality_resources
+
+        return load_quality_resources(agent)
     base = root or arv2_catalog_root(agent, version)
 
     def one(kind: Literal["profile", "prompt", "skill"], ref: str, name: str) -> CatalogResource:
@@ -130,14 +174,14 @@ def _load_resources(agent: Arv2Agent, version: str, root: Path | None) -> Resour
     )
 
 
-def load_account_resources(root: Path | None = None) -> ResourceBundle:
+def load_account_resources(root: Path | None = None, *, version: str = "v1") -> ResourceBundle:
     """Read the account agent's five files and pin each one by digest."""
-    return _load_resources("arv2-account", ARV2_ACCOUNT_CATALOG_VERSION, root)
+    return _load_resources("arv2-account", version, root)
 
 
-def load_person_resources(root: Path | None = None) -> ResourceBundle:
+def load_person_resources(root: Path | None = None, *, version: str = "v1") -> ResourceBundle:
     """Read the person agent's five files and pin each one by digest."""
-    return _load_resources("arv2-person", ARV2_PERSON_CATALOG_VERSION, root)
+    return _load_resources("arv2-person", version, root)
 
 
 @dataclass(frozen=True)
@@ -215,6 +259,8 @@ def build_system_prompt(bundle: ResourceBundle, context: AccountContext) -> str:
         "The following runtime context is engine authority: the account, the ICP, the persona map, "
         "the field catalog and what is already established. Research the account in full.\n"
         f"<account_research_context>\n{context.block()}\n</account_research_context>",
+        RESEARCH_PROVIDER_POLICY,
+        CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)
 
@@ -293,5 +339,7 @@ def build_person_system_prompt(bundle: ResourceBundle, context: PersonContext) -
         "account they belong to, the ICP, the persona map, the field catalog and what is already "
         "established. Research this one person in full.\n"
         f"<person_research_context>\n{context.block()}\n</person_research_context>",
+        RESEARCH_PROVIDER_POLICY,
+        CONTACT_ENRICHMENT_POLICY,
     ]
     return "\n\n".join(sections)

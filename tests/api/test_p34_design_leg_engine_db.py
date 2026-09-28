@@ -21,7 +21,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 from sqlalchemy import text
@@ -40,19 +40,24 @@ from clue_api.agent_turn_wiring import (
     DbAgentTurnJournal,
     DurableAgentArtifactStore,
 )
+from clue_api.chat.turn_events import list_turn_events
+from clue_api.chat.turn_stream import TurnStreamEmitter, TurnStreamPolicy
 from clue_api.conversation_capture import persist_user_turn
 from clue_api.design_leg_tools import DESIGN_DELEGATION_BUNDLE_MEDIA_TYPE
 from clue_api.design_leg_wiring import (
     DesignLegTurnRunner,
     _assistant_summary,
+    clarification_sentence,
     design_leg_run_id,
     load_design_leg_history,
     load_head_of_abm_history,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from clue_design import accounts as design_accounts
 from clue_design import legs as design_legs
 from clue_design import runs as design_runs
-from clue_design.documents import create_document
+from clue_design.documents import create_document, set_document_account
+from clue_design.exit_judgment import ExitJudgment
 from clue_storage import FsStorage
 from tests._identity import seed_principal
 from tests._workspace import seed_project
@@ -103,6 +108,68 @@ class _FakeLane:
                         "error": {"code": "agent_runtime.failed", "message": "boom"},
                     }
                 ),
+            )
+
+
+class _BatchFakeLane(_FakeLane):
+    """A fake lane that also answers the multi-document seam (§3.3's ``drive_batch``),
+    completing every sibling the turn dispatched in the order it was handed them."""
+
+    async def drive_batch(self, *, envelopes: Any) -> None:
+        for envelope in envelopes:
+            await self.drive(envelope=envelope)
+
+
+#: The one question the clarifying fake lane asks, reused by the assertions below.
+CLARIFYING_QUESTION = "Which proof point should lead the ad?"
+
+
+class _ClarifyingFakeLane(_FakeLane):
+    """A lane whose run stops to ASK instead of designing (spec 2026-09-20 §2.1).
+
+    Only the FIRST dispatch clarifies: the follow-up turn of the test answers the question,
+    and a lane that asked again forever could never prove the guard is armed.
+    """
+
+    async def drive(self, *, envelope: Any) -> None:
+        self.envelopes.append(envelope)
+        if len(self.envelopes) > 1:
+            async with self._conn_factory() as conn:
+                await design_runs.set_run_result(
+                    conn,
+                    workspace_id=envelope.workspace_id,
+                    run_id=envelope.run_id,
+                    status="succeeded",
+                    result={
+                        "schema_version": 1,
+                        "status": "accepted",
+                        "stop_reason": "Visual reviewer accepted the artboard.",
+                    },
+                )
+            return
+        async with self._conn_factory() as conn:
+            await design_runs.set_run_result(
+                conn,
+                workspace_id=envelope.workspace_id,
+                run_id=envelope.run_id,
+                status="succeeded",
+                result={
+                    "schema_version": 1,
+                    "status": "clarification_requested",
+                    "stop_reason": "clarification_requested",
+                    "summary": "Asked before designing.",
+                    "clarification": {
+                        "questions": [
+                            {
+                                "id": "proof",
+                                "question": CLARIFYING_QUESTION,
+                                "why_it_matters": "It decides the headline.",
+                                "options": ["The 40% stat", "The logo wall"],
+                                "default": "The 40% stat",
+                            }
+                        ]
+                    },
+                },
             )
 
 
@@ -199,6 +266,8 @@ async def _submit_message(
     message: str,
     previous_turn_outcome: str | None = None,
     focus_refs: tuple[DomainObjectRef, ...] = (),
+    derivation: str | None = None,
+    derived_from_turn_id: UUID | None = None,
 ) -> AgentTurnSubmissionRow:
     turn_id = uuid5(NAMESPACE_URL, f"p34e:{label}:turn")
     captured = await persist_user_turn(
@@ -225,6 +294,8 @@ async def _submit_message(
         idempotency_key=f"p34e-{label}",
         context_refs=focus_refs,
         previous_turn_outcome=previous_turn_outcome,
+        derivation=derivation,
+        derived_from_turn_id=derived_from_turn_id,
     )
     return submission
 
@@ -259,6 +330,7 @@ async def _run_turn(
     lane: Any,
     submission: AgentTurnSubmissionRow,
     focus_refs: tuple[DomainObjectRef, ...] = (),
+    stream: Any = None,
 ) -> Any:
     leg = await design_legs.get_open_leg_for_thread(
         conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
@@ -271,7 +343,7 @@ async def _run_turn(
         user_message_ref=user_message_ref,
         focus_refs=focus_refs,
         card_payload=_card_payload(seeds),
-        stream=None,
+        stream=stream,
     )
 
 
@@ -439,6 +511,138 @@ async def _pin_document(
         conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
     )
     return document
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected_outcome"),
+    [
+        ("design", "accepted by the design review"),
+        ("edit", "whole design has not been accepted"),
+        (None, "saved as a draft; it has not been accepted"),
+    ],
+)
+def test_scene_summary_distinguishes_acceptance_from_execution_success(
+    scope: str | None, expected_outcome: str
+) -> None:
+    """The four-brand controls shared status/reason despite different verdicts."""
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "proposed",
+                "acceptance_scope": scope,
+                "stop_reason": "target_exceeded",
+                "summary": "Supporting copy still needs a readability check.",
+            },
+        }
+    )
+    assert expected_outcome in summary
+    assert "time target" in summary
+    assert "Supporting copy still needs a readability check." in summary
+
+
+def test_clarification_sentence_reads_back_the_questions_the_agent_asked() -> None:
+    """Spec 2026-09-20 §2.2: the durable thread record of a run that stopped to ask is the
+    agent's own questions, verbatim and in order — nothing about drafts or acceptance."""
+
+    assert (
+        clarification_sentence(
+            {
+                "status": "clarification_requested",
+                "clarification": {
+                    "questions": [{"question": "Which proof point?"}, {"question": "Which tone?"}],
+                },
+            }
+        )
+        == "Asked you 2 questions before designing: Which proof point?; Which tone?."
+    )
+
+
+def test_clarification_sentence_says_question_in_the_singular() -> None:
+    assert (
+        clarification_sentence(
+            {
+                "status": "clarification_requested",
+                "clarification": {"questions": [{"question": "Which proof point?"}]},
+            }
+        )
+        == "Asked you 1 question before designing: Which proof point?."
+    )
+
+
+def test_clarification_sentence_is_none_for_a_run_that_actually_designed() -> None:
+    """The branch must not claim a question was asked on an ordinary proposal."""
+
+    assert clarification_sentence({"status": "proposed", "acceptance_scope": "design"}) is None
+
+
+def test_scene_summary_of_a_clarification_run_asks_rather_than_claiming_a_draft() -> None:
+    """A clarification run's design-runtime status is ``clarification_requested`` while the RUN
+    row succeeded, so the summarizer must branch on the result — otherwise the thread would
+    record "Design saved as a draft" for a turn that saved nothing."""
+
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "clarification_requested",
+                "clarification": {
+                    "questions": [
+                        {"question": "Which proof point?"},
+                        {"question": "Which tone?"},
+                    ],
+                },
+            },
+        }
+    )
+    assert summary == "Asked you 2 questions before designing: Which proof point?; Which tone?."
+    assert "draft" not in summary
+
+
+@pytest.mark.parametrize(
+    ("reason", "limit"),
+    [
+        ("budget_exhausted_wall_clock", "time limit"),
+        ("budget_exhausted_llm_calls", "model-call limit"),
+        ("cancelled_by_request", "stopped at your request"),
+    ],
+)
+def test_scene_summary_preserves_unaccepted_draft_when_generation_stops(
+    reason: str, limit: str
+) -> None:
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "result": {
+                "status": "proposed",
+                "acceptance_scope": None,
+                "stop_reason": reason,
+                "summary": "Current draft awaits review.",
+            },
+        }
+    )
+    assert "saved as a draft; it has not been accepted" in summary
+    assert limit in summary
+    assert "Current draft awaits review." in summary
+
+
+def test_scene_acceptance_summary_does_not_change_website_summary() -> None:
+    summary = _assistant_summary(
+        {
+            "status": "succeeded",
+            "document_id": "doc_website",
+            "result": {
+                "doc_kind": "web",
+                "status": "completed",
+                "current_version": 3,
+                "summary": "Updated the hero copy.",
+            },
+        }
+    )
+    assert summary == (
+        "Design turn completed on website document doc_website (now version 3): "
+        "Updated the hero copy."
+    )
 
 
 def test_a_conflicted_scene_result_summarizes_with_the_versions_it_names() -> None:
@@ -779,6 +983,64 @@ def test_a_failed_design_run_fails_the_turn_honestly_and_keeps_the_leg_open(
     run_async(scenario())
 
 
+class _LaneThatCrashes:
+    """Raises out of the drive — the shape of the 2026-09-20 batch crash (a receipt collision
+    after every run had finished), and of any other unexpected raise past ``mark_leg_running``."""
+
+    async def drive(self, *, envelope: Any) -> None:
+        raise RuntimeError("boom: the dispatch crashed after the leg was marked running")
+
+
+def test_a_crashed_dispatch_hands_the_leg_back_instead_of_leaving_it_running(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Crash containment covers the LEG, not only the turn. Until 2026-09-20 a raise between
+    ``mark_leg_running`` and ``_leg_back_to_awaiting`` left the leg ``running`` for good: the
+    turn read failed, but the thread refused every later message until a hand repair."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="crash")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            submission = await _submit_message(
+                conn, seeds, label="crash", message="Render it, then crash."
+            )
+            with pytest.raises(RuntimeError, match="boom"):
+                await _run_turn(conn, seeds, registry, _LaneThatCrashes(), submission)
+            # The crash still surfaces (the fleet task fails loudly) — but the leg is back where
+            # the user can speak to it, with its lifecycle frame on the crashed turn.
+            leg_after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+            )
+            assert leg_after["state"] == "open_awaiting_user"
+            status = (
+                await conn.execute(
+                    text(
+                        "SELECT status, reason_code FROM agent_turn_event "
+                        "WHERE turn_id = :turn ORDER BY seq DESC LIMIT 1"
+                    ),
+                    {"turn": submission.turn_id},
+                )
+            ).one()
+            assert tuple(status) == ("abandoned", "design_leg_turn_crashed")
+            frames = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM agent_turn_event_stream "
+                        "WHERE turn_id = :turn AND event_type = 'leg.awaiting_user'"
+                    ),
+                    {"turn": submission.turn_id},
+                )
+            ).scalar_one()
+            assert int(frames) == 1
+
+    run_async(scenario())
+
+
 def test_leg_history_is_leg_scoped_and_head_of_abm_never_ingests_it(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
@@ -860,5 +1122,332 @@ def test_leg_history_is_leg_scoped_and_head_of_abm_never_ingests_it(
                 thread_id=seeds["thread_id"],
             )
             assert [item.turn_id for item in hoabm_history] == [strategy_turn]
+
+    run_async(scenario())
+
+
+def test_the_first_turn_of_a_leg_runs_every_document_without_the_judge(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec 2026-09-20 §2.3: the leg's first turn is the ask that OPENED the leg, queued by
+    ``open_design_leg`` as a derived submission. Nobody has spoken on the leg yet, so there is
+    nothing to judge — the exit judge is never asked — and the turn addresses every document
+    of the leg. The user row stays (ruling 2026-09-20: only the transcript hides the derived
+    bubble), so the turn's thread messages read ``["user", "assistant"]`` like any other.
+
+    The control at the end proves the skip is the DERIVATION's doing and not a dead judge:
+    the very same runner, on an ordinary (non-derived) message, reaches the judge.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="firstturn")
+            lane = _BatchFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            judged: list[dict[str, Any]] = []
+
+            async def judge(**kwargs: Any) -> None:
+                # P3.6's fail-safe envelope swallows anything a judge raises, so the raise alone
+                # could never fail this test — the call log is what the assertions read. The raise
+                # stays because a judge REACHED here is already the bug.
+                judged.append(kwargs)
+                raise AssertionError("the first turn is never judged")
+
+            async def finisher(**kwargs: Any) -> dict[str, Any]:
+                # A judge without a finisher is treated as absent, so the bridge needs both
+                # composed for "the judge would have run" to be true at all.
+                raise AssertionError("no design-leg first turn exits the leg")
+
+            runner = DesignLegTurnRunner(
+                profiles=registry,
+                artifacts=seeds["artifacts"],
+                turns=DbAgentTurnJournal(conn_factory=seeds["conn_factory"]),
+                history=DbAgentHistoryStore(conn_factory=seeds["conn_factory"]),
+                lane=lane,
+                exit_judge=judge,
+                finisher=finisher,
+                conn_factory=seeds["conn_factory"],
+            )
+
+            async def run(submission: AgentTurnSubmissionRow) -> Any:
+                leg = await design_legs.get_open_leg_for_thread(
+                    conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+                )
+                assert leg is not None
+                return await runner.run_leg_turn(
+                    submission=submission,
+                    leg=leg,
+                    user_message_ref=await message_artifact_ref(conn, submission),
+                    focus_refs=(),
+                    card_payload=_card_payload(seeds),
+                    stream=None,
+                )
+
+            # A TWO-document leg, so "every document" is a real claim: without the skip this
+            # turn would reach the judge, and §3.5's many-document fail-safe would ASK and
+            # dispatch nothing at all.
+            extra = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            pinned = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            await design_legs.add_leg_documents(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                leg_id=seeds["leg"]["id"],
+                documents=[
+                    design_legs.LegDocumentSpec(
+                        document_id=pinned["id"], position=0, note="the hero artboard"
+                    ),
+                    design_legs.LegDocumentSpec(
+                        document_id=extra["id"], position=1, note="the square cut"
+                    ),
+                ],
+            )
+
+            # The head-of-abm turn whose bytes ``open_design_leg`` carried onto the leg. The
+            # column carries no FK, so the seed names it rather than journaling a whole turn.
+            opening_turn = uuid5(NAMESPACE_URL, "p34e:firstturn:opening-turn")
+            first = await _submit_message(
+                conn,
+                seeds,
+                label="firstturn-1",
+                message="A launch artboard for the spring push.",
+                derivation="design_leg_first_turn",
+                derived_from_turn_id=opening_turn,
+            )
+            assert first.derivation == "design_leg_first_turn"
+
+            result = await run(first)
+
+            assert judged == []  # the judge was never asked
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            # Every document of the leg was dispatched — both of them, in position order.
+            assert [str(envelope.document_id) for envelope in lane.envelopes] == [
+                pinned["id"],
+                extra["id"],
+            ]
+            roles = (
+                await conn.execute(
+                    text(
+                        "SELECT role FROM agent_thread_message "
+                        "WHERE workspace_id = :ws AND turn_id = :turn ORDER BY sequence"
+                    ),
+                    {"ws": seeds["workspace_id"], "turn": first.turn_id},
+                )
+            ).scalars()
+            assert list(roles) == ["user", "assistant"]
+
+            # Control: the SAME runner, an ordinary message — the judge is reached.
+            ordinary = await _submit_message(
+                conn, seeds, label="firstturn-2", message="Make the headline two lines."
+            )
+            await run(ordinary)
+            assert [call["message"] for call in judged] == ["Make the headline two lines."]
+
+    run_async(scenario())
+
+
+def test_a_clarifying_run_rides_the_turn_as_a_part_and_arms_the_next_turns_guard(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec 2026-09-20 §2.1/§2.4: a run that stopped to ASK hands back honestly.
+
+    Three claims on one journey. (1) The durable assistant message says what actually
+    happened — the questions, not a draft-saved sentence. (2) The turn carries ONE
+    ``clarification`` part for the asking document, landed BEFORE the rehydrate frame so the
+    card is on the turn by the time the client refetches the canonical message. (3) The
+    one-round guard is DERIVED per document on the next turn: the follow-up envelope carries
+    ``previous_turn_outcome == "clarification_requested"`` although the submission echoed
+    nothing at all.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="clarify")
+            pinned = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            lane = _ClarifyingFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            asked = await _submit_message(
+                conn,
+                seeds,
+                label="clarify-1",
+                message="Design the launch ad.",
+            )
+            emitter = await TurnStreamEmitter.open(
+                workspace_id=seeds["workspace_id"],
+                project_id=seeds["project"].project_id,
+                thread_id=seeds["thread_id"],
+                turn_id=asked.turn_id,
+                conn_factory=seeds["conn_factory"],
+                # Zero-length batching: every frame stands alone, so the ordering assertion
+                # is about the emission order and not about a buffer's timing.
+                policy=TurnStreamPolicy(batch_max_chars=1, batch_interval_s=0.0),
+            )
+            result = await _run_turn(conn, seeds, registry, lane, asked, stream=emitter)
+
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            assert result.assistant_message == (
+                f"Asked you 1 question before designing: {CLARIFYING_QUESTION}."
+            )
+
+            frames = list(
+                await list_turn_events(
+                    conn, workspace_id=seeds["workspace_id"], turn_id=asked.turn_id
+                )
+            )
+            cards = [
+                frame
+                for frame in frames
+                if frame.event_type == "part.created" and frame.part_kind == "clarification"
+            ]
+            assert len(cards) == 1
+            assert cards[0].part_id == f"clarification:{pinned['id']}"
+            part = cards[0].payload["part"]
+            assert part["document_id"] == pinned["id"]
+            assert [q["question"] for q in part["questions"]] == [CLARIFYING_QUESTION]
+            assert part["questions"][0]["default"] == "The 40% stat"
+            # This document carries no account, so the header has no name to show: the key is
+            # ABSENT from the wire rather than present and null (``exclude_none``).
+            assert "account_name" not in part
+            resets = [frame for frame in frames if frame.event_type == "stream.reset"]
+            assert resets, "the design hand-back always rehydrates"
+            terminals = [frame for frame in frames if frame.event_type == "turn.awaiting_input"]
+            assert terminals, "the design hand-back always closes the turn"
+            # The card lands AFTER the reset that would otherwise drop it — the client clears
+            # the turn's parts on a reset — and before the terminal frame, so the turn closes
+            # with the card already in hand.
+            assert cards[0].sequence > resets[-1].sequence
+            assert cards[0].sequence < terminals[-1].sequence
+
+            # --- the next turn: the guard is derived, never echoed ---------------------------
+            async def judge(**kwargs: Any) -> ExitJudgment:
+                return ExitJudgment(
+                    close_this_session=False,
+                    addressed_artifacts=[1],
+                    reasoning="The answer is work on this artifact.",
+                )
+
+            async def finisher(**kwargs: Any) -> dict[str, Any]:
+                raise AssertionError("a staying judgment never closes the leg")
+
+            runner = DesignLegTurnRunner(
+                profiles=registry,
+                artifacts=seeds["artifacts"],
+                turns=DbAgentTurnJournal(conn_factory=seeds["conn_factory"]),
+                history=DbAgentHistoryStore(conn_factory=seeds["conn_factory"]),
+                lane=lane,
+                exit_judge=judge,
+                finisher=finisher,
+                conn_factory=seeds["conn_factory"],
+            )
+            answer = await _submit_message(
+                conn,
+                seeds,
+                label="clarify-2",
+                message="The 40% stat.",
+            )
+            assert answer.previous_turn_outcome is None  # the client echoed nothing
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert leg is not None
+            await runner.run_leg_turn(
+                submission=answer,
+                leg=leg,
+                user_message_ref=await message_artifact_ref(conn, answer),
+                focus_refs=(),
+                card_payload=_card_payload(seeds),
+                stream=None,
+            )
+
+            assert len(lane.envelopes) == 2
+            assert (
+                lane.envelopes[1].config["request"]["previous_turn_outcome"]
+                == "clarification_requested"
+            )
+            # The first turn had nothing behind it to derive from — the guard is armed by the
+            # ASKING run, not by every turn on a leg.
+            assert lane.envelopes[0].config["request"]["previous_turn_outcome"] is None
+
+    run_async(scenario())
+
+
+def test_a_tagged_scene_ads_clarification_card_names_its_account(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec 2026-09-20 §2.5: the card's header is "<title> · <account>" when the document
+    carries an account.
+
+    The G2 card the runner freezes into the envelope is resolved for WEB documents only, so a
+    SCENE ad tagged to an ABM account would otherwise hand back a nameless card — dropping the
+    one fact that says whose ad is waiting on an answer, on exactly the documents (per-account
+    ads) where a leg holds several at once.
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="clarifyacct")
+            pinned = await _pin_document(conn, seeds, doc_kind="scene", version=1)
+            account_id = f"acct_p34e_{uuid4().hex[:8]}"
+            await design_accounts.create_web_account(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                account_id=account_id,
+                name="Northwind Logistics",
+                domain="northwind.example",
+                logo_asset_id=None,
+                data={},
+                notes=None,
+            )
+            await set_document_account(
+                conn,
+                workspace_id=seeds["workspace_id"],
+                document_id=pinned["id"],
+                account_id=account_id,
+            )
+            lane = _ClarifyingFakeLane(conn_factory=seeds["conn_factory"])
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+
+            asked = await _submit_message(
+                conn,
+                seeds,
+                label="clarify-acct",
+                message="Design the launch ad.",
+            )
+            emitter = await TurnStreamEmitter.open(
+                workspace_id=seeds["workspace_id"],
+                project_id=seeds["project"].project_id,
+                thread_id=seeds["thread_id"],
+                turn_id=asked.turn_id,
+                conn_factory=seeds["conn_factory"],
+                policy=TurnStreamPolicy(batch_max_chars=1, batch_interval_s=0.0),
+            )
+            result = await _run_turn(conn, seeds, registry, lane, asked, stream=emitter)
+
+            assert result.outcome.status is AgentExecutionStatus.AWAITING_INPUT
+            cards = [
+                frame
+                for frame in await list_turn_events(
+                    conn, workspace_id=seeds["workspace_id"], turn_id=asked.turn_id
+                )
+                if frame.event_type == "part.created" and frame.part_kind == "clarification"
+            ]
+            assert len(cards) == 1
+            assert cards[0].payload["part"]["account_name"] == "Northwind Logistics"
 
     run_async(scenario())

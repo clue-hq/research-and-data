@@ -22,6 +22,9 @@ Keep notes concise and operational. Do not store secrets, API keys, credentials,
 
 ## Repository Role
 
+- `2026-09-22-asset-inspector-review.md` — branded asset inspector, automatic saving,
+  responsive/failure verification and pilot comparison with an open generation-quality defect.
+
 This repository is the data and research subsystem for the larger AI-native ABM orchestration platform. Its job is to turn client ICPs and client knowledge into canonical account/contact entities, typed claims with provenance, explainable fit/intent scores, and persona-keyed buying-committee research that downstream content and design systems can trust.
 
 The central architecture bet is that verification must be modeled at the claim/data layer. LLM research is a last-resort tier-4 source, not the foundation. The product should prefer empty, flagged fields over fabricated fields.
@@ -29,7 +32,89 @@ The central architecture bet is that verification must be modeled at the claim/d
 ## Topic notes
 - `2026-09-17-custom-domain-publishing-s2.md` — custom-domain publishing S2 landed on `website/custom-domain` (13 commits `ab3a3bf7b..6e40162af`): the Settings → Pages control plane (`/frontend/v1/settings/pages` — read, defaults, both multipart uploads, Clue-address label, connect/check/remove), `clue_spine` custom-hostname validation + DAL and the pages-settings DAL, the Cloudflare for SaaS client, DNS observation and the pure status ladder, `workspace.manage_settings` (policy revision 3), the page origin's fallback-URL/favicon reads, design-API publish-time description/social-preview defaults, and the lifted settings shell with the four-state custom-domain card; the seven plan decisions, the rulings, the test evidence, the settings-slice merge reconciliation list and the deferred minors. New contract doc: `apps/frontend/docs/api-contracts/settings.md` (Pages section). **The live Cloudflare acceptance walk (spec §10, a founder-owned hostname), the dev-stack walk of Settings → Pages, `npm run build` and the co-founder's frames for the connection card are all OWED.**
 - `2026-09-17-custom-domain-publishing-s1.md` — custom-domain publishing S1 landed on `research-streaming-v3` (14 commits `2247d1f8f..4ffd7d3da`): migration `aaff3d831895` (`workspace_hostname` + `workspace_pages_settings`), `clue_spine.hostnames` + allocation in `create_workspace`, `make pages-backfill-hostnames`, the new `clue_page_origin` service (Railway Dockerfile, dev port 8040, edge gate), host-independent publish packages (root-relative `/p-assets`, shared CSP, no canonical/og:url), the O6b `/w/` routes deleted, the share menu on the real host, and the `pages-edge` Cloudflare Worker; the nine plan decisions, the test evidence, and the follow-ups (S2 control plane, reserved slugs not refused at publish, the design subsystem's own `webDocuments.ts`). **S0 is a founder-operated runbook — `docs/specs/pages-hosting-runbook.md` — and NOTHING hosted exists yet; the dev-stack walk, `npm run build` and the hosted acceptance walk (spec §3 item 7) are all OWED.**
+
+- `2026-09-24-nick-person-exa-comparison.md` — second isolated person-depth trial, fresh
+  delegation/query, missed personal-discovery benchmark and preserved playground comparison inputs.
+
+- `2026-09-24-person-exa-comparison.md` — isolated person-agent request and paid Exa trial against
+  saved PoC; exact artifacts, source-level comparison, role-attribution defect and pending review.
+
+- `2026-09-24-person-exa-charter.md` — explicit person-depth charter and Exa instruction review
+  draft; source inspiration and the still-pending person provider/navigation wiring.
+
+- `2026-09-23-head-of-abm-research-briefing.md` — rejected runtime compiler reverted;
+  Head-of-ABM briefing skill, shared account placeholders and existing source references.
+
+- `2026-09-23-arv3-advisory-research.md` — founder defers relationship/schema/display verification; source-based selection, plain findings and unrestricted research presentation for new quality revision six.
+
+- `2026-09-22-arv3-research-quality-implementation.md` — authorized quality development in
+  progress; exact context foundations, isolated test DB and remaining implementation/acceptance.
+- `2026-09-22-arv3-research-quality-spec.md` — detailed review proposal and ordered plan for exact
+  project context, evidence access, claim corrections, specialist ownership and committee reconciliation.
+- `2026-09-22-arv3-premier-live.md` — authorized isolated Premier v3 run, six-worker fleet,
+  completed research/display and tracing, with identity, evidence and seller-context quality defects.
+- `2026-09-22-arv3-cumulative-quality-review.md` — Premier v1 / Probook-Zafran v3
+  comparison, completed historical read-only join, shared extraction/correction defects,
+  and conditional Deep Agent specialist design; discussion only.
+- `2026-09-22-arv2-media-implementation.md` — approved media v3 implemented locally;
+  AI Ark v2 remains default. Observability follow-up repairs unpriced video settlement and
+  async trace nesting, adds IDs-only media outcomes; 145 affected tests pass. Live acceptance owed.
+- `2026-09-22-arv2-media-research-planning.md` — media spec/plan only, covering discovery,
+  reusable transcripts and evidence; separate founder instruction changed new-launch default
+  to AI Ark v2. 70 focused tests pass; media implementation and live acceptance remain pending.
+- `2026-09-22-arv2-ai-ark-committee-planning.md` — planning-only SMART role discovery within
+  researched accounts; founder approved work-email + phone enrichment and continuation after
+  Exa failure. Detailed design/plan, profile reuse and identity/replay/context/erasure gaps;
+  based on pulled `8df27dd25`. No runtime implementation or live provider calls.
+- `2026-09-22-web-search-tool-design.md` — `web_search@1` **LANDED 2026-09-22**, re-minted as head-of-abm@v62 / prompt v15 / manual v9 / recipe 32 on the research-streaming merge (two base heads joined by `7c4fe6965720`; seven stale base tests fixed); (branch `feat/add-general-purpose-web-search-exa`, eight commits `722814d91`..`cd2f9ca91` plus this record): one deep-lite open-web search granted to `head-of-abm@v62` (prompt v15, recipe0-stage0@32, manual v9) and `design@v3` (the fourth tool on the platform-reads seam, both harnesses), used LAST by prompt, text never a claim, ledger row workspace-stamped. Design session rulings, verified seams, spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md` (implemented; offline acceptance §4.1–4.4 green) and the eight-task plan `docs/superpowers/plans/2026-09-22-web-search-tool.md`; **the two live proofs (§4.5–4.6) are owed, founder-triggered.**
+- `2026-09-22-lome-lane-ports.md` — the lome lane (branch `research-streaming-v3`) on its own all-4 ports 3024/8014/8024/8034 via the untracked `scripts/dev_stack_lome.sh`; DB = `clue_lome`@55040, a verified `pg_dump|psql` clone of `clue_san-salvador` (founder ruling, second pass); `.artifacts/`, helper binary and `npm ci` owed before `up`.
+- `2026-09-22-on-demand-ingestion-pool.md` — dedicated ingestion coordinator and
+  on-demand 4 x 10 image workers; strict routing, durable tasks and idle shutdown.
+- `2026-09-22-hide-asset-source-interpretation-rows.md` — temporarily removes Observed
+  use, Logo relationship and Messaging & tone from the inspector; stored metadata retained.
+- `2026-09-22-asset-vision-replay-preparation.md` — four approved live calls completed;
+  all recognized the logos, background interpretation varied, original failure not reproduced.
+- `2026-09-22-asset-description-mapping-audit.md` — identity/fingerprint checks and
+  concurrent replay pass, but multiple captions are visually wrong; validation,
+  transparent-preview, provider-evidence and library-polling gaps remain open.
+- `2026-09-22-asset-details-height.md` — asset Details column fills the modal height;
+  removed a conflicting viewport-height cap and verified internal scrolling live.
+- `2026-09-22-onboarding-role-select.md` — onboarding Role field reuses the branded
+  shared select; browser-checked without disturbing the user's live ingestion.
+- `2026-09-21-brand-context-controls.md` — shared branded asset selectors, aligned
+  toolbar, simplified header, and automatic brand-kit plus ICP/product approval.
+- `2026-09-21-san-diego-stack-startup.md` — isolated live San Diego stack on
+  3033/8013/8023/8033; four fleet workers, restored blobs, and authority/recipe boot fixes.
+- `2026-09-20-pr68-conflict-resolution.md` — PR #68 target-branch merge preserves
+  sandbox and project-management authority tests; isolated database migration smoke.
+- `2026-09-20-sidebar-action-overlay.md` — project actions overlay full-width names
+  on hover/focus instead of reserving empty space in the sidebar row.
+- `2026-09-20-remove-chat-tool-activity.md` — release cleanup: removed per-tool step
+  activity rows from the shared chat renderer across all conversations and states.
+- `2026-09-20-chat-appearance-review.md` — documented CHAT-VIS-01..03 in the canonical
+  chat fidelity map: shared body tokens (now 14/22), mention identity and attachment geometry now
+  implemented; live/split and isolated responsive browser checks plus 81 focused tests passed.
+- `2026-09-20-remove-chat-inspect.md` — release cleanup: removed the chat Inspect button,
+  drawer wiring and capability probe; frontend build/lint gates and live browser smoke passed.
+- `2026-09-20-sandbox-private-defaults.md` — fixes the CSV permissions incident at creation:
+  worker UID/GID + child-only umask 077, defensive-only mode repair, native Linux volume smoke
+  and Docker-to-workspace-finalize regression; 144 focused tests passed.
+- `2026-09-17-pr62-design-agent-v1-merge-context.md` — merges `origin/research-streaming` into
+  `codex/design-agent-v1` (PR #62): the 37-conflict resolution under the founder's rulings, the
+  semantic fixes the gates surfaced, the Alembic join, the gateway numeric-code retry follow-up,
+  and the triage of seven broad-suite failures (five stale-default-DB, two pre-existing on the
+  target). Local commits only; not pushed.
+- `2026-09-17-composer-file-tagging.md` — composer `@` tagging of files, microsites and accounts: the approved spec and its rulings (categories Files / Microsites / Accounts, the Gallery is the file system with no path or id ever shown, a tagged design artifact is a reference only and never opens a design leg, latest version offered and pinned on tag), the eight landed tasks on branch `file-tagging` (migration `9289d41e9a60`: wire + CHECK, validation with project containment and `CONTEXT_REF_STALE`, the L5 focus card, the transcript echo, the typed catalog, the two-level picker, the typed chips and contract notes), what the browser walk and the tests proved, and the deferred minors. **Three live proofs owed — founder-triggered: the L5 card in a real turn, a microsite mention answered without a leg, and a stale-tag refusal.**
+- `2026-09-17-no-model-pins-in-tests.md` — ruling: tests never assert which model a default/pin names, only that the id is well-formed (`tests/_model_ids.py`); the design@v1 doubled-prefix fix and the six test rewrites; router label follow-up.
+- `2026-09-18-conversation-naming-design.md` — generated chat titles + project names: design session (rulings B/A/1, 60 s timeout, default on; off-critical-path grace + bounded poll) AND the implementation record — spec `docs/superpowers/specs/2026-09-18-conversation-naming-design.md` approved and implemented on branch `research-streaming-v3` (Tasks 1–10, commits `1f183eb73`…`cccf7a072`), focused suites green; live acceptance (spec §6 items 1–8, real `CLUE_OPENROUTER_API_KEY`) and `npm run build` still owed.
+- `2026-09-18-trenton-lane-ports.md` — the trenton lane (branch `research-streaming-v3`) on its own all-9 ports 3029/8019/8029/8039 via the untracked `scripts/dev_stack_trenton.sh`; `clue_trenton`@55040 cloned from live `clue_san-salvador`; helper binary, `.artifacts/` and the wrapper commit still owed.
+- `2026-09-18-lane3-slice5-design-subsystem.md` — Lane 3 slice 5 on `lane3/slice5-design-spend`: the design subsystem's spend, tracing and telemetry on the platform's stack — the provider-caller seam moved to `libs/clue-spend` (ARV2 re-exports), `clue_obs.production` + the `clue-design-api` root, a per-unit `spend_scope` behind the ten `design.*` ledger operations with an injected drain, per-call receipts collected at the invoke config onto `agent_model_call` with `role=design`, and the `design-leg.turn` trace. Includes **finding F-1** (the slice-2 trace carrier broke every QUEUED design job at the `extra="forbid"` envelope parse — 47 failures on 2026-09-17; fixed at the worker) and the **five owed live proofs**, founder-triggered.
+- `2026-09-18-lane3-slice5-planning.md` — the planning session behind it (design note + six-task plan, six rulings requested); superseded by the note above for what actually shipped.
+- `2026-09-18-workspace-display-names.md` — workspace display names: canonical name from the website's domain, typed-first provisioning, `workspace_name` on the session, chooser + sidebar switcher on real memberships landing on `/`, dry-run backfill; browser-verified; owed: a blank-name provisioning and `--apply` on real environments.
+- `2026-09-17-settings-rebase-pr57.md` — rebase of PR 57 (`settings-page` onto `research-streaming`), preserved Settings changes and upstream Artifacts/provider incidents/composer tagging; Alembic joins `4266c7fb8ab1` and `f74cbccd3200`; regression and lease-protected push record.
 - `2026-09-15-artifacts-page-exploration.md` — `/artifacts` cross-project artifacts home: the dummy's implementation (port-of-spain `45892a6`+`93c6120`), what this repo has (nav link with no route; per-project leg-derived design-artifact feed + project documents; no workspace-wide list, no metadata writes, no account on the wire) the fifteen founder rulings, and the closing entry: the whole integration LANDED 2026-09-16 (26 commits; migrations 5f2bd1b4b82d + 323081354b51; `/frontend/v1/artifacts` + marks; governed rename/archive tools; `/artifacts` route; `?open=`), gates green first-hand; the browser walk is OWED (founder-triggered, ports held by san-salvador).
+- `2026-09-16-workspace-agent-proposals-plan.md` — founder-requested plan for workspace-local automatic research fields; trusted registration, historical global vocabulary containment, Settings creator attribution and immutable deepagent manual/bundle updates. Planning/docs only; no runtime activation.
+- `2026-09-16-settings-completion-plan.md` — Settings completion plan after code/spec audit; accepted suspended-member and invite-retry rulings; registry trigger/nullability, retirement fallback and evidence projection gaps; explicit Research fields and Pages V1 phases. Planning only, implementation and live acceptance remain open.
 - `2026-09-15-lane3-slice4-entity-tags.md` — Lane 3 slice 4 on `lane3/sice1b`: `tag_entities` (shared per-trace accumulator; `entity:<id>` tags + `entities` metadata); the job tags its subject, its writes and its committee members; `read_account_research`/`read_claims` tag what they served; the erasure query; the 2026-09-15 coverage audit and the leave-as-is ruling. **Live proof + Langfuse retention owed — founder-triggered.**
 - `2026-09-15-lane3-slice3-langfuse.md` — Lane 3 slice 3 (3a + 3b) on `lane3/sice1b`: Langfuse attached to the slice 2 provider; the LangChain handler + run registry in the turn and research-agent tuples; gateway/provider/tool observations with settled cost; receipt ids (migration `b7193eb28363`) and ledger-row ids; redaction; `make langfuse-check`; the streamed `answering_model` fix. **Live proof owed — founder-triggered.**
 - `2026-09-15-lane3-slice2-roots.md` — Lane 3 slice 2 on `lane3/sice1b`: `clue_obs.otel.install_tracing` (one provider per process, run context on every span, httpx + FastAPI instrumented) and `clue_obs.sentry` installed at `projections_main` and `fleet_main`; run context bound at the roots (the design note's 'already done' claim was false); the trace rides the fleet payload (D1, no migration); `CLUE_OTEL_*`/`CLUE_SENTRY_*`/`CLUE_RELEASE` + the metrics gap in `.env.example`; seven rulings. **Live proof with an OTLP endpoint and a forced Sentry event owed — founder-triggered.**
@@ -531,6 +616,23 @@ The central architecture bet is that verification must be modeled at the claim/d
 - **2026-08-01 — Stage-0 acceptance run PASSED** (`2026-08-01-stage0-acceptance-run.md`): structured-output repair plan + F6/F7/F8 landed; live Terra interview → grounded confirmed ICP; entailment-strictness product finding; Sumble canary is next.
 
 - **2026-08-10 — Part II D8 CLOSED; Part II COMPLETE (D0–D8)** (`2026-08-10-part2-d8-close.md`): outbox consolidation (one DAL owner + `clue_core.run_event` contract-delta), dead liveness net deleted, retention (token sweep ON / design pruner OFF with in-code floors), Part-II gate machine-checked end to end, DSAR **assessed not wired** (`docs/specs/PD-D8-dsar-assessment.md`); founder items: pruner enablement + the standing D2.2/D4 flags.
+
+- **2026-09-02 — WOFF2 brand fonts: investigation + option A plan (NOT executed)** (`2026-09-02-woff2-font-investigation-and-plan.md`): the SVG refusal is the container check, not the license gate (0 restricted fsType bits in stored fonts; 94% of files are WOFF2); three sfnt-only consumers (Rust embedder, CanvasKit, FreeType/Linux); plan `docs/superpowers/plans/2026-09-02-woff2-font-decode-at-ingestion.md` — decode at `CoreClient.ingest_asset`, web lane re-encodes, backfill script, brotli must be declared.
+
+- **2026-09-02 — WOFF2 fonts decoded at ingestion (option A), backfill applied on colombo dev** (`2026-09-02-woff2-decode-at-ingestion.md`): fonts now stored as sfnt (`CoreClient.ingest_asset` decodes WOFF/WOFF2; web lane re-encodes at export); dev backfill `294 decoded, 142 missing blobs`; live proof — Apollo doc's canonical SVG embeds Season Mix + Söhne as `font/ttf` with zero font diagnostics; Task 4b checkpoint excuse stays until every environment is backfilled.
+
+- **2026-09-03 — Agent-working chip: visible form of the scene editor lock** (`2026-09-03-agent-working-chip.md`): "Designing. Please wait to edit." chip with dot-grid pulse + text shimmer, top-left of the scene stage while `agentRunLock.locked`; zero-dependency CSS; live-proven on the thread route. FINDING: the standalone artifact route (`editor-surface.tsx`) passes no lock at all — founder decision pending.
+
+- **2026-09-03 — Standalone artifact route now honours the editor lock** (`2026-09-03-standalone-artifact-lock.md`): `GET /documents/{id}/agent-run` (the 409's own predicate + current_version) polled every 4 s by `EditorSurface`; locks session/inspector/gestures/Edit, shows the chip, reloads on version moves. Live-proven on the Apollo doc. Test suites left 19 `ws_test_*` design jobs in the shared queue again (worker restarted).
+
+- **2026-09-04 — Apollo dry run: seven editor defects, root causes, roadmap** (`2026-09-04-editor-quality-dry-run.md`): kit line-height 4.5 = px/16 parser bug; bold/italic dead = single-face kit, variable fonts never instanced; CTA unselectable = deepest-leaf hit + no hover/walk-up; box≠paint = layout-box hit-test; pageless streaming = pageId picked once at load; page-before-assets unordered. Roadmap `docs/superpowers/plans/2026-09-04-editor-quality-roadmap.md` (order: ingestion → fresh doc → selection ladder → text bounds last; inspector controls gated on a founder icon preview).
+
+- **2026-09-04 — Plan 1 shipped: type units + instanced faces + honest Bold/Italic** (`2026-09-04-plan1-type-units-and-faces.md`): parser line-height/letter-spacing are element-relative (px/16 bug); LUMI0233 normalizer guard; variable fonts instanced to 400/500/600/700 static kit faces at ingestion (LUMI0234/0235); `scripts/rederive_kit_type_units.py` backfill (dry-run default, --repin-documents); editor Bold/Italic disable with a reason when the kit has no face. Live-proven on the Apollo ad (kit v3/v4; editor reads `scene.meta.brand_kit`, so rebinding needs the attach route).
+
+- **2026-09-04 — Plan 2 shipped: page first + pre-spend guard + canvas on the first streamed batch** (`2026-09-04-plan2-page-first-and-first-batch.md`): asset tools refuse on a pageless scene (`scene.page_required`) before any spend; page-first rule in the director/author prompts and the LinkedIn ad skill; the canvas draws the page of the scene it streams. Live proof exposed a second blocker — ledgered-but-unstreamed ops made the frontend cursor dirty — fixed at the `record()` chokepoint (frames carry every ledger op since the last frame). Proven on a fresh Apollo/Brex ad: artboard on the first frame at document version 0.
+
+- **2026-09-04 — Plan 3 shipped: selection ladder** (`2026-09-04-plan3-selection-ladder.md`): pure `scene-selection-ladder.ts` (button-first hit, walk-up to the nearest representable ancestor, hover target, Escape effect, breadcrumb ancestry); double-click on a button edits its label; canvas wiring (Alt-click / same-spot second click / Escape walk up; hover outline as `SelectionChrome variant="hover"`). Live-proven on the Brex ad; the Apollo CTA is unreachable because it overflows its clipped column (engine hit-tests layout boxes — Plan 4). Inspector breadcrumb declined by the founder after a preview (Layers covers ancestry). Layers tree now indents by real depth (the flat 16px CSS was the "depth cap").
+- 2026-09-04-web-editor-page-section-and-mint-removal.md — Page section two-group repair, mint-green/fixture palette removal, canvas swatch hydration
 - `2026-09-08-arv2-r2-account-agent.md` — R2 BUILT + live acceptance passed (Probook 85 / Zafran 104 claims); rulings, observations and R2-close follow-ups
 - `2026-09-09-arv2-r3-person-agent.md` — **R3 close-out**: the committee step and the person agent BUILT, live acceptance **partial by ruling** (six people end to end on the fixed code; Zafran's fan-out proven, its four person jobs dequeued). Commits, all fourteen rulings, the live defects (L1 employer lock, L2 off-target insight, C1b phone scan) and the read-surface walk (W1–W4), the acceptance numbers and parallelism measurement, and the follow-ups (facet-text recall grader; account finalize candidate dedupe; the loader's `core.work_email` rows; per-process concurrency is a fleet change; legacy-only committees now read empty by design; the not-run people and how to re-offer them). Evidence `.context/arv2-r3-acceptance/acceptance.md`; lane docs `platform/api/clue_api/arv2/README.md` § R3.
 - `2026-09-10-arv2-r4-websets-experiment.md` — R4 discovery experiment: Exa Websets vs `/search` on the v3 ICP; Websets 14/25 strict passes vs search 2/4; 5 Websets verdict errors caught by our $0.007 stage probe; cost per qualified company and the R4 design it argues for.
@@ -556,3 +658,6 @@ The central architecture bet is that verification must be modeled at the claim/d
 - `2026-09-16-provider-incidents.md` — provider incidents end to end (classifier, `provider_incident` table + Sentry open/close, the drain and chat-turn writers, three inline surfaces); rulings PI-1..PI-5, the live Exa refusal→recovery proof, and what the founder's browser walk still owes.
 - `2026-09-17-composer-file-tagging.md` — composer `@` tagging of Gallery files, microsites and accounts: the clipped-picker fix (`89f34dd4e`), the approved spec and the 8-task plan; execution not started (founder ruling); rulings and the one spec deviation recorded.
 - `2026-09-17-custom-domain-publishing-research.md` — custom-domain publishing for web pages: what the tree actually serves today (interim `/w/{ws}/p/{slug}`, hardcoded `share.cluehq.ai` chrome, tenant-subdomain v1 unbuilt, absolute asset URLs baked at publish), how Notion/Mutiny/Ploy do it, Railway 20-domains-per-service cap, Cloudflare-for-SaaS recommendation, which dummy Pages fields to keep/drop; section-20 rules + Option C RATIFIED; design approved; spec at `docs/superpowers/specs/2026-09-17-custom-domain-publishing-design.md`. No code.
+- `2026-09-18-design-session-continuity.md` — the design agent's durable session (one workspace and one thread per design session, continue/resume, session sync through the blob store, erasure), then the 2026-09-19 exit judge v2 (free reasoning + three engine actions, artifact and tags shown), and the **seller + target-account context** shipped the same day on `design-agent-account-context-transfer`: the design role is granted `read_project_accounts@1` / `read_account_research@2` / `read_claims@1`, they reach the runtime as tools on LEG turns only, a governed refusal arrives as `{"error": "refused", "reasons": [...]}`, the seller's pinned knowledge documents are written read-only into `workspace/seller/` with an `index.md`, and the account-adaptation / scene-brief-copy / tools skills teach all of it. **Skill text pending founder review; the three live acceptance proofs (spec §6) are owed.**
+- `2026-09-21-display-prewrite-planning.md` — how display prose is generated today (lazy on read, Luna per section, `display_block`), the 09-12 prewrite design found unimplemented, the 09-21 placeholder ruling (`Synthesis in progress…`, `pending`, 5 s poll), and the 8-task plan `docs/superpowers/plans/2026-09-21-display-prewrite-and-shared-blocks.md`. Execution not started.
+- `2026-09-21-display-prewrite-execution.md` — execution record for `display/prewrite-and-shared-blocks`: display prose is now written by the fleet (`arv2_display_page` kind + handler, the account overview offered at settle, the contact pages of an account on its first open), a read became a scheduler (`pending` + `Synthesis in progress, please wait a few seconds.` + a 5 s `router.refresh()` poll), and the insights page's `context-only` / `contact-insights` are the owners' stored blocks. Eight tasks, two migrations (`fd8795c4fd5a`, `2b702a116c15`); rulings, gates and the five owed live proofs recorded there.

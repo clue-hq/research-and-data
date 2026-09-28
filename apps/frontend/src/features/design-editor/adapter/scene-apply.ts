@@ -21,6 +21,7 @@ import type {
   Scene,
   Stroke,
   TextAlign,
+  TextNode,
   Unit,
   VerticalAlign,
 } from "../engine/scene/contracts";
@@ -42,6 +43,13 @@ import {
   updateTextNode,
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
+import { resolvedTextFields, textTypographyResolves } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
+import {
+  remapSpansByDiff,
+  spanValidationIssues,
+  spansVectorForContentEdit,
+} from "../engine/scene/textSpans";
 import {
   getPage,
   isNodeDirectGeometryEditable,
@@ -140,6 +148,9 @@ import {
  *     does not have would be the very drift this rule prevents.
  *   • `fillMode` → image only, because hydrate states it for an image node and
  *     for nothing else (`scene-hydrate.ts:687-691`).
+ *   • `fitToText` (Plan 4 item F) → text only. Its control lives on the text
+ *     schema alone and its write states a text fact — the box hugs its copy —
+ *     so there is nothing for it to mean on any other kind.
  *   • §1.4's AUTO LAYOUT rows (direction / wrap / gap / grow / padding / align)
  *     → `auto_layout` only. Ruling L10 makes hydrate state the whole set for
  *     every auto-layout node (defaults included) and for no other kind's
@@ -257,11 +268,9 @@ const PADDING_SLOTS: Record<string, 0 | 1 | 2 | 3> = {
  * L10), and the same seed `updateAutoLayoutAlignment` uses internally, so the
  * panel and the engine cannot disagree about what such a node lays out as.
  *
- * Spreading the STORED object is what preserves `gap_token` / `padding_token` /
- * `layout_mode`: §1.4/OQ-2 keeps tokens and fill weights off this surface, so
- * no control here can restate a binding a numeric commit dropped. It also
- * introduces no `undefined` keys — only the members the node actually holds
- * ride along (wire-format minimization).
+ * Spread authored properties to preserve unrelated bindings and layout mode.
+ * An explicit gap or padding override replaces only its own binding; padding
+ * siblings come from the paired resolved view before its shared token is removed.
  */
 function layoutBase(node: Node): AutoLayoutProps {
   return node.layout ?? defaultLayoutProps();
@@ -634,12 +643,48 @@ function positionOperation(
   );
 }
 
+/** Detach an edited role while preserving the other effective text fields. */
+function inspectorTypographyOperation(
+  node: Node,
+  change: Partial<Pick<TextNode, "font_family" | "font_size" | "font_weight">>,
+  tokenMaps?: KitTokenMaps | null,
+): Operation | null {
+  if (node.kind.kind !== "text") return null;
+  const text = node.kind;
+  if (!textTypographyResolves(text, tokenMaps)) return null;
+  if (!text.style_token && !text.font_size_token && !text.line_height_token && !text.letter_spacing_token) {
+    return updateTextNode(node, change);
+  }
+  const maps = tokenMaps ?? { typography: {}, numbers: {} };
+  const styled = resolvedTextFields(text, maps);
+  const effective = { ...text, font_family: styled.fontFamily, font_size: styled.fontSize,
+    font_weight: styled.fontWeight, line_height: styled.lineHeight,
+    letter_spacing: styled.letterSpacing };
+  if (Object.entries(change).every(([key, value]) => effective[key as keyof TextNode] === value)) {
+    return null;
+  }
+  // A literal edit detaches the role. Keep other bindings only when they still
+  // produce the value the user saw; a previously shadowed token must not wake up.
+  const detached = resolvedTextFields({ ...text, style_token: null }, maps);
+  const kind: typeof text = { ...effective, ...change, style_token: null,
+    font_size_token: change.font_size === undefined && detached.fontSize === styled.fontSize
+      ? text.font_size_token : null,
+    line_height_token: detached.lineHeight === styled.lineHeight ? text.line_height_token : null,
+    letter_spacing_token: detached.letterSpacing === styled.letterSpacing ? text.letter_spacing_token : null,
+  };
+  return { kind: "update_node", node_id: node.id, patch: nodePatch({
+    kind: set(kind), explicit_text_tokens: {
+      style: false, font_size: kind.font_size_token != null,
+      line_height: kind.line_height_token != null,
+      letter_spacing: kind.letter_spacing_token != null,
+    },
+  }) };
+}
+
 /**
  * One inspector change → one engine operation, or `null`.
- *
- * `isNodeDirectGeometryEditable` is the ready-made gate for the geometry rows
- * (unlocked AND (not solver-managed OR freehand)); it is the engine's own
- * predicate and is never re-implemented here.
+ * `isNodeDirectGeometryEditable` gates geometry rows using the engine's own
+ * predicate (unlocked AND either unmanaged or freehand).
  */
 export function sceneChangeToOperation(
   detail: SceneChangeDetail,
@@ -650,6 +695,8 @@ export function sceneChangeToOperation(
    * caller that has not threaded one — means no label can be validated, so no
    * token write happens. Every other row ignores it. */
   palette?: ScenePalette | null,
+  tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): Operation | null {
   const { property } = detail;
 
@@ -795,12 +842,76 @@ export function sceneChangeToOperation(
       return backgroundFillsOperation(node, paint);
     }
 
+    // ── Rung A: Text — what the node SAYS (rich-text plan, 2026-08-24) ───────
+    //
+    // The empty string is a LEGAL commit here, unlike every other text row: an
+    // emptied text node is a node that says nothing, which is a real edit and a
+    // node that survives — so no `trim() === ""` refusal, and none of the
+    // string coercion above needs relaxing (a non-string never reaches the
+    // switch).
+    //
+    // D4, and rung C's answer to it (founder-visible item 6). The engine CLEARS
+    // a spanned node's spans when the content changes and the spans arrive
+    // byte-identical (`operations.rs:620-631`) — right for a caller who forgot
+    // them, wrong for one that can still place them. So a spanned node's edit
+    // now carries a REMAPPED vector: the conservative prefix/suffix diff
+    // (`remapSpansByDiff`, the same one the caret session's untracked path
+    // uses), which keeps styling inside the unchanged prefix and suffix and
+    // trims or drops what touched the changed middle. It never guesses — this
+    // row sees only the before and after strings, so a bolded word the user
+    // retyped in the middle comes back unstyled rather than mis-styled.
+    //
+    // `spansVectorForContentEdit` runs LAST, immediately before the write, and
+    // its output is never re-normalized: its whole job is to make a vector the
+    // engine cannot mistake for a stale carry-forward, and normalizing would
+    // merge that deliberate split back together.
+    //
+    // A node with no spans writes the content channel alone, exactly as rung A
+    // did — there is nothing to remap and nothing for the engine to clear.
+    //
+    // RECORDED, NOT FIXED (review 2026-08-24, P3-5): a content commit whose
+    // value equals the stored content still writes, and its spans channel then
+    // carries the NORMALIZED stored vector — so a no-op "edit" could mint a
+    // document version whose only change is a span merge. It is unreachable
+    // from the shipped UI: every inspector row commits through `fieldCommit`,
+    // which suppresses a re-type of the live value before it ever reaches this
+    // switch. Left as it is rather than adding a guard nothing can trip.
+    case "content": {
+      if (!text) {
+        return null;
+      }
+      const stored = text.spans ?? [];
+      if (stored.length === 0) {
+        return updateTextNode(node, { content: value });
+      }
+      const remapped = remapSpansByDiff(text.content, value, stored);
+      const vector = spansVectorForContentEdit(text, value, remapped);
+      // The pre-send gate, the caret session's own
+      // (`scene-text-edit.ts::textEditCommitOperations`) repeated here rather
+      // than assumed: the engine validates spans at LAYOUT, not at apply, so an
+      // invalid vector applies clean and then drops the node out of measurement
+      // (LUMV0906) with nothing refused. Unreachable by construction — every
+      // `textSpans.ts` exit normalizes onto the five rules — and load-bearing
+      // anyway. Loud in dev/test; in production the spans channel is dropped
+      // and the content edit still lands, which is the honest degradation.
+      const issues = spanValidationIssues(value, vector);
+      if (issues.length > 0) {
+        if (process.env.NODE_ENV !== "production") {
+          throw new Error(
+            `refusing to write an invalid spans vector: ${issues.join("; ")}`,
+          );
+        }
+        return updateTextNode(node, { content: value });
+      }
+      return updateTextNode(node, { content: value, spans: vector });
+    }
+
     // ── §1.2 row 2: Font family (§2 delta row 3 — the real vocabulary) ───────
     case "fontFamily": {
       if (!text || value.trim() === "") {
         return null;
       }
-      return updateTextNode(node, { font_family: value });
+      return inspectorTypographyOperation(node, { font_family: value }, tokenMaps);
     }
 
     // ── §1.2 row 3: Size — a free number ≥ 1 (§2 delta row 2) ────────────────
@@ -812,7 +923,7 @@ export function sceneChangeToOperation(
       if (size === null || size < 1) {
         return null;
       }
-      return updateTextNode(node, { font_size: size });
+      return inspectorTypographyOperation(node, { font_size: size }, tokenMaps);
     }
 
     // ── §1.2 row 4: Weight — the nine named labels (§2 delta row 2) ──────────
@@ -824,7 +935,7 @@ export function sceneChangeToOperation(
       if (weight === undefined) {
         return null;
       }
-      return updateTextNode(node, { font_weight: weight });
+      return inspectorTypographyOperation(node, { font_weight: weight }, tokenMaps);
     }
 
     // ── §1.2 row 5: H-alignment — four toggles (§2 delta row 2) ──────────────
@@ -1055,6 +1166,18 @@ export function sceneChangeToOperation(
       return updateNodeSize(node, { ...node.size, [axis]: dimension });
     }
 
+    // ── Plan 4 item F: "Fit to text" — the text box hugs its copy ────────────
+    // ONE write, one document version: the height flips to hug (the authoring
+    // default Plan 4 restores) and nothing else moves. Width is deliberately
+    // untouched — a fixed width is the wrap width the author chose. The value
+    // is not read; the button carries "1" for the event's sake only.
+    case "fitToText": {
+      if (!text || node.size.height.kind === "hug") {
+        return null;
+      }
+      return updateNodeSize(node, { ...node.size, height: { kind: "hug" } });
+    }
+
     // ── §1.4 Auto Layout: Direction (AD4.B step 2) ───────────────────────────
     // KIND GUARD: `auto_layout` only, on all six rows below. That is hydrate's
     // condition for them (ruling L10 states the whole set for every auto-layout
@@ -1086,7 +1209,9 @@ export function sceneChangeToOperation(
       if (size === null) {
         return null;
       }
-      return updateNodeLayout(node, { ...layoutBase(node), [property]: size });
+      const layout = { ...layoutBase(node), [property]: size };
+      if (property === "gap" && layout.gap_token) layout.gap_token = undefined;
+      return updateNodeLayout(node, layout);
     }
 
     // ── §1.4 Auto Layout: Pad T / R / B / L ──────────────────────────────────
@@ -1106,9 +1231,12 @@ export function sceneChangeToOperation(
       // order (`PADDING_SLOTS` is where that order is stated). The tuple is
       // rebuilt rather than mutated — `layoutBase` may hand back the node's own
       // stored array, and an operation must never edit the scene it reads.
-      const padding: AutoLayoutProps["padding"] = [...base.padding];
+      if (base.padding_token && !effectiveNode?.layout) return null;
+      const padding: AutoLayoutProps["padding"] = [
+        ...(base.padding_token ? effectiveNode!.layout!.padding : base.padding),
+      ];
       padding[PADDING_SLOTS[property]] = size;
-      return updateNodeLayout(node, { ...base, padding });
+      return updateNodeLayout(node, { ...base, padding, ...(base.padding_token ? { padding_token: undefined } : {}) });
     }
 
     // ── §1.4 Auto Layout: Align X / Align Y ──────────────────────────────────
@@ -1659,8 +1787,8 @@ function backgroundPaint(raw: unknown): Paint | null {
       //      event fires from the fill-type SELECT, so the document's paint is
       //      not solid — and hydrate deliberately states no `backgroundColor`
       //      for a non-solid paint (only facts hydrate), leaving the shared
-      //      `DEFAULT_STATE` seed `#00F59B` on screen. Committing it would
-      //      write the dummy's green into a real ad: a fabrication, and worse
+      //      `DEFAULT_STATE` seed on screen. Committing it would
+      //      write the dummy's seed into a real ad: a fabrication, and worse
       //      than `stops[0]`, which is at least a colour the document has.
       //
       // `stops[0]` is not the answer either: the stops are inert while solid

@@ -542,7 +542,7 @@ def client(tmp_path: Path) -> TestClient:
     return make_client(create_app(tmp_path / "engine-cache"))
 
 
-def test_the_published_draft_kit_carries_the_brief(
+def test_the_published_approved_kit_carries_the_brief(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class Writer:
@@ -555,7 +555,7 @@ def test_the_published_draft_kit_carries_the_brief(
         client, monkeypatch, brief_agent=Writer(), url="https://brief-rides.example"
     )
     detail = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
-    assert detail["brand_kit"]["approval_status"] == "draft"
+    assert detail["brand_kit"]["approval_status"] == "approved"
     brief = detail["brand_kit_json"]["brief"]
     assert brief["schema_version"] == 1
     assert brief["characterization"]["words"] == ["calm", "clinical", "optimistic"]

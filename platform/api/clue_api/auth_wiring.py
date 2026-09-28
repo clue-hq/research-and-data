@@ -31,8 +31,23 @@ from clue_auth import (
     permissions_for_role,
     provision_self_serve_workspace,
 )
-from clue_auth.errors import IdentityConflictError, ProvisioningConflict
+from clue_auth.errors import (
+    IdentityConflictError,
+    InvitationAddressMismatch,
+    InvitationUnavailableError,
+    ProvisioningConflict,
+)
 from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
+from clue_auth.providers.clerk_api import ClerkApi, ClerkApiError
+from clue_auth.provisioning import (
+    ProvisionedIdentity,
+    accept_pending_workspace_invitations,
+    accept_workspace_invitation,
+)
+from clue_auth.store import (
+    get_platform_user,
+    update_platform_user_email,
+)
 from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
@@ -59,6 +74,9 @@ class SessionMembershipResponse(BaseModel):
 
     membership_id: str
     workspace_id: str
+    # What the user is shown for this workspace. Always present on the wire, so no screen has to
+    # fall back to an id.
+    workspace_name: str
     role_key: str
     permissions: frozenset[str]
 
@@ -89,16 +107,28 @@ class ProvisionRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=200)
     last_name: str = Field(min_length=1, max_length=200)
     job_role: str = Field(min_length=1, max_length=200)
-    company_name: str = Field(min_length=1, max_length=200)
+    # Optional: a company name typed here wins, and a submission without one is named from
+    # ``company_website`` by the shared canonical rule. Provisioning refuses (422,
+    # ``COMPANY_NAME_REQUIRED``) only when neither can name the workspace.
+    company_name: str | None = Field(default=None, max_length=200)
     company_website: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("first_name", "last_name", "job_role", "company_name")
+    @field_validator("first_name", "last_name", "job_role")
     @classmethod
     def _strip_required(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("must contain non-whitespace characters")
         return cleaned
+
+    @field_validator("company_name")
+    @classmethod
+    def _blank_company_name_is_absent(cls, value: str | None) -> str | None:
+        """A blank or whitespace-only name is "not typed", not an error: the website names it."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
     @field_validator("company_website")
     @classmethod
@@ -301,6 +331,8 @@ def build_auth_router(
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
     pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
+    clerk_api: ClerkApi | None = None,
+    provision_enabled: bool = True,
 ) -> APIRouter:
     router = APIRouter(prefix=AUTH_PREFIX, tags=["authentication"])
     session_dependency = SessionDependency(service)
@@ -309,13 +341,31 @@ def build_auth_router(
     @router.get("/session", response_model=SessionResponse)
     async def get_session(
         session: Annotated[AuthenticatedSessionView, Depends(session_dependency)],
+        request: Request,
     ) -> SessionResponse:
+        if clerk_api is not None and conn_factory is not None:
+            async with conn_factory() as conn:
+                user = await get_platform_user(conn, session.user_id)
+            if user is not None and user.email is None:
+                external = await service.external_session(authentication_request(request))
+                if external.provider_key == "clerk":
+                    try:
+                        email = await clerk_api.primary_email(external.provider_subject)
+                    except ClerkApiError:
+                        log.warning("auth.email_backfill.unavailable")
+                    else:
+                        if email:
+                            async with conn_factory() as conn:
+                                await update_platform_user_email(conn, session.user_id, email)
         return SessionResponse(
             user_id=session.user_id,
             memberships=tuple(
                 SessionMembershipResponse(
                     membership_id=item.membership_id,
                     workspace_id=item.workspace_id,
+                    # The database loader's join always carries the name; the fallback covers
+                    # only in-memory membership loaders (tests), which read no workspace row.
+                    workspace_name=item.workspace_name or item.workspace_id,
                     role_key=item.role_key,
                     permissions=permissions_for_role(item.role_key),
                 )
@@ -337,6 +387,11 @@ def build_auth_router(
         )
 
     if conn_factory is not None:
+        register_invitation_acceptance(
+            router, service=service, conn_factory=conn_factory, clerk_api=clerk_api
+        )
+
+    if conn_factory is not None and provision_enabled:
 
         @router.post("/provision", response_model=ProvisionResponse)
         async def provision(
@@ -355,6 +410,12 @@ def build_auth_router(
             log.info("auth.provision.started", request_id=request_id)
             try:
                 session = await service.external_session(authentication_request(request))
+                email = None
+                if clerk_api is not None and session.provider_key == "clerk":
+                    try:
+                        email = await clerk_api.primary_email(session.provider_subject)
+                    except ClerkApiError:
+                        log.warning("auth.provision.email_unavailable")
                 async with conn_factory() as conn:
                     provisioned = await provision_self_serve_workspace(
                         conn,
@@ -367,6 +428,8 @@ def build_auth_router(
                         company_website=body.company_website,
                         pages_system_suffix=pages_system_suffix,
                     )
+                    if email:
+                        await update_platform_user_email(conn, provisioned.user.user_id, email)
             except IdentityConflictError as error:
                 log.info(
                     "auth.provision.completed",
@@ -405,11 +468,107 @@ def build_auth_router(
                 job_role=provisioned.user.job_role,
                 created=provisioned.created,
                 company_name_ignored=(
-                    not provisioned.created and provisioned.workspace.name != body.company_name
+                    not provisioned.created
+                    and body.company_name is not None
+                    and provisioned.workspace.name != body.company_name
                 ),
             )
 
     return router
+
+
+class InvitationAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str | None = Field(default=None, min_length=1, max_length=512)
+
+
+def register_invitation_acceptance(
+    router: APIRouter,
+    *,
+    service: PrincipalService,
+    conn_factory: ConnFactory,
+    clerk_api: ClerkApi | None,
+) -> None:
+    @router.post("/invitations/accept")
+    async def accept_invitation(
+        request: Request,
+        body: InvitationAcceptRequest,
+    ) -> JSONResponse:
+        request_id = request_id_for(request)
+
+        def error(status: int, code: str, message: str) -> JSONResponse:
+            return JSONResponse(
+                status_code=status,
+                content={"error": {"code": code, "message": message, "requestId": request_id}},
+                headers={REQUEST_ID_HEADER: request_id},
+            )
+
+        external = await service.external_session(authentication_request(request))
+        if clerk_api is None or external.provider_key != "clerk":
+            return error(
+                503, "INVITATIONS_UNCONFIGURED", "Invitation acceptance is not configured."
+            )
+        try:
+            profile = await clerk_api.primary_profile(external.provider_subject)
+        except ClerkApiError:
+            return error(
+                503, "INVITATIONS_UNAVAILABLE", "Invitation service is unavailable. Try again."
+            )
+        if profile is None:
+            return error(
+                409,
+                "VERIFIED_EMAIL_REQUIRED",
+                "Verify your primary email before accepting an invitation.",
+            )
+        try:
+            async with conn_factory() as conn:
+                accepted: tuple[ProvisionedIdentity, ...]
+                if body.token:
+                    accepted = (
+                        await accept_workspace_invitation(
+                            conn,
+                            raw_token=body.token,
+                            verified_address=profile.email,
+                            provider_key=external.provider_key,
+                            provider_subject=external.provider_subject,
+                            initial_first_name=profile.first_name,
+                            initial_last_name=profile.last_name,
+                        ),
+                    )
+                else:
+                    accepted = await accept_pending_workspace_invitations(
+                        conn,
+                        verified_address=profile.email,
+                        provider_key=external.provider_key,
+                        provider_subject=external.provider_subject,
+                        initial_first_name=profile.first_name,
+                        initial_last_name=profile.last_name,
+                    )
+                for item in accepted:
+                    await update_platform_user_email(conn, item.user.user_id, profile.email)
+        except InvitationAddressMismatch:
+            return error(
+                409,
+                "ADDRESS_MISMATCH",
+                "Sign in with the email address this invitation was sent to.",
+            )
+        except InvitationUnavailableError:
+            return error(
+                410,
+                "INVITATION_UNAVAILABLE",
+                "This invitation is expired, revoked, or unavailable.",
+            )
+        except IdentityConflictError:
+            return error(
+                409, "INVITATION_UNAVAILABLE", "This account cannot accept the invitation."
+            )
+        result: dict[str, str | int] = {"accepted": len(accepted)}
+        if accepted:
+            result.update(
+                workspace_id=accepted[0].membership.workspace_id,
+                membership_id=accepted[0].membership.membership_id,
+            )
+        return JSONResponse(content=result, headers={REQUEST_ID_HEADER: request_id})
 
 
 def install_auth_wiring(
@@ -418,6 +577,8 @@ def install_auth_wiring(
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
     pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
+    clerk_api: ClerkApi | None = None,
+    provision_enabled: bool = True,
 ) -> None:
     """Install the provider-free session routes and stable auth error envelope.
 
@@ -471,6 +632,8 @@ def install_auth_wiring(
             service=service,
             conn_factory=conn_factory,
             pages_system_suffix=pages_system_suffix,
+            clerk_api=clerk_api,
+            provision_enabled=provision_enabled,
         )
     )
 

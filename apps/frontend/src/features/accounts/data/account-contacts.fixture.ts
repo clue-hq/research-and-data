@@ -71,6 +71,7 @@ export const deniseDresserFixture: AccountContactDetail = {
   // No work-email claim behind this row: the chip cites nothing (ruling R5).
   emailClaimId: null,
   lastModifiedAt: "2026-04-08T00:00:00.000Z",
+  customFields: [],
   researchEvidence: [],
   evidence: [
     {

@@ -35,10 +35,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_catalog import (
-    ARV2_ACCOUNT_PROFILE_REF,
-    ARV2_PERSON_PROFILE_REF,
     arv2_account_profile_sha256,
     arv2_person_profile_sha256,
+    has_capability,
 )
 from clue_api.arv2.account_research_claims import (
     PERSONA_FIELD,
@@ -63,6 +62,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.research_context import pin_persona
 from clue_api.arv2.structuring_client import FieldCatalog
 from clue_config import Settings
 from clue_core import EntityId, ExtractionMethod, Persona, ProjectPhase, ProjectRunId
@@ -143,6 +143,10 @@ def arv2_job_id(run_id: UUID, subject_id: UUID) -> UUID:
     a person job under the same run can never collide.
     """
     return uuid5(_JOB_NS, f"{run_id}:{subject_id}")
+
+
+def quality_person_job_id(run_id: UUID, account_id: UUID, contact_id: UUID) -> UUID:
+    return uuid5(_RUN_NS, f"quality-person:{run_id}:{account_id}:{contact_id}")
 
 
 #: The run row's effort dial. Kept as a closed literal (and CHECK-ed in the migration) so a typo
@@ -301,6 +305,16 @@ async def launch_arv2_account_research(
 
     request_sha = _request_sha256(request, profile_sha256=profile_sha256)
     run_id = uuid5(_RUN_NS, request_sha)
+    context_id = await _quality_context_for_run(
+        conn,
+        storage,
+        settings=settings,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        run_id=run_id,
+        product_selection_version=request.product_selection_version,
+        icp_artifact_key=request.icp_artifact_key,
+    )
     inserted = await create_run(
         conn,
         RunRow(
@@ -317,10 +331,25 @@ async def launch_arv2_account_research(
             effort=request.effort,
             committee_cap=request.committee_cap,
             directive_text=request.directive_text,
-            profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+            profile_ref=f"agent-profile:arv2-account:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            context_id=context_id,
+            persona_pin=(
+                await pin_persona(
+                    conn,
+                    storage,
+                    workspace_id=request.workspace_id,
+                    brand_id=icp.brand_id,
+                    project_id=request.project_id,
+                    icp_key=icp.icp_key,
+                    icp_version=icp.icp_version,
+                )
+            )
+            if context_id is None
+            and has_capability(settings.arv2_research_catalog_version, "committee_discovery")
+            else None,
             created_at=now(),
         ),
     )
@@ -354,6 +383,7 @@ async def launch_arv2_account_research(
             # committee step, once this job has resolved them. The job carries its own copy of the
             # profile pin so replay never has to infer it from the run.
             subject_type="account",
+            profile_ref=f"agent-profile:arv2-account:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
         )
 
@@ -378,6 +408,60 @@ async def launch_arv2_account_research(
             for job_id in job_ids
         ),
     )
+
+
+async def _quality_context_for_run(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    *,
+    settings: Settings,
+    workspace_id: str,
+    project_id: str,
+    run_id: UUID,
+    product_selection_version: int,
+    icp_artifact_key: str,
+) -> UUID | None:
+    if not has_capability(settings.arv2_research_catalog_version, "research_quality"):
+        return None
+    from clue_api.arv2.quality_context import build_context, persist_context, read_context
+
+    # Serialize the first pin with run creation. Retried launches never recalculate persona,
+    # catalog or seller context against whatever is newest at retry time.
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+        {"key": f"research-launch-context:{workspace_id}:{run_id}"},
+    )
+    existing = await read_run(conn, run_id=run_id)
+    if existing is not None:
+        if (existing.workspace_id, existing.project_id) != (
+            workspace_id,
+            project_id,
+        ) or existing.context_id is None:
+            raise Arv2LaunchRefused(
+                "context_pin_missing", "Existing research has no matching context pin"
+            )
+        context = await read_context(
+            conn,
+            storage,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            context_id=existing.context_id,
+        )
+        if context.icp.artifact_key != icp_artifact_key:
+            raise Arv2LaunchRefused(
+                "context_pin_mismatch", "Existing context names a different ICP"
+            )
+        return existing.context_id
+    context = await build_context(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        product_selection_version=product_selection_version,
+    )
+    if context.icp.artifact_key != icp_artifact_key:
+        raise Arv2LaunchRefused("context_pin_mismatch", "Project ICP changed during launch")
+    return await persist_context(conn, storage, context)
 
 
 async def enqueue_launched_jobs(queue: WorkQueue, receipt: Arv2LaunchReceipt) -> int:
@@ -745,6 +829,16 @@ async def launch_arv2_person_research(
         product_selection_version=product_set.selection_version,
     )
     run_id = uuid5(_RUN_NS, request_sha)
+    context_id = await _quality_context_for_run(
+        conn,
+        storage,
+        settings=settings,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        run_id=run_id,
+        product_selection_version=product_set.selection_version,
+        icp_artifact_key=artifact_key,
+    )
     inserted = await create_run(
         conn,
         RunRow(
@@ -761,10 +855,25 @@ async def launch_arv2_person_research(
             effort="full",
             committee_cap=len(request.contact_entity_ids),
             directive_text=request.directive_text,
-            profile_ref=ARV2_PERSON_PROFILE_REF,
+            profile_ref=f"agent-profile:arv2-person:{settings.arv2_research_catalog_version}",
             profile_sha256=profile_sha256,
             requested_by_user_id=request.requested_by_user_id,
             request_sha256=request_sha,
+            context_id=context_id,
+            persona_pin=(
+                await pin_persona(
+                    conn,
+                    storage,
+                    workspace_id=request.workspace_id,
+                    brand_id=icp.brand_id,
+                    project_id=request.project_id,
+                    icp_key=icp.icp_key,
+                    icp_version=icp.icp_version,
+                )
+            )
+            if context_id is None
+            and has_capability(settings.arv2_research_catalog_version, "committee_discovery")
+            else None,
             created_at=now(),
         ),
     )
@@ -777,7 +886,7 @@ async def launch_arv2_person_research(
         project_run_id=project_run_id,
     )
 
-    catalog = await read_person_catalog(conn)
+    catalog = await read_person_catalog(conn, workspace_id=request.workspace_id)
     writer = LenientClaimWriter(lenient=settings.claim_write_lenient)
     job_ids: list[UUID] = []
     seated: list[UUID] = []
@@ -790,7 +899,11 @@ async def launch_arv2_person_research(
             account_entity_id=place.account_id,
             added_via="manual",
         )
-        job_id = arv2_job_id(run_id, contact_id)
+        job_id = (
+            quality_person_job_id(run_id, place.account_id, contact_id)
+            if context_id
+            else arv2_job_id(run_id, contact_id)
+        )
         job_ids.append(job_id)
         await create_job(
             conn,
@@ -801,10 +914,26 @@ async def launch_arv2_person_research(
             # account sibling, and the driver composes their employer's context from it.
             account_entity_id=place.account_id,
             subject_type="person",
+            profile_ref=f"agent-profile:arv2-person:{settings.arv2_research_catalog_version}",
             subject_entity_id=contact_id,
             profile_sha256=profile_sha256,
+            input_refs={"subject_scope": "account", "requested_persona": request.persona.value}
+            if context_id
+            else None,
         )
-        if await seat_person_on_committee(
+        if context_id is not None:
+            await conn.execute(
+                text("""
+              UPDATE arv2_research_job SET input_refs=input_refs || CAST(:refs AS jsonb)
+              WHERE job_id=:job AND workspace_id=:ws
+            """),
+                {
+                    "job": job_id,
+                    "ws": request.workspace_id,
+                    "refs": json.dumps({"requested_persona": request.persona.value}),
+                },
+            )
+        elif await seat_person_on_committee(
             conn,
             scope=JobScope(
                 workspace_id=request.workspace_id,
@@ -1033,7 +1162,9 @@ class DbArv2LaunchService:
     async def launch(self, request: Arv2LaunchRequest) -> Arv2LaunchReceipt:
         # The profile digest is read at launch time, so a run records the bytes that existed when
         # the human approved it — the driver re-checks them and refuses if they have since moved.
-        profile_sha256 = arv2_account_profile_sha256()
+        profile_sha256 = arv2_account_profile_sha256(
+            version=self._settings.arv2_research_catalog_version
+        )
         async with self._conn_factory() as conn:
             receipt = await launch_arv2_account_research(
                 conn,
@@ -1053,7 +1184,9 @@ class DbArv2LaunchService:
         # The person profile's digest, read at launch time for the same reason the account launch
         # reads its own: the run records the bytes that existed when the human asked, and the
         # driver refuses a job whose profile has moved since.
-        profile_sha256 = arv2_person_profile_sha256()
+        profile_sha256 = arv2_person_profile_sha256(
+            version=self._settings.arv2_research_catalog_version
+        )
         async with self._conn_factory() as conn:
             receipt = await launch_arv2_person_research(
                 conn,
@@ -1178,7 +1311,10 @@ class LaunchArv2AccountResearchTool(Tool):
         "explicitly approves this exact account set and ICP. A successful result means the jobs "
         "were enqueued or replayed; it never means research has completed, and it authorizes no "
         "contact research. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#launch_arv2_account_research"
+        "Before launching, read .deepagent/skills/account-research-briefing/v2/SKILL.md and "
+        "write the project-specific delegation brief it teaches in directive_text, with "
+        "account placeholders and references to the complete pinned documents. "
+        "Manual: .deepagent/skills/manual-tools/v12/SKILL.md#launch_arv2_account_research"
     )
     input_model = LaunchArv2AccountResearchInput
     output_model = LaunchArv2AccountResearchOutput
@@ -1271,7 +1407,7 @@ class LaunchArv2PersonResearchTool(Tool):
         "replayed, never that research has completed. ``persona`` is the committee seat each "
         "named person is given if they do not already hold one — it is what puts them on the "
         "account's contact list — and defaults to ``user``. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#launch_arv2_person_research"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#launch_arv2_person_research"
     )
     input_model = LaunchArv2PersonResearchInput
     output_model = LaunchArv2PersonResearchOutput
@@ -1346,7 +1482,7 @@ class ReadArv2AccountResearchRunTool(Tool):
         "Read one ARV2 account-research run: what it was pinned to, its status, and the state of "
         "each account's job (including the failure code of anything that needs review). Effect-"
         "free; it never starts, resumes or changes research. "
-        "Manual: .deepagent/skills/manual-tools/v4/SKILL.md#read_arv2_account_research_run"
+        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_arv2_account_research_run"
     )
     input_model = ReadArv2AccountResearchRunInput
     output_model = ReadArv2AccountResearchRunOutput

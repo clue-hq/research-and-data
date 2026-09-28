@@ -1,0 +1,76 @@
+# Exa - webset
+
+## **The short verdict**
+
+Aryan is right on the structural point, and the proof of concept did not disprove it. It never tested Websets at all. Discovery ran on `/search` because the ARV2 lane was built as a Day-1 “Exa-only agent” and, when the M06A team tried the Websets API on 3 August, Exa returned 401 with “must upgrade to Pro”: the API is gated behind the $449/month plan, and the key we had was not entitled. That is a procurement fact, not a technical verdict. So the honest comparison is: what the docs say Websets does, what our repo’s own live acceptance runs saw, and what our `/search` funnel cost.
+
+Where his argument holds:
+
+- **Dedup must happen before you pay, not after.** With `/search`, a result is a page. You pay for the search, extract the company, resolve it against your 5,000 accounts, and throw away the known ones. `excludeDomains` caps at 1,200 domains and is not even supported with the company category, so at 5,000 accounts you cannot push the exclusion into the query. Websets does it at the source: import your existing homepage URLs (up to 50,000 rows per import), pass the import as `exclude`, and “any results found within these sources will be omitted.” A `count: 10`then means ten *new* verified companies.
+- **“Find me 10 more for a different ICP” is a first-class Websets operation.** New query, criteria auto-generated from the plain-English ICP (confirm or edit), entity type `company`, exclude the import of everything already researched. And the mirror case, “re-check my existing 5,000 against ICP B”, is Websets’ `scope`: “evaluate each one against criteria. Only the ones that pass are returned.” Our `/search` funnel has no equivalent short of running our own verification per account.
+- **The verification is built in and priced only on success.** Each result is judged per criterion with `satisfied: yes | no | unclear`, a reasoning string, and references (title, snippet, URL). 10 credits per all-green result; non-matches cost nothing. In the proof of concept, 15 of the 23 discovery-phase Exa calls were the agent doing this by hand (ten verification searches plus five tie-breaks). That is exactly the “excess searches” he is pointing at.
+- **It returns companies, not pages, with firmographics attached.** A company item carries name, URL, location, employees, industry, founded year, headquarters, `fundingTotal`, `fundingLatestRound`(name, date, amount), and web traffic. Our biggest `/search` finding was that prose ICP queries return content about the ICP rather than members of it. Websets’ entity mode solves that natively.
+- **We already own the pipeline.** M06A (D0 to D6) is implemented, accepted live on 3 August, and composed into the fleet: pinned ICP → deterministic plan with up to five criteria → submit → reconcile → identity admission through M2 (same domain collapses to one survivor) → seal → scoring, with the rule all `yes` = selected, any `no` = excluded, any `unclear` = hold for a human. It just does not yet send `exclude` or use imports; the adapter already models both fields.
+
+Where his argument overreaches, and this is where the caution lives:
+
+- **Websets is not our identity system.** Exclusion is URL matching against past websets or imported URLs. Our resolver still owns canonical identity (workspace-scoped domain uniqueness, merges, survivors). Websets removes most duplicates before we pay; M2 removes the rest. Both stay.
+- **A natural-language ICP becomes at most five binary, publicly verifiable criteria.** Exa’s guidance: “Use 1-3 criteria for best results,” “keep criteria verifiable,” and subjective criteria “produce inconsistent results.” Our ICP has parts that are judgments: “quantifiable pain,” “no ABM platform in place” (an absence, unverifiable from the web). Those become `unclear` and land in hold. The compile step is real work, and it is where our M3 compiler and the human confirmation have to earn their keep.
+- **Minutes, not seconds.** Websets is asynchronous. Exa’s FAQ: 1,000-plus results “can take about an hour or more,” and narrower criteria take longer. Our own acceptance script polled every 10 seconds with a 600-second timeout. A chat prompt “find me 10 more” is fine if the UI shows progress, and the fleet’s `waiting_external` plus webhooks already handle that; it is not a synchronous tool call.
+- **The plan floor is the real cost.** API access requires Pro at $449/month for 100,000 credits. At our current volume that fixed fee dwarfs everything else (numbers below).
+- **What it cannot do.** No signal orchestration: it cannot alert on a new job posting or a job change (third-party review, consistent with the docs). Monitors re-run a search at most once a day. So the free ATS reads that produced our best signals stay, and so does AI Ark for people, since reviewers report people freshness lagging company data. Only one G2 review exists; the evidence base on quality is thin, which is an argument for testing, not for either side.
+
+## **The cost side**
+
+What one deeply researched account costs today, from the smoke-test and Zafran ledgers:
+
+| **Step** | **Per account** | **Basis** |
+| --- | --- | --- |
+| Discovery share (search + gate verification) | $0.035 per selected, $0.018 per scored | Agent A: $0.177 for 38 companies surfaced, 10 scored, 5 selected |
+| Deep research, full depth | $0.155 (AI Ark list price) / $0.10 (volume) | Agent B, 5 accounts, incl. contacts and emails |
+| Display copy (Luna, all pages) | ~$0.05 | control test |
+| **All-in** | **about $0.20 to $0.25** |  |
+
+What Websets would replace and what it costs:
+
+|  | **`/search` funnel** | **Websets (Pro)** |
+| --- | --- | --- |
+| Per verified matching company | ~$0.035 (incl. hand-done gates) | $0.045 (10 credits at $0.00449) |
+| Per candidate that fails the gates | ~$0.014 | $0 |
+| Per email or phone | AI Ark credits | 5 credits (~$0.02) |
+| Per extra enrichment column | agent call | 2 credits (~$0.009) |
+| Excluding 5,000 known accounts | not possible in-query | import once, exclude every search |
+| Fixed cost | none, pay-as-you-go | $449/month, credits expire monthly |
+| Latency | ~1 s per call | minutes per webset |
+
+The unit economics are roughly a wash: Websets is 1.3× our per-match cost but charges nothing for the misses we currently pay to verify. The decision is made by the fixed fee. At 500 verified accounts a month the Pro plan works out to about $0.90 per verified account, 25× the `/search` path. At 10,000 verified accounts a month it is $0.045 and the per-unit case favours Websets outright, with entity dedup, criteria evidence, funding data, source-level exclusion and monitors thrown in. Deep research and the display layer cost the same either way; discovery is under 15% of the per-account total on both paths.
+
+## **What I recommend**
+
+1. **Adopt Websets as the discovery and re-qualification engine, and fund the Pro plan when volume justifies it.** Add two things to M06A that the docs support and the adapter already models: an import of every workspace account’s homepage URL used as `exclude` on every discovery search, and `scope` searches to re-score an existing account set against a new ICP. Confirm with Exa the per-plan cap on excluded results; the docs say “determined by your plan” without a number, and that cap decides whether 5,000-account exclusion works on Pro.
+2. **Keep `/search` for what it is good at:** one-off interactive lookups, the domain lock, and the signal-first job-post angle, which becomes a criterion hint rather than a discovery method.
+3. **Keep the free ATS reads and AI Ark**, because Websets cannot watch job boards and its people data lags.
+4. **Run a control test before committing**, same ICP both ways: recall, gate precision, unclear rate, time to idle, and cost. Two websets of 25 results is about 500 credits ($2.25 at Pro rates) plus whatever it takes to get the key entitled. We have the harness pattern from the display-layer test; this one is cheaper.
+
+One correction to my earlier answer: I described Websets as “for bulk and monitors” as if that were a finding. It was a scoping choice made without the entitlement to test it, and the ARV2 plan’s own line was narrower: “kept for web-defined ICPs.” Aryan’s challenge is well founded.
+
+Sources:
+
+- Exa Websets overview
+- Websets API: how it works
+- Websets API guide for coding agents
+- Create a search (exclude, scope, criteria limits)
+- Websets item shape (company properties, evaluations)
+- Websets imports, imports and search (scope), import from CSV, exclude results
+- Websets monitors
+- Websets best practices, criteria versus enrichments, prompting, example queries, dashboard get started
+- Websets FAQ (plans, credits, timing)
+- Exa pricing (Search, Contents, Monitors, Agent), Search API reference (excludeDomains cap, categories)
+- Bloomberry: Clay alternatives, Websets section, Autotouch: Exa vs Clay, Explorium: Clay vs Exa, G2: Exa Websets reviews, TinyFish: Exa pricing 2026
+- Repo: , `M06A-D2-exa-websets-paid-submit.md` (credit policy, Pro gate), `M06A-D3-exa-websets-lifecycle.md`, `M06A-D6-production-composition-acceptance.md`, ; ledgers in  §6
+    
+    `docs/specs/M06A-exa-websets-sumble-discovery-integration.md`
+    
+    `_memory/2026-08-02-m6a-d2-exa-websets-submit.md`
+    
+    `.context/arv2-smoke-cluehq/SMOKE-TEST-REPORT.md`

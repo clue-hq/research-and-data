@@ -86,7 +86,8 @@ class OpenRouterRoleAssist:
         )
 
     def _invoke(self, draft: AssistDraft) -> dict | None:
-        import httpx  # lazy: only the real network path needs it
+        from clue_spend import ProviderHalted
+        from lumen_api import spend  # lazy: only the real network path needs it
 
         body = {
             "model": self.model,
@@ -99,21 +100,27 @@ class OpenRouterRoleAssist:
                 "json_schema": {"name": "role_assist", "strict": True, "schema": _RESPONSE_SCHEMA},
             },
         }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        url = self.base_url.rstrip("/") + "/chat/completions"
-        for _ in range(2):
-            try:
-                response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-                if response.status_code >= 400:
-                    continue
-                content = response.json()["choices"][0]["message"]["content"]
-                return json.loads(content)
-            except Exception:
-                continue
-        return None
+        # The two attempts are the provider caller's now (same count, same swallow-on-failure
+        # contract). A ``ProviderHalted`` propagates: an out-of-credit key must fail the job, not
+        # quietly drop the lane to its deterministic fallback.
+        try:
+            response = spend.openrouter_call(
+                operation="design.ingestion.assist",
+                body=body,
+                label="assist:role refinement",
+                timeout_s=DEFAULT_TIMEOUT_S,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_attempts=2,
+            )
+            if response.status >= 400:
+                return None
+            content = json.loads(response.body)["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except ProviderHalted:
+            raise
+        except Exception:
+            return None
 
 
 def _draft_payload(draft: AssistDraft) -> dict:

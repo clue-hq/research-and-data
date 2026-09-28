@@ -18,6 +18,7 @@ import pytest
 from pydantic import SecretStr
 
 from clue_api.arv2.calls import CallCost, ProviderCaller
+from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import (
     ANSWER_ESTIMATE_USD,
     THIN_MAX_COST_USD,
@@ -106,6 +107,17 @@ def _deep(output_text: str, n_results: int) -> ExaDeepResult:
 # -- request shaping ---------------------------------------------------------------------------
 
 
+def test_optional_link_and_image_extras_reach_search_and_contents_without_changing_defaults():
+    extras = {"links": 10, "imageLinks": 3}
+    search = search_body("public interviews", extras=extras)
+    contents = contents_body(["https://example.test/interview"], extras=extras)
+    assert search["contents"]["extras"] == contents["extras"] == extras
+    extras["links"] = 99
+    assert search["contents"]["extras"]["links"] == contents["extras"]["links"] == 10
+    assert "extras" not in search_body("public interviews")["contents"]
+    assert "extras" not in contents_body(["https://example.test/interview"])
+
+
 def test_a_search_body_carries_only_the_options_the_caller_passed() -> None:
     """No module-level default may narrow a search the caller did not ask to narrow."""
     body = search_body("zafran security funding")
@@ -149,6 +161,58 @@ def test_a_search_body_puts_every_option_on_the_wire_when_it_is_passed() -> None
         "text": {"maxCharacters": 2500},
         "highlights": {"query": "abm", "maxCharacters": 500},
     }
+
+
+def test_a_search_body_omits_exclude_domains_and_output_schema_unless_passed() -> None:
+    body = search_body("acme conference 2026")
+    assert "excludeDomains" not in body
+    assert "outputSchema" not in body
+
+
+def test_a_search_body_carries_exclude_domains_and_output_schema_when_passed() -> None:
+    body = search_body(
+        "acme conference 2026",
+        type="deep-lite",
+        exclude_domains=["pinterest.com"],
+        output_schema={"type": "text"},
+        highlights={},
+    )
+    assert body["type"] == "deep-lite"
+    assert body["excludeDomains"] == ["pinterest.com"]
+    assert body["outputSchema"] == {"type": "text"}
+    assert body["contents"]["highlights"] == {}
+
+
+def test_a_search_result_carries_the_written_answer_when_exa_returns_one() -> None:
+    """``/search`` with ``type=deep-lite`` and an ``outputSchema`` answers with ``output``."""
+    from clue_api.arv2.exa_client import ExaSearchResult, _search_result
+
+    body = {
+        "results": [{"url": "https://a.example", "title": "A", "highlights": ["h1"]}],
+        "output": "Acme runs its conference in May.",
+    }
+    result = _search_result(
+        body,
+        status=200,
+        cost=CallCost(
+            cost_usd=Decimal("0.01"),
+            credits=Decimal(0),
+            media_seconds=0,
+            cost_source="metered",
+            provider="exa",
+            operation="search",
+            raw_ref="raw/s",
+            ledger_row_id="row-s",
+        ),
+        request_id="req_s",
+    )
+    assert isinstance(result, ExaSearchResult)
+    assert result.output_text == "Acme runs its conference in May."
+    assert result.results[0].highlights == ("h1",)
+    assert (
+        _search_result({"results": []}, status=200, cost=result.cost, request_id=None).output_text
+        is None
+    )
 
 
 def test_an_empty_include_domains_list_is_still_sent() -> None:
@@ -451,3 +515,44 @@ def test_the_answer_call_reserves_its_estimate_and_is_ledgered_as_metered() -> N
     assert rows[1].cost_usd == Decimal("0.005")
     assert result.cost.cost_source == "metered"
     assert result.ledger_row_id == rows[1].row_id
+
+
+def test_an_answer_exa_refused_is_ledgered_at_zero_not_at_its_estimate() -> None:
+    """Run ``ee79d837``: seven Answer calls refused with 402 were recorded at the one-cent
+    estimate each. Exa sold nothing, so the result row says zero."""
+    ledger = BufferedLedger()
+    caller = ProviderCaller(
+        transport=ScriptedTransport(
+            [HttpResponse(status=402, body=b'{"error": "You have exceeded your credits limit"}')]
+        ),
+        raw_sink=BufferedRawSink(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+    )
+
+    with pytest.raises(ProviderHalted):
+        ExaClient(caller, SecretStr("k")).answer(
+            "Q?", system_prompt="S", output_schema={"type": "object"}
+        )
+
+    rows = ledger.drain()
+    assert rows[0].estimate_usd == ANSWER_ESTIMATE_USD
+    assert rows[1].outcome == "halted" and rows[1].cost_usd == Decimal(0)
+
+
+def test_a_5xx_answer_keeps_the_estimate_because_exa_did_not_say_what_it_did() -> None:
+    ledger = BufferedLedger()
+    caller = ProviderCaller(
+        transport=ScriptedTransport([HttpResponse(status=500, body=b"{}")] * 4),
+        raw_sink=BufferedRawSink(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+        sleep=lambda seconds: None,
+    )
+
+    ExaClient(caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+
+    result_row = ledger.drain()[-1]
+    assert result_row.cost_usd == ANSWER_ESTIMATE_USD

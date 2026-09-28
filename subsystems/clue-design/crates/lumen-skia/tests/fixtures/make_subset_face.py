@@ -52,3 +52,16 @@ for ch in ("/", "×", "—"):
 for ch in "0123456789ABCabc":
     assert ord(ch) in cmap, f"{ch!r} unexpectedly absent"
 print("verified: symbols dropped, alphanumerics kept, family =", check["name"].getDebugName(1))
+
+# Same family, different coverage: only the bold face supplies this private-use
+# character. Its visible outline is the existing A, not proprietary font data.
+bold = TTFont(OUT)
+bold["OS/2"].usWeightClass = 700
+bold["OS/2"].fsSelection = (bold["OS/2"].fsSelection & ~0x40) | 0x20
+bold["head"].macStyle |= 1
+for table in bold["cmap"].tables:
+    if table.isUnicode():
+        table.cmap[0xE123] = table.cmap[ord("A")]
+for name_id, value in [(2, "Bold"), (4, "SubsetFace Bold"), (6, "SubsetFace-Bold"), (17, "Bold")]:
+    bold["name"].setName(value, name_id, 3, 1, 0x409)
+bold.save(OUT.with_name("subset-face-bold.ttf"))

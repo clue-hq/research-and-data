@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ResearchEntitySchema } from "./research-fields";
 
 export const SettingsSectionSchema = z.enum([
   "profile",
@@ -14,6 +15,11 @@ export const SettingsSectionSchema = z.enum([
 
 export type SettingsSection = z.infer<typeof SettingsSectionSchema>;
 
+export const DataModelEntitySchema = ResearchEntitySchema;
+export const DataModelViewSchema = z.enum(["fields", "display"]);
+export type DataModelEntity = z.infer<typeof DataModelEntitySchema>;
+export type DataModelView = z.infer<typeof DataModelViewSchema>;
+
 export const ConnectionSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -22,57 +28,14 @@ export const ConnectionSchema = z.object({
   status: z.enum(["available", "connected"]),
 });
 
-export const WorkspaceMemberSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  email: z.string().email(),
-  joinedOn: z.string(),
-  role: z.enum(["Admin", "Member"]),
-});
-
-export const DataModelFieldSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: z.string(),
-  editableBy: z.string(),
-  aiFill: z.enum(["Auto", "None"]),
-  system: z.boolean(),
-});
-
-export const SettingsWorkspaceSchema = z.object({
-  profile: z.object({
-    id: z.string().min(1).optional(),
-    avatarUrl: z.string().optional(),
-    fullName: z.string(),
-    displayName: z.string(),
-    initials: z.string(),
-    avatarColor: z.string(),
-  }),
+/** Preview-only sections; live settings have separate backend contract schemas. */
+export const StaticSettingsSchema = z.object({
   connections: z.array(ConnectionSchema),
-  workspace: z.object({
-    name: z.string(),
-    website: z.string().url(),
-    logoPath: z.string().nullable(),
-  }),
-  members: z.array(WorkspaceMemberSchema),
   billing: z.object({
     planName: z.string(),
     planDescription: z.string(),
     remainingCredits: z.number().int().nonnegative(),
     totalCredits: z.number().int().positive(),
-  }),
-  dataModel: z.object({
-    entities: z.array(
-      z.object({
-        id: z.string(),
-        name: z.string(),
-      }),
-    ),
-    fields: z.array(DataModelFieldSchema),
-    display: z.object({
-      alwaysShown: z.array(z.string()),
-      collapsed: z.array(z.string()),
-    }),
   }),
   pages: z.object({
     customDomain: z.string(),
@@ -90,18 +53,30 @@ export const SettingsWorkspaceSchema = z.object({
   }),
 });
 
-export type SettingsWorkspace = z.infer<typeof SettingsWorkspaceSchema>;
+export type StaticSettings = z.infer<typeof StaticSettingsSchema>;
 
 export const SettingsRouteSchema = z
   .array(z.string())
   .max(3)
-  .transform((segments) => {
-    const [section = "profile", entity, view] = segments;
-    return {
-      section: SettingsSectionSchema.parse(section),
-      entity,
-      view,
-    };
-  });
+  .transform(
+    ([section = "profile", entity, view]): {
+      section: string;
+      entity?: string;
+      view?: string;
+    } => ({ section, entity, view }),
+  )
+  .pipe(
+    z
+      .object({
+        section: SettingsSectionSchema,
+        entity: DataModelEntitySchema.optional(),
+        view: DataModelViewSchema.optional(),
+      })
+      .refine(
+        ({ section, entity, view }) =>
+          section === "data-model" || (!entity && !view),
+        "Only Data model supports nested settings routes",
+      ),
+  );
 
 export type SettingsRoute = z.infer<typeof SettingsRouteSchema>;

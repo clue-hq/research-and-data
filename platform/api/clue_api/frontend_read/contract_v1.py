@@ -194,9 +194,18 @@ class AccountCustomField(V1Model):
     value: str
     presentation: Literal["text", "badge", "score"] = "text"
     primary: bool = False
+    claim_id: str | None = None
 
 
 # --- the research display layer ---------------------------------------------------------------
+
+
+class SellerPassage(V1Model):
+    document_id: str
+    sha256: str
+    quote: str
+    start: int
+    end: int
 
 
 class ResearchEvidence(V1Model):
@@ -211,6 +220,14 @@ class ResearchEvidence(V1Model):
     """
 
     claim_id: str
+    source_kind: (
+        Literal["primary_quote", "source_excerpt", "provider_record", "inference"] | None
+    ) = None
+    source_excerpt: str | None = None
+    qualifications: tuple[str, ...] = ()
+    supporting_claim_ids: tuple[str, ...] = ()
+    seller_passages: tuple[SellerPassage, ...] = ()
+    research_field_key: str | None = _Absent
     source_url: HttpUrl | None
     source_domain: str | None
     favicon_url: HttpUrl | None
@@ -242,6 +259,9 @@ class ResearchSentence(V1Model):
     text: str
     claim_ids: tuple[str, ...] = ()
     segments: tuple[ResearchInlineSegment, ...] | None = _Absent
+
+    kind: Literal["fact", "inference", "quote", "qualified", "gap"] | None = None
+    qualifications: tuple[str, ...] = ()
 
 
 class ResearchContactReference(V1Model):
@@ -293,7 +313,9 @@ class ResearchSection(V1Model):
     model was never called; ``empty_message`` is optional server text, else the client prints its
     own. ``restricted`` marks the only sections that may carry ``outreach_safe=False`` claims
     (``do-not-mention`` / ``context-only`` / ``watch-outs``); the frontend shows them under an
-    "Internal notes" control (ruling R2).
+    "Internal notes" control (ruling R2). ``pending`` is true only when the section will be
+    written (its recipe matched claims and its page task is offered); a section that matches
+    nothing is never pending.
     """
 
     key: str
@@ -303,7 +325,38 @@ class ResearchSection(V1Model):
     intro: tuple[ResearchSentence, ...] | None = _Absent
     restricted: bool = False
     default_open: bool = False
+    # Plan 2026-09-21: the section is missing AND a fleet task is writing it. Served with the one
+    # ``empty_message`` sentence; the client polls the page while any section is pending.
+    pending: bool = False
     empty_message: str | None = _Absent
+    gaps: tuple[str, ...] = ()
+
+
+class ResearchContextChoice(V1Model):
+    project_id: str
+    project_name: str
+    context_id: str
+    account_id: str
+
+
+class ResearchQuality(V1Model):
+    project_id: str | None = None
+    context_id: str | None = None
+    generation_id: str | None = None
+    quality_state: Literal[
+        "researching",
+        "provisional",
+        "reconciled",
+        "partial",
+        "needs_review",
+        "suspended",
+        "privacy_stopped",
+        "context_required",
+        "legacy",
+    ]
+    refresh_pending: bool = False
+    gaps: tuple[str, ...] = ()
+    contexts: tuple[ResearchContextChoice, ...] = ()
 
 
 class ResearchDisplayBlock(V1Model):
@@ -311,6 +364,7 @@ class ResearchDisplayBlock(V1Model):
 
     page: Literal["insights", "overview", "contact"]
     sections: tuple[ResearchSection, ...]
+    research_quality: ResearchQuality | None = None
 
 
 class BuyingCommitteeMember(V1Model):
@@ -330,6 +384,11 @@ class BuyingCommitteeMember(V1Model):
     email_claim_id: str | None
     linkedin_url: HttpUrl | None
     why_they_matter: str
+    membership_state: Literal["candidate", "supported", "needs_verification", "excluded"] | None = (
+        None
+    )
+    outreach_eligible: bool = False
+    membership_gaps: tuple[str, ...] = ()
 
 
 # --- account detail parts ---------------------------------------------------------------------
@@ -564,15 +623,20 @@ class AccountContactSummaryV1(V1Model):
     title: str | None
     persona: str
     persona_tone: Literal["olive", "orange", "blue", "cyan", "green", "pink", "red"]
-    influence: Literal["High", "Medium", "Low"]
+    influence: Literal["High", "Medium", "Low"] | None
     avatar_url: AssetRef | None = _Absent
     email_status: Literal["available", "lookup"]
     email_label: str | None = _Absent
     socials: tuple[Literal["linkedin", "x", "facebook", "instagram", "whatsapp"], ...]
     profile_action: Literal["none", "preview", "page"] = "none"
 
+    # --- E5: the contact detail -------------------------------------------------------------------
 
-# --- E5: the contact detail -------------------------------------------------------------------
+    membership_state: Literal["candidate", "supported", "needs_verification", "excluded"] | None = (
+        None
+    )
+    outreach_eligible: bool = False
+    membership_gaps: tuple[str, ...] = ()
 
 
 class AccountContactDetailV1(AccountContactSummaryV1):
@@ -607,6 +671,7 @@ class AccountContactDetailV1(AccountContactSummaryV1):
     overview_paragraphs: tuple[str, ...] = ()
     evidence: tuple[ContactEvidence, ...]
     research_evidence: tuple[ResearchEvidence, ...] = ()
+    custom_fields: tuple[AccountCustomField, ...] = ()
     contact_display: ResearchDisplayBlock | None = _Absent
     last_modified_at: str
 

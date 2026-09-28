@@ -33,6 +33,63 @@ def test_not_installed_builds_nothing() -> None:
     assert build_langfuse_callbacks() is None
 
 
+def test_concurrent_tools_parent_provider_spans_and_restore_context() -> None:
+    import asyncio
+
+    from langchain_core.tools import StructuredTool
+
+    from clue_obs.langfuse import current_ids, observation
+
+    async def scenario() -> None:
+        callbacks = build_langfuse_callbacks()
+        assert callbacks is not None
+        arrived = 0
+        both = asyncio.Event()
+
+        async def tool_body(label: str) -> str:
+            nonlocal arrived
+            arrived += 1
+            if arrived == 2:
+                both.set()
+            await both.wait()
+
+            def provider_hop() -> None:
+                with observation("provider." + label, as_type="generation"):
+                    pass
+
+            await asyncio.to_thread(provider_hop)
+            if label == "failed":
+                raise ValueError("fixture rejection")
+            return "done"
+
+        tool = StructuredTool.from_function(
+            coroutine=tool_body, name="research_tool", description="Concurrent research fixture"
+        )
+        with observation("job", as_type="agent"):
+            root = current_ids()
+
+            async def invoke(label: str) -> None:
+                try:
+                    await tool.ainvoke({"label": label}, config={"callbacks": [callbacks.handler]})
+                except ValueError:
+                    assert label == "failed"
+                assert current_ids() == root
+
+            await asyncio.gather(invoke("ok"), invoke("failed"))
+            assert current_ids() == root
+
+    with langfuse_installed() as (exporter, _):
+        run_async(scenario())
+        spans = finished_spans(exporter)
+    tools = [s for s in spans if s.name == "research_tool"]
+    providers = [s for s in spans if s.name.startswith("provider.")]
+    assert len(tools) == len(providers) == 2
+    assert {p.parent.span_id for p in providers} == {t.context.span_id for t in tools}
+    job = next(s for s in spans if s.name == "job")
+    assert all(t.parent.span_id == job.context.span_id for t in tools)
+    assert {s.context.trace_id for s in spans} == {job.context.trace_id}
+
+
 def test_the_generation_carries_the_settled_cost_and_the_registry_its_ids() -> None:
     with langfuse_installed() as (exporter, _provider):
         callbacks = build_langfuse_callbacks()

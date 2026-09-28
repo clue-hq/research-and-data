@@ -94,6 +94,49 @@ def test_a_free_public_fetch_is_a_tool_observation() -> None:
     assert attrs["langfuse.observation.metadata.cost_usd"] == "0"
 
 
+@pytest.mark.parametrize("malformed_metering", [False, True])
+def test_native_generation_preserves_unpriced_usd_even_if_metering_is_malformed(
+    malformed_metering: bool,
+) -> None:
+    def read(_response: HttpResponse) -> CostReading:
+        if malformed_metering:
+            raise ValueError("unreadable metering")
+        return CostReading(media_seconds=60, extras={"model": "native-video", "prompt_tokens": 42})
+
+    with langfuse_installed() as (exporter, _provider):
+        caller, _t, _r, ledger, _c = _caller([_OK])
+        result = caller.call(
+            _spec(
+                provider="gemini",
+                operation="models/native-video:generateContent",
+                estimate=SpendEstimate(media_seconds=60),
+                extras={"usd_unpriced": True},
+                cost_reader=read,
+            )
+        )
+        spans = finished_spans(exporter)
+    assert result.call_cost.cost_usd is None
+    assert result.call_cost.cost_source == "unpriced"
+    assert result.call_cost.media_seconds == 60
+    row = next(r for r in ledger.rows if r.phase == "result")
+    assert row.cost_usd is None and row.extras["cost_source"] == "unpriced"
+    generation = next(s for s in spans if s.name == "gemini.models/native-video:generateContent")
+    attrs = _attrs(generation)
+    assert attrs["langfuse.observation.type"] == "generation"
+    assert "langfuse.observation.cost_details" not in attrs
+    assert "langfuse.observation.model.name" not in attrs  # no automatic vendor pricing
+    assert attrs["langfuse.observation.metadata.cost_source"] == "unpriced"
+    assert row.extras["langfuse_observation_id"] == format(generation.context.span_id, "016x")
+    assert caller.totals().usd == 0 and caller.totals().media_seconds == 60
+
+
+def test_reported_usd_overrides_an_unpriced_reservation() -> None:
+    caller, _t, _r, _ledger, _c = _caller([_OK])
+    result = caller.call(_spec(extras={"usd_unpriced": True}, cost_reader=_reader))
+    assert result.call_cost.cost_usd == Decimal("0.02")
+    assert result.call_cost.cost_source == "metered"
+
+
 def test_a_halt_is_an_error_and_the_next_call_is_a_latch_guardrail() -> None:
     refused = HttpResponse(402, {}, b'{"error":"out of credit"}')
     with langfuse_installed() as (exporter, _provider):

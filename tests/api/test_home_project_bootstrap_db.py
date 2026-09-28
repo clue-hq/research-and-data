@@ -12,15 +12,19 @@ from httpx import ASGITransport
 from sqlalchemy import text
 
 from clue_api import build_tool_invoker, create_projections_app
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.chat import RequestPrincipal
-from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
-from clue_api.chat.router import _first_thread_title
+from clue_api.chat.composer_context import (
+    PROJECT_CONVERSATION_AGENT_PROFILE_ID,
+    PROJECT_CONVERSATION_MODEL_ID,
+)
+from clue_api.thread_store import set_thread_title
 from clue_api.thread_wiring import register_thread_tools
 from clue_auth import permissions_for_role
 from clue_config import Settings, load_settings
 from clue_core import AccountStatus
 from clue_research.identity import insert_account_entity
-from clue_spine import create_brand
+from clue_spine import create_brand, set_project_name
 from clue_toolbelt import DbIdempotencyStore, ToolRegistry
 from tests._identity import fixture_membership_id, seed_principal
 from tests._workspace import seed_workspace
@@ -151,15 +155,6 @@ def _body(brand_id: str, message: str = "Start an ABM project for Northstar Labs
     }
 
 
-def test_first_thread_title_follows_the_frozen_unicode_rule() -> None:
-    assert _first_thread_title("  Plan\tNorthstar\nLabs  ") == "Plan Northstar Labs"
-    assert _first_thread_title("x" * 81) == f"{'x' * 79}…"
-    title = _first_thread_title(f"{'word ' * 18}tail")
-    assert len(title) <= 80
-    assert title.endswith("…")
-    assert not title.endswith(" …")
-
-
 def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -> None:
     del require_chat_db
 
@@ -190,23 +185,32 @@ def test_home_read_is_real_scoped_and_capability_honest(require_chat_db: None) -
                             "object_id": str(account_id),
                             "label": "Northstar Labs",
                             "secondary_label": "northstar.example",
-                            "image_url": None,
+                            # The same logo the accounts list shows: Brandfetch's Logo API
+                            # for the domain when a client id is configured, else none.
+                            "image_url": brandfetch_logo_url(
+                                "northstar.example",
+                                client_id=_settings().brandfetch_client_id,
+                            ),
                             "version": None,
+                            "account_id": None,
+                            "account_name": None,
                         }
                     ],
                     "agent_profiles": [
                         {
                             "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                            "label": "GPT-5.6 Terra",
-                            "short_label": "GPT-5.6 Terra",
-                            "description": ("Clue's governed GPT-5.6 Terra conversation profile"),
-                            "model_id": "openai/gpt-5.6-terra",
+                            "label": "Grok 4.6",
+                            "short_label": "Grok 4.6",
+                            "description": "Clue's governed Grok 4.6 conversation profile",
+                            # The wire echoes the constant; which model it names is not asserted.
+                            "model_id": PROJECT_CONVERSATION_MODEL_ID,
                         }
                     ],
                     "default_agent_profile_id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
                     "composer_capabilities": {
                         "context_refs": True,
-                        "attachments": False,
+                        # This app composes an artifact store, so attachments are offered.
+                        "attachments": True,
                         "agent_profile_selection": True,
                     },
                     "suggestions": [
@@ -268,9 +272,31 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
             assert replay.status_code == 200, replay.text
             first = created.json()["data"]
             second = replay.json()["data"]
+
+            # Naming (or a human rename) moves both names after the fact; an exact replay of the
+            # same key must still be the same act, not a 409.
+            await set_thread_title(
+                conn,
+                workspace_id="ws-home-create",
+                thread_id=first["thread"]["id"],
+                title="Renamed by hand",
+            )
+            await set_project_name(
+                conn,
+                workspace_id="ws-home-create",
+                project_id=first["project"]["id"],
+                name="GI outreach",
+            )
+            async with _client(app) as client:
+                after_rename = await client.post(
+                    "/api/v1/projects", headers=headers, json=request_body
+                )
+            assert after_rename.status_code == 200, after_rename.text
+            assert after_rename.json()["data"]["thread"]["title"] == "Renamed by hand"
+            assert after_rename.json()["data"]["project"]["title"] == "GI outreach"
             assert first["project"]["title"] == "Untitled project"
             assert first["project"]["brand_id"] == brand.brand_id
-            assert first["thread"]["title"] == "Start an ABM project for Northstar Labs"
+            assert first["thread"]["title"] is None
             assert first["thread"]["status"] == "running"
             assert first["turn"]["replayed"] is False
             assert second["turn"]["replayed"] is True
@@ -296,7 +322,12 @@ def test_home_bootstrap_is_atomic_and_exact_replay_is_one_project_turn(
                     headers={"X-Workspace-Id": "ws-home-create"},
                 )
             assert pending_turns.status_code == 200, pending_turns.text
-            accepted_message = pending_turns.json()["data"][0]["submission_message"]
+            pending_turn_item = pending_turns.json()["data"][0]
+            # A human turn says so: the wire always carries `derivation`, null unless the
+            # server made the turn from the user's own bytes.
+            assert "derivation" in pending_turn_item
+            assert pending_turn_item["derivation"] is None
+            accepted_message = pending_turn_item["submission_message"]
             assert accepted_message["body"] == request_body["message"]
             assert accepted_message["turn_id"] == first["turn"]["turn_id"]
             assert [ref["object_id"] for ref in accepted_message["refs"]] == [

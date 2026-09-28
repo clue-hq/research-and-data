@@ -580,7 +580,8 @@ def _apply_rules_one_to_six(
     blob = " ".join(original)
 
     # Rule 1 — personal contact details. A phone, a private email or a home address is never
-    # written, whatever field it arrived on; the professional email export is the one exception.
+    # written in research prose; the professional email export and source-bound phone field are
+    # explicit channel exceptions.
     # URLs come out first: a numeric id in a media link is not a phone number.
     scrubbed = _URL.sub(" ", blob)
     # The phone scan reads the leaves apart; the other two read the value as one text, because an
@@ -593,6 +594,15 @@ def _apply_rules_one_to_six(
                 continue
             found = pattern.search(blob) is not None
         elif name == "phone":
+            if (
+                draft.field_key == "core.direct_phone"
+                and draft.extraction_method == ExtractionMethod.API
+                and draft.source_key == "ai_ark:phone"
+                and draft.artifact_key
+                and draft.markers.get("provider_subject_id")
+                and draft.markers.get("operation_id")
+            ):
+                continue
             found = _phone_in(scrubbed_leaves) is not None
         else:
             found = pattern.search(scrubbed) is not None

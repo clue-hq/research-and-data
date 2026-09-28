@@ -257,6 +257,8 @@ class SourceBlock:
     kind: SourceKind
     text: str
     title: str | None = None
+    # Server-supplied qualifications are context, never additional quotable source words.
+    annotations: dict[str, Any] | None = None
 
 
 def build_bundle(sources: Sequence[SourceBlock], notes: str | None) -> str:
@@ -276,6 +278,12 @@ def build_bundle(sources: Sequence[SourceBlock], notes: str | None) -> str:
             f"{neutralise_source_markers(block.text)}\n"
             f"=== END SOURCE {index}"
         )
+        if block.annotations:
+            qualifications = neutralise_source_markers(json.dumps(block.annotations, default=str))
+            parts.append(
+                f"{CONTEXT_BEGIN}\nSOURCE {index} qualifications (not evidence):\n"
+                f"{qualifications}\n{CONTEXT_END}"
+            )
     if notes and notes.strip():
         parts.append(f"{CONTEXT_BEGIN}\n{neutralise_source_markers(notes)}\n{CONTEXT_END}")
     return "\n\n".join(parts)

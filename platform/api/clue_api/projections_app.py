@@ -90,6 +90,7 @@ from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
+from clue_fleet import DbWorkQueue
 from clue_execution.run_events import list_run_events
 from clue_obs import bound_context
 from clue_obs.otel import TracingRuntime, bind_and_annotate
@@ -136,6 +137,7 @@ from clue_toolbelt import (
 )
 
 if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.frontend_read.project_memory import MemoryWriteFactory
     from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
@@ -859,6 +861,7 @@ def create_projections_app(
     project_library: ProjectLibraryRefresher | None = None,
     project_library_closer: Callable[[], None] | None = None,
     tracing: TracingRuntime | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -883,7 +886,12 @@ def create_projections_app(
     the other shutdown closers rather than left to process exit.
 
     ``tracing`` is the process's tracer runtime; when given and the settings ask for it, the app
-    is instrumented at construction."""
+    is instrumented at construction.
+
+    ``memory_write_factory`` binds the project home's memory panel to the scoped-memory write
+    seam. It is ``None`` on a deployment that composes no model gateway (reconciliation needs a
+    judge), and the memory writes then refuse ``MEMORY_UNAVAILABLE`` while the list still
+    serves."""
     resolved = settings if settings is not None else load_settings()
     if resolved.auth_environment == "production" and auth_service is None:
         raise RuntimeError("production projections require the authenticated principal service")
@@ -936,22 +944,33 @@ def create_projections_app(
     # runner (the only thing under `/frontend/v1` that spends money). A deployment with no key —
     # every test app included — composes a seam that cannot generate, so the read surface stays a
     # pure projection instead of refusing to start.
+    runtime_secrets = Secrets()
     install_frontend_read_surface(
         app,
         settings=resolved,
         conn_factory=conn_factory,
         evidence_storage=ingestion_storage,
         contact_email_lookup=contact_email_lookup,
-        secrets=Secrets(),
+        secrets=runtime_secrets,
         project_library=project_library,
+        memory_write_factory=memory_write_factory,
+        # The display seam schedules page writes on the fleet instead of writing them on the
+        # request — the same default work queue the onboarding enqueuer and the persona request
+        # service already use in this process.
+        work_queue=DbWorkQueue(),
     )
     if auth_service is not None:
+        from clue_auth.providers.clerk_api import ClerkApi
+
+        clerk_secret = runtime_secrets.auth_clerk_secret_key
         # The provision route (workspace-creating write) mounts only behind its default-off
         # flag, matching the rollout discipline of every neighbouring surface.
         install_auth_wiring(
             app,
             service=auth_service,
-            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+            conn_factory=conn_factory,
+            provision_enabled=resolved.self_serve_provisioning_enabled,
+            clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
             pages_system_suffix=resolved.pages_system_suffix,
         )
         if workspace_resolver is None and actor_resolver is None:

@@ -428,6 +428,67 @@ def test_the_web_envelope_pins_the_documents_current_version(
     run_async(scenario())
 
 
+def test_web_annotations_ride_the_request_as_target_ids_and_notes(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Annotated `design_node` refs become `target_node_ids` + ordered `target_notes`.
+
+    The keys appear ONLY here — a turn the human pointed at nothing keeps the plan-F4 v1
+    request byte-for-byte (pinned by the dispatch test above).
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_web_leg(conn, storage_root=tmp_path, label="annot")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_WEB_RESULT)
+            submission = await _submit_message(
+                conn, seeds, label="annot", message="Two fixes, please."
+            )
+
+            def ref(object_type: str, object_id: str, note: str | None = None) -> DomainObjectRef:
+                return DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type=object_type,
+                    object_id=object_id,
+                    note=note,
+                )
+
+            await _run_turn(
+                conn,
+                seeds,
+                registry,
+                lane,
+                submission,
+                focus_refs=(
+                    ref("design_document", document["id"]),
+                    ref(
+                        "design_node", "root#:nth-child(1) > :nth-child(2)", "1. Make this shorter"
+                    ),
+                    ref("design_node", "root", "2. Remove this"),
+                ),
+            )
+
+            request = lane.envelopes[0].config["request"]
+            # The owning node is named once; the notes keep every annotation, in order.
+            assert request["target_node_ids"] == ["root"]
+            assert request["target_notes"] == [
+                {
+                    "target": "root",
+                    "path": ":nth-child(1) > :nth-child(2)",
+                    "note": "1. Make this shorter",
+                },
+                {"target": "root", "path": None, "note": "2. Remove this"},
+            ]
+            assert request["prompt"] == "Two fixes, please."
+
+    run_async(scenario())
+
+
 def test_an_applied_web_turn_lands_a_thread_summary_naming_the_document(
     tmp_path: Path,
     migrated_db: bool,  # noqa: F811
@@ -950,9 +1011,7 @@ def test_a_scene_leg_turn_freezes_the_ad_lane_at_offer_time(
             # Offer 1: flag OFF in the offering process — the frozen decision is "no lane".
             monkeypatch.delenv("LUMEN_BRAND_AD_ASSETS", raising=False)
             lane = _FakeLane(conn_factory=seeds["conn_factory"])
-            submission = await _submit_message(
-                conn, seeds, label="adlane", message="Sketch an ad."
-            )
+            submission = await _submit_message(conn, seeds, label="adlane", message="Sketch an ad.")
             await _run_turn(conn, seeds, registry, lane, submission)
             envelope = lane.envelopes[0]
             assert envelope.kind == "agent_turn"
@@ -970,9 +1029,7 @@ def test_a_scene_leg_turn_freezes_the_ad_lane_at_offer_time(
 
             from clue_api import design_leg_wiring as wiring_module
 
-            monkeypatch.setattr(
-                wiring_module.design_ad_assets, "frozen_ad_lane", fake_frozen_lane
-            )
+            monkeypatch.setattr(wiring_module.design_ad_assets, "frozen_ad_lane", fake_frozen_lane)
             lane_on = _FakeLane(conn_factory=seeds["conn_factory"])
             submission_on = await _submit_message(
                 conn, seeds, label="adlane2", message="Sketch another ad."

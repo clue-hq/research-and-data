@@ -3,7 +3,7 @@ import {
   dragActionToOperations,
   resizeActionToOperation,
 } from "../engine/scene/canvaskitGestures";
-import type { NodeId, Operation, PageId, Scene } from "../engine/scene/contracts";
+import type { NodeId, Operation, PageId, Rect, Scene } from "../engine/scene/contracts";
 import type {
   GestureAction,
   Modifiers,
@@ -431,6 +431,70 @@ export function freezeOperationsToPersist(
     return [];
   }
   return outcome.operations;
+}
+
+/** Anything above this on x/y/width (and on a non-text height) is motion. */
+const FREEZE_MOTION_TOLERANCE = 1e-6;
+/** A text node's un-baked hug height re-measures within a pixel — see above. */
+const FREEZE_TEXT_HEIGHT_TOLERANCE = 1.0;
+
+/** One node whose solved box is not where it was before the freeze. */
+export interface FreezeMotionEntry {
+  id: NodeId;
+  before: Rect;
+  after: Rect;
+}
+
+/** The answer `freezeMotionReport` gives: every node the freeze moved. */
+export interface FreezeMotionReport {
+  moved: FreezeMotionEntry[];
+}
+
+/**
+ * Whether a freeze moved anything — the runtime half of the zero-motion
+ * contract the engine tests pin offline.
+ *
+ * A freeze is a pure re-expression of the solve: it bakes each managed
+ * container's placement into Free coordinates so the very press that fired it
+ * can drag. If it MOVES a node, the ad visibly jumps under the human's finger
+ * (2026-09-20: every container in the agent's ads is `fill`-width, and the old
+ * bake snapped hugged rows to the artboard edge on first grab). That is an
+ * ENGINE defect, never something the canvas can repair — so this reports it
+ * loudly and changes nothing: ruling C-9 stands, the press goes on to arm.
+ *
+ * Compared per node id off `computed.layout_bounds`, the same numbers the
+ * gesture machine captured at press time. Ids absent on either side are
+ * ignored: a node that the freeze did not place (or that has no solved box
+ * yet) has no "before" and "after" to disagree.
+ *
+ * Tolerances mirror the engine's own real-ad test: x / y / width to 1e-6,
+ * because those are baked Fixed extents and a baked transform and any drift
+ * there is a real regression; a TEXT node's height to 1.0px, because a hug
+ * height is deliberately left un-baked and re-measures within a pixel of its
+ * whole-pixel-rounded Stack height. Unlike that test there is no node
+ * allow-list here — this runs over documents nobody enumerated.
+ */
+export function freezeMotionReport(before: Scene, after: Scene): FreezeMotionReport {
+  const moved: FreezeMotionEntry[] = [];
+  for (const [id, beforeNode] of Object.entries(before.nodes)) {
+    const afterNode = after.nodes[id];
+    const wasBox = beforeNode?.computed?.layout_bounds;
+    const nowBox = afterNode?.computed?.layout_bounds;
+    if (!wasBox || !nowBox) {
+      continue;
+    }
+    const isText = beforeNode.kind.kind === "text" || afterNode.kind.kind === "text";
+    const heightTolerance = isText ? FREEZE_TEXT_HEIGHT_TOLERANCE : FREEZE_MOTION_TOLERANCE;
+    const drifted =
+      Math.abs(nowBox.x - wasBox.x) > FREEZE_MOTION_TOLERANCE ||
+      Math.abs(nowBox.y - wasBox.y) > FREEZE_MOTION_TOLERANCE ||
+      Math.abs(nowBox.width - wasBox.width) > FREEZE_MOTION_TOLERANCE ||
+      Math.abs(nowBox.height - wasBox.height) > heightTolerance;
+    if (drifted) {
+      moved.push({ id: id as NodeId, before: { ...wasBox }, after: { ...nowBox } });
+    }
+  }
+  return { moved };
 }
 
 /** What the host does with one reduced `GestureAction`. */

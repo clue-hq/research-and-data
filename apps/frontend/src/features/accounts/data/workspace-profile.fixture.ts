@@ -1,4 +1,4 @@
-import type { WorkspaceProfile } from "../model/workspace-profile";
+import { WORKSPACE_AVATAR_COLOR, type WorkspaceProfile } from "../model/workspace-profile";
 
 /**
  * The prototype's workspace person, lifted verbatim from the design build's
@@ -10,5 +10,5 @@ export const workspaceProfileFixture: WorkspaceProfile = {
   fullName: "Aakash Shrivastava",
   displayName: "Aakash",
   initials: "A",
-  avatarColor: "#8343A5",
+  avatarColor: WORKSPACE_AVATAR_COLOR,
 };

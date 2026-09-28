@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Collection, Sequence
-from typing import Any, cast
+import time
+from collections.abc import Callable, Collection, Sequence
+from typing import Any, Literal, cast
 
 from deepagents import create_deep_agent
 from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
@@ -16,6 +17,7 @@ from langchain_core.tools import BaseTool
 
 from clue_agents.contracts import AgentTurnRequest
 from clue_agents.execution import (
+    MAX_RUNTIME_MODEL_ROUNDS,
     AgentExecutionStatus,
     AgentTurnOutcome,
     GovernedOperationReceipt,
@@ -27,10 +29,13 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_agents.state import ClueDeepAgentState
+from clue_agents.tool_recovery import ToolRepairRoundsMiddleware
 from clue_core.provider_failures import classify_exception, failure_code
 from clue_obs import get_logger
+from clue_obs.langfuse import flag_trace
+from clue_obs.sentry import warn as sentry_warn
 
-__all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware"]
+__all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware", "TurnBudgetMiddleware"]
 
 log = get_logger("clue_agents.runtime")
 
@@ -58,15 +63,23 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 _MAX_FINALIZE_REPAIRS = 2
 
 
-def superstep_ceiling(max_rounds: int) -> int:
-    """LangGraph's ``recursion_limit`` for a round budget: two supersteps a round, plus headroom.
+#: LangGraph supersteps one model round costs today: the turn-budget and tool-repair
+#: ``before_model`` hooks, the model call, deepagents' to-do ``after_model`` hook, and the tool
+#: node. ``test_turn_budget.py`` proves an agent really reaches its configured rounds, so a new hook
+#: that costs another step fails that test instead of silently shrinking the budget.
+_SUPERSTEPS_PER_ROUND = 5
 
-    One model round is a model superstep plus a tool superstep; the four extra cover the graph's
-    own entry/exit nodes. This is the ceiling that actually bounds a chat turn, because every
-    governed tool call the model makes is its own one-step plan.
+
+def superstep_ceiling(max_rounds: int) -> int:
+    """LangGraph's ``recursion_limit`` for a round budget: a runaway-loop fuse, never the limit.
+
+    The round limit itself is :class:`TurnBudgetMiddleware`, which winds the turn up and ends it
+    through ``finalize_turn``. This fuse sits above it with one spare step a round (for a future
+    hook) plus headroom for the graph's entry/exit nodes and the finalize repairs, so a working
+    agent never reaches it; only a loop inside the graph itself would.
     """
 
-    return max_rounds * 2 + 4
+    return max_rounds * (_SUPERSTEPS_PER_ROUND + 1) + 10
 
 
 # The status contract itself is stated once, on the finalize tool's own description, which the
@@ -221,6 +234,19 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
             tool.return_direct = True
         tool_call_id = str(request.tool_call.get("id", _FINALIZE_TOOL_NAME))
         try:
+            latest = next(
+                (
+                    m
+                    for m in reversed(request.state.get("messages", ()))
+                    if isinstance(m, AIMessage)
+                ),
+                None,
+            )
+            if latest is not None and len(latest.tool_calls) > 1:
+                raise ValueError(
+                    "Call finalize_turn alone after reading the completed tool batch results. "
+                    "Other calls in this batch are still allowed to finish."
+                )
             result = await handler(request)
         except ValueError as error:
             # Argument-schema violations are already turned into an error ``ToolMessage`` by the
@@ -263,6 +289,170 @@ class ExactAgentToolSurfaceMiddleware(AgentMiddleware[Any, Any, Any]):
         )
 
 
+#: How many rounds (or, near a time limit, how many model calls) the agent is warned for before
+#: only ``finalize_turn`` is offered (founder ruling 2026-09-27).
+WRAP_UP_WARNING_ROUNDS = 3
+#: Near a time limit the warning starts this many seconds before it — at most a quarter of the
+#: turn's whole limit, so a short turn is not wrapping up from its first round.
+WRAP_UP_WARNING_S = 180.0
+#: Below this much time left (at most a tenth of the limit), a model call is finalize-only
+#: whatever the warnings did.
+_FINALIZE_ONLY_S = 60.0
+
+WrapUpStatus = Literal["blocked", "awaiting_input"]
+
+
+class TurnBudgetMiddleware(AgentMiddleware[Any, Any, Any]):
+    """End a turn through ``finalize_turn`` before its round or time limit, not by a crash.
+
+    Rounds are counted in graph state (keyed to the turn, as ``ToolRepairRoundsMiddleware`` does)
+    so a resumed turn keeps its count. Round ``N`` is the whole budget: the finalize-only round
+    comes ``_MAX_FINALIZE_REPAIRS`` rounds before it, so a refused finalization can still be
+    repaired inside the budget and nothing outside it (the research allowance, the graph fuse) is
+    ever the thing that stops a working agent. The three rounds before that carry a notice.
+
+    With a time limit the same happens by the clock: three warned model calls once about three
+    minutes remain, then finalize-only (or at once, with under a minute left). A short turn scales
+    both windows down (a quarter and a tenth of its limit).
+
+    Every notice is appended to that model call's messages only; nothing is written to the
+    thread's history, so a replay reads exactly what was committed.
+    """
+
+    state_schema = ClueDeepAgentState
+
+    def __init__(
+        self,
+        *,
+        max_rounds: int,
+        wrap_up_status: WrapUpStatus,
+        max_runtime_s: float | None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._max_rounds = max_rounds
+        self._finalize_round = max(1, max_rounds - _MAX_FINALIZE_REPAIRS)
+        self._status = wrap_up_status
+        self._clock = clock
+        self._deadline = None if max_runtime_s is None else clock() + max_runtime_s
+        self._warn_s = 0.0 if max_runtime_s is None else min(WRAP_UP_WARNING_S, max_runtime_s / 4)
+        self._final_s = 0.0 if max_runtime_s is None else min(_FINALIZE_ONLY_S, max_runtime_s / 10)
+        self._time_warnings = 0
+        self._announced: set[str] = set()
+
+    async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        del runtime
+        turn = str(state.get("turn_id"))
+        rounds = state.get("turn_budget_rounds", 0) if state.get("turn_budget_turn") == turn else 0
+        return {"turn_budget_turn": turn, "turn_budget_rounds": rounds + 1}
+
+    async def awrap_model_call(self, request: Any, handler: Any) -> Any:
+        round_number = int(request.state.get("turn_budget_rounds", 1))
+        remaining_s = None if self._deadline is None else self._deadline - self._clock()
+        reason: Literal["round", "time"] | None = None
+        finalize_only = False
+        notice = ""
+        if round_number >= self._finalize_round:
+            reason, finalize_only = "round", True
+        elif remaining_s is not None and remaining_s <= self._warn_s:
+            reason = "time"
+            finalize_only = (
+                self._time_warnings >= WRAP_UP_WARNING_ROUNDS or remaining_s <= self._final_s
+            )
+            if not finalize_only:
+                self._time_warnings += 1
+                minutes = max(1, round(remaining_s / 60))
+                notice = f"about {minutes} minute{'s' if minutes != 1 else ''} of its time limit"
+        elif round_number >= self._finalize_round - WRAP_UP_WARNING_ROUNDS:
+            reason = "round"
+            left = self._finalize_round - round_number
+            notice = f"{left} model round{'s' if left != 1 else ''}"
+        if reason is None:
+            return await handler(request)
+
+        self._record(
+            reason=reason,
+            finalize_only=finalize_only,
+            request=request,
+            round_number=round_number,
+            remaining_s=remaining_s,
+        )
+        if finalize_only:
+            finalize = [tool for tool in request.tools if _tool_name(tool) == _FINALIZE_TOOL_NAME]
+            return await handler(
+                request.override(
+                    messages=[*request.messages, HumanMessage(content=self._reached(reason))],
+                    tools=finalize,
+                    tool_choice=_FINALIZE_TOOL_NAME,
+                )
+            )
+        return await handler(
+            request.override(
+                messages=[*request.messages, HumanMessage(content=self._warning(notice))]
+            )
+        )
+
+    def _unfinished(self) -> str:
+        advice = (
+            f'If the work is not finished, finalize with status "{self._status}": say in '
+            "user_message what you completed, and list the remaining work in next_actions."
+        )
+        if self._status == "awaiting_input":
+            advice += ' Tell the user they can reply "continue" to keep going.'
+        return advice
+
+    def _warning(self, notice: str) -> str:
+        return (
+            f"Platform notice (not from the user): this turn has {notice} left before only "
+            "finalize_turn is offered. Use them to save anything you have not saved yet, then "
+            f"call finalize_turn. {self._unfinished()}"
+        )
+
+    def _reached(self, reason: str) -> str:
+        return (
+            f"Platform notice (not from the user): this turn has reached its {reason} limit. "
+            "Only finalize_turn is available now. Call it once, on its own. "
+            f"{self._unfinished()}"
+        )
+
+    def _record(
+        self,
+        *,
+        reason: str,
+        finalize_only: bool,
+        request: Any,
+        round_number: int,
+        remaining_s: float | None,
+    ) -> None:
+        """Log and tag each stage once per turn: the first warning, then the limit itself."""
+        stage = f"{reason}_budget_reached" if finalize_only else "wrap_up_warned"
+        if stage in self._announced:
+            return
+        self._announced.add(stage)
+        constitution = request.state.get("constitution")
+        fields: dict[str, object] = {
+            "turn_id": str(request.state.get("turn_id")),
+            "execution_id": str(getattr(constitution, "execution_id", "")),
+            "workspace_id": str(getattr(constitution, "workspace_id", "")),
+            "profile_ref": str(getattr(constitution, "profile_ref", "")),
+            "reason": reason,
+            "round": round_number,
+            "max_rounds": self._max_rounds,
+            "remaining_s": None if remaining_s is None else round(remaining_s, 1),
+            "wrap_up_status": self._status,
+        }
+        log.warning(f"agent.{stage}", **fields)
+        flag_trace(
+            f"agent.{stage}",
+            tags=(stage,),
+            status_message=(
+                f"{reason} limit reached; finalize-only, expected status {self._status}"
+                if finalize_only
+                else f"{reason} limit near; agent warned to wrap up"
+            ),
+            metadata=fields,
+        )
+
+
 def _error_code(exc: BaseException) -> str:
     # A provider that refused or failed is named for what it did, not for the SDK class that
     # carried the news: the transcript, the turn row and the incident record read the same code.
@@ -285,19 +475,89 @@ class DeepAgentTurnRuntime:
         *,
         models: AgentModelProvider,
         execution: AgentExecutionAdapter,
-        max_runtime_s: float = 300.0,
+        max_runtime_s: float | None = 300.0,
         max_rounds: int = 24,
+        middleware: Sequence[AgentMiddleware[Any, Any, Any]] = (),
+        wrap_up_status: WrapUpStatus = "blocked",
+        long_turn_alert_s: float | None = None,
     ) -> None:
-        if max_runtime_s <= 0:
+        if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
-        if not 1 <= max_rounds <= 128:
-            raise ValueError("agent round ceiling must be between 1 and 128")
+        if not 1 <= max_rounds <= MAX_RUNTIME_MODEL_ROUNDS:
+            raise ValueError(
+                f"agent round ceiling must be between 1 and {MAX_RUNTIME_MODEL_ROUNDS}"
+            )
+        if long_turn_alert_s is not None and long_turn_alert_s <= 0:
+            raise ValueError("a long-turn alert threshold must be positive (None disables it)")
         self._models = models
+        self._middleware = tuple(middleware)
         self._execution = execution
         self._max_runtime_s = max_runtime_s
+        self._max_rounds = max_rounds
+        self._wrap_up_status: WrapUpStatus = wrap_up_status
+        self._long_turn_alert_s = long_turn_alert_s
         self._recursion_limit = superstep_ceiling(max_rounds)
 
     async def run(
+        self,
+        *,
+        request: AgentTurnRequest,
+        resolved_profile: ResolvedAgentProfile,
+        context: AssembledAgentContext,
+        backend: object,
+        governed_tools: Sequence[BaseTool],
+        callbacks: Sequence[BaseCallbackHandler] = (),
+    ) -> AgentTurnOutcome:
+        watchdog = (
+            asyncio.create_task(self._alert_when_long(request, resolved_profile))
+            if self._long_turn_alert_s is not None
+            else None
+        )
+        try:
+            return await self._run_turn(
+                request=request,
+                resolved_profile=resolved_profile,
+                context=context,
+                backend=backend,
+                governed_tools=governed_tools,
+                callbacks=callbacks,
+            )
+        finally:
+            if watchdog is not None:
+                watchdog.cancel()
+
+    async def _alert_when_long(
+        self, request: AgentTurnRequest, resolved_profile: ResolvedAgentProfile
+    ) -> None:
+        """Say so, once, when a turn is still running past the alert threshold; never stop it."""
+        assert self._long_turn_alert_s is not None
+        await asyncio.sleep(self._long_turn_alert_s)
+        constitution = request.constitution
+        role = resolved_profile.profile.role.value
+        minutes = round(self._long_turn_alert_s / 60)
+        fields: dict[str, object] = {
+            "role": role,
+            "turn_id": str(request.turn_id),
+            "execution_id": str(constitution.execution_id),
+            "workspace_id": str(constitution.workspace_id),
+            "profile_ref": constitution.profile_ref,
+            "running_minutes": minutes,
+        }
+        log.warning("agent.long_turn", **fields)
+        flag_trace(
+            "agent.long_turn",
+            tags=("long_turn",),
+            status_message=f"turn still running after {minutes} minutes",
+            metadata=fields,
+        )
+        sentry_warn(
+            f"{role} turn still running after {minutes} minutes",
+            # One Sentry issue per long turn, so each one raises its own alert.
+            fingerprint=("agent-long-turn", str(constitution.execution_id), str(request.turn_id)),
+            tags={key: str(value) for key, value in fields.items()},
+        )
+
+    async def _run_turn(
         self,
         *,
         request: AgentTurnRequest,
@@ -333,6 +593,7 @@ class DeepAgentTurnRuntime:
                 tools=list(governed_tools),
                 system_prompt=resolved_profile.prompt_body,
                 middleware=(
+                    ToolRepairRoundsMiddleware(),
                     ExactAgentToolSurfaceMiddleware(
                         profile=resolved_profile,
                         # Some reviewed profile capabilities are constitution-dependent.  For
@@ -343,6 +604,14 @@ class DeepAgentTurnRuntime:
                         # profile.
                         effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
                     ),
+                    # Inside the exact-surface check, which insists every granted tool is present:
+                    # only after it may the last rounds be narrowed to finalize_turn.
+                    TurnBudgetMiddleware(
+                        max_rounds=self._max_rounds,
+                        wrap_up_status=self._wrap_up_status,
+                        max_runtime_s=self._max_runtime_s,
+                    ),
+                    *self._middleware,
                 ),
                 backend=backend,  # type: ignore[arg-type]
                 checkpointer=checkpointer,
@@ -367,6 +636,9 @@ class DeepAgentTurnRuntime:
                                     "checkpoint_ns": f"agent-turn:{request.turn_id}",
                                 },
                                 "callbacks": list(callbacks),
+                                # Nested governed children inherit callbacks, but monetary
+                                # receipts belong only to the execution making this dispatch.
+                                "metadata": {"agent_execution_id": str(constitution.execution_id)},
                                 "recursion_limit": self._recursion_limit,
                             },
                         ),

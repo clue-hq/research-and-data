@@ -384,6 +384,60 @@ class RunBudget:
             f"{verdict}"
         )
 
+    def candidate_status_line(self, *, current_round: int, runtime_owned_rounds: bool = False) -> str:
+        """Scene-candidate advice for one quality repair, not a new hard gate.
+
+        The candidate's four-minute target equals the existing minimum repair
+        allowance. Comparing repair headroom to that target therefore forbids
+        every repair once work starts. Keep reporting the target, but assess
+        this single repair against the unchanged hard limits. The director
+        judges defects after viewing the current pixels; an author's accepted
+        self-audit must not suppress a legitimate director disagreement. Hard
+        headroom stays in metrics; advice exposes eligibility, not an allowance
+        inviting the model to spend up to the backstop.
+        """
+        state = self.remaining()
+        calls_left = max(0, self.max_llm_calls - state["calls_used"])
+        seconds_left = max(0.0, self.wall_clock_s - state["elapsed_s"])
+        enough_headroom = (
+            calls_left >= REPAIR_ROUND_MIN_CALLS
+            and seconds_left >= REPAIR_ROUND_MIN_SECONDS
+        )
+        finish = (
+            "Do not open another authoring round. Finalize accepted only if the current "
+            "review passes all acceptance checks; otherwise preserve an unaccepted draft "
+            "and record the remaining defects."
+        )
+        if not enough_headroom:
+            verdict = f"There is insufficient hard headroom for a repair. {finish}"
+        elif current_round == 0:
+            verdict = (
+                "No authoring round has finished yet. Continue the initial authoring "
+                "workflow; this is not a repair-round decision."
+            )
+        elif current_round == 1:
+            repair = (
+                "after a registered rejected critique, the next construction tool "
+                "starts round_2 automatically. Round notes are optional; batch the repair. "
+                if runtime_owned_rounds else
+                "open round_2 with those defects and a single batched repair. "
+            )
+            verdict = (
+                "If your current review identifies concrete defects, one focused repair "
+                f"round is available: {repair}"
+                "Do not open a round because headroom alone exists. If the current "
+                "review passes all acceptance checks, finalize now."
+            )
+        else:
+            verdict = f"The one repair round is already used. {finish}"
+        target = "TARGET EXCEEDED" if state["past_target"] else "WITHIN TARGET"
+        return (
+            f"BUDGET LEFT: {target}: {state['calls_used']} of "
+            f"{self.target_llm_calls} target model calls and {state['elapsed_s']:.0f}s of "
+            f"{self.target_wall_clock_s:.0f}s used. A target overrun is not a hard budget stop. "
+            f"{verdict}"
+        )
+
     def snapshot(self) -> dict:
         """The budget's own line in the §7 metrics summary.
 
@@ -418,6 +472,7 @@ class BudgetCallbackHandler:
     #: langchain-core's opt-in: without it, ``handle_event`` logs our exception
     #: and carries on — which would turn the ceiling back into a suggestion.
     raise_error = True
+    run_inline = False
     ignore_llm = False
     ignore_chain = True
     ignore_agent = True

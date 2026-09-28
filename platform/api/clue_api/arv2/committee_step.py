@@ -32,6 +32,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import JobScope, committee_member_claims
 from clue_api.arv2.account_research_launch import QueuedJob, arv2_job_id
 from clue_api.arv2.account_research_store import (
@@ -48,6 +49,11 @@ from clue_core import EntityId
 from clue_obs import get_logger
 from clue_obs.langfuse import tag_entities
 from clue_research.identity import get_contact, insert_contact_entity
+from clue_research.identity.provider import (
+    ProviderIdentityConflict,
+    link_selection_claim,
+    resolve_provider_contact,
+)
 
 log = get_logger("clue_api.arv2.committee_step")
 
@@ -91,6 +97,7 @@ async def run_committee_step(
     writer: LenientClaimWriter,
     person_profile_sha256: str,
     catalog: FieldCatalog,
+    person_profile_ref: str | None = None,
 ) -> CommitteeStepResult:
     """Turn one account job's confirmed committee candidates into people and person jobs.
 
@@ -103,14 +110,29 @@ async def run_committee_step(
     skipped: list[CommitteeSkip] = []
     no_linkedin: list[str] = []
     admitted = 0
+    seen: set[str] = set()
 
     for candidate in candidates:
         name = str(candidate.get("name") or "").strip()
         if candidate.get("vacant_seat") or not name:
-            skipped.append(CommitteeSkip(name, "vacant_seat"))
+            skipped.append(
+                CommitteeSkip(
+                    name,
+                    "unfilled_role"
+                    if candidate.get("evidence_kind") == "unfilled_role"
+                    and not candidate.get("vacant_seat")
+                    else "vacant_seat",
+                )
+            )
             continue
-        if not candidate.get("confirmed_by"):
+        if not candidate.get("confirmed_by") and not candidate.get("candidate_ref"):
             skipped.append(CommitteeSkip(name, "unconfirmed"))
+            continue
+        identity = str(
+            candidate.get("provider_subject_id") or candidate.get("linkedin_url") or name.casefold()
+        )
+        if identity in seen:
+            skipped.append(CommitteeSkip(name, "duplicate_selection"))
             continue
         if admitted >= run.committee_cap:
             skipped.append(CommitteeSkip(name, "committee_cap"))
@@ -130,7 +152,11 @@ async def run_committee_step(
                     writer=writer,
                     person_profile_sha256=person_profile_sha256,
                     catalog=catalog,
+                    person_profile_ref=person_profile_ref,
                 )
+        except ProviderIdentityConflict as conflict:
+            skipped.append(CommitteeSkip(name, str(conflict)))
+            continue
         except _AmbiguousName:
             # Deliberately not an error in the log: two people of one name under one account is a
             # finding about the data, not a fault, and the refusal to guess is the correct answer.
@@ -147,6 +173,7 @@ async def run_committee_step(
             skipped.append(CommitteeSkip(name, "member_not_written"))
             continue
 
+        seen.add(identity)
         admitted += 1
         if member.created:
             created.append(member.contact_id)
@@ -196,6 +223,7 @@ async def _fan_out(
     writer: LenientClaimWriter,
     person_profile_sha256: str,
     catalog: FieldCatalog,
+    person_profile_ref: str | None = None,
 ) -> _Member:
     """One confirmed member: their contact row, their three claims, and their person job.
 
@@ -204,9 +232,41 @@ async def _fan_out(
     written — which makes the row the member's idempotency latch and a re-settle a pure no-op.
     """
     linkedin = fold_linkedin_url(candidate.get("linkedin_url"))
-    contact_id, account_id, created = await _resolve_contact(
-        conn, run=run, account_id=job.account_entity_id, name=name, linkedin_url=linkedin
+    refs = (
+        {"version": 1, "parent_job_id": str(job.job_id)}
+        if has_capability(scope.catalog_version, "committee_discovery")
+        else None
     )
+    if candidate.get("candidate_ref"):
+        contact_id, created = await resolve_provider_contact(
+            conn,
+            workspace_id=run.workspace_id,
+            account_id=scope.account_id,
+            provider="ai_ark",
+            subject_id=str(candidate["provider_subject_id"]),
+            name=name,
+            linkedin_url=linkedin,
+            artifact_key=str(candidate["artifact_key"]),
+        )
+        account_id = job.account_entity_id
+        refs = {key: candidate[key] for key in ("candidate_ref", "parent_job_id")}
+        refs["version"] = 1
+    else:
+        contact_id, account_id, created = await _resolve_contact(
+            conn, run=run, account_id=job.account_entity_id, name=name, linkedin_url=linkedin
+        )
+        if (
+            has_capability(scope.catalog_version, "committee_discovery")
+            and account_id != job.account_entity_id
+        ):
+            raise ProviderIdentityConflict("employment_conflict")
+    if candidate.get("selection_claim_id"):
+        await link_selection_claim(
+            conn,
+            workspace_id=run.workspace_id,
+            contact_id=contact_id,
+            claim_id=UUID(str(candidate["selection_claim_id"])),
+        )
     person_job_id = arv2_job_id(run.run_id, UUID(str(contact_id)))
     inserted = await create_job(
         conn,
@@ -223,6 +283,8 @@ async def _fan_out(
         # The person profile's own digest: a person job is queued long after the launch, so replay
         # reads the bytes *it* was pinned to rather than the account run's.
         profile_sha256=person_profile_sha256,
+        profile_ref=person_profile_ref,
+        input_refs=refs,
     )
     if inserted:
         # The member is born here: the account job's trace names every person it created.

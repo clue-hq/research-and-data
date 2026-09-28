@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.onboarding_store import DocumentRow
 from clue_api.arv2.structuring_client import FieldCatalog, FieldSpec
 from clue_core import decode_jsonb
+from clue_research.claimstore import list_research_fields
 
 __all__ = [
     "PERSON_EXTRA_FIELDS",
@@ -90,7 +91,7 @@ _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, product_selection_version, effort, "
     "committee_cap, directive_text, profile_ref, profile_sha256, requested_by_user_id, "
-    "request_sha256, status, created_at, finished_at"
+    "request_sha256, status, created_at, finished_at, persona_pin, context_id"
 )
 
 #: The run's status, derived from its jobs in one statement so two drivers finishing two accounts
@@ -146,6 +147,8 @@ class RunRow:
     profile_sha256: str
     requested_by_user_id: str
     request_sha256: str
+    persona_pin: dict[str, Any] | None = None
+    context_id: UUID | None = None
     status: JobStatus = "not_started"
     created_at: datetime | None = None
     finished_at: datetime | None = None
@@ -184,6 +187,9 @@ class JobRow:
     #: Where the job is (spec 2026-09-12 §1); ``None`` before its first claim or on rows that
     #: predate the column. Stamped by the driver, read by the research progress card.
     stage: JobStage | None = None
+    profile_ref: str | None = None
+    input_refs: dict[str, Any] | None = None
+    selection_claim_ids: tuple[UUID, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -220,7 +226,8 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             " :icp_artifact_sha256, :icp_key, :icp_version, :product_selection_version, :effort, "
             " :committee_cap, :directive_text, :profile_ref, :profile_sha256, "
             " :requested_by_user_id, :request_sha256, :status, COALESCE(:created_at, now()), "
-            " :finished_at) ON CONFLICT (run_id) DO NOTHING"
+            " :finished_at, CAST(:persona_pin AS jsonb), :context_id) "
+            "ON CONFLICT (run_id) DO NOTHING"
         ),
         {
             "run_id": row.run_id,
@@ -240,6 +247,8 @@ async def create_run(conn: AsyncConnection, row: RunRow) -> bool:
             "profile_sha256": row.profile_sha256,
             "requested_by_user_id": row.requested_by_user_id,
             "request_sha256": row.request_sha256,
+            "persona_pin": json.dumps(row.persona_pin) if row.persona_pin is not None else None,
+            "context_id": row.context_id,
             "status": row.status,
             "created_at": row.created_at,
             "finished_at": row.finished_at,
@@ -258,6 +267,8 @@ async def create_job(
     subject_type: JobSubject = "account",
     subject_entity_id: UUID | None = None,
     profile_sha256: str | None = None,
+    profile_ref: str | None = None,
+    input_refs: Mapping[str, Any] | None = None,
 ) -> bool:
     """Queue one subject — the account itself, or one of its committee members. Returns whether
     the row was inserted.
@@ -275,9 +286,9 @@ async def create_job(
     result = await conn.execute(
         text(
             "INSERT INTO arv2_research_job (job_id, run_id, workspace_id, account_entity_id, "
-            " subject_type, subject_entity_id, profile_sha256) "
+            " subject_type, subject_entity_id, profile_sha256, profile_ref, input_refs) "
             "VALUES (:job_id, :run_id, :workspace_id, :account_entity_id, :subject_type, "
-            " :subject_entity_id, :profile_sha256) "
+            " :subject_entity_id, :profile_sha256, :profile_ref, CAST(:input_refs AS jsonb)) "
             "ON CONFLICT DO NOTHING"
         ),
         {
@@ -288,6 +299,8 @@ async def create_job(
             "subject_type": subject_type,
             "subject_entity_id": subject_entity_id,
             "profile_sha256": profile_sha256,
+            "profile_ref": profile_ref,
+            "input_refs": json.dumps(input_refs or {}),
         },
     )
     return result.rowcount == 1
@@ -550,33 +563,15 @@ async def job_link_audit(conn: AsyncConnection, *, job_id: UUID) -> dict[str, in
     return {f"{row['verdict']}/{row['reason']}": int(row["n"]) for row in rows}
 
 
-async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The account-side field menu one job may write against: every registered ``account.*`` and
-    ``core.*`` field, exactly as the registry holds it.
-
-    The catalog is read from the registry rather than enumerated in code, because "open by
-    registration, not enumeration" is the whole point of the field registry: a pack that adds a
-    field is a row, and this menu grows with it without a code change.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'account.%' OR field_key LIKE 'core.%') "
-                    "ORDER BY field_key"
-                )
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_account_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The account menu from the effective registry, including this workspace's instructions."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="accounts")
     return FieldCatalog(
         account=tuple(
             FieldSpec(
-                key=str(row["field_key"]),
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
+                key=row.field_def.field_key,
+                description=row.description or "",
+                value_schema=row.value_schema,
             )
             for row in rows
         )
@@ -595,39 +590,12 @@ async def read_account_catalog(conn: AsyncConnection) -> FieldCatalog:
 PERSON_EXTRA_FIELDS: tuple[str, ...] = ("core.work_email",)
 
 
-async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
-    """The person-side field menu one person job may write against.
-
-    Every registered ``contact.*`` field — plain facts in the contact section, personal hooks in
-    the facet section — plus :data:`PERSON_EXTRA_FIELDS`. Read from the registry for the same
-    reason :func:`read_account_catalog` is: a pack that adds a contact field is a row, and the menu
-    grows with it without a code change.
-
-    Each row also carries the field's declared ``use_class_hint``. The registry holds it in
-    ``field_definition.validation`` (``{"use_class_hint": …}``), and it is what a contact claim
-    written against that field is born with — so the difference between a professional fact and a
-    personal one is read off the field that declares it, never inferred from the key's spelling.
-    A field whose ``validation`` says nothing has no hint, and the claim path's default decides.
-    """
-    rows = (
-        (
-            await conn.execute(
-                text(
-                    "SELECT field_key, description, value_schema, "
-                    " validation->>'use_class_hint' AS use_class_hint "
-                    "FROM field_definition "
-                    "WHERE active AND (field_key LIKE 'contact.%' OR field_key = ANY(:extra)) "
-                    "ORDER BY field_key"
-                ),
-                {"extra": list(PERSON_EXTRA_FIELDS)},
-            )
-        )
-        .mappings()
-        .all()
-    )
+async def read_person_catalog(conn: AsyncConnection, *, workspace_id: str) -> FieldCatalog:
+    """The person menu, preserving facets, work email and registered use-class hints."""
+    rows = await list_research_fields(conn, workspace_id=workspace_id, entity="contacts")
     sections: dict[str, list[FieldSpec]] = {"account": [], "contact": [], "facet": []}
     for row in rows:
-        key = str(row["field_key"])
+        key = row.field_def.field_key
         section = (
             "facet"
             if key.startswith("contact.facet.")
@@ -635,14 +603,14 @@ async def read_person_catalog(conn: AsyncConnection) -> FieldCatalog:
             if key.startswith("contact.")
             else "account"
         )
+        validation = row.field_def.validation
+        hint = validation.get("use_class_hint") if isinstance(validation, dict) else None
         sections[section].append(
             FieldSpec(
                 key=key,
-                description=str(row["description"] or ""),
-                value_schema=_schema(row["value_schema"]),
-                use_class_hint=(
-                    str(row["use_class_hint"]) if row["use_class_hint"] is not None else None
-                ),
+                description=row.description or "",
+                value_schema=row.value_schema,
+                use_class_hint=str(hint) if hint is not None else None,
             )
         )
     return FieldCatalog(
@@ -795,12 +763,6 @@ async def read_persona_documents(
     )
 
 
-def _schema(raw: Any) -> Mapping[str, Any] | None:
-    """A ``value_schema`` column as a mapping, or ``None`` when the field declares none."""
-    decoded = decode_jsonb(raw)
-    return decoded if isinstance(decoded, Mapping) else None
-
-
 def _dump_json(payload: Mapping[str, Any]) -> str:
     """The finalization payload as jsonb text. ``default=str`` so a Decimal or a datetime the
     driver put in its finalization is stored rather than raising at the last step of a job."""
@@ -826,6 +788,8 @@ def _run(row: RowMapping) -> RunRow:
         profile_sha256=row["profile_sha256"],
         requested_by_user_id=row["requested_by_user_id"],
         request_sha256=row["request_sha256"],
+        persona_pin=decode_jsonb(row.get("persona_pin")),
+        context_id=row.get("context_id"),
         status=row["status"],
         created_at=row["created_at"],
         finished_at=row["finished_at"],
@@ -855,4 +819,9 @@ def _job(row: RowMapping) -> JobRow:
         credits=row["credits"],
         media_seconds=row["media_seconds"],
         stage=row["stage"],
+        profile_ref=row.get("profile_ref"),
+        input_refs=decode_jsonb(row.get("input_refs")) or {},
+        selection_claim_ids=tuple(row["selection_claim_ids"])
+        if row.get("selection_claim_ids") is not None
+        else None,
     )

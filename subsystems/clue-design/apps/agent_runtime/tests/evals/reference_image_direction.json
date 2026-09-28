@@ -1,0 +1,212 @@
+{
+  "skill": "reference-image-direction",
+  "version": 2,
+  "scope": "Design-agent image direction only; no brand ingestion or library expansion",
+  "execution_status": "local_validation_partial",
+  "protocol": {
+    "comparison": "Freeze each source snapshot and record differences. The initial live comparison changes both guidance and reference-selection tools; it measures the combined system change, not a prompt-only causal effect. Keep briefs, source bytes and model configuration equal for the close-companion baseline and candidate.",
+    "inputs": "Resolve fixture requirements to authorized current-run assets and record IDs and digests before either run. Fixture descriptions alone do not replace image inputs.",
+    "reference_delivery": "Record both successful reference views and actual generation-input provenance. These are separate checks.",
+    "review": "Inspect source and candidate pixels, then the native scene at delivery size. Record authoring quality separately from provider delivery and mechanical editability. No self-reported success substitutes for inspection.",
+    "timing": "Measure request acceptance through saved usable artifact including queueing, image generation, inspection and repair. Distinguish prepared-asset reuse from fresh generation.",
+    "results": "For each attempt record case ID, knowledge digest, model configuration, run/artifact IDs, actual source digests, operation, generated asset IDs, editability evidence, elapsed seconds, reviewer verdict and unmet requirements. Unavailable observations remain unknown.",
+    "repetition": "Repeat representative passing cases to check that the result is not a single fortunate output. Test a different brand without changing the skill.",
+    "contrast": "For native copy over raster imagery, record resolved foreground, mapped source-image copy region, input digest and measured threshold flags. Distinguish source-pixel sampling from full-composition/glyph evidence and inspect the final render."
+  },
+  "cases": [
+    {
+      "id": "abstract-companions",
+      "fixture_requirements": [
+        "Authorized abstract brand background with no identifiable landscape",
+        "Exact brand logo asset"
+      ],
+      "brief": "Make two new background options in this reference's visual family for the same awareness message. Keep logo and headline separately editable.",
+      "observe": [
+        "Views the actual reference",
+        "Chooses close companions and meaningful composition differences",
+        "Preserves abstract subject language and observed treatment",
+        "Keeps marketing text and logo out of generated artwork",
+        "Views both generated outputs and preserves usable alternatives"
+      ],
+      "failure_examples": [
+        "Invents a literal lake or forest from an abstract field",
+        "Counts the original as a new variant",
+        "Claims success from a provider status alone"
+      ]
+    },
+    {
+      "id": "authentic-product-evidence",
+      "fixture_requirements": [
+        "Original product screenshot showing the advertised feature",
+        "Brand atmosphere reference"
+      ],
+      "brief": "Explain this feature using our actual product screen and a newly generated background. The screen must remain authentic and replaceable.",
+      "observe": [
+        "Inspects and reuses the relevant original screen",
+        "Generates only the requested background",
+        "Plans product and copy bounds together",
+        "Preserves native marketing text and independent original UI layer"
+      ],
+      "failure_examples": [
+        "Regenerates the complete dashboard",
+        "Adds unsupported product behavior",
+        "Uses an irrelevant screenshot merely because it is available"
+      ]
+    },
+    {
+      "id": "new-concept",
+      "fixture_requirements": [
+        "Brand reference with a distinctive photographic or illustrative treatment",
+        "Brief about a subject absent from current assets"
+      ],
+      "brief": "Create a new visual concept explaining coordinated work. Our current photos do not depict this topic. Preserve the brand's visual treatment.",
+      "observe": [
+        "Names why a new subject serves the message",
+        "Chooses new concept rather than forced source reuse",
+        "Describes specific observed treatment to carry forward",
+        "Separates a permitted subject change from an unsupported lighting, material or motif change",
+        "Can use a new arrangement of observed forms with native explanatory copy when a literal metaphor would change the brand's character",
+        "Does not present a metaphor as actual product functionality"
+      ],
+      "failure_examples": [
+        "Copies an irrelevant subject",
+        "Uses arbitrary atmosphere with no source-grounded treatment or stated role in the creative",
+        "Matches the palette and texture but invents a different lighting language to illustrate a campaign keyword",
+        "Invents a testimonial or result"
+      ]
+    },
+    {
+      "id": "treatment-preservation-after-rejection",
+      "fixture_requirements": [
+        "Original matte textured brand field",
+        "Rejected generated companion that retained the pattern but invented luminous motifs",
+        "Existing scene with useful native copy and authentic logo"
+      ],
+      "brief": "The pattern belongs to the brand, but the invented lighting does not. Create a new companion from the original visual language and preserve the editable foreground.",
+      "observe": [
+        "Inspects the original source and the rejected candidate",
+        "Uses the original as the generation input rather than reinforcing the rejected treatment",
+        "Preserves distinct treatment dimensions instead of accepting a palette-only match",
+        "Views the generated component and final scene before accepting",
+        "Retains native foreground layers and reports any unrelated changes"
+      ],
+      "failure_examples": [
+        "Rationalizes unsupported lighting as a metaphor for the campaign",
+        "Sends the rejected image as the only reference for a new companion",
+        "Accepts conspicuous treatment drift because the dot pattern matches"
+      ]
+    },
+    {
+      "id": "exact-identity",
+      "fixture_requirements": [
+        "Authorized exact product photo",
+        "Brand logo variant"
+      ],
+      "brief": "Use this exact product photograph and this exact logo. Improve their arrangement while retaining their original appearance.",
+      "observe": [
+        "Chooses original-asset reuse and native placement",
+        "Keeps exact logo uncropped",
+        "Avoids unnecessary generative modification of identity-critical pixels"
+      ],
+      "failure_examples": [
+        "Promises exact pixel identity from generative editing",
+        "Redraws the logo",
+        "Claims a new image was generated when the original was reused"
+      ]
+    },
+    {
+      "id": "mixed-reference-capability",
+      "fixture_requirements": [
+        "Two visibly conflicting turn attachments",
+        "A desired library image that is not a turn attachment"
+      ],
+      "brief": "Generate using only the library image's appearance and ignore the two attached images.",
+      "observe": [
+        "Distinguishes viewing an asset from attaching it",
+        "Passes only the chosen authorized library asset with reference_asset_ids",
+        "Verifies returned input IDs and digests and preserves the turn attachment configuration",
+        "Reports unavailable selected bytes without spending on an unconditioned substitute"
+      ],
+      "failure_examples": [
+        "Leaves conflicting attachments implicitly selected",
+        "Describes a viewed image as a confirmed generation input without a receipt",
+        "Claims a placeholder was conditioned on selected references"
+      ]
+    },
+    {
+      "id": "ambiguous-effect",
+      "fixture_requirements": [
+        "A low-resolution textured reference where the precise production method is uncertain"
+      ],
+      "brief": "Generate a companion with the same texture. Explain the visual qualities that need to carry forward.",
+      "observe": [
+        "Describes visible pattern scale and tonal relationships",
+        "Marks uncertain effect identification",
+        "Checks texture after resizing to the intended placement",
+        "Does not claim an exact recovered shader/filter setting"
+      ],
+      "failure_examples": [
+        "Calls every noisy image a halftone",
+        "Asserts native dither or backdrop blur support that the tool does not expose"
+      ]
+    },
+    {
+      "id": "foreground-alpha-and-vectors",
+      "fixture_requirements": [
+        "Brand illustration reference",
+        "Background that must remain visible behind a movable foreground"
+      ],
+      "brief": "Add a separately movable foreground illustration with editable labels. If you use a vector, its geometry must actually be vector geometry.",
+      "observe": [
+        "Plans foreground bounds and overlap",
+        "Uses supported native paths/icons or clearly labels raster artwork",
+        "Checks actual alpha when available",
+        "Treats an opaque result as a failed cutout requirement",
+        "Keeps labels native"
+      ],
+      "failure_examples": [
+        "Calls a PNG a vector",
+        "Places an opaque rectangle and claims transparency",
+        "Bakes labels into the illustration"
+      ]
+    },
+    {
+      "id": "missing-source-and-budget",
+      "fixture_requirements": [
+        "An unavailable requested reference",
+        "A fixed existing run budget"
+      ],
+      "brief": "Use this reference to create a matching background, but finish within the run budget.",
+      "observe": [
+        "Reports unavailable pixels instead of inventing observations",
+        "Distinguishes unconditioned exploration from reference-matched generation",
+        "Preserves useful existing work",
+        "Reports unmet reference/generated-image requirements if necessary"
+      ],
+      "failure_examples": [
+        "Fabricates details of the missing reference",
+        "Retries identical cached requests indefinitely",
+        "Labels a placeholder as a finished generated background"
+      ]
+    },
+    {
+      "id": "pale-ground-and-missing-logo-variant",
+      "fixture_requirements": [
+        "Pale generated artwork below white editable copy",
+        "Authentic dark wordmark with no appropriate white wordmark in the kit"
+      ],
+      "brief": "Repair legibility and remove logo treatment that resembles an unrequested CTA. Preserve useful imagery and authentic independent identity.",
+      "observe": [
+        "Measures actual image regions instead of dismissing token contrast diagnostics",
+        "Repairs failing copy and checks final render",
+        "Checks the pixels of fetched logo variants, not just provider labels",
+        "Reports a missing authentic wordmark rather than redrawing it"
+      ],
+      "failure_examples": [
+        "Calls a pale chevron a full wordmark because its metadata says lockup",
+        "Accepts white copy on pale ground",
+        "Claims an added white plate matches a white reference wordmark"
+      ]
+    }
+  ]
+}

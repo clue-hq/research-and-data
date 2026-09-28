@@ -149,11 +149,44 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Artifacts page (2026-09-15) adds the library's two curation writes, `design_rename_document`
     # and `design_set_document_archived` (134 -> 136), both UNGRANTED and human-only: renaming or
     # archiving a document is an act of the person at the library grid or the editor header.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 136
-    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_project_accounts@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
+    # The code sandbox (2026-09-19) adds `run_python` (136 -> 137), registered UNGRANTED: it
+    # is a WRITE over the turn's own workspace, and the grant is the reviewed head-of-abm
+    # bump that pins its contract and mints the manual chapter, not an entry added here.
+    # It is GRANTED as of `head-of-abm@v58` (2026-09-19), the reviewed bump that pins its two
+    # schema digests, opens `attachments` on the readable prefixes and mints the manual and the
+    # `code-execution` skill that teach it. No new NAME joins: the count is unmoved.
+    assert C6_AGENT_TOOL_AUTHORITY["run_python"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("run_python@1") == (AgentRole.HEAD_OF_ABM,)
+    # Projects directory (2026-09-19) adds the four project-row writes, `create_project`,
+    # `update_project_details`, `set_project_pinned` and `set_project_archived`
+    # (137 -> 141), all UNGRANTED and human-only for the same reason the design library's
+    # curation writes are: filing a project is an act of the person looking at the list.
+    # `configure_project_targeting` (automatic targeting, base) joined at 142 -> 143 without the
+    # count moving here; web_search@1 (2026-09-22), granted at head-of-abm@v62 and design@v3,
+    # makes 144.
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 144
+    assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
+    assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
+    # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
+    # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
+    # contracts. `read_discovery_run` is deliberately not among them: the design leg never
+    # proposes a discovery. The version fence is unchanged, so the grant is on `@2`.
+    assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_project_accounts@1") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert C6_AGENT_TOOL_AUTHORITY["read_account_research"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_account_research@2") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
     # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.
@@ -161,8 +194,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # immutable revision; @28 re-pins the key to `@2` rather than admitting both.
     assert c6_roles_for_tool("read_account_research@1") == ()
     assert c6_roles_for_tool("read_discovery_run@1") == ()
-    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_claims@1") == (AgentRole.HEAD_OF_ABM,)
+    assert C6_AGENT_TOOL_AUTHORITY["read_claims"] == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
+    assert c6_roles_for_tool("read_claims@1") == (
+        AgentRole.HEAD_OF_ABM,
+        AgentRole.DESIGN,
+    )
     assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_artifact@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
@@ -179,8 +218,14 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["read_arv2_account_research_run"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_account_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_arv2_account_research_run@1") == (AgentRole.HEAD_OF_ABM,)
-    assert C6_AGENT_TOOL_AUTHORITY["open_product_set_selection_gate"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("open_product_set_selection_gate@1") == (AgentRole.HEAD_OF_ABM,)
+    # Automatic project targeting (head-of-abm@v61, base): both gates are UNGRANTED now —
+    # `configure_project_targeting@1` applies the ICP and product set with turn provenance.
+    assert C6_AGENT_TOOL_AUTHORITY["open_product_set_selection_gate"] == ()
+    assert c6_roles_for_tool("open_product_set_selection_gate@1") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == ()
+    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == ()
+    assert C6_AGENT_TOOL_AUTHORITY["configure_project_targeting"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("configure_project_targeting@1") == (AgentRole.HEAD_OF_ABM,)
     for dropped in (
         "evaluate_stage0_readiness",
         "inspect_readiness_history",
@@ -208,14 +253,16 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `open_icp_confirmation_gate` did not leave the role — its subject changed. `@2` presents the
     # brand's ICP knowledge document; `@1`, whose subject was a draft `icp_spec` row this lane
     # never writes, stays registered and frozen for replay with no role behind it.
-    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == (AgentRole.HEAD_OF_ABM,)
+    # Automatic project targeting (v61) then withdrew `@2` from the role as well: both versions
+    # stay registered, frozen for replay, held by nobody.
+    assert c6_roles_for_tool("open_icp_confirmation_gate@2") == ()
     assert c6_roles_for_tool("open_icp_confirmation_gate@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["open_design_leg"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["finish_design_leg"] == (AgentRole.DESIGN,)
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 56
+    assert len(design_grants) == 57
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a
@@ -225,6 +272,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # not get to make on its own.
     AD_ASSETS_LANE = {
         "design_ingest_ad_assets",
+        "design_enrich_assets",
         "design_record_ad_creatives",
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",
@@ -254,6 +302,11 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_project"] == ()
+    # Projects directory (2026-09-19): the four project-row tools are human-only too.
+    assert C6_AGENT_TOOL_AUTHORITY["create_project"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["update_project_details"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_pinned"] == ()
+    assert C6_AGENT_TOOL_AUTHORITY["set_project_archived"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["set_thread_pinned"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["archive_thread"] == ()
     # Lane E E1 adds `synthesize_entity_prose`, machine-invoked only: the fleet step offers a
@@ -268,8 +321,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("exa_search_evidence@1") == (AgentRole.ONBOARDING_SYNTHESIS,)
     # The combined inventory retains both exact-subject human gates, FI-2's selected-Account
     # launch, and S4/S5's company/product readers. Machine-only confirmation remains withheld.
-    # (The total is asserted once above — 114 after the part-iii merge.)
-    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == (AgentRole.HEAD_OF_ABM,)
+    # (The total is asserted once above — 114 after the part-iii merge.) Automatic project
+    # targeting (v61) withdrew the ICP gate from the role; it stays registered for replay.
+    assert C6_AGENT_TOOL_AUTHORITY["open_icp_confirmation_gate"] == ()
     # ARV2 onboarding O6: the S4-E/S5-F Client-KB and Product-KB readers, and the single-product
     # gate, are ungranted at EVERY version now. The exact-address rules that used to admit one safe
     # version of each were deleted with the grants, so `@1` and `@2` are both `()` — which is what

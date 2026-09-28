@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 
 from clue_agents.contracts import (
@@ -123,6 +124,37 @@ def _resource_path(ref: AgentResourceRef) -> str:
     raise WorkspaceSecurityError("unsupported agent resource kind")
 
 
+_SKILL_PATH = re.compile(r"\{\{\s*skills\.([a-zA-Z0-9_-]+)\.path\s*\}\}")
+
+
+def render_skill_references(text: str, skills: tuple[AgentResourceRef, ...]) -> str:
+    """Resolve only skill-path placeholders, from the effective pinned skill set.
+
+    No catalog scans, general template evaluation or recursive substitution. Unrelated
+    placeholders (for example account_name in teaching examples) remain literal.
+    """
+
+    if not re.search(r"\{\{\s*skills\b", text):
+        return text
+    paths: dict[str, str] = {}
+    for ref in skills:
+        key = ref.name.replace("-", "_")
+        if key in paths:
+            raise WorkspaceSecurityError(f"ambiguous skill placeholder name: {key}")
+        paths[key] = "/" + _resource_path(ref)
+
+    def replace(match: re.Match[str]) -> str:
+        key = match[1].replace("-", "_")
+        if key not in paths:
+            raise WorkspaceSecurityError(f"skill placeholder is not mounted by this profile: {key}")
+        return paths[key]
+
+    rendered = _SKILL_PATH.sub(replace, text)
+    if re.search(r"\{\{\s*skills\b", rendered):
+        raise WorkspaceSecurityError("invalid skill placeholder; expected {{skills.<name>.path}}")
+    return rendered
+
+
 @dataclass(frozen=True, slots=True)
 class AgentResourceSnapshot:
     """Validated bodies for the exact immutable refs in one resource manifest."""
@@ -149,6 +181,46 @@ class AgentResourceSnapshot:
         for address, expected_ref in expected_by_address.items():
             if actual_by_address[address].ref != expected_ref:
                 raise WorkspaceSecurityError("resource snapshot ref differs from the manifest")
+        # Resolve before any model spend or workspace writes, including references between skills.
+        for body in self.bodies:
+            self.rendered_content(body)
+
+    def rendered_content(self, body: ResourceBody) -> bytes:
+        """Derived model-visible bytes; source bodies and their hashes stay immutable."""
+
+        if body.ref.kind not in (ResourceKind.PROMPT, ResourceKind.SKILL):
+            return body.content
+        return render_skill_references(body.content.decode("utf-8"), self.manifest.skills).encode(
+            "utf-8"
+        )
+
+    def materialized_entries(self) -> tuple[tuple[str, bytes], ...]:
+        entries = []
+        rendered_records = []
+        for body in sorted(self.bodies, key=lambda item: _resource_path(item.ref)):
+            path = _resource_path(body.ref)
+            content = self.rendered_content(body)
+            entries.append((path, content))
+            if content != body.content:
+                rendered_records.append(
+                    {
+                        "path": path,
+                        "source_sha256": body.ref.sha256,
+                        "rendered_sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                )
+        if rendered_records:
+            entries.append(
+                (
+                    ".deepagent/rendered-resources.json",
+                    json.dumps(
+                        {"renderer": "skill-paths-v1", "resources": rendered_records},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8"),
+                )
+            )
+        return tuple(entries)
 
 
 class AgentResourceMaterializer:
@@ -210,7 +282,7 @@ class AgentResourceMaterializer:
         snapshot: AgentResourceSnapshot,
         seed_files: tuple[WorkspaceSeedFile, ...],
     ) -> None:
-        resource_paths = tuple(_resource_path(body.ref) for body in snapshot.bodies)
+        resource_paths = tuple(path for path, _ in snapshot.materialized_entries())
         seed_paths = tuple(seed.path for seed in seed_files)
         all_paths = (*resource_paths, *seed_paths, _MANIFEST_PATH)
         if len(set(all_paths)) != len(all_paths):
@@ -224,7 +296,10 @@ class AgentResourceMaterializer:
         """Every path the model must see, with the exact digest it must have."""
 
         return (
-            *((_resource_path(body.ref), body.ref.sha256) for body in snapshot.bodies),
+            *(
+                (path, hashlib.sha256(content).hexdigest())
+                for path, content in snapshot.materialized_entries()
+            ),
             *((seed.path, seed.sha256) for seed in seed_files),
             (
                 _MANIFEST_PATH,
@@ -262,8 +337,8 @@ class AgentResourceMaterializer:
         """Reset the trusted trees, write this turn's bytes, freeze them, verify every digest."""
 
         lease.backend.reset_materialized_trees()
-        for body in sorted(snapshot.bodies, key=lambda item: _resource_path(item.ref)):
-            lease.backend.materialize_bytes(_resource_path(body.ref), body.content)
+        for path, content in snapshot.materialized_entries():
+            lease.backend.materialize_bytes(path, content)
         for seed in sorted(seed_files, key=lambda item: item.path):
             lease.backend.materialize_bytes(seed.path, seed.content)
 
@@ -273,9 +348,9 @@ class AgentResourceMaterializer:
         lease.backend.materialize_bytes(_MANIFEST_PATH, manifest_bytes)
         lease.backend.freeze_materialized_trees()
 
-        for body in snapshot.bodies:
-            entry = lease.backend.stat_entry_sync(_resource_path(body.ref))
-            if entry.sha256 != body.ref.sha256 or not entry.read_only:
+        for path, content in snapshot.materialized_entries():
+            entry = lease.backend.stat_entry_sync(path)
+            if entry.sha256 != hashlib.sha256(content).hexdigest() or not entry.read_only:
                 raise WorkspaceSecurityError("materialized resource verification failed")
         for seed in seed_files:
             entry = lease.backend.stat_entry_sync(seed.path)

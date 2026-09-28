@@ -407,8 +407,9 @@ class _CheckpointingRunner:
     ``_GatedRunner`` above proves the claim/fence/takeover machinery with
     ``checkpointer_factory=None`` — deliberately, because its stub never builds a graph. That
     leaves one production composition no test exercises: the handler's checkpointer seam wired to
-    ``postgres_design_checkpointer``, with graph state actually landing in Postgres under the run's
-    ``checkpoint_thread_id``. This runner closes that gap.
+    ``postgres_design_checkpointer``, with graph state actually landing in Postgres under the
+    turn's ``checkpoint_thread_id`` (the run id for these document-less envelopes; a
+    document-pinned leg turn threads on its session id instead). This runner closes that gap.
 
     Attempt 1 blocks inside the graph's second node — *after* the first superstep's checkpoint has
     been written — and is then abandoned. Attempt 2 (the takeover) reads the thread back through a
@@ -472,8 +473,8 @@ class _CheckpointingRunner:
         self.takeover_saw_checkpoint = getattr(snapshot, "created_at", None) is not None
         self.takeover_checkpoint_rows = len(list(saver.list(config)))
 
-        # …then drive it through the PRODUCTION seam, which clears the thread and re-runs from the
-        # top (resume-as-restart — see ``lumen_agent/checkpoint.py`` for why).
+        # …then drive it through the PRODUCTION seam, which continues the thread it found (see
+        # ``lumen_agent/checkpoint.py``: a thread that already carries state is the normal case).
         state = invoke_turn_graph(
             agent,
             {"steps": []},
@@ -512,10 +513,11 @@ def _publishing_checkpointer(thread_id: str) -> Any:
     """The PRODUCTION factory, with the opened saver published to the turn body.
 
     ``postgres_design_checkpointer`` is called verbatim — the real sync ``PostgresSaver`` on the
-    real platform database, opened inside the turn thread, keyed by the run's
-    ``checkpoint_thread_id``. The only thing added is the publish, which exists because the stub
-    runner seam (``DesignTurnHost.agent_turn_runner``) receives ``(payload, root)`` and not the
-    checkpointer the real ``run_agent_turn_preview`` is handed.
+    real platform database, opened inside the turn thread, keyed by the turn's
+    ``checkpoint_thread_id`` (see ``_CheckpointingRunner`` on what that id is). The only thing
+    added is the publish, which exists because the stub runner seam
+    (``DesignTurnHost.agent_turn_runner``) receives ``(payload, root)`` and not the checkpointer
+    the real ``run_agent_turn_preview`` is handed.
     """
     from lumen_api.fleet_handler import postgres_design_checkpointer
 
@@ -533,12 +535,16 @@ def test_a_taken_over_run_finds_its_checkpoint_thread_on_the_real_postgres_saver
 ) -> None:
     """Kill-and-resume with the REAL checkpointer composed — the one D5 left unexercised.
 
-    WHAT THIS CERTIFIES, EXACTLY: **resume-as-restart with checkpoint continuity.** The takeover
+    WHAT THIS CERTIFIES, EXACTLY: **checkpoint continuity across a worker death.** The takeover
     worker finds the dead attempt's graph state durably present in Postgres, addressed by the SAME
-    ``checkpoint_thread_id`` (which is the run id — the D5 ruling), loadable through a fresh saver
-    on a different worker, and it then drives the turn through the production
-    ``invoke_turn_graph`` seam, which clears that thread and re-runs the frozen envelope from the
-    top.
+    ``checkpoint_thread_id``, loadable through a fresh saver on a different worker, and it then
+    drives the turn through the production ``invoke_turn_graph`` seam, which CONTINUES that thread
+    (session continuity, 2026-09-18) with the frozen envelope's input.
+
+    The thread id here is the run id because these envelopes pin no document. That is the
+    document-less shape, not a ruling for every turn: since session continuity a document-pinned
+    leg turn threads on its DOCUMENT's session id, so consecutive turns of one design meet on one
+    thread.
 
     WHAT THIS DOES **NOT** CERTIFY: mid-turn resume. Design turns are not resumable — the tool
     substrate (scene, trace dir, ``final.json``) is not in the checkpoint and cannot be
@@ -548,7 +554,9 @@ def test_a_taken_over_run_finds_its_checkpoint_thread_on_the_real_postgres_saver
     """
     from lumen_api.fleet_handler import DesignTurnHost, build_design_job_handler
 
-    caplog.set_level("WARNING", logger="lumen_agent.checkpoint")
+    # INFO: the seam says which branch it took at info level (continue / resume); only its
+    # best-effort failures are warnings.
+    caplog.set_level("INFO", logger="lumen_agent.checkpoint")
 
     async def scenario() -> None:
         async with db_lifespan():
@@ -614,13 +622,13 @@ def test_a_taken_over_run_finds_its_checkpoint_thread_on_the_real_postgres_saver
                 )
                 assert (runner.takeover_checkpoint_rows or 0) >= 1
 
-                # And it restarted deliberately, through the production seam, saying so.
-                restarts = [
+                # And it went through the production seam deliberately, saying so.
+                continued = [
                     record
                     for record in caplog.records
-                    if "turn.checkpoint_restart" in str(record.msg)
+                    if "turn.checkpoint_continue" in str(record.msg)
                 ]
-                assert restarts, "the takeover did not go through the checkpoint-restart branch"
+                assert continued, "the takeover did not go through the checkpoint-continue branch"
             finally:
                 runner.release.set()
                 worker_b.stop()
@@ -727,3 +735,43 @@ def test_two_workspaces_drain_concurrently_without_blocking_each_other() -> None
                 await asyncio.gather(*tasks, return_exceptions=True)
 
     run_async(scenario())
+
+
+# --- the session probe (2026-09-18) -------------------------------------------------------------
+#
+# What the handler asks the saver before handing the turn to an executor: "has this thread run
+# before?" The answer decides whether the turn re-sends the delegation brief and the leg history
+# or leaves them to the state the thread already holds. No database — the contract is entirely
+# about what the probe does with the three answers a saver can give.
+
+
+def test_the_session_probe_reads_the_threads_state_through_the_saver() -> None:
+    from lumen_api.fleet_handler import _thread_has_state
+
+    asked: list[dict[str, Any]] = []
+
+    class _Saver:
+        def __init__(self, tuple_: Any) -> None:
+            self._tuple = tuple_
+
+        def get_tuple(self, config: dict[str, Any]) -> Any:
+            asked.append(config)
+            return self._tuple
+
+    assert _thread_has_state(_Saver(object()), "dsess_abc") is True
+    assert _thread_has_state(_Saver(None), "dsess_abc") is False
+    assert asked == [{"configurable": {"thread_id": "dsess_abc"}}] * 2
+
+
+def test_a_saver_that_cannot_answer_never_fails_the_turn() -> None:
+    """A probe is a convenience; a turn is paid work. An unreadable thread reads as FRESH, which
+    costs one re-sent brief and never a lost one."""
+    from lumen_api.fleet_handler import _thread_has_state
+
+    class _Broken:
+        def get_tuple(self, config: dict[str, Any]) -> Any:
+            raise RuntimeError("the saver is down")
+
+    assert _thread_has_state(_Broken(), "dsess_abc") is False
+    # No checkpointer at all (the CLI / fixture composition) is the same answer.
+    assert _thread_has_state(None, "dsess_abc") is False

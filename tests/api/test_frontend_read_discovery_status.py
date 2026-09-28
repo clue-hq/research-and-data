@@ -57,7 +57,6 @@ async def _run_for(conn, project) -> DiscoveryRunRow:  # noqa: ANN001
         requested_by_user_id="user-1",
         request_sha256=uuid4().hex * 2,
         target_count=20,
-        strict_count=35,
         relaxed_enabled=True,
         criteria_gate_keys=("geography", "stage"),
     )

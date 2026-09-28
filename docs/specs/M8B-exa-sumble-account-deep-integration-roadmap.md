@@ -104,6 +104,9 @@ researches; the engine enforces eligibility, identity, evidence, spend, privacy,
     scope. They require separate trust/evidence/freshness contracts.
 15. General-purpose Exa web search as an unrestricted agent tool remains out of scope. This plan
     authorizes only target-locked account-deep acquisition through the research substrate.
+    **Superseded 2026-09-22** by `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`
+    (`web_search@1`, granted to head-of-abm@v62 and design@v3, used last, text never a claim);
+    M8B's target-locked acquisition is untouched.
 16. Parallel Task is excluded from the initial healthcare account-deep source profile. Do not
     delete the provider globally; omit it through a versioned workspace/ICP field/source-plan
     override. `sumble_tech_stack` is admitted only for a deliberately mapped field.

@@ -193,6 +193,12 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "create_thread": ("precondition", ("project_not_found",)),
     "rename_thread": ("precondition", ("thread_not_found",)),
     "rename_project": ("precondition", ("project_not_found",)),
+    # Projects directory (2026-09-19). Same shape: the subject that does not exist in this
+    # workspace — a brand for the creator, a project for the three mutators.
+    "create_project": ("precondition", ("brand_not_found",)),
+    "update_project_details": ("precondition", ("project_not_found",)),
+    "set_project_pinned": ("precondition", ("project_not_found",)),
+    "set_project_archived": ("precondition", ("project_not_found",)),
     "set_thread_pinned": ("precondition", ("thread_not_found",)),
     "archive_thread": ("precondition", ("thread_not_found",)),
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
@@ -210,6 +216,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # gate hits. (`@1` resolved the execution-bound Stage-0 scope first; it stays registered,
     # non-default, for replay.)
     "open_icp_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
+    # turn the body names is its first fail-closed boundary.
+    "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -232,6 +241,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # ARV2 O4: the default composition is handed no provider credentials (`build_toolbelt`'s
     # `secrets` defaults to None, fail-closed), so this SPEND tool's Exa path is never reached here.
     "exa_search_evidence": ("precondition", ("exa_not_configured",)),
+    # web_search@1: no credentials are handed to the default composition, so the SPEND tool's Exa
+    # path is never reached here.
+    "web_search": ("precondition", ("exa_not_configured",)),
     # ARV2 R2/R3 (seam 1): the two account tools and R3's on-demand person launch register in
     # EVERY process — the C6 authority audit is a strict set equality — but this matrix composes
     # no `Arv2LaunchService`, so each refuses on composition before it reads a row.
@@ -273,6 +285,10 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # The gallery read needs no service, so its first fail-closed boundary is the project: the
     # matrix's context carries no execution, and the project is ambient rather than a body field.
     "read_artifact": ("precondition", ("project_not_found",)),
+    # The sandbox is registered everywhere and composed only where turns are driven, so the
+    # matrix — which passes no ``sandbox_workspaces`` — refuses at its first boundary,
+    # whatever ``CLUE_SANDBOX_ENABLED`` says on the machine running this.
+    "run_python": ("precondition", ("sandbox_unavailable",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
     # The matrix composes no durable discovery execution router, and the tool checks for it
     # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
@@ -350,6 +366,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
     "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_enrich_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
@@ -569,6 +586,19 @@ def _bodies() -> dict[str, dict[str, object]]:
         "create_thread": {"project_id": "prj_absent_from_this_workspace"},
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
         "rename_project": {"project_id": "project_missing", "title": "renamed"},
+        "create_project": {
+            "project_id": "prj_new",
+            "brand_id": "brand_missing",
+            "title": "t",
+            "description": "",
+        },
+        "update_project_details": {
+            "project_id": "project_missing",
+            "title": "t",
+            "description": "",
+        },
+        "set_project_pinned": {"project_id": "project_missing", "pinned": True},
+        "set_project_archived": {"project_id": "project_missing", "archived": True},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
         "finish_design_leg": {
@@ -587,6 +617,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_icp_confirmation_gate": {
+            "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "configure_project_targeting": {
             "icp_key": "matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
@@ -624,6 +658,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
         "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
         "exa_search_evidence": {"query": "how practice managers describe referral fax pain"},
+        "web_search": {"query": "acme summit 2026"},
         # ARV2 R2/R3 seam 1. The workspace and the requesting human are AMBIENT authority, so
         # neither launch body carries them; the account launch names the exact account set and the
         # pinned ICP artifact it was signed off against, and R3's person launch names contacts that
@@ -664,6 +699,7 @@ def _bodies() -> dict[str, dict[str, object]]:
         "read_discovery_run": {"project_id": "prj_matrix"},
         "read_claims": {"entity_id": _UUID()},
         "read_artifact": {"artifact_id": "doc_matrix"},
+        "run_python": {"code": "print(1)"},
         "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
@@ -908,6 +944,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "work_id": _UUID(),
             "request": {"company_domain": "matrix.example"},
             "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
+        },
+        "design_enrich_assets": {
+            "job_id": "ingest_matrix_enrich",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_enrich"},
         },
         "design_record_ad_creatives": {
             "creatives": [
@@ -1412,7 +1454,14 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1449,7 +1498,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    assert len(registry) == 166
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1487,7 +1540,14 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (133 -> 134), composed on nothing but the ambient connection factory.
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry.names()) == 136
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1511,7 +1571,11 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # next (153 -> 154).
     # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
     # ungranted (134 -> 136 / 154 -> 156).
-    assert len(registry) == 156
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    assert len(registry) == 166
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

@@ -290,11 +290,11 @@ def test_an_export_that_found_an_address_costs_a_whole_credit() -> None:
     assert export_cost_reader(response).credits == Decimal("1.0")
 
 
-def test_an_export_that_found_nothing_costs_only_the_profile_half() -> None:
+def test_an_export_that_found_nothing_costs_zero_under_the_current_contract() -> None:
     response = HttpResponse(
         status=200, body=b'{"email":{"state":"DONE","output":[{"found":false}]}}'
     )
-    assert export_cost_reader(response).credits == Decimal("0.5")
+    assert export_cost_reader(response).credits == Decimal("0")
 
 
 def test_a_refused_export_costs_nothing_rather_than_the_estimate() -> None:

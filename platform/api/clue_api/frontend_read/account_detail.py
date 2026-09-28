@@ -17,17 +17,17 @@ Two disciplines are load-bearing here and are enforced, not merely intended:
   what the suite's statement-count guard exists to prevent.
 
 The second route in this module, ``GET /accounts/{id}/evidence/{claim_id}``, streams one retained
-evidence artifact. It authorises against what the **stored** overview page actually cites and
-nothing else, so an authorisation check can never write a page or schedule one.
+evidence artifact. It authorises stored overview citations and the account's scoped custom-field
+claims, including retired fields. Authorization never writes or schedules a page.
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -62,6 +62,7 @@ from clue_api.frontend_read.v1_shared import (
     account_logo_path,
     activity_for,
     arv2_research_status_for,
+    custom_field_evidence_for,
     custom_fields_for,
     employee_range_label,
     fit_band,
@@ -82,7 +83,7 @@ from clue_api.frontend_read.v1_shared import (
 from clue_config import Settings
 from clue_core import ClaimId, EntityId, EntityType
 from clue_db import ConnFactory
-from clue_research.claimstore import WorkspaceScope, claims_by_ids, current_values
+from clue_research.claimstore import WorkspaceScope, current_values
 from clue_research.compliance import load_workspace_policy
 from clue_research.identity import get_account, surviving_id
 from clue_storage import StorageBackend
@@ -152,6 +153,8 @@ async def read_account_detail(
     display: DisplayPages,
     settings: Settings,
     now: datetime,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
 ) -> AccountDetailResponseV1:
     """The account detail in **contract v1** — the ARV2 account page and its preview.
 
@@ -218,7 +221,13 @@ async def read_account_detail(
     )
 
     policy = await load_workspace_policy(conn, workspace_id=workspace_id)
-    members = await committee(conn, workspace_id=workspace_id, account_id=str(canonical))
+    members = await committee(
+        conn,
+        workspace_id=workspace_id,
+        account_id=str(canonical),
+        project_id=project_id,
+        context_id=context_id,
+    )
     contacts = await rail_contacts(conn, workspace_id=workspace_id, members=members, policy=policy)
     committee_rows = await buying_committee(
         conn,
@@ -233,6 +242,8 @@ async def read_account_detail(
         subject_kind="account",
         subject_id=str(canonical),
         page=OVERVIEW_PAGE,
+        project_id=project_id,
+        context_id=context_id,
     )
     activity = await activity_for(conn, workspace_id=workspace_id, account_id=canonical, now=now)
     # The drawer's ids: what the page cites, then what the committee's email chips point at,
@@ -249,13 +260,25 @@ async def read_account_detail(
         ),
     )
 
+    field_evidence = await custom_field_evidence_for(
+        conn, workspace_id=workspace_id, subject_id=canonical
+    )
+    evidence = list({record.claim_id: record for record in [*evidence, *field_evidence]}.values())
+
     # ``canonical_name`` is NOT NULL on the spine, but a blank one would fail the contract's
     # ``min(1)``; the domain, then the id, keep the page honest and reachable.
     name = str(account.canonical_name or account.primary_domain or account_uuid)
     location = location_label(value_of("core.hq_location"))
     # The account's newest fit whichever project scored it (founder ruling 2026-09-11: a fit is
     # global to the account); the per-project sections below keep the attribution.
-    fit = account_fit(scores.get(account_uuid, ()))
+    contextual = page.research_quality and page.research_quality.get("qualityState") != "legacy"
+    chosen_project = (page.research_quality or {}).get("projectId") or project_id
+    candidates = scores.get(account_uuid, ())
+    if contextual:
+        candidates = tuple(
+            s for s in candidates if chosen_project and s.project_id == chosen_project
+        )
+    fit = account_fit(candidates)
     return AccountDetailResponseV1(
         data=AccountDetailV1(
             id=str(account_uuid),
@@ -348,7 +371,10 @@ def register_account_detail_routes(
 
     @router.get("/accounts/{account_id}")
     async def get_account_detail(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> AccountDetailResponseV1:
         async with conn_factory() as conn:
             try:
@@ -359,6 +385,8 @@ def register_account_detail_routes(
                     display=display,
                     settings=settings,
                     now=datetime.now(UTC),
+                    project_id=project_id,
+                    context_id=context_id,
                 )
             except AccountNotFound as exc:
                 raise HTTPException(
@@ -374,10 +402,12 @@ def register_account_detail_routes(
         workspace_id: WorkspaceDep,
         account_id: uuid.UUID,
         claim_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> Response:
-        """Stream retained evidence only when the account's own page actually cites it.
+        """Stream evidence for stored page citations or scoped custom-field values.
 
-        The authorising set is exactly what the **stored** overview page cites. ``generate=False``
+        The authorising set includes the **stored** overview and custom values. ``generate=False``
         is load-bearing: an authorisation check must never be a spend path, so this asks only what
         is already written and neither writes a section nor schedules a rewrite. The account id is
         resolved to its survivor first, so a merged-loser url authorises against the page the
@@ -414,9 +444,29 @@ def register_account_detail_routes(
                 subject_kind="account",
                 subject_id=str(canonical),
                 page=OVERVIEW_PAGE,
+                project_id=project_id,
+                context_id=context_id,
                 generate=False,
             )
-            if str(claim_id) not in page.cited_claim_ids:
+            custom_evidence = await custom_field_evidence_for(
+                conn, workspace_id=workspace_id, subject_id=canonical
+            )
+            insights = await display.page(
+                conn,
+                workspace_id=workspace_id,
+                subject_kind="account",
+                subject_id=str(canonical),
+                page="insights",
+                project_id=project_id,
+                context_id=context_id,
+                generate=False,
+            )
+            served_ids = {
+                *page.cited_claim_ids,
+                *insights.cited_claim_ids,
+                *(row.claim_id for row in custom_evidence),
+            }
+            if str(claim_id) not in served_ids:
                 raise HTTPException(
                     status_code=404,
                     detail={
@@ -425,10 +475,12 @@ def register_account_detail_routes(
                     },
                 )
             typed_claim_id = ClaimId(claim_id)
-            claims = await claims_by_ids(
+            from clue_research.claimstore.quality import inspectable_claims_by_ids
+
+            claims = await inspectable_claims_by_ids(
                 conn,
-                (typed_claim_id,),
-                scope=WorkspaceScope.for_workspace(workspace_id),
+                workspace_id=workspace_id,
+                claim_ids=[typed_claim_id],
             )
             claim = claims.get(typed_claim_id)
             if claim is None:

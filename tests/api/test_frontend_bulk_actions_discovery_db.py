@@ -95,7 +95,6 @@ async def _discovery_run(conn: AsyncConnection, project: Project) -> DiscoveryRu
         requested_by_user_id="user-1",
         request_sha256="a" * 64,
         target_count=20,
-        strict_count=35,
         relaxed_enabled=True,
         criteria_gate_keys=("geography", "stage"),
     )

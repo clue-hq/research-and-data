@@ -215,9 +215,10 @@ def build_tool_invoker(
     conn_factory: ConnFactory = transaction,
     crash_hook: InvocationCrashHook | None = None,
     journal_crash_hook: JournalCrashHook | None = None,
+    parameter_artifacts: ParameterArtifactStore | None = None,
 ) -> ToolInvoker:
     """Build the mandatory production invoker; no null journal/storage fallback exists."""
-    artifact_store = StorageParameterArtifactStore(
+    artifact_store = parameter_artifacts or StorageParameterArtifactStore(
         storage=storage,
         conn_factory=conn_factory,
     )

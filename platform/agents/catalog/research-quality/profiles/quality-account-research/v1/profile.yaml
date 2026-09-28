@@ -1,0 +1,85 @@
+schema_version: '1'
+kind: profile
+name: quality-account-research
+version: v1
+status: active
+role: account_research
+prompt:
+  name: quality-account-research
+  version: v1
+  sha256: b2e0b5d85e504ca3178597cc34bc878b89cf7a58d5a796e0e3c4229a597b13e4
+skills:
+- name: governed-evidence
+  version: v1
+  sha256: 8b0dcd78b9031371c5c92e6abf74c832a1f304c0c3775df41c2fed772101eb53
+tools:
+- &id001
+  name: submit_research_claim
+  version: '1'
+  input_schema_sha256: 1d84b1a72f08547328655423e3caf165a100522606808df6d250be16e12090cd
+  output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+- &id002
+  name: correct_research_claim
+  version: '1'
+  input_schema_sha256: 6c436987623a6b1924b6766ff9ec3a3cfad56c76a282eb8952b091a947463a4d
+  output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+- &id003
+  name: search_evidence
+  version: '1'
+  input_schema_sha256: 54f3e11344084f8101830fab6ec637b9d24f7d5377f3a8d69bd304c764a336e4
+  output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+- &id004
+  name: record_research_disposition
+  version: '1'
+  input_schema_sha256: 3354147d9d08833cfa2d004988ca5981812f4e65fd83a14da42733a154de2cac
+  output_schema_sha256: d5458cf618b731af3058bd1bacf7100d2993c66a59d478b96d1ee01685f2d913
+- name: acquire_research_evidence
+  version: '1'
+  input_schema_sha256: 4d59ef67b3685e3e36d93ced1d21eb4b295b87413928127614c1f8ff13698d08
+  output_schema_sha256: ac4bbc57d23e215e824f5367bdc625284e4d06fb9ac11d7b56056f0accca2901
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 120.0
+  max_retries: 2
+  max_output_tokens: 16384
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .yaml
+  readable_prefixes:
+  - .deepagent
+  - inputs
+  - context
+  - work
+  - outputs
+  - research
+  - evidence
+  writable_prefixes:
+  - work
+  - outputs
+  retention_class: agent-ephemeral-v1
+delegation_roles:
+- research_claims
+- research_narrative
+delegation_tool_grants:
+  research_claims:
+  - *id001
+  - *id002
+  - *id003
+  - *id004
+  research_narrative:
+  - *id001
+  - *id003
+max_delegation_depth: 1
+max_delegations: 16
+max_plan_nodes: 64
+turn_timeout_s: 1800.0
+max_model_rounds: 100

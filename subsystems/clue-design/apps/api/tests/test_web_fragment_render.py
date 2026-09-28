@@ -463,7 +463,17 @@ def test_the_web_turn_hands_the_agent_runtime_the_resolved_package(
     artifact = _mint(workspace_id, design_storage)
     captured: dict[str, Any] = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+        callbacks=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
@@ -512,7 +522,17 @@ def test_a_web_turn_on_a_fragmentless_document_carries_no_package(
 
     captured: dict[str, Any] = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+        callbacks=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
@@ -655,3 +675,95 @@ def test_the_editor_route_serves_an_artifacts_own_image_from_this_requests_origi
     # Nothing root-relative survives on this path, in either place.
     assert f'src="/asset-store/{OWNED_DIGEST}"' not in html
     assert f'url("/asset-store/{OWNED_DIGEST}")' not in html
+
+
+def test_an_annotation_inside_a_clone_names_the_element_from_the_real_stored_html(
+    tmp_path: Path,
+    workspace_id: str,
+    design_storage: FsStorage,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R-A2, end to end against a REAL minted artifact.
+
+    A marketer points at the headline inside a cloned band and types a note. The path they
+    produced is measured from the clone's rendered WRAPPER (the `data-fragment-root` div the
+    engine emits), whose element children are exactly this artifact's top-level elements — so
+    `:nth-child(1)` is the `<section>` and `:nth-child(1) > :nth-child(1)` is the `<h1>`. The
+    brief must come back naming that `h1` and quoting what it currently says, which is only
+    possible by reading the stored HTML out of durable custody here.
+
+    This is the test that would catch an off-by-one in the resolution origin: resolving one
+    level too deep would land on nothing and the line would say "no longer resolves".
+    """
+    import lumen_agent.harness_web as harness_web
+    import lumen_agent.llm as agent_llm
+
+    from lumen_api import main as main_mod
+
+    artifact = _mint(workspace_id, design_storage)
+    captured: dict[str, Any] = {}
+
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+        callbacks=None,
+    ):
+        captured["prompt"] = prompt
+        captured["config"] = config
+        return {
+            "status": "applied",
+            "outcome": "completed",
+            "summary": "stubbed",
+            "web_doc": initial_web_doc,
+            "operations": [],
+        }
+
+    monkeypatch.setattr(harness_web, "run_deepagent_web_turn", _fake_turn)
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Blobs:
+        workspace_id = None
+        storage = design_storage
+
+    blobs = _Blobs()
+    blobs.workspace_id = workspace_id
+
+    notes = [
+        {
+            "target": "n1",
+            "path": ":nth-child(1) > :nth-child(1)",
+            "note": "1. Make this shorter",
+        },
+        {"target": "n1", "path": ":nth-child(1) > :nth-child(9)", "note": "2. Bolder"},
+    ]
+    main_mod.run_web_agent_turn(
+        {"scene": _web_doc("doc_annotated", _fragment_node("n1", artifact.fragment_id))},
+        "Tighten the hero",
+        None,
+        Path(__file__).resolve().parents[3],
+        target_node_ids=["n1"],
+        target_notes=notes,
+        workspace_id=workspace_id,
+        blobs=blobs,
+        engine_cache_root=tmp_path / "engine-cache",
+    )
+
+    prompt = captured["prompt"]
+    assert (
+        "ANNOTATION 1: on fragment " in prompt
+    ), prompt
+    assert (
+        "element `h1` at path `:nth-child(1) > :nth-child(1)` "
+        f'reading "{SENTINEL}"'
+    ) in prompt, prompt
+    assert '"1. Make this shorter"' in prompt
+    # The second note points at a child the artifact does not have; it is SAID, not guessed at.
+    assert "ANNOTATION 2" in prompt and "no longer resolves in this section" in prompt
+    # The runtime gets the same facts by value, in the same submission order.
+    assert captured["config"].turn_target_notes == notes

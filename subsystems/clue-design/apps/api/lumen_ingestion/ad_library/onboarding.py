@@ -87,6 +87,7 @@ def run_ad_assets_onboarding(
     provider: Any = None,
     identity_resolver: Any = None,
     distiller: Any = None,
+    describer: Any = None,
     generate: Optional[Callable[..., Any]] = None,
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]] = None,
     now: Optional[Callable[[], datetime]] = None,
@@ -122,6 +123,7 @@ def run_ad_assets_onboarding(
             provider=provider,
             identity_resolver=identity_resolver,
             distiller=distiller,
+            describer=describer,
             generate=generate,
             fetch_creative=fetch_creative,
             now=now or (lambda: datetime.now(UTC)),
@@ -142,6 +144,7 @@ def _onboard(
     provider: Any,
     identity_resolver: Any,
     distiller: Any,
+    describer: Any = None,
     generate: Optional[Callable[..., Any]],
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]],
     now: Callable[[], datetime],
@@ -301,6 +304,41 @@ def _onboard(
     evidence["steps"]["record"] = {"status": "ok", "count": recorded["count"]}
 
     # >>> Everything above is now durable. Nothing below may lose it. <<<
+
+    if request.get("harvest_only") is True:
+        for step in ("enrich", "distill", "pregenerate"):
+            evidence["steps"][step] = {
+                "status": "skipped",
+                "reason": "harvest-only was requested; original ads were saved without model calls",
+            }
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+    from ..asset_enrichment import enrich_assets
+    from ..pipeline import resolve_describer
+    from clue_design.asset_context import fingerprint
+    targets = {}
+    image_bytes = {creative.asset_id: (creative.image_bytes, creative.mime_type)
+                   for creative in custody.creatives}
+    for row in creative_rows:
+        occurrence = {
+            "occurrence_id": fingerprint({"creative_id": row["creative_id"], "brand": brand_kit_id}),
+            "source": "linkedin_ad", "brand_kit_id": brand_kit_id,
+            "creative_id": row["creative_id"], "ad_permalink": row["view_details_link"],
+            "advertiser": row["advertiser_name"], "headline": row["headline"],
+            "commentary": row["commentary"],
+        }
+        target = targets.setdefault(row["asset_id"], {"kind": "ad", "source_occurrences": []})
+        target["source_occurrences"].append(occurrence)
+    enrichment = enrich_assets(
+        targets, workspace_id=repo.workspace_id, describer=describer if describer is not None else resolve_describer(), job_id=job_id,
+        resolve_bytes=image_bytes.get,
+        reporter=lambda stage, progress: reporter(stage, 0.4 + (progress - 0.8) * 2),
+    )
+    evidence["steps"]["enrich"] = {
+        **{key: value for key, value in enrichment.items() if key != "results"},
+        "status": "ok" if enrichment["ready"] == enrichment["total"] else "failed",
+        "reason": enrichment.get("reason") or f"{enrichment['total'] - enrichment['ready']} analyses unfinished",
+    }
 
     # --- step 2: distil the ad-DNA card ------------------------------------------------------
     reporter("Learning your ad style…", 0.55)
@@ -744,7 +782,7 @@ def _digest(data: bytes) -> str:
 #: The lane's steps, in the order they run. A job that ran all five to `ok` produced all three
 #: of the lane's artifact kinds — custodied creatives, an ad-DNA card, pre-generated imagery.
 #: Listed once so the summary and its status can never disagree about what "everything" means.
-_LANE_STEPS = ("harvest", "custody", "record", "distill", "pregenerate")
+_LANE_STEPS = ("harvest", "custody", "record", "enrich", "distill", "pregenerate")
 
 
 def _outcome(evidence: JsonObject) -> JsonObject:

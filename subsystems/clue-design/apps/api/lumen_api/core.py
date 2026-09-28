@@ -12,6 +12,7 @@ from uuid import uuid4
 from py_lumen_config import settings
 from py_lumen_obs import get_logger
 
+from .font_containers import normalize_ingest_font
 from .observability import (
     current_request_id,
     diagnostic_summary,
@@ -80,10 +81,17 @@ class CoreClient:
         scene: JsonObject,
         edit: JsonObject,
         scope: Optional[JsonObject] = None,
+        *,
+        brand_kit: Optional[JsonObject] = None,
+        mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         request = {"action": "apply_structured_edit", "scene": scene, "edit": edit}
         if scope is not None:
             request["scope"] = scope
+        if brand_kit is not None:
+            request["brand_kit"] = brand_kit
+        if mode is not None:
+            request["mode"] = mode
         return self._run(request)
 
     def compile_dsl_into_scene(
@@ -92,6 +100,9 @@ class CoreClient:
         source: str,
         dsl_session: Optional[JsonObject] = None,
         protected_node_ids: Optional[list[str]] = None,
+        *,
+        brand_kit: Optional[JsonObject] = None,
+        mode: Optional[JsonObject] = None,
     ) -> JsonObject:
         request: JsonObject = {
             "action": "compile_dsl_into_scene",
@@ -104,6 +115,10 @@ class CoreClient:
         # empty (pure declarative). Phase B wires the runtime call site.
         if protected_node_ids is not None:
             request["protected_node_ids"] = protected_node_ids
+        if brand_kit is not None:
+            request["brand_kit"] = brand_kit
+        if mode is not None:
+            request["mode"] = mode
         return self._run(request)
 
     def preflight_scene(
@@ -163,19 +178,35 @@ class CoreClient:
         max_bytes: Optional[int] = None,
         raise_on_error: bool = True,
     ) -> JsonObject:
+        # Option A (2026-09-02): the ONE chokepoint every font byte passes through — harvest,
+        # uploads, PDF capture, `POST /assets`, font-library provisioning. A WOFF/WOFF2 payload
+        # is unwrapped to sfnt HERE, before the Rust helper sniffs it, so the stored primary
+        # bytes are always TTF/OTF (see `font_containers.py` for why that invariant matters).
+        # `max_bytes` is checked by the helper against the DECODED size, which can be 2-3x the
+        # wrapper; that is the honest number for what the store keeps.
+        normalized = normalize_ingest_font(
+            bytes_base64=bytes_base64,
+            declared_mime_type=declared_mime_type,
+            filename=filename,
+            provenance=provenance,
+        )
+        if normalized.refusal is not None:
+            if raise_on_error:
+                raise CoreError(normalized.refusal["code"], normalized.refusal["message"])
+            return {"ok": False, "error": dict(normalized.refusal), "diagnostics": []}
         return self._run(
             {
                 "action": "ingest_asset",
                 "store_root": store_root,
-                "bytes_base64": bytes_base64,
+                "bytes_base64": normalized.bytes_base64,
                 "asset_id": asset_id,
                 "label": label,
-                "declared_mime_type": declared_mime_type,
-                "filename": filename,
+                "declared_mime_type": normalized.declared_mime_type,
+                "filename": normalized.filename,
                 "kind": kind,
                 "uploaded_by": uploaded_by,
                 "license": license,
-                "provenance": provenance,
+                "provenance": normalized.provenance,
                 "source": source,
                 "tags": tags,
                 "max_bytes": max_bytes,

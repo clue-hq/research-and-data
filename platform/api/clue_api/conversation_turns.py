@@ -21,6 +21,7 @@ local session file; production reads durable project state), so each surface bui
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -28,6 +29,7 @@ from typing import Any
 from uuid import UUID, uuid5
 
 from clue_agents import (
+    AgentExecutionStatus,
     AgentFinalizeEnvelope,
     AgentRole,
     AgentTurnOutcome,
@@ -38,6 +40,7 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DeterministicAgentContextAssembler,
+    MountRequest,
     ResolvedAgentProfile,
     WorkspaceSeedFile,
 )
@@ -56,12 +59,23 @@ from clue_api.agent_runtime_wiring import (
     CompletionGuard,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.attachment_binding import DbAttachmentDescriber
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.conversation_naming import (
+    ConversationNamer,
+    NamingOutcome,
+    NamingRequest,
+    TurnNamingLauncher,
+)
+from clue_api.conversation_naming import (
+    log as naming_log,
+)
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
 )
+from clue_api.sandbox.workspaces import SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_core import ContextAssembly, ExecutionId, MemoryType
 from clue_db import ConnFactory, transaction
@@ -165,7 +179,18 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
 # key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
 # replay input for turns pinned to it.
-CONVERSATION_RECIPE_VERSION = 28
+# Revision 29 (the code sandbox) admits one address and removes none: ``run_python@1``, granted
+# for the first time at `head-of-abm@v58`, so a turn can open a PDF, a deck or a spreadsheet the
+# human attached instead of guessing from its filename. v28 stays the exact replay input for
+# turns pinned to it.
+# Revision 30 (multi-artifact legs) re-pins one address: ``open_design_leg`` moves to ``@5``, the
+# contract `head-of-abm@v59` grants — the top-level ``title`` is gone and the input carries an
+# ``artifacts`` list, so one open births one document per item. ``@4`` leaves the slot rather than
+# stand beside ``@5``, for the reason revision 22 recorded: one version per ``(kind, key)``
+# resolves, so both at once is a ``conflicting_requirement``. ``run_python@1`` stays where
+# revision 29 put it. v29 stays the exact replay input for turns pinned to it.
+# Revision 32 (web search, 2026-09-22) admits one address and removes none: ``web_search@1``.
+CONVERSATION_RECIPE_VERSION = 32
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were
@@ -245,6 +270,7 @@ class ConversationTurnEngine:
         runtime: HeadOfAbmStage0Runtime,
         captured_turns: CapturedTurnBinder,
         plans: DbAgentPlanJournal,
+        namer: ConversationNamer | None = None,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.surface = surface
@@ -258,6 +284,9 @@ class ConversationTurnEngine:
         self._runtime = runtime
         self._captured_turns = captured_turns
         self._plans = plans
+        # Conversation naming (2026-09-18 §4.1): a service step beside the turn, never inside it.
+        # Without a namer the launcher is a no-op and every chat keeps its placeholder name.
+        self._naming = TurnNamingLauncher(namer=namer)
         self._conn_factory = conn_factory
 
     @property
@@ -335,6 +364,7 @@ class ConversationTurnEngine:
         submitted_via_membership_id: str | None = None,
         stream: TurnStreamEmitter | None = None,
         input_seeds: tuple[WorkspaceSeedFile, ...] = (),
+        mounts: MountRequest | None = None,
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -356,6 +386,13 @@ class ConversationTurnEngine:
         ``input_seeds`` (ARV2 onboarding O6) are the surface's read-only workspace inputs for this
         turn. The engine only forwards them: what they are, and how they were pinned, belongs to
         the surface that composed them.
+
+        ``mounts`` (spec 2026-09-19 §3.4) is the exact :class:`~clue_agents.MountRequest` the
+        caller acquired ``lease`` with. It is what lets this method derive the turn's host
+        directories for the code sandbox — the tool is handed ids, never handles, so the paths
+        have to be registered here, under the turn's execution id, while the lease is held. A
+        caller that passes none registers nothing and ``run_python@1`` refuses by name, which is
+        the honest answer: a mount table nobody named is a guess.
         """
 
         constitution = request.constitution
@@ -395,33 +432,63 @@ class ConversationTurnEngine:
                 profile=self.resolved.profile,
                 history=prior_history,
             )
-            execution = build_head_of_abm_stage0_execution(
-                request=request,
-                profiles=self.components.profiles,
-                tools=self._tools,
-                tool_invoker=self._tool_invoker,
-                executor=self._executor,
-                compatibility=self._compatibility,
-                artifacts=self.components.artifacts,
-                plans=self._plans,
-                checkpointer_factory=postgres_agent_checkpointer,
-                budget_limit_millicents=budget_limit_millicents,
-                captured_turns=self._captured_turns,
-                surface=self.surface,
-                # The thread's own workspace is where a governed result too large for its receipt
-                # lands: `reads/<operation>.json`, readable by the model, written by nobody else.
-                spill_sink=lease.backend,
-                conn_factory=self._conn_factory,
-            )
-            outcome = await self._runtime.run(
-                request=request,
-                context=context,
-                lease=lease,
-                execution=execution,
-                completion_guard=completion_guard,
-                stream=stream,
-                input_seeds=input_seeds,
-            )
+            # The code sandbox's one binding (spec 2026-09-19 §3.4). ``ToolContext`` carries
+            # the execution id and nothing else, so this is where ``run_python@1`` is told which
+            # host directories this turn owns — derived from the lease the spill sink below is
+            # bound to, and from the very mount table the model's own file tools see. With no
+            # registry (the sandbox is off) or no ``MountRequest`` (a surface that acquired its
+            # own lease and named nothing) this binds nothing, and the tool refuses by name
+            # rather than running against a guessed path.
+            sandbox = self.components.sandbox_workspaces
+            bound_sandbox: SandboxWorkspaces | None = None
+            if sandbox is not None and mounts is not None:
+                bound_sandbox = sandbox
+                sandbox.register(
+                    constitution.execution_id,
+                    sandbox_mounts_for_lease(
+                        lease,
+                        self.components.workspaces,
+                        brand=mounts.brand,
+                        project_library=mounts.project_library,
+                        project_library_name=mounts.project_library_name,
+                        attachments=mounts.attachments,
+                    ),
+                )
+            try:
+                execution = build_head_of_abm_stage0_execution(
+                    request=request,
+                    profiles=self.components.profiles,
+                    tools=self._tools,
+                    tool_invoker=self._tool_invoker,
+                    executor=self._executor,
+                    compatibility=self._compatibility,
+                    artifacts=self.components.artifacts,
+                    plans=self._plans,
+                    checkpointer_factory=postgres_agent_checkpointer,
+                    budget_limit_millicents=budget_limit_millicents,
+                    captured_turns=self._captured_turns,
+                    surface=self.surface,
+                    # The thread's own workspace is where a governed result too large for its
+                    # receipt lands: `reads/<operation>.json`, readable by the model, written by
+                    # nobody else.
+                    spill_sink=lease.backend,
+                    conn_factory=self._conn_factory,
+                )
+                outcome = await self._runtime.run(
+                    request=request,
+                    context=context,
+                    lease=lease,
+                    execution=execution,
+                    completion_guard=completion_guard,
+                    stream=stream,
+                    input_seeds=input_seeds,
+                )
+            finally:
+                # On every exit path — returned, raised, cancelled — and idempotent, because the
+                # binding must not outlive the lease it names: a later turn's script reaching a
+                # released tree is exactly what this registry exists to prevent.
+                if bound_sandbox is not None:
+                    bound_sandbox.release(constitution.execution_id)
         else:
             outcome = committed
         return await self._result_from_outcome(
@@ -431,6 +498,7 @@ class ConversationTurnEngine:
             thread_id=request.thread_id,
             stream=stream,
             replayed=committed is not None,
+            naming_scope=(request.constitution.project_id, request.user_message_artifact_ref),
         )
 
     async def _result_from_outcome(
@@ -442,8 +510,14 @@ class ConversationTurnEngine:
         thread_id: str,
         stream: TurnStreamEmitter | None,
         replayed: bool,
+        naming_scope: tuple[str, ArtifactRef] | None = None,
     ) -> ConversationTurnResult:
-        """Resolve one durable outcome into its canonical message and optional projection."""
+        """Resolve one durable outcome into its canonical message and optional projection.
+
+        ``naming_scope`` is what conversation naming needs and this method does not otherwise
+        read: the turn's project and the artifact holding what the human wrote. Only ``execute``
+        passes it — a replayed turn was already named by the process that first completed it.
+        """
 
         assistant_message: str | None = None
         envelope: AgentFinalizeEnvelope | None = None
@@ -463,6 +537,40 @@ class ConversationTurnEngine:
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
+        naming_task = None
+        if (
+            naming_scope is not None
+            and not replayed
+            and assistant_message
+            and outcome.status
+            in (AgentExecutionStatus.COMPLETED, AgentExecutionStatus.AWAITING_INPUT)
+        ):
+            # §4.10: nothing on the naming path may raise into the turn — and this read is on
+            # the turn's own path, ahead of the launcher's own guard. A turn that already
+            # produced its reply must not fail because the message it was answering could not be
+            # re-read; it simply goes unnamed.
+            try:
+                project_id, user_message_ref = naming_scope
+                user_message = (await self.components.artifacts.read(user_message_ref)).decode()
+                naming_task = self._naming.start(
+                    NamingRequest(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                    )
+                )
+            except Exception:  # noqa: BLE001 — a naming failure is a skip, never a turn error
+                naming_log.warning(
+                    "conversation_naming.skipped",
+                    reason="user_message_unreadable",
+                    turn_id=str(turn_id),
+                    thread_id=thread_id,
+                    exc_info=True,
+                )
+                naming_task = None
         if stream is not None:
             await self._project_turn_close(
                 stream=stream,
@@ -470,6 +578,7 @@ class ConversationTurnEngine:
                 envelope=envelope,
                 assistant_message=assistant_message,
                 replayed=replayed,
+                naming_task=naming_task,
             )
         return ConversationTurnResult(
             outcome=outcome,
@@ -485,6 +594,7 @@ class ConversationTurnEngine:
         envelope: AgentFinalizeEnvelope | None,
         assistant_message: str | None,
         replayed: bool,
+        naming_task: asyncio.Task[NamingOutcome] | None = None,
     ) -> None:
         """Project the finalization's durable refs, reconcile the text, then close the turn.
 
@@ -539,6 +649,12 @@ class ConversationTurnEngine:
             await stream.rehydrate(reason="turn_replayed")
         else:
             await stream.reconcile_text(assistant_message=assistant_message)
+        # §4.1: a fast namer lands before the terminal event (one refetch shows the names); a
+        # slow one keeps running detached. The terminal event never waits longer than the grace.
+        # (``wait_grace(None)`` is already a no-op; the guard keeps this projection callable
+        # unbound, as the D5 close-projection tests call it.)
+        if naming_task is not None:
+            await self._naming.wait_grace(naming_task)
         await stream.turn_finished(
             status=outcome.status.value,
             failure_code=outcome.failure_code,
@@ -558,6 +674,7 @@ def build_conversation_turn_engine(
     requested_memory_types: tuple[MemoryType, ...],
     context_policy: ContextAssemblyPolicy,
     child_runner: FreshWakeChildRunner | None = None,
+    namer: ConversationNamer | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ConversationTurnEngine:
     """Compose one conversation engine for one declared capability surface.
@@ -586,6 +703,12 @@ def build_conversation_turn_engine(
         requested_memory_types=requested_memory_types,
         policy=context_policy,
         captured_turns=captured_turns,
+        # L7 names this turn's attachments from the submission rows, so a file the human dropped
+        # into the conversation is a named file with a readable path rather than a bare hash.
+        attachment_describer=DbAttachmentDescriber(conn_factory=conn_factory),
+        # An image the user sent earlier stays in the conversation so it can still be asked about
+        # later; the operator's setting decides how many the thread carries (ruling 2).
+        history_images_max=components.history_images_max,
         conn_factory=conn_factory,
     )
     runtime = HeadOfAbmStage0Runtime(
@@ -595,8 +718,10 @@ def build_conversation_turn_engine(
         artifacts=components.artifacts,
         tools=tools,
         child_runner=child_runner if child_runner is not None else DelegationWithheld(),
-        max_runtime_s=resolved.profile.turn_timeout_s,
-        max_rounds=resolved.profile.max_model_rounds,
+        # Operator settings, not the profile's own numbers (founder ruling 2026-09-27).
+        max_runtime_s=components.head_of_abm_turn_timeout_s,
+        max_rounds=components.head_of_abm_max_model_rounds,
+        long_turn_alert_s=components.agent_long_turn_alert_s,
         surface=surface,
         conn_factory=conn_factory,
     )
@@ -612,5 +737,6 @@ def build_conversation_turn_engine(
         runtime=runtime,
         captured_turns=captured_turns,
         plans=DbAgentPlanJournal(conn_factory=conn_factory),
+        namer=namer,
         conn_factory=conn_factory,
     )

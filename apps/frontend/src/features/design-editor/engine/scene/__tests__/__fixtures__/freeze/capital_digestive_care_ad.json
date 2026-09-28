@@ -1,0 +1,1276 @@
+{
+  "assets": {
+    "asset_ing_56a8225dcaec8700": {
+      "font": null,
+      "id": "asset_ing_56a8225dcaec8700",
+      "kind": "raster_image",
+      "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 2960,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815"
+        },
+        "filename": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "location": {
+          "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/56a8225dcaec8700924d03755d76a29366fb2a0165196f1f73a771fb79f06815",
+          "provider": "clue-storage",
+          "url": null
+        },
+        "mime_type": "image/webp",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "ws_2875e9e3dc5c452885db3774076de8c4/design/57e1104d78104a5a08cd6f9685b10f9cd95df53b4149a00c09c0e73ccbf772df",
+            "provider": "clue-storage",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 38,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.7,
+        "created_at": "2026-09-11T06:22:02.620566+00:00",
+        "created_by": "lumen_ingestion",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": {
+        "aspect_ratio": 6.676056338028169,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": true,
+        "pixel_height": 71,
+        "pixel_width": 474
+      },
+      "source": {
+        "kind": "brand_guide",
+        "label": "slurp-56a8225dcaec-679a076b988f538bbab3ac8a_Tryb_izolacji.webp",
+        "source_asset_id": "asset_ing_56a8225dcaec8700"
+      },
+      "status": "ready",
+      "tags": [
+        "brand-ingestion",
+        "image"
+      ],
+      "vector": null
+    },
+    "asset_ing_735ed736187b9723": {
+      "font": null,
+      "id": "asset_ing_735ed736187b9723",
+      "kind": "raster_image",
+      "label": "Capital Digestive Care logo (alternative: icon)",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 9700,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "735ed736187b9723a9a3b3c0f20713205604e007f02ed2e59011706c52eb7995"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/73/735ed736187b9723a9a3b3c0f20713205604e007f02ed2e59011706c52eb7995",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/jpeg",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/60/6051e0b319b653ccfda489108ef3fe0d220648b30fadbc7223f96f251269eefd",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 256,
+          "pixel_width": 256
+        }
+      },
+      "provenance": {
+        "confidence": 0.95,
+        "created_at": null,
+        "created_by": "brandfetch",
+        "notes": [],
+        "source_label": "brandfetch"
+      },
+      "raster": {
+        "aspect_ratio": 1.0,
+        "color_profile": null,
+        "dpi_x": null,
+        "dpi_y": null,
+        "has_alpha": false,
+        "pixel_height": 400,
+        "pixel_width": 400
+      },
+      "source": {
+        "captured_at": "2026-09-20T09:11:21Z",
+        "kind": "website",
+        "url": "https://cdn.brandfetch.io/idmYvZ0xDm/w/400/h/400/theme/dark/icon.jpeg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+      },
+      "status": "ready",
+      "tags": [
+        "target-account",
+        "logo-ladder"
+      ],
+      "vector": null
+    },
+    "asset_ing_da5517e3c94a0d19": {
+      "font": null,
+      "id": "asset_ing_da5517e3c94a0d19",
+      "kind": "vector",
+      "label": "Capital Digestive Care logo (alternative: light_lockup)",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 24211,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "da5517e3c94a0d190108a6bd255be8f26c0d8fa1292cfcf7cb997b59d256d868"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/da/da5517e3c94a0d190108a6bd255be8f26c0d8fa1292cfcf7cb997b59d256d868",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/svg+xml",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/2d/2d277472777f21e1cb61f123205feed8e8cb00b5606c177475f9f60339cf82ea",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 512,
+          "pixel_width": 1099
+        }
+      },
+      "provenance": {
+        "confidence": 0.95,
+        "created_at": null,
+        "created_by": "brandfetch",
+        "notes": [],
+        "source_label": "brandfetch"
+      },
+      "raster": null,
+      "source": {
+        "captured_at": "2026-09-20T09:11:21Z",
+        "kind": "website",
+        "url": "https://cdn.brandfetch.io/idmYvZ0xDm/theme/dark/logo.svg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+      },
+      "status": "ready",
+      "tags": [
+        "target-account",
+        "logo-ladder"
+      ],
+      "vector": {
+        "has_transparency": null,
+        "height": 82.0,
+        "path_data": null,
+        "view_box": [
+          0.0,
+          0.0,
+          176.0,
+          82.0
+        ],
+        "width": 176.0
+      }
+    },
+    "asset_ing_e699c6b27fd1b18b": {
+      "font": null,
+      "id": "asset_ing_e699c6b27fd1b18b",
+      "kind": "vector",
+      "label": "Capital Digestive Care logo (light_lockup)",
+      "license": null,
+      "logo": null,
+      "media": {
+        "byte_length": 24896,
+        "digest": {
+          "algorithm": "sha256",
+          "value": "e699c6b27fd1b18be29fb78d5c711820f4040c23162ee2a447c5cb94e1d140b5"
+        },
+        "filename": null,
+        "location": {
+          "opaque_ref": "sha256/e6/e699c6b27fd1b18be29fb78d5c711820f4040c23162ee2a447c5cb94e1d140b5",
+          "provider": "local-store",
+          "url": null
+        },
+        "mime_type": "image/svg+xml",
+        "thumbnail": {
+          "location": {
+            "opaque_ref": "sha256/2d/2d277472777f21e1cb61f123205feed8e8cb00b5606c177475f9f60339cf82ea",
+            "provider": "local-store",
+            "url": null
+          },
+          "mime_type": "image/png",
+          "pixel_height": 512,
+          "pixel_width": 1099
+        }
+      },
+      "provenance": {
+        "confidence": 0.95,
+        "created_at": null,
+        "created_by": "logo_ladder",
+        "notes": [],
+        "source_label": "website"
+      },
+      "raster": null,
+      "source": {
+        "captured_at": "2026-09-20T09:11:21Z",
+        "kind": "website",
+        "url": "https://www.capitaldigestivecare.com/wp-content/uploads/2023/03/cdc-logo.svg"
+      },
+      "status": "ready",
+      "tags": [
+        "target-account",
+        "logo-ladder"
+      ],
+      "vector": {
+        "has_transparency": null,
+        "height": 82.0,
+        "path_data": null,
+        "view_box": [
+          0.0,
+          0.0,
+          176.0,
+          82.0
+        ],
+        "width": 176.0
+      }
+    }
+  },
+  "export_profiles": [],
+  "meta": {
+    "artifact_type": null,
+    "brand_kit": {
+      "id": "brand_kit_ing_6709960c4caa40cdab9b2213f05ed4cb",
+      "version": 1
+    },
+    "id": "doc_9f772c46411751fba2fa59bb5f86a69e",
+    "medium": "ad",
+    "status": {
+      "kind": "draft"
+    },
+    "title": "Capital Digestive Care LinkedIn ad"
+  },
+  "nodes": {
+    "artboard": {
+      "children": [
+        "identity",
+        "eyebrow",
+        "headline",
+        "support",
+        "products",
+        "kicker"
+      ],
+      "clip": true,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_artboard_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.card"
+          }
+        }
+      ],
+      "id": "artboard",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 18.0,
+        "grow": 0.0,
+        "padding": [
+          48.0,
+          52.0,
+          48.0,
+          52.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "eyebrow": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_eyebrow_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.brand"
+          }
+        }
+      ],
+      "id": "eyebrow",
+      "kind": {
+        "align": "left",
+        "content": "For Capital Digestive Care",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 600,
+        "kind": "text",
+        "letter_spacing": 0.08,
+        "line_height": 1.2,
+        "max_lines": 1,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "headline": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_headline_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "headline",
+      "kind": {
+        "align": "left",
+        "content": "Direct access still waits on paper packets",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 51.5,
+        "font_size_token": "type.size.5xl",
+        "font_weight": 700,
+        "kind": "text",
+        "letter_spacing": -0.02,
+        "line_height": 1.05,
+        "max_lines": 3,
+        "spans": [
+          {
+            "end": 42,
+            "fill": {
+              "color": {
+                "kind": "hex",
+                "value": "#00654B"
+              },
+              "kind": "solid"
+            },
+            "font_weight": 700,
+            "start": 29
+          }
+        ],
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "identity": {
+      "children": [
+        "logo_insight",
+        "pair_x",
+        "logo_cdc"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "identity",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 12.0,
+        "gap_token": "space.md",
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "kicker": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_kicker_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.brand"
+          }
+        }
+      ],
+      "id": "kicker",
+      "kind": {
+        "align": "left",
+        "content": "Built for Saturday colonoscopy screenings in 2026",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "max_lines": 2,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "logo_cdc": {
+      "asset_placement": {
+        "alt_text": "Capital Digestive Care logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "logo_cdc",
+      "kind": {
+        "alt": "Capital Digestive Care logo",
+        "asset_id": "asset_ing_e699c6b27fd1b18b",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 110.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 236.0
+        }
+      },
+      "source_asset_id": "asset_ing_e699c6b27fd1b18b",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "logo_insight": {
+      "asset_placement": {
+        "alt_text": "InsightHealth logo",
+        "fit": "contain",
+        "focal_point": {
+          "x": 0.5,
+          "y": 0.5
+        }
+      },
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "logo_insight",
+      "kind": {
+        "alt": "InsightHealth logo",
+        "asset_id": "asset_ing_56a8225dcaec8700",
+        "kind": "image"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "fixed",
+          "value": 44.0
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 292.0
+        }
+      },
+      "source_asset_id": "asset_ing_56a8225dcaec8700",
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "pair_x": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_pair_x_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "pair_x",
+      "kind": {
+        "align": "center",
+        "content": "x",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fixed",
+          "value": 28.0
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "prod_dac": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_prod_dac_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "prod_dac",
+      "kind": {
+        "align": "left",
+        "content": "Colonoscopy intake screens for scheduling",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "max_lines": 1,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "prod_intake": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_prod_intake_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "prod_intake",
+      "kind": {
+        "align": "left",
+        "content": "Intake AI Agent collects medical history",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "max_lines": 1,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "prod_magicdocs": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_prod_magicdocs_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.accent"
+          }
+        }
+      ],
+      "id": "prod_magicdocs",
+      "kind": {
+        "align": "left",
+        "content": "MagicDocs files packets and referrals",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "max_lines": 1,
+        "wrap": "no_wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "products": {
+      "children": [
+        "row_md",
+        "row_in",
+        "row_dac"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [],
+      "id": "products",
+      "kind": {
+        "direction": "column",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "start",
+        "gap": 10.0,
+        "grow": 0.0,
+        "padding": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "padding_token": "space.0"
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "row_dac": {
+      "children": [
+        "prod_dac"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "token": "radius.card",
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_row_dac_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand.subtle"
+          }
+        }
+      ],
+      "id": "row_dac",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 0.0,
+        "gap_token": "space.0",
+        "grow": 0.0,
+        "padding": [
+          14.0,
+          20.0,
+          14.0,
+          20.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "row_in": {
+      "children": [
+        "prod_intake"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "token": "radius.card",
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_row_in_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand.subtle"
+          }
+        }
+      ],
+      "id": "row_in",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 0.0,
+        "gap_token": "space.0",
+        "grow": 0.0,
+        "padding": [
+          14.0,
+          20.0,
+          14.0,
+          20.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "row_md": {
+      "children": [
+        "prod_magicdocs"
+      ],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 16.0,
+        "bottom_right": 16.0,
+        "token": "radius.card",
+        "top_left": 16.0,
+        "top_right": 16.0
+      },
+      "fills": [
+        {
+          "id": "paint_row_md_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "surface.brand.subtle"
+          }
+        }
+      ],
+      "id": "row_md",
+      "kind": {
+        "direction": "row",
+        "kind": "auto_layout",
+        "wrap": false
+      },
+      "layout": {
+        "align_x": "start",
+        "align_y": "center",
+        "gap": 0.0,
+        "gap_token": "space.0",
+        "grow": 0.0,
+        "padding": [
+          14.0,
+          20.0,
+          14.0,
+          20.0
+        ]
+      },
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    "support": {
+      "children": [],
+      "clip": false,
+      "computed": null,
+      "corner": {
+        "bottom_left": 0.0,
+        "bottom_right": 0.0,
+        "top_left": 0.0,
+        "top_right": 0.0
+      },
+      "fills": [
+        {
+          "id": "paint_support_fill_1",
+          "paint": {
+            "kind": "token",
+            "token": "text.secondary"
+          }
+        }
+      ],
+      "id": "support",
+      "kind": {
+        "align": "left",
+        "content": "You already schedule colonoscopy without a first consult. MagicDocs, Intake AI Agent, and Direct Access Colonoscopy intake can take packets, histories, and referrals into one GI front door.",
+        "direction": "ltr",
+        "font_family": "Aeonik",
+        "font_size": 34.5,
+        "font_size_token": "type.size.2xl",
+        "font_weight": 400,
+        "kind": "text",
+        "letter_spacing": 0.0,
+        "line_height": 1.18,
+        "max_lines": 5,
+        "wrap": "wrap"
+      },
+      "layout": null,
+      "locked": false,
+      "name": null,
+      "opacity": 1.0,
+      "size": {
+        "height": {
+          "kind": "hug"
+        },
+        "width": {
+          "kind": "fill",
+          "value": {
+            "weight": 1.0
+          }
+        }
+      },
+      "strokes": [],
+      "transform": {
+        "flip_x": false,
+        "flip_y": false,
+        "rotation": 0.0,
+        "skew_x": 0.0,
+        "skew_y": 0.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  },
+  "pages": {
+    "linkedin_ad": {
+      "background": [],
+      "bleed": null,
+      "children": [
+        "artboard"
+      ],
+      "id": "linkedin_ad",
+      "name": "linkedin_ad",
+      "safe_area": null,
+      "size": {
+        "height": 1080.0,
+        "orientation": "landscape",
+        "output": {
+          "raster": {
+            "height_px": 1080,
+            "width_px": 1080
+          }
+        },
+        "preset": "custom",
+        "source": {
+          "height": 1080.0,
+          "unit": "px",
+          "width": 1080.0
+        },
+        "unit": "pt",
+        "width": 1080.0
+      }
+    }
+  },
+  "schema_version": 1,
+  "slots": {}
+}

@@ -69,10 +69,14 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert set(data) == {
                 "id",
                 "title",
+                "description",
                 "brand_id",
                 "product_id",
                 "status",
+                "pinned",
                 "created_at",
+                "updated_at",
+                "archived_at",
                 "context_entities",
                 "agent_profiles",
                 "default_agent_profile_id",
@@ -87,16 +91,17 @@ def test_project_shell_is_scoped_real_and_fixture_free(require_chat_db: None) ->
             assert data["agent_profiles"] == [
                 {
                     "id": PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                    "label": "GPT-5.6 Terra",
-                    "short_label": "GPT-5.6 Terra",
-                    "description": "Clue's governed GPT-5.6 Terra conversation profile",
-                    "model_id": "openai/gpt-5.6-terra",
+                    "label": "Grok 4.6",
+                    "short_label": "Grok 4.6",
+                    "description": "Clue's governed Grok 4.6 conversation profile",
+                    "model_id": "x-ai/grok-4.6",
                 }
             ]
             assert data["default_agent_profile_id"] == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             assert data["composer_capabilities"] == {
                 "context_refs": True,
-                "attachments": False,
+                # This app composes an artifact store, so attachments are offered.
+                "attachments": True,
                 "agent_profile_selection": True,
             }
             for refusal in (foreign_response, missing_response):
@@ -171,6 +176,8 @@ def test_composer_context_prepares_an_existing_active_thread(require_chat_db: No
                         "secondary_label": "existing-thread.example",
                         "image_url": None,
                         "version": 1,
+                        "account_id": None,
+                        "account_name": None,
                     }
                 ],
             }
@@ -358,8 +365,8 @@ def test_sidebar_serves_only_active_projects(require_chat_db: None) -> None:
             projects = {item["id"]: item for item in response.json()["data"]}
             assert set(projects) == {live.project_id}
             assert archived.project_id not in projects
-            assert [
-                item["id"] for item in projects[live.project_id]["conversations"]
-            ] == ["thr_o6_arch_0"]
+            assert [item["id"] for item in projects[live.project_id]["conversations"]] == [
+                "thr_o6_arch_0"
+            ]
 
     run_async(scenario())

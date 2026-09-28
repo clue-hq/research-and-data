@@ -93,6 +93,8 @@ def test_session_and_principal_routes_expose_internal_values_and_stable_errors()
             assert session.status_code == 200
             assert session.json()["user_id"] == user.user_id
             assert session.json()["memberships"][0]["membership_id"] == membership.membership_id
+            # A user picks a workspace by its name; the id never has to stand in for one.
+            assert session.json()["memberships"][0]["workspace_name"] == "API auth workspace"
             assert principal.status_code == 200
             assert principal.json()["workspace_id"] == workspace.workspace_id
             assert "api-subject" not in principal.text

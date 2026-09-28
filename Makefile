@@ -8,6 +8,7 @@
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
 	redis-up redis-down manual manual-check manual-link cost-report langfuse-check \
 	pages-backfill-hostnames
+	sandbox-image
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -126,3 +127,7 @@ pages-backfill-hostnames: ## Allocate missing system hostnames. Usage: make page
 # --- Langfuse (lane 3 slice 3) ----------------------------------------------
 langfuse-check: ## Is Langfuse enabled and does the host accept the keys? Reads .env; sends no trace
 	uv run python -m clue_api.langfuse_check
+
+# --- agent code sandbox (spec 2026-09-19) ------------------------------------
+sandbox-image: ## Build the Head-of-ABM code sandbox image named by CLUE_SANDBOX_IMAGE (default clue-agent-sandbox:latest)
+	docker build -t $${CLUE_SANDBOX_IMAGE:-clue-agent-sandbox:latest} docker/agent-sandbox

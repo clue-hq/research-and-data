@@ -7,6 +7,7 @@ import type { Scene } from "../engine/scene/contracts";
 import { AD_PAGE_ID, HARVESTED_AD_PAGE } from "./__fixtures__/scene-nodes";
 import {
   PAGELESS_SCENE_NOTICE,
+  effectiveScenePageId,
   isPagelessScene,
   scenePagelessNotice,
 } from "./scene-pageless";
@@ -138,5 +139,33 @@ it("the inspector forwards pageless to EVERY AdCanvasInspector it renders", () =
     AD_INSPECTOR_SOURCE.split("<AdCanvasInspector pageless={pageless}").length - 1,
     renders,
     "every AdCanvasInspector render must pass pageless, or the refusal is inert",
+  );
+});
+
+it("Plan 2 item D: a pageless load takes its page from the scene being drawn", () => {
+  // The document loaded with `pages: {}` (pageId null). The reveal pump then
+  // applied a streamed `add_page`, so the DRAWN scene has a page. The canvas
+  // must draw that page now, not after the next checkpoint reload.
+  assert.equal(effectiveScenePageId(null, HARVESTED_AD_PAGE), AD_PAGE_ID);
+});
+
+it("a loaded page id wins over the drawn scene", () => {
+  assert.equal(effectiveScenePageId(AD_PAGE_ID, PAGELESS_SCENE), AD_PAGE_ID);
+  assert.equal(effectiveScenePageId(AD_PAGE_ID, HARVESTED_AD_PAGE), AD_PAGE_ID);
+});
+
+it("nothing drawn and nothing loaded is still no page", () => {
+  assert.equal(effectiveScenePageId(null, null), null);
+  assert.equal(effectiveScenePageId(null, PAGELESS_SCENE), null);
+});
+
+it("the pageless notice clears the moment the drawn scene has a page", () => {
+  const drawn = HARVESTED_AD_PAGE;
+  const pageId = effectiveScenePageId(null, drawn);
+  assert.equal(scenePagelessNotice(drawn, pageId), null);
+  // …and still shows while the drawn scene is pageless.
+  assert.equal(
+    scenePagelessNotice(PAGELESS_SCENE, effectiveScenePageId(null, PAGELESS_SCENE)),
+    PAGELESS_SCENE_NOTICE,
   );
 });

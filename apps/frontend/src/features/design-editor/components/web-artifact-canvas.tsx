@@ -1,18 +1,53 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import type { PendingAnnotation } from "../adapter/annotations";
+import type { VeilRenderKind } from "../adapter/generating-veil";
 import { canvasSandbox } from "../adapter/view-mode-html";
-import type {
-  RichTextCommand,
-  RichTextSelectionState,
-  WebSelection,
+import {
+  addressKey,
+  type RichTextCommand,
+  type RichTextSelectionState,
+  type WebAnnotateEvent,
+  type WebElementAddress,
+  type WebSelection,
 } from "../engine/webBridge";
-import type { RichTextDocument, WebTheme } from "../engine/webDocuments";
+import type {
+  RichTextDocument,
+  WebFragmentTextOverride,
+  WebTheme,
+} from "../engine/webDocuments";
 import { useWebBridgeSelection } from "../hooks/use-web-bridge-selection";
 import { useWebRender } from "../hooks/use-web-render";
+import { WebAnnotationPopover } from "./web-annotation-popover";
 import styles from "./web-artifact-canvas.module.css";
 import { WebRichTextToolbar } from "./web-rich-text-toolbar";
+
+/**
+ * Slice 2 (R-A1..R-A3): the annotation session, as the CANVAS needs it. The
+ * state itself is owned by `useWebAnnotations` up in the editing session (the
+ * composer chips read the same list); the canvas only opens the box on a click,
+ * renders it, and draws the badges the list implies.
+ *
+ * `onSend` is optional and its control is simply absent without it — "Send to
+ * chat" belongs to the composer (task 7).
+ *
+ * Slice 4 (R-A6): "Edit text" is NOT part of this binding at all. The CANVAS
+ * owns that quick action — it dismisses the box and posts `edit-text` into the
+ * frame with its own bridge sender — so the button is there whenever the box is
+ * open on a text-like element, whoever owns the session. There is deliberately
+ * no slot for it here: a session owner has nothing to say about it.
+ */
+export interface WebAnnotationsCanvasBinding {
+  pending: PendingAnnotation | null;
+  itemsForPage: (pageId: string) => { address: WebElementAddress; n: number }[];
+  open: (pending: Omit<PendingAnnotation, "pageId" | "note">) => void;
+  editNote: (note: string) => void;
+  dismiss: () => void;
+  add: (note?: string) => void;
+  onSend?: (note: string) => void;
+}
 
 /** W2.3: imperative controls the canvas publishes for its owner — layer-row
  * clicks send `selectNode` INTO the iframe (the frame echoes the normal
@@ -83,32 +118,63 @@ export interface WebRichTextSessionState {
  * discipline): no keyed remount, no loading flash.
  */
 export function WebArtifactCanvas({
+  annotations,
   controlsRef,
   documentId,
   editing = false,
+  onCloneTextCommit,
+  onNavigate,
+  onRenderKindChange,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
+  pageId,
   reloadToken = 0,
   richTextBusy = false,
   richTextEnabled = false,
   richTextTheme = null,
   selectedNodeId = null,
 }: {
+  /** Slice 2 (R-A1): the annotation session. Absent → no comment box and no
+   * badges, exactly as before this slice. */
+  annotations?: WebAnnotationsCanvasBinding;
   /** W2.3: receives the canvas's imperative controls while mounted. */
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   /** W4 addendum: the mode switch. False (the default) mounts the bridge-free
    * view render — an actual website, links opening in new tabs. */
   editing?: boolean;
+  /** Slice 3 (R-A6): the in-frame clone text editor committed — the owner
+   * persists ONE `set_fragment_text_override` op. The address always carries a
+   * structural path (the validator drops one that does not). */
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride,
+  ) => void;
+  /** F5 task 20: the user clicked a site-internal link in the canvas. The
+   * injected bridge always prevents the iframe navigation; when the link's raw
+   * href is one of the document's routes it reports the page it points at, and
+   * the owner switches the active page (which also clears the selection). */
+  onNavigate?: (pageId: string) => void;
   /** W4.8a: a text node's in-iframe session committed — the owner persists ONE
    * `set_rich_text` op through the manual-edits controller. */
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
+  /** The render state, mirrored up on every change. The output stage owns the
+   * "agent is generating" veil (it has to: the veil must show from leg-open,
+   * before any document exists to mount this canvas at all), and its hold rule
+   * needs to know when the render that a turn produced has actually landed.
+   * Nothing here reads it back — this canvas is only the reporter. */
+  onRenderKindChange?: (kind: VeilRenderKind) => void;
   /** W4.8a: the session state mirrored up on every change. */
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   /** W2.2: canvas selection events from the injected bridge, nonce-validated
    * by the ported listener. */
   onSelect?: (selection: WebSelection | null) => void;
+  /** F5: which page of a multi-page site to render. Undefined (the default)
+   * renders the document's first page — the endpoint's own default. A change
+   * refetches into the SAME iframe under the reloadToken quiet-swap
+   * discipline; only the DOCUMENT keys the remount, never the page. */
+  pageId?: string;
   /** W3.2: bump to quietly refetch the render after a committed write. The
    * new HTML swaps into the SAME mounted iframe (no keyed remount, no
    * loading flash) — the source shell's post-edit behavior. */
@@ -134,12 +200,17 @@ export function WebArtifactCanvas({
   return (
     <DocumentRender
       key={documentId}
+      annotations={annotations}
       controlsRef={controlsRef}
       documentId={documentId}
       editing={editing}
+      onCloneTextCommit={onCloneTextCommit}
+      onNavigate={onNavigate}
+      onRenderKindChange={onRenderKindChange}
       onRichTextCommit={onRichTextCommit}
       onRichTextSessionChange={onRichTextSessionChange}
       onSelect={onSelect}
+      pageId={pageId}
       reloadToken={reloadToken}
       richTextBusy={richTextBusy}
       richTextEnabled={richTextEnabled}
@@ -150,24 +221,37 @@ export function WebArtifactCanvas({
 }
 
 function DocumentRender({
+  annotations,
   controlsRef,
   documentId,
   editing,
+  onCloneTextCommit,
+  onNavigate,
+  onRenderKindChange,
   onRichTextCommit,
   onRichTextSessionChange,
   onSelect,
+  pageId,
   reloadToken,
   richTextBusy,
   richTextEnabled,
   richTextTheme,
   selectedNodeId,
 }: {
+  annotations?: WebAnnotationsCanvasBinding;
   controlsRef?: RefObject<WebArtifactCanvasControls | null>;
   documentId: string;
   editing: boolean;
+  onCloneTextCommit?: (
+    address: WebElementAddress,
+    override: WebFragmentTextOverride,
+  ) => void;
+  onNavigate?: (pageId: string) => void;
+  onRenderKindChange?: (kind: VeilRenderKind) => void;
   onRichTextCommit?: (nodeId: string, content: RichTextDocument) => void;
   onRichTextSessionChange?: (state: WebRichTextSessionState) => void;
   onSelect?: (selection: WebSelection | null) => void;
+  pageId?: string;
   reloadToken: number;
   richTextBusy: boolean;
   richTextEnabled: boolean;
@@ -175,13 +259,31 @@ function DocumentRender({
   selectedNodeId: string | null;
 }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const { nonceRef, state } = useWebRender(documentId, reloadToken, editing);
+  const { nonceRef, state } = useWebRender(documentId, reloadToken, editing, pageId);
   // The ported bridge listener (source-window + nonce validation). Selection
   // state itself lives with the join owner (useWebArtifactSelection); this
   // canvas only forwards validated events upward.
+  // Slice 2 (R-A1): the element-level click report opens the comment box. The
+  // ordinary `select` for the OWNING node still fires beside it, so the
+  // inspector and the layers panel are untouched by annotating.
+  const openAnnotation = annotations?.open;
+  const onAnnotate = useCallback(
+    (event: WebAnnotateEvent) => {
+      openAnnotation?.({
+        address: event.address,
+        name: event.name,
+        textLike: event.textLike,
+        geometry: event.geometry,
+      });
+    },
+    [openAnnotation],
+  );
   const bridge = useWebBridgeSelection({
     iframeRef,
     nonceRef,
+    onAnnotate,
+    onCloneTextCommit,
+    onNavigate,
     onRichTextCommit,
     onSelect,
   });
@@ -189,6 +291,8 @@ function DocumentRender({
   const {
     commandRichText,
     editingNodeId,
+    postAnnotations,
+    postEditText,
     ready,
     resetSelection,
     richTextError,
@@ -197,6 +301,46 @@ function DocumentRender({
     setRichTextToolbarActive,
     settleRichText,
   } = bridge;
+
+  // Slice 2: the badges. Posted on every change of the list AND on every
+  // `ready` — a post-write reload rebuilds the frame's DOM (and rotates the
+  // nonce), so the badges have to be drawn again against the new render.
+  // An empty list is the clear, so a removed annotation erases its badge
+  // through the very same message.
+  const itemsForPage = annotations?.itemsForPage;
+  const annotationItems = useMemo(
+    () => (itemsForPage && pageId ? itemsForPage(pageId) : []),
+    [itemsForPage, pageId],
+  );
+  useEffect(() => {
+    if (!ready) return;
+    postAnnotations(annotationItems);
+  }, [annotationItems, postAnnotations, ready]);
+
+  // Slice 4 (R-A6): the comment box's "Edit text" quick action. It is defined
+  // HERE, not up in the annotation session, because the sender it needs
+  // (`postEditText`) belongs to the bridge hook this component owns — a handler
+  // that lived anywhere else would have to carry the iframe window and the
+  // render nonce with it.
+  //
+  // Order is load-bearing: DISMISS the pending box first, then post. The
+  // frame's `edit-text` handler starts `beginCloneEditing` (or the vocabulary
+  // rich-text session for a bare `[data-tv]` node), which hides its hover box
+  // and takes focus — a comment box left open beside/over the element would sit
+  // on top of the editor it just opened.
+  //
+  // Which editor opens is the FRAME's decision, made from the address alone
+  // (path present → the clone's constrained editor; no path → `beginEditing`),
+  // so this quick action treats both cases identically.
+  const dismissAnnotation = annotations?.dismiss;
+  const onEditText = useCallback(
+    (address: WebElementAddress) => {
+      dismissAnnotation?.();
+      postEditText(address);
+    },
+    [dismissAnnotation, postEditText],
+  );
+
   useEffect(() => {
     if (!controlsRef) return;
     controlsRef.current = {
@@ -278,6 +422,21 @@ function DocumentRender({
     });
   }, [editingNodeId, richTextError, richTextSelection]);
 
+  // The render state, mirrored up to the stage's generating veil. Same
+  // discipline as the session mirror directly above and as the callback-ref
+  // updates in use-web-bridge-selection.ts: a passive effect calling the
+  // PARENT's setter, never a setState of this component's own state (which this
+  // repo's react-hooks lint bars, and which would paint one stale frame first).
+  // The latest callback lives in a ref so a caller passing an inline closure
+  // cannot make this re-fire on every render.
+  const onRenderKindChangeRef = useRef(onRenderKindChange);
+  useEffect(() => {
+    onRenderKindChangeRef.current = onRenderKindChange;
+  });
+  useEffect(() => {
+    onRenderKindChangeRef.current?.(state.kind);
+  }, [state.kind]);
+
   if (state.kind === "ready") {
     return (
       <>
@@ -325,6 +484,27 @@ function DocumentRender({
                 command={commandRichText}
                 setInteractionActive={setRichTextToolbarActive}
                 settle={settleRichText}
+              />,
+              window.document.body,
+            )
+          : null}
+        {/* Slice 2 (R-A1/R-A2): the comment box. Portalled to <body> for the
+         * very reason the toolbar above is — `.artifactWorkspace`'s transform
+         * would otherwise become the containing block for its `position: fixed`
+         * and clip it. Keyed on the element address, so clicking a second
+         * element starts a genuinely empty box rather than carrying the first
+         * one's half-typed note across. */}
+        {editing && annotations?.pending
+          ? createPortal(
+              <WebAnnotationPopover
+                key={addressKey(annotations.pending.address)}
+                iframeRef={iframeRef}
+                onAdd={annotations.add}
+                onDismiss={annotations.dismiss}
+                onEditNote={annotations.editNote}
+                onEditText={onEditText}
+                onSend={annotations.onSend}
+                pending={annotations.pending}
               />,
               window.document.body,
             )

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, InputHTMLAttributes } from "react";
 import styles from "./settings.module.css";
 
 export function SettingsCard({
@@ -16,18 +16,20 @@ export function SettingsInput({
   className = "",
   defaultValue,
   placeholder,
+  ...inputProps
 }: {
   ariaLabel: string;
   className?: string;
   defaultValue?: string;
   placeholder?: string;
-}) {
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "className">) {
   return (
     <input
       aria-label={ariaLabel}
       className={`${styles.input} ${className}`}
       defaultValue={defaultValue}
       placeholder={placeholder}
+      {...inputProps}
     />
   );
 }

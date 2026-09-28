@@ -100,7 +100,9 @@ def test_render_report_prints_every_section_and_the_honesty_list() -> None:
     assert "x-ai/grok-4.6" in out and "unpriced 2" in out
     assert str(JOB) in out
     assert "p1" in out
-    assert "NOT COVERED" in out and "design subsystem" in out
+    # Slice 5 removed the design entry; the pre-cost-columns turn rows are the one left.
+    assert "NOT COVERED" in out and "counted as unpriced" in out
+    assert "design subsystem" not in out
     assert "a note" in out
 
 

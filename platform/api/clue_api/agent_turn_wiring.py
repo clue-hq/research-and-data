@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID, uuid5
 
+from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -56,8 +59,10 @@ from clue_agents.turns import (
 from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
 from clue_api.thread_store import ensure_platform_thread
+from clue_api.turn_attachments import turn_image_refs
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_design_run_event
 from clue_obs import get_logger
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
@@ -73,6 +78,9 @@ __all__ = [
     "DbAgentTurnJournal",
     "DurableAgentArtifactStore",
     "AgentPrivacyService",
+    "DesignRunPrivacyTarget",
+    "DesignRunPrivacyPurger",
+    "is_agent_turn_privacy_tombstoned",
 ]
 
 _EVENT_NAMESPACE = UUID("f16bca96-c8c9-5fad-9f42-35ad7873f021")
@@ -80,6 +88,24 @@ _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
 _PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
 log = get_logger("clue_api.agent_turn")
+
+
+async def is_agent_turn_privacy_tombstoned(
+    conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
+) -> bool:
+    """Erasure is permanent even if a stale writer appends a later status event."""
+    return bool(
+        (
+            await conn.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM agent_turn_event "
+                    "WHERE workspace_id=:workspace AND turn_id=:turn "
+                    "AND status='privacy_tombstoned')"
+                ),
+                {"workspace": workspace_id, "turn": turn_id},
+            )
+        ).scalar_one()
+    )
 
 
 def _event_id(turn_id: UUID, status: str) -> UUID:
@@ -1373,6 +1399,15 @@ class DbAgentHistoryStore(AgentHistoryStore):
                 ),
                 {"workspace": workspace_id, "thread": thread_id},
             )
+            rows = result.mappings().all()
+            # One query for the whole page, not one per message: the images a past turn carried
+            # ride its messages again (ruling 2, spec 2026-09-18), and the conversation layer caps
+            # how many of them the thread can afford.
+            images = await turn_image_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_ids=[row["turn_id"] for row in rows],
+            )
             return tuple(
                 HistoryMessageRef(
                     message_id=row["id"],
@@ -1387,8 +1422,9 @@ class DbAgentHistoryStore(AgentHistoryStore):
                         media_type=row["media_type"],
                         byte_count=int(row["size_bytes"]),
                     ),
+                    attachment_refs=images.get(row["turn_id"], ()),
                 )
-                for row in result.mappings()
+                for row in rows
             )
 
     async def append(
@@ -1533,6 +1569,10 @@ class DbAgentReplayReader:
             )
             artifacts: list[ReplayArtifactRef] = []
             blockers: list[str] = []
+            if await is_agent_turn_privacy_tombstoned(
+                conn, workspace_id=workspace_id, turn_id=turn_id
+            ):
+                blockers.append("turn_privacy_tombstoned")
             for row in artifact_rows.mappings():
                 if row["media_type"] is None:
                     state = AgentArtifactState.MISSING
@@ -1707,6 +1747,22 @@ class DbAgentReplayReader:
         )
 
 
+@dataclass(frozen=True)
+class DesignRunPrivacyTarget:
+    """Authoritative locator metadata retained until the host confirms physical erasure."""
+
+    run_id: str
+    checkpoint_thread_id: str
+    result_json: dict[str, Any] | None
+    events: tuple[dict[str, Any], ...]
+
+
+class DesignRunPrivacyPurger(Protocol):
+    async def __call__(self, *, workspace_id: str, runs: Sequence[DesignRunPrivacyTarget]) -> None:
+        """Delete only the named runs' owned files; raise on unresolved or unsafe ownership."""
+        ...
+
+
 class AgentPrivacyService:
     """Erase subject-bound agent artifacts and every affected isolated materialization."""
 
@@ -1716,11 +1772,13 @@ class AgentPrivacyService:
         storage: StorageBackend,
         workspaces: AgentWorkspaceFactory,
         conn_factory: ConnFactory = transaction,
+        design_run_purger: DesignRunPrivacyPurger | None = None,
         library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._storage = storage
         self._workspaces = workspaces
         self._conn_factory = conn_factory
+        self._design_run_purger = design_run_purger
         self._library = library
 
     async def erase_subject(
@@ -1878,7 +1936,10 @@ class AgentPrivacyService:
                                 JOIN agent_context_ref r ON r.context_bundle_id=b.id
                                 JOIN memory m ON r.object_type='scoped_memory'
                                   AND m.memory_id=r.object_id
-                                WHERE b.turn_id=t.id AND m.subject_entity_id=:subject
+                                WHERE b.turn_id=t.id AND b.workspace_id=t.workspace_id
+                                  AND m.workspace_id=t.workspace_id
+                                  AND r.disposition='included'
+                                  AND m.subject_entity_id=:subject
                             )
                         )
                     ), thread_closure AS (
@@ -1912,6 +1973,65 @@ class AgentPrivacyService:
             )
             turns = tuple(affected_result.mappings())
             turn_ids = [turn["id"] for turn in turns]
+            design_rows = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT r.run_id, r.checkpoint_thread_id, r.result_json, t.id turn_id, "
+                            "COALESCE((SELECT jsonb_agg(e.payload ORDER BY e.seq) FROM run_event e "
+                            "WHERE e.workspace_id=r.workspace_id AND e.subject_kind='design_run' "
+                            "AND e.subject_id=r.run_id), '[]'::jsonb) events "
+                            "FROM design_agent_run r JOIN agent_turn t "
+                            "ON t.execution_id=r.execution_id AND t.workspace_id=r.workspace_id "
+                            "WHERE r.workspace_id=:workspace "
+                            "AND t.id=ANY(CAST(:turn_ids AS uuid[])) ORDER BY r.run_id"
+                        ),
+                        {"workspace": workspace_id, "turn_ids": turn_ids},
+                    )
+                ).mappings()
+            )
+            design_purge_ids = {
+                row["run_id"]: uuid5(
+                    _PRIVACY_NAMESPACE, f"{workspace_id}:{row['run_id']}:design-runtime"
+                )
+                for row in design_rows
+            }
+            completed_design_purges = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT event_id FROM agent_privacy_event "
+                            "WHERE workspace_id=:workspace "
+                            "AND event_id=ANY(CAST(:ids AS uuid[])) AND action='workspace_purged'"
+                        ),
+                        {"workspace": workspace_id, "ids": list(design_purge_ids.values())},
+                    )
+                ).scalars()
+            )
+            pending_design_rows = tuple(
+                row
+                for row in design_rows
+                if design_purge_ids[row["run_id"]] not in completed_design_purges
+            )
+            if pending_design_rows and self._design_run_purger is None:
+                raise RuntimeError("design runtime privacy purge is not configured")
+            # Fence in-flight workers before erasing their local files. Preserve the locator
+            # bodies until the host hook succeeds so a partial physical failure can be retried.
+            for row in pending_design_rows:
+                await conn.execute(
+                    text(
+                        "UPDATE design_agent_run SET status='failed', "
+                        "lease_generation=COALESCE(lease_generation, 0)+1, "
+                        "leased_by=COALESCE(leased_by, 'privacy-erasure'), "
+                        "leased_at=COALESCE(leased_at, now()), "
+                        "cancel_requested_at=COALESCE(cancel_requested_at, now()), "
+                        "updated_at=now() "
+                        "WHERE workspace_id=:workspace AND run_id=:run AND NOT EXISTS ("
+                        "SELECT 1 FROM agent_turn_event WHERE workspace_id=:workspace "
+                        "AND turn_id=:turn AND status='privacy_tombstoned')"
+                    ),
+                    {"workspace": workspace_id, "run": row["run_id"], "turn": row["turn_id"]},
+                )
             if turn_ids:
                 propagated_result = await conn.execute(
                     text(
@@ -2018,28 +2138,98 @@ class AgentPrivacyService:
                     ),
                     {"workspace": workspace_id, "turn": turn["id"]},
                 )
-                for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-                    exists = (
-                        await conn.execute(
-                            text("SELECT to_regclass(:table_name)"),
-                            {"table_name": table_name},
-                        )
-                    ).scalar_one()
-                    if exists is not None:
-                        await conn.execute(
-                            text(
-                                f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
-                                "WHERE thread_id=:thread_id"
-                            ),
-                            {
-                                # A production AgentTurn has its own immutable execution id. Real
-                                # LangGraph versions may persist the root namespace as either the
-                                # configured value or the empty string and may add subgraph
-                                # namespaces. The execution id is therefore the durable, complete,
-                                # turn-local DSAR boundary.
-                                "thread_id": str(turn["execution_id"]),
-                            },
-                        )
+            # Platform checkpoints use execution ids; design checkpoints use outer run ids.
+            # Include every namespace and write/blob channel, including empty root namespaces.
+            checkpoint_threads = sorted(
+                {str(turn["execution_id"]) for turn in turns}
+                | {str(row["checkpoint_thread_id"]) for row in design_rows}
+            )
+            for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                exists = (
+                    await conn.execute(
+                        text("SELECT to_regclass(:table_name)"), {"table_name": table_name}
+                    )
+                ).scalar_one()
+                if exists is not None:
+                    await conn.execute(
+                        text(
+                            f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
+                            "WHERE thread_id=ANY(CAST(:thread_ids AS text[]))"
+                        ),
+                        {"thread_ids": checkpoint_threads},
+                    )
+
+        if pending_design_rows:
+            assert self._design_run_purger is not None  # checked before any erasure writes
+            await self._design_run_purger(
+                workspace_id=workspace_id,
+                runs=tuple(
+                    DesignRunPrivacyTarget(
+                        run_id=row["run_id"],
+                        checkpoint_thread_id=row["checkpoint_thread_id"],
+                        result_json=row["result_json"],
+                        events=tuple(row["events"]),
+                    )
+                    for row in pending_design_rows
+                ),
+            )
+            async with self._conn_factory() as conn:
+                for row in pending_design_rows:
+                    # Original payloads, traces and result summaries may all contain model
+                    # echoes. Keep only a body-free failed terminal event for SSE completion.
+                    erased_result: dict[str, JsonValue] = {
+                        "status": "failed",
+                        "error": {
+                            "code": "privacy_erased",
+                            "message": "Design run erased for privacy.",
+                        },
+                    }
+                    await conn.execute(
+                        text(
+                            "UPDATE design_agent_run SET payload='{}'::jsonb, "
+                            "result_json=CAST(:result AS jsonb) "
+                            "WHERE workspace_id=:workspace AND run_id=:run"
+                        ),
+                        {
+                            "workspace": workspace_id,
+                            "run": row["run_id"],
+                            "result": json.dumps(erased_result),
+                        },
+                    )
+                    await conn.execute(
+                        text(
+                            "DELETE FROM run_event WHERE workspace_id=:workspace "
+                            "AND subject_kind='design_run' AND subject_id=:run"
+                        ),
+                        {"workspace": workspace_id, "run": row["run_id"]},
+                    )
+                    await emit_design_run_event(
+                        conn,
+                        workspace_id=workspace_id,
+                        design_run_id=row["run_id"],
+                        topic="design.run.failed",
+                        payload={
+                            "event_type": "privacy_erased",
+                            "data": {},
+                            "result": erased_result,
+                        },
+                    )
+                    await conn.execute(
+                        text(
+                            "INSERT INTO agent_privacy_event "
+                            "(event_id, workspace_id, subject_entity_id, turn_id, "
+                            "action, reason_code) VALUES "
+                            "(:event, :workspace, :subject, :turn, 'workspace_purged', :reason) "
+                            "ON CONFLICT (event_id) DO NOTHING"
+                        ),
+                        {
+                            "event": design_purge_ids[row["run_id"]],
+                            "workspace": workspace_id,
+                            "subject": subject_entity_id,
+                            "turn": row["turn_id"],
+                            "reason": reason_code,
+                        },
+                    )
 
         if keys:
             async with self._conn_factory() as conn:

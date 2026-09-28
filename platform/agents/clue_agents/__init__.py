@@ -20,6 +20,9 @@ from clue_agents.catalog import (
     SkillResource,
 )
 from clue_agents.context import (
+    IMAGE_TOKEN_ALLOWANCE,
+    AttachmentDescriber,
+    AttachmentDescription,
     CompiledContextCard,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
@@ -165,6 +168,7 @@ from clue_agents.versioned_root import (
     VersionedWriteRefused,
 )
 from clue_agents.workspace import (
+    ATTACHMENTS_DIR,
     LIBRARY_DIR,
     PROJECTS_DIR,
     THREADS_DIR,
@@ -188,6 +192,7 @@ from clue_agents.workspace_policy import (
 )
 
 __all__ = [
+    "IMAGE_TOKEN_ALLOWANCE",
     "AgentArtifactSink",
     "AgentArtifactReader",
     "AgentArtifactState",
@@ -230,6 +235,8 @@ __all__ = [
     "AnchoredAgentWorkspaceBackend",
     "ArtifactRef",
     "AssembledAgentContext",
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CatalogResourcePin",
     "ClueDeepAgentState",
     "CompiledContextCard",
@@ -286,6 +293,7 @@ __all__ = [
     "LayerBudget",
     "MemoryLayerSource",
     "ModelPolicy",
+    "ATTACHMENTS_DIR",
     "LIBRARY_DIR",
     "LibraryFile",
     "LibraryTree",

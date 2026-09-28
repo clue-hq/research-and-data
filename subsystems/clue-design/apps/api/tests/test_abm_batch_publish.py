@@ -30,7 +30,7 @@ import pytest
 from clue_storage import FsStorage
 from fastapi.testclient import TestClient
 
-from conftest import is_served, make_client, published_html
+from conftest import make_client
 
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from lumen_api.fragments.campaign_shell import CAMPAIGN_SHELL_FOOTER, CAMPAIGN_SHELL_HEADER
@@ -171,10 +171,10 @@ def test_the_batch_derives_and_publishes_one_page_per_account_and_says_which_car
         assert row["status"] == "published"
         assert row["document_id"]
         assert row["slug"].startswith("abm-")
-        assert row["url"].endswith(f"/{row['slug']}")
+        assert row["url"] == f"http://testserver/w/{workspace_id}/p/{row['slug']}"
         assert row["noindex"] is True
         assert row["error"] is None
-        assert is_served(workspace_id, row["slug"])
+        assert client.get(row["url"]).status_code == 200
     # R25-2: the manifest SAYS, per account, whether a logo was bound or the slot derived empty.
     assert rows[with_logo]["logo"] == {"bound": True, "asset_id": logo}
     assert rows[without_logo]["logo"] == {"bound": False, "reason": "no_logo_on_account"}
@@ -223,7 +223,7 @@ def test_a_bound_logo_reaches_the_published_account_page(
         json={"account_ids": [account], "publish": True, "abm": True},
     ).json()
 
-    page = published_html(workspace_id, body["manifest"][0]["slug"])
+    page = client.get(body["manifest"][0]["url"]).text
     assert f"/asset-store/{digest}" in page
     assert "Goodman Campbell" in page
 
@@ -276,7 +276,7 @@ def test_the_account_page_carries_the_robots_meta(
         json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
     ).json()
 
-    page = published_html(workspace_id, body["manifest"][0]["slug"])
+    page = client.get(body["manifest"][0]["url"]).text
     assert ROBOTS_META in page
 
 
@@ -302,7 +302,7 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     ordinary = client.post(f"/documents/{derived}/web/publish", json={"slug": "acme-home"})
     assert ordinary.status_code == 200, ordinary.text
 
-    page = published_html(workspace_id, "acme-home")
+    page = client.get(f"/w/{workspace_id}/p/acme-home").text
     assert "robots" not in page
     row = HybridRepository(workspace_id=workspace_id).get_web_publish("acme-home")
     assert "robots" not in (row.get("manifest") or {})
@@ -314,7 +314,7 @@ def test_an_ordinary_publish_is_byte_identical_to_what_it_was_before_this_task(
     kwargs = dict(
         blobs=blobs,
         slug="acme-home",
-        public_origin="http://testserver",
+        public_base="http://testserver",
         workspace_id=workspace_id,
         node_bin=app.state.web_export_node_bin,
     )
@@ -381,14 +381,14 @@ def test_a_plain_republish_of_an_abm_page_keeps_the_robots_meta(
         json={"account_ids": [_account(client, "Acme Health")], "publish": True, "abm": True},
     ).json()
     row = body["manifest"][0]
-    assert ROBOTS_META in published_html(workspace_id, row["slug"])
+    assert ROBOTS_META in client.get(row["url"]).text
 
     republished = client.post(
         f"/documents/{row['document_id']}/web/publish", json={"slug": row["slug"]}
     )
 
     assert republished.status_code == 200, republished.text
-    assert ROBOTS_META in published_html(workspace_id, row["slug"])
+    assert ROBOTS_META in client.get(row["url"]).text
     publish = HybridRepository(workspace_id=workspace_id).get_web_publish(row["slug"])
     assert publish["manifest"]["robots"] == "noindex"
 
@@ -409,12 +409,13 @@ def test_the_toolbelt_publish_tool_honors_the_durable_flag_without_being_asked(
         "design_publish_web",
         {
             "document_id": derived,
+            "public_base": "http://testserver",
             "slug": "tool-published",
         },
         workspace_id=workspace_id,
     )
 
-    assert ROBOTS_META in published_html(workspace_id, "tool-published")
+    assert ROBOTS_META in client.get(f"/w/{workspace_id}/p/tool-published").text
 
 
 def test_clearing_the_durable_flag_is_an_explicit_named_call_and_a_publish_cannot_do_it(
@@ -449,7 +450,7 @@ def test_clearing_the_durable_flag_is_an_explicit_named_call_and_a_publish_canno
         f"/documents/{row['document_id']}/web/publish", json={"slug": row["slug"]}
     )
     assert republished.status_code == 200, republished.text
-    assert ROBOTS_META not in published_html(workspace_id, row["slug"])
+    assert ROBOTS_META not in client.get(row["url"]).text
 
 
 def test_an_ordinary_document_is_born_un_stamped_and_publishes_exactly_as_before(
@@ -471,7 +472,7 @@ def test_an_ordinary_document_is_born_un_stamped_and_publishes_exactly_as_before
         == 200
     )
 
-    page = published_html(workspace_id, "plain-home")
+    page = client.get(f"/w/{workspace_id}/p/plain-home").text
     assert "robots" not in page
     assert "robots" not in (repo.get_web_publish("plain-home").get("manifest") or {})
 
@@ -527,7 +528,7 @@ def test_the_derived_page_publishes_because_it_has_no_markers_left(
     response = client.post(f"/documents/{derived}/web/publish", json={"slug": "abm-acme"})
 
     assert response.status_code == 200, response.text
-    page = published_html(workspace_id, "abm-acme")
+    page = client.get(f"/w/{workspace_id}/p/abm-acme").text
     assert "{{account." not in page
 
 
@@ -854,7 +855,8 @@ def test_an_unpublished_abm_batch_still_stamps_the_durable_flag(
     assert published.status_code == 200, published.text
     from lumen_api.web_export import ROBOTS_NOINDEX_META
 
-    assert ROBOTS_NOINDEX_META in published_html(workspace_id, "abm-later")
+    served = client.get(f"/w/{workspace_id}/p/abm-later")
+    assert ROBOTS_NOINDEX_META in served.text
 
 
 def test_rollback_refuses_to_serve_a_stamped_page_unindexed(
@@ -887,7 +889,7 @@ def test_rollback_refuses_to_serve_a_stamped_page_unindexed(
     assert "design_publish_rollback_would_unindex" in rolled.text
     from lumen_api.web_export import ROBOTS_NOINDEX_META
 
-    assert ROBOTS_NOINDEX_META in published_html(workspace_id, "abm-rollbk")
+    assert ROBOTS_NOINDEX_META in client.get(f"/w/{workspace_id}/p/abm-rollbk").text
 
 
 def test_rollback_of_two_unstamped_revisions_stays_available(

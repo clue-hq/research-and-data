@@ -17,6 +17,49 @@ fn parse(payload: String) -> Value {
     serde_json::from_str(&payload).expect("engine returns JSON")
 }
 
+#[test]
+fn explicit_same_text_tokens_survive_wasm_wire_replay_but_raw_edits_detach() {
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).unwrap();
+    let text = &mut scene["nodes"]["node_contact_name"]["kind"];
+    text["font_size"] = json!(16);
+    text["style_token"] = json!("type.display");
+    text["font_size_token"] = json!("type.size.7xl");
+    let mut engine = Engine::from_scene_json(&scene.to_string()).unwrap();
+    let mut kind = scene["nodes"]["node_contact_name"]["kind"].clone();
+    kind["font_size"] = json!(80);
+    let mut patch = node_transform_patch(0.0, 0.0);
+    patch["transform"] = json!({"kind": "unchanged"});
+    patch["kind"] = json!({"kind": "set", "value": kind});
+    patch["explicit_text_tokens"] = json!({"style": true, "font_size": true});
+    let operation = json!({"kind": "update_node", "node_id": "node_contact_name", "patch": patch});
+    let result = parse(engine.apply_operations(&json!([operation]).to_string()));
+    assert_eq!(result["ok"], true);
+    let applied = parse(engine.scene_json());
+    assert_eq!(
+        applied["nodes"]["node_contact_name"]["kind"]["font_size_token"],
+        "type.size.7xl"
+    );
+    let mut raw = operation;
+    raw["patch"]
+        .as_object_mut()
+        .unwrap()
+        .remove("explicit_text_tokens");
+    raw["patch"]["kind"]["value"]["font_size"] = json!(44);
+    let result = parse(engine.apply_operations(&json!([raw]).to_string()));
+    assert_eq!(result["ok"], true);
+    let applied = parse(engine.scene_json());
+    assert_eq!(
+        applied["nodes"]["node_contact_name"]["kind"]["font_size"].as_f64(),
+        Some(44.0)
+    );
+    assert!(applied["nodes"]["node_contact_name"]["kind"]
+        .get("style_token")
+        .is_none());
+    assert!(applied["nodes"]["node_contact_name"]["kind"]
+        .get("font_size_token")
+        .is_none());
+}
+
 fn transform(x: f64, y: f64) -> Value {
     json!({
         "x": x,
@@ -313,10 +356,101 @@ fn set_measurements_makes_hug_text_geometry_skia_faithful() {
     assert_ne!(after, before, "heuristic width should be replaced");
     assert_eq!(after, 350.0, "computed width is the injected Skia width");
 
+    // Legacy standalone reconcile/undo can replace geometry without changing
+    // its text measurement signature, so it will not reinject these metrics.
+    let original = scene.to_string();
+    scene["nodes"]["node_contact_name"]["transform"]["x"] = json!(84.0);
+    engine.load_scene(&scene.to_string()).expect("reconcile loads");
+    assert_eq!(node_computed_width(&engine, "node_contact_name"), 350.0);
+    assert_eq!(
+        parse(engine.scene_json())["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["x"],
+        84.0
+    );
+    engine.load_scene(&original).expect("undo snapshot loads");
+    assert_eq!(node_computed_width(&engine, "node_contact_name"), 350.0);
+
     // Clearing the override returns to the heuristic width.
     let clear = parse(engine.set_measurements("[]"));
     assert_eq!(clear["ok"], true);
     assert_eq!(node_computed_width(&engine, "node_contact_name"), before);
+}
+
+#[test]
+fn measurement_ack_returns_unmet_layout_inputs_and_clears_them_after_shaping() {
+    let mut engine = Engine::from_scene_json(MINIMAL_SCENE).expect("scene loads");
+    let unconstrained = json!({
+        "content": "Dr. Priya Sharma", "font_family": "Inter",
+        "font_size": 18.0, "font_weight": 600, "line_height": 1.2,
+        "letter_spacing": 0.0, "wrap": "wrap", "max_lines": null,
+        "direction": "ltr", "width": 150.0, "height": 21.6
+    });
+    let ack = parse(engine.set_measurements(&json!([unconstrained]).to_string()));
+    let missing = ack["missing"]
+        .as_array()
+        .expect("report unmet shaping requests");
+    assert!(
+        missing
+            .iter()
+            .all(|input| input["node_id"] == "node_contact_name"),
+        "slot fixtures must retain their source node styling: {ack}"
+    );
+    assert!(
+        missing.iter().any(|input| {
+            input["content"] == "Dr. Priya Sharma"
+                && input["max_width"] == 160.0
+                && input["max_height"] == 28.0
+        }),
+        "the request is the engine's actual constraint, not an inferred container width: {ack}"
+    );
+    let mut filled = vec![unconstrained];
+    for input in missing {
+        let mut measured = input.clone();
+        measured["width"] = json!(150.0);
+        measured["height"] = json!(21.6);
+        filled.push(measured);
+    }
+    let shaped = parse(engine.set_measurements(&json!(filled).to_string()));
+    assert_eq!(shaped["missing"], json!([]));
+}
+
+#[test]
+fn provided_lines_place_text_lines_and_narrow_the_hit_target() {
+    // Plan 4 item F: `node_contact_name` is a fixed 160×28 box at (24,40) on
+    // the minimal scene. A record keyed on that box (the key
+    // `validate_text_nodes` measures with) carries ONE 60-wide line, so the
+    // box's empty right half no longer hits the text.
+    let mut engine = Engine::from_scene_json(MINIMAL_SCENE).expect("minimal scene loads");
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma",
+        "font_family": "Inter",
+        "font_size": 18.0,
+        "font_weight": 600,
+        "line_height": 1.2,
+        "letter_spacing": 0.0,
+        "wrap": "wrap",
+        "max_lines": null,
+        "direction": "ltr",
+        "max_width": 160.0,
+        "max_height": 28.0,
+        "width": 60.0,
+        "height": 21.6,
+        "lines": [{ "x": 0.0, "y": 0.0, "width": 60.0, "height": 21.6, "baseline": 17.0 }]
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["text_lines"],
+        json!([{ "x": 24.0, "y": 40.0, "width": 60.0, "height": 21.6 }])
+    );
+    // Inside the box, right of the painted line: nothing (the page has no
+    // other child).
+    let miss = parse(engine.hit_test("page_a4", 150.0, 50.0));
+    assert_eq!(miss["hit"], Value::Null, "{miss:#?}");
+    // On the glyphs.
+    let hit = parse(engine.hit_test("page_a4", 30.0, 50.0));
+    assert_eq!(hit["hit"], "node_contact_name");
 }
 
 fn node_computed_width(engine: &Engine, node_id: &str) -> f64 {
@@ -494,4 +628,31 @@ fn refreshed_computed_never_enters_authored_operations() {
             "authored op leaked a computed geometry write: {op:#?}"
         );
     }
+}
+
+#[test]
+fn fixed_width_hug_text_takes_the_editor_height_measured_at_its_width() {
+    // Ruling R8: `node_contact_name` fixed 160 wide, hug height. The editor's
+    // line pass keys its record on `max_width = 160` with no height; that is
+    // now the key the manual path measures with, so the injected height lands.
+    let mut scene: Value = serde_json::from_str(MINIMAL_SCENE).expect("scene json");
+    scene["nodes"]["node_contact_name"]["size"] =
+        json!({ "width": { "kind": "fixed", "value": 160.0 }, "height": { "kind": "hug" } });
+    let mut engine = Engine::from_scene_json(&scene.to_string()).expect("scene loads");
+    let measurements = json!([{
+        "content": "Dr. Priya Sharma", "font_family": "Inter", "font_size": 18.0, "font_weight": 600,
+        "line_height": 1.2, "letter_spacing": 0.0, "wrap": "wrap", "max_lines": null, "direction": "ltr",
+        "max_width": 160.0, "width": 100.0, "height": 99.0
+    }]);
+    let ack = parse(engine.set_measurements(&measurements.to_string()));
+    assert_eq!(ack["ok"], true, "{ack:#?}");
+    let scene: Value = serde_json::from_str(&engine.scene_json()).expect("scene");
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["height"],
+        99.0
+    );
+    assert_eq!(
+        scene["nodes"]["node_contact_name"]["computed"]["layout_bounds"]["width"],
+        160.0
+    );
 }

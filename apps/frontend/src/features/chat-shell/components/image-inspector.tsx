@@ -9,8 +9,10 @@ import { PAGELESS_SCENE_NOTICE } from "@/features/design-editor/adapter/scene-pa
 import type { ScenePalette } from "@/features/design-editor/adapter/scene-palette";
 import type { AlignMode } from "@/features/design-editor/engine/scene/alignDistribute";
 import type { SceneArrangeBinding } from "@/features/design-editor/hooks/use-scene-arrange";
+import type { SceneAssetLibraryBinding } from "@/features/design-editor/hooks/use-scene-asset-library";
 import type { ChatShellInspectorSelection } from "../model/chat-shell";
 import {
+  dispatchInspectorEvent,
   useInspectorController,
   useInspectorLayerTree,
   type HorizontalAlignment,
@@ -28,6 +30,7 @@ import {
   InspectorLayerRow,
   InspectorSection,
   InspectorSelect,
+  InspectorTextArea,
   RadiusControls,
 } from "./inspector-primitives";
 import styles from "./chat-shell.module.css";
@@ -333,6 +336,8 @@ function AdTextInspector({
   // A hydrated weight is a real one and wins; a node whose weight is off the
   // nine-name ramp hydrates none (AD2.4) and keeps this default.
   const initial = { fontWeight: "600 Semi Bold", ...hydrated };
+  const typographyUnavailable = hydrated?.typographyUnavailable === true;
+  const typographyInert = inert || typographyUnavailable;
   const controller = useInspectorController([], "text", initial, addressing, {
     // AD4.R: live only when a real scene is behind the panel — the dummy
     // fixture path (no hydration) stays the interactive mock it shipped as.
@@ -377,17 +382,36 @@ function AdTextInspector({
   return (
     <>
       <Section id="typography" label="Typography" open={state.openSections.typography} toggle={() => toggleSection("typography")}>
-        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} fixtureFallback={false} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
-        <InspectorField label="Font"><InspectorSelect disabled={inert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={state.fontFamily} /></InspectorField>
+        {/* Rung A (rich-text plan, 2026-08-24): what the node SAYS, first —
+            every other row on this panel styles text the user could not edit.
+            It COMMITS ON BLUR/⌘-Enter (`InspectorTextArea`), never per
+            keystroke: a per-keystroke content field would persist one document
+            version and one undo step per letter.
+
+            The guard shape is the Alt-text row's, verbatim: `inspectorDisabled`
+            rides as its OWN line so the locked half stays the literal
+            `if (!locked)` the A29 pin reads. The field is natively disabled, so
+            this is the programmatic-blur backstop. */}
+        <InspectorField label="Text">
+          <InspectorTextArea
+            ariaLabel="Text content"
+            disabled={inert}
+            onCommitValue={(value) => { if (inspectorDisabled) return; if (!locked) setValue("content", value); }}
+            value={state.content}
+          />
+        </InspectorField>
+        <InspectorField label="Color"><ColorControl color={colorRow.color} disabled={inert} onColorChange={colorRow.onColorChange} onTokenChange={colorRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Font"><InspectorSelect disabled={typographyInert} label="Font family" onChange={(value) => setValue("fontFamily", value)} options={fontOptions} value={typographyUnavailable ? "" : state.fontFamily} /></InspectorField>
         <div className={styles.fieldGrid}>
           {/* §2 delta (contract row 2): the size select becomes a free number. */}
-          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" disabled={inert} onCommitValue={(value) => setValue("fontSize", value)} value={state.fontSize} /></InspectorField>
-          <InspectorField label="Weight"><InspectorSelect disabled={inert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={state.fontWeight} /></InspectorField>
+          <InspectorField label="Size"><InspectorInput ariaLabel="Font size" disabled={typographyInert} onCommitValue={(value) => setValue("fontSize", value)} value={typographyUnavailable ? "" : state.fontSize} /></InspectorField>
+          <InspectorField label="Weight"><InspectorSelect disabled={typographyInert} label="Font weight" onChange={(value) => setValue("fontWeight", value)} options={FONT_WEIGHT_OPTIONS} value={typographyUnavailable ? "" : state.fontWeight} /></InspectorField>
         </div>
+        {typographyUnavailable ? <p className={styles.inspectorStatusNote} role="status">Brand typography is unavailable. If this persists, reload to try again.</p> : null}
         <InspectorField label="Alignment"><TextAlignment disabled={inert} horizontal={state.horizontalAlignment} onHorizontalChange={(value) => setValue("horizontalAlignment", value)} onVerticalChange={(value) => setValue("verticalAlignment", value)} vertical={state.verticalAlignment} /></InspectorField>
       </Section>
       <Section id="stroke" label="Stroke" open={state.openSections.stroke} toggle={() => toggleSection("stroke")}>
-        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} fixtureFallback={false} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
+        <InspectorField label="Color"><ColorControl color={strokeRow.color} disabled={inert} onColorChange={strokeRow.onColorChange} onTokenChange={strokeRow.onTokenChange} options={paletteOptions} /></InspectorField>
         <InspectorField label="Width"><InspectorInput ariaLabel="Stroke width" disabled={inert} onCommitValue={(value) => setValue("strokeWidth", value)} value={state.strokeWidth} /></InspectorField>
       </Section>
       <Section id="layout" label="Layout" open={state.openSections.layout} toggle={() => toggleSection("layout")}>
@@ -398,6 +422,29 @@ function AdTextInspector({
           </div>
         </InspectorField>
         <InspectorField label="Rotation"><InspectorInput ariaLabel="Rotation" disabled={inert} onCommitValue={(value) => setValue("rotation", value)} suffix="°" value={state.rotation} /></InspectorField>
+        {/* Plan 4 item F: the one-click way out of a fixed height the copy
+            outgrew (the selection then outlines the glyphs and drops its
+            dashed frame). One property-change event, one write — two
+            `setValue` calls would be two document versions and the second
+            can be dropped by the one-in-flight write discipline. Dead while
+            the box already hugs. */}
+        <InspectorField label="Text box">
+          <button
+            className={styles.sharePrimaryButtonWide}
+            disabled={inert || state.heightMode === "Hug"}
+            onClick={() => {
+              if (inspectorDisabled || locked) return;
+              dispatchInspectorEvent(
+                "clue:inspector-property-change",
+                { property: "fitToText", selectionType: "text", value: "1" },
+                addressing,
+              );
+            }}
+            type="button"
+          >
+            Fit to text
+          </button>
+        </InspectorField>
       </Section>
       <Section id="arrange" label="Arrange" open={state.openSections.arrange} toggle={() => toggleSection("arrange")}>
         <ArrangeControls arrange={arrange} disabled={inert} onAction={(action) => requestAction(`arrange:${action}`)} />
@@ -565,7 +612,7 @@ function AdCanvasInspector({
           <BackgroundFillControl
             disabled={inspectorDisabled}
             fill={state.backgroundFill}
-            fixtureFallback={false}
+           
             onFillChange={changeBackgroundFill}
             onSolidColorChange={backgroundRow.onColorChange}
             onTokenChange={backgroundRow.onTokenChange}
@@ -863,6 +910,7 @@ function AdImageReviewTile({
 
 function AdImageInspector({
   addressing,
+  assetLibrary,
   hydrated,
   imageAi,
   inspectorDisabled = false,
@@ -871,6 +919,7 @@ function AdImageInspector({
   onSelectionChange,
   ...binding
 }: AdSchemaBinding & {
+  assetLibrary?: SceneAssetLibraryBinding;
   imageAi?: SceneImageAiBinding;
   onReplaceImage?: (file: File) => void | Promise<void>;
   onSelectionChange: (selection: ChatShellInspectorSelection) => void;
@@ -939,7 +988,11 @@ function AdImageInspector({
             landing after a mid-upload reload still repaints the thumbnail,
             because `InspectorImageUpload` follows the live value when it
             changes. */}
-        <InspectorField label="Image"><InspectorImageUpload disabled={inert} onFileSelect={onReplaceImage} src={state.imagePreviewSrc} /></InspectorField>
+        {/* Replace image, option A: with a live document behind it the pill is
+            a two-row chooser (upload, or the workspace asset library); the
+            dummy fixture path has no `assetLibrary`, so it keeps the direct
+            file dialog it shipped with. */}
+        <InspectorField label="Image"><InspectorImageUpload disabled={inert} onFileSelect={onReplaceImage} onOpenLibrary={assetLibrary?.open} src={state.imagePreviewSrc} /></InspectorField>
         <InspectorField label="Mode"><InspectorSelect disabled={inert} label="Image fill mode" onChange={(value) => setValue("fillMode", value)} options={FILL_MODES} value={state.fillMode} /></InspectorField>
         {/* §1.3 row 2 (AD4.A step 3): Alt text — the AI suite's one MANUAL
             row. Upstream has no alt-text generator, so this is an ordinary
@@ -1001,6 +1054,7 @@ function AdImageInspector({
 export function ImageInspector({
   addressing,
   arrange,
+  assetLibrary,
   error = null,
   fontOptions = DEFAULT_FONT_OPTIONS,
   hydrated,
@@ -1022,6 +1076,12 @@ export function ImageInspector({
    * dummy fixture path, leaves every one of those buttons exactly as it
    * shipped. */
   arrange?: SceneArrangeBinding;
+  /** Replace image, option A: the session's asset-library picker. Only the
+   * image schema reads it, and only `open` — the panel's job here is to OFFER
+   * the library as the pill's second source; the picker itself is the session's
+   * surface. Absent (the dummy fixture path) leaves "Replace image" the plain
+   * file-dialog button it shipped as. */
+  assetLibrary?: SceneAssetLibraryBinding;
   /** AD2.7: an inline write error. Same one-line floor the web branch renders
    * (the W3.3 founder gate forbids any new failure UI). */
   error?: string | null;
@@ -1154,9 +1214,10 @@ export function ImageInspector({
           ) : null}
           {selection === "canvas" ? <AdCanvasInspector pageless={pageless} {...schema} /> : null}
           {selection === "text" ? <AdTextInspector arrange={arrange} fontOptions={fontOptions} {...schema} /> : null}
-          {/* `onReplaceImage` and `imageAi` go to THIS schema alone — the rows
-              are §1.3's — the way `fontOptions` goes only to the text schema. */}
-          {selection === "image" ? <AdImageInspector imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
+          {/* `onReplaceImage`, `imageAi` and `assetLibrary` go to THIS schema
+              alone — the rows are §1.3's — the way `fontOptions` goes only to
+              the text schema. */}
+          {selection === "image" ? <AdImageInspector assetLibrary={assetLibrary} imageAi={imageAi} onReplaceImage={onReplaceImage} {...schema} /> : null}
           {dummySelection ? <AdDummyInspector arrange={arrange} selection={selection} suppressAutoLayoutSection={suppressAutoLayoutSection} {...schema} /> : null}
           {/* `"button"` is deliberately absent from this list: with its schema
               hidden (row 7) it falls through to the canvas default. */}

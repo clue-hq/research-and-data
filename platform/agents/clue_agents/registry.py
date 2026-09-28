@@ -33,6 +33,7 @@ from clue_agents.resources import (
     AgentResourceSnapshot,
     ResourceBody,
     build_agent_resource_manifest,
+    render_skill_references,
 )
 
 __all__ = [
@@ -233,7 +234,7 @@ class ResolvedAgentProfile:
 
         for skill in self.skills:
             if skill.ref.address == address:
-                return skill.body
+                return render_skill_references(skill.body, self.resource_manifest.skills)
         raise AgentCatalogError(f"skill {address!r} is not disclosed by this profile")
 
     @property
@@ -417,6 +418,7 @@ class AgentProfileRegistry:
         selected_profile_versions: Mapping[AgentRole, str] | None = None,
         tool_inventory: Sequence[AgentToolContract] = (),
         surface_policies: Sequence[AgentSurfacePolicy] = (),
+        required_roles: frozenset[AgentRole] = _REQUIRED_ACTIVE_ROLES,
     ) -> None:
         self._prompts = prompts
         self._skills = skills
@@ -454,7 +456,7 @@ class AgentProfileRegistry:
                         f"selected profile {role.value!r}@{version} is not uniquely active"
                     )
                 active[role] = candidates[0]
-        missing = _REQUIRED_ACTIVE_ROLES - set(active)
+        missing = required_roles - set(active)
         if missing:
             raise AgentCatalogError(
                 f"required active roles have no profile: {sorted(role.value for role in missing)}"
@@ -665,7 +667,7 @@ class AgentProfileRegistry:
         return ResolvedAgentProfile(
             profile=profile,
             profile_ref=resource.ref,
-            prompt_body=prompt.body,
+            prompt_body=render_skill_references(prompt.body, manifest.skills),
             resource_manifest=manifest,
             resource_snapshot=snapshot,
             memory_policy=definition.memory_policy,

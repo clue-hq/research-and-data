@@ -174,6 +174,7 @@ export const nickFisherFixture: AccountContactDetail = {
   reports: [vari],
   overviewParagraphs: zafranSpecContent.contactDisplay.sections[0]!.items[0]!.body.map((sentence) => sentence.text),
   evidence: [],
+  customFields: [],
   researchEvidence: [...zafranSpecContent.evidence, {
     ...zafranResearchEvidence.find((record) => record.claimId === "ashby-bdr-role")!,
     claimId: "nick-location",
@@ -202,17 +203,18 @@ function compactDetail(
   const display: ResearchDisplayBlock = {
     page: "contact",
     sections: [
-      { key: "why-this-person", h1: "Why this person", empty: personItems.length === 0, defaultOpen: true, restricted: false, items: personItems },
+      { key: "why-this-person", h1: "Why this person", empty: personItems.length === 0, defaultOpen: true, pending: false, restricted: false, items: personItems },
       ...relatedSections,
       // Ruling R10: "Account context" is fixture-only — it exists so the four
       // non-Nick pages have the spec's content. Production sections come from
       // `contactDisplay` alone, and no component switches on this key.
       {
-        key: "account-context", h1: "Account context", empty: false, defaultOpen: false, restricted: false,
+        key: "account-context", h1: "Account context", empty: false, defaultOpen: false, pending: false, restricted: false,
         items: zafranSpecContent.overviewDisplay.sections.filter((section) => !section.restricted)
           .flatMap((section) => section.items).filter((item) => item.contactRefs.some((ref) => ref.contactId === summary.id)),
       },
       { ...zafranSpecContent.overviewDisplay.sections.find((section) => section.key === "watch-outs")!, key: "do-not-mention", h1: "Do not mention" },
+      { ...zafranSpecContent.contactDisplay.sections.find((section) => section.key === "miscellaneous")! },
     ].map((section) => ({ ...section, empty: section.items.length === 0, emptyMessage: `No ${section.h1.toLowerCase()} information found for ${summary.name}.` })),
   };
   return {
@@ -228,7 +230,8 @@ function compactDetail(
     reports: [],
     overviewParagraphs: personItems.flatMap((item) => item.body.map((sentence) => sentence.text)),
     evidence: [],
-    researchEvidence: zafranSpecContent.evidence,
+    customFields: [],
+  researchEvidence: zafranSpecContent.evidence,
     contactDisplay: display,
     lastModifiedAt: latestVerifiedAt(display, zafranSpecContent.evidence),
   };

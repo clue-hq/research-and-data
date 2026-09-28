@@ -56,6 +56,11 @@ RECEIPT_REFERENCE_VALUES_MAX_BYTES = 16_384
 #: still leaves the receipt's envelope room and a spilled read is the honestly-oversized one.
 SPILL_THRESHOLD_BYTES = 12 * 1024
 
+# A trusted composition root may authorize a larger per-run budget than a profile default. The
+# operator settings (``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``, ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``)
+# carry the same upper bound, so a value this refuses is refused at start-up instead.
+MAX_RUNTIME_MODEL_ROUNDS = 500
+
 #: How much of a spilled result's prose the stub is allowed to keep.  Enough for the model to
 #: recognise what it asked for; far too little to be mistaken for the result itself.
 _SPILL_SUMMARY_MAX_CHARS = 300
@@ -79,10 +84,11 @@ class AgentPlanPolicy(_Value):
     max_dependency_depth: int = Field(ge=1, le=64)
     max_fanout: int = Field(ge=1, le=32)
     max_parallelism: int = Field(ge=1, le=32)
-    max_rounds: int = Field(ge=1, le=128)
+    max_rounds: int = Field(ge=1, le=MAX_RUNTIME_MODEL_ROUNDS)
     max_delegations: int = Field(ge=0, le=32)
     max_delegation_depth: int = Field(ge=0, le=4)
     budget_limit_millicents: int = Field(ge=0)
+    budget_mode: Literal["enforced", "record_only"] = "enforced"
 
     @classmethod
     def from_profile(
@@ -90,6 +96,7 @@ class AgentPlanPolicy(_Value):
         profile: AgentProfile,
         *,
         budget_limit_millicents: int,
+        budget_mode: Literal["enforced", "record_only"] = "enforced",
         max_dependency_depth: int = 16,
         max_fanout: int = 8,
         max_parallelism: int = 8,
@@ -104,6 +111,7 @@ class AgentPlanPolicy(_Value):
             max_delegations=profile.max_delegations,
             max_delegation_depth=profile.max_delegation_depth,
             budget_limit_millicents=budget_limit_millicents,
+            budget_mode=budget_mode,
         )
 
 

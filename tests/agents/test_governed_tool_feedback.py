@@ -287,8 +287,8 @@ def test_a_retry_is_a_new_operation_and_cannot_collide_with_the_refused_one() ->
     assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
 
 
-def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The repair budget is spent, and then the wrapper raises exactly as it always did.
+def test_an_eleventh_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The complete eleventh failed batch stops the next model call.
 
     ``DeepAgentTurnRuntime`` already caps the graph at ``max_rounds * 2 + 4`` supersteps, so this
     budget is not what makes the loop terminate — it is what stops the turn paying for ~24 further
@@ -301,9 +301,9 @@ def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch)
         "log",
         SimpleNamespace(warning=lambda event, **fields: emitted.append((event, fields))),
     )
-    execution = _RefusingExecution(refusals=9)
+    execution = _RefusingExecution(refusals=11)
     outcome, calls = _run(
-        tuple(_route_call(f"route-{ordinal}") for ordinal in range(4)),
+        tuple(_route_call(f"route-{ordinal}") for ordinal in range(11)),
         execution=execution,
     )
 
@@ -311,14 +311,14 @@ def test_a_fourth_refusal_fails_the_turn_closed(monkeypatch: pytest.MonkeyPatch)
     assert outcome.failure_code == "runtime_error"
     assert outcome.finalization_ref is None
     assert execution.envelopes == []
-    # Three visible repairs, then the fourth refusal ends the turn: four model calls, no more.
-    assert len(calls.batches) == 4
-    assert [event for event, _ in emitted] == ["agent.tool_repair"] * 4
-    assert [fields["attempt"] for _, fields in emitted] == [1, 2, 3, 4]
-    assert [fields["exhausted"] for _, fields in emitted] == [False, False, False, True]
+    # Ten corrective rounds are allowed; the eleventh failed batch exhausts them.
+    assert len(calls.batches) == 11
+    assert [event for event, _ in emitted] == ["agent.tool_repair"] * 11
+    assert [fields["attempt"] for _, fields in emitted] == list(range(1, 12))
+    assert [fields["exhausted"] for _, fields in emitted] == [False] * 10 + [True]
     # W10 spares only an effect-free read refused by precondition; a write refused on its value
-    # still pays, so every one of these four spends the budget.
-    assert [fields["budgeted"] for _, fields in emitted] == [True] * 4
+    # still pays, so every one of these eleven spends the budget.
+    assert [fields["budgeted"] for _, fields in emitted] == [True] * 11
     assert emitted[0][1]["error_type"] == "ValueError"
     assert emitted[0][1]["reasons"] == [f"ValueError: {_VERIFIER_REFUSAL}"]
 
@@ -422,3 +422,108 @@ def test_honest_read_refusals_do_not_spend_the_repair_budget(
     assert [fields["budgeted"] for _, fields in emitted] == [False] * 5
     assert all(fields["exhausted"] is False for _, fields in emitted)
     assert len(calls.batches) == 6
+
+
+def test_seven_parallel_refusals_all_reach_the_next_model_round() -> None:
+    execution = _RefusingExecution(refusals=7)
+    batch = AIMessage(
+        content="", tool_calls=[_route_call(f"bad-{i}").tool_calls[0] for i in range(7)]
+    )
+    outcome, calls = _run(
+        (
+            batch,
+            _route_call("corrected", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 8
+    assert len(calls.batches) == 3
+    feedback = [m for m in calls.batches[1] if getattr(m, "type", None) == "tool"]
+    assert len(feedback) == 7
+    assert all(_VERIFIER_REFUSAL in str(m.content) for m in feedback)
+
+
+def test_failed_batch_preserves_successful_sibling_without_repeating_it() -> None:
+    execution = _RefusingExecution(refusals=7)
+    batch = AIMessage(
+        content="", tool_calls=[_route_call(f"sibling-{i}").tool_calls[0] for i in range(8)]
+    )
+    outcome, calls = _run(
+        (
+            batch,
+            _route_call("repair-only", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 9
+    feedback = [m for m in calls.batches[1] if getattr(m, "type", None) == "tool"]
+    assert len(feedback) == 8
+    assert sum(_VERIFIER_REFUSAL in str(m.content) for m in feedback) == 7
+
+
+def test_repair_round_state_survives_compaction_and_does_not_count_batch_twice() -> None:
+    from langchain_core.messages import ToolMessage
+
+    from clue_agents.tool_recovery import ToolRepairRoundsMiddleware
+
+    async def case():
+        middleware = ToolRepairRoundsMiddleware()
+        batch = _route_call("after-compaction")
+        state = {
+            "messages": [
+                batch,
+                ToolMessage(
+                    content='{"governed_repair_budgeted":true}', tool_call_id="after-compaction"
+                ),
+            ],
+            "tool_repair_turn": "None",
+            "tool_repair_rounds": 2,
+            "tool_repair_batch": ["archived-batch"],
+        }
+        update = await middleware.abefore_model(state, None)
+        assert update["tool_repair_rounds"] == 3
+        state.update(update)
+        assert await middleware.abefore_model(state, None) is None
+
+    run_async(case())
+
+
+def test_finalize_waits_for_sibling_results_instead_of_committing_mid_batch():
+    execution = _RefusingExecution(refusals=0)
+    batch = AIMessage(
+        content="",
+        tool_calls=[
+            _route_call("successful-work", quote=_ANSWER).tool_calls[0],
+            _finalize_call("premature", status="awaiting_input", user_message=_QUESTION).tool_calls[
+                0
+            ],
+        ],
+    )
+    outcome, calls = _run(
+        (batch, _finalize_call("settled", status="awaiting_input", user_message=_QUESTION)),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 1
+    assert len(execution.envelopes) == 1
+    assert len(calls.batches) == 2
+    assert "Call finalize_turn alone" in str(calls.batches[1][-1].content)
+
+
+def test_the_tenth_corrective_round_can_succeed() -> None:
+    execution = _RefusingExecution(refusals=10)
+    outcome, calls = _run(
+        (
+            *(_route_call(f"failed-{i}") for i in range(10)),
+            _route_call("tenth-correction", quote=_ANSWER),
+            _finalize_call("final", status="awaiting_input", user_message=_QUESTION),
+        ),
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.AWAITING_INPUT
+    assert len(execution.executed) == 11
+    assert len(calls.batches) == 12

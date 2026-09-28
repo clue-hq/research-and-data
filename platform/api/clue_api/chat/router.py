@@ -25,8 +25,7 @@ demarcation registry §2.2, and doing it here would mean editing another lane's 
 
 from __future__ import annotations
 
-import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -56,6 +55,7 @@ from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    submission_attachment_refs,
     submission_context_refs,
     turn_id_for_submission,
 )
@@ -66,14 +66,21 @@ from clue_api.arv2.icp_confirmation import (
     current_icp_document,
     pin_project_icp,
 )
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import PrincipalDependency, principal_from_request
+from clue_api.chat.attachments import (
+    AttachmentReferenceError,
+    ValidatedAttachment,
+    validated_attachment_refs,
+)
 from clue_api.chat.composer_context import (
+    PRESENTED_REF_TYPES,
     PROJECT_CONVERSATION_AGENT_PROFILE_ID,
     PROJECT_CONVERSATION_MODEL_ID,
     ComposerContextEntity,
     ContextReferenceError,
-    design_asset_ref_presentations,
+    context_ref_presentations,
     list_composer_context_entities,
     prepare_composer_context_entities,
     validated_context_refs,
@@ -106,8 +113,11 @@ from clue_api.chat.principal import (
 )
 from clue_api.chat.schemas import (
     AgentProfileOptionWire,
+    AttachmentRefRequest,
     ComposerContextEntityWire,
+    CreateBlankProjectRequest,
     CreateThreadRequest,
+    DesignArtifactAccountWire,
     DesignArtifactListItemWire,
     DesignArtifactListResponse,
     DesignArtifactResponse,
@@ -124,16 +134,18 @@ from clue_api.chat.schemas import (
     PrepareComposerContextRequest,
     PreparedComposerContextResponse,
     PreparedComposerContextWire,
+    ProjectActivityWire,
     ProjectBootstrapProjectWire,
     ProjectBootstrapResponse,
     ProjectBootstrapThreadWire,
     ProjectBootstrapWire,
+    ProjectDirectoryItemResponse,
+    ProjectDirectoryItemWire,
+    ProjectDirectoryResponse,
     ProjectShellResponse,
     ProjectShellWire,
-    RenameProjectRequest,
-    RenameProjectResponse,
-    RenameProjectWire,
     ResearchTaskListResponse,
+    SetProjectArchivedRequest,
     SidebarConversationWire,
     SidebarPageMeta,
     SidebarProjectsResponse,
@@ -143,6 +155,7 @@ from clue_api.chat.schemas import (
     ThreadResponse,
     TurnAcceptedResponse,
     TurnAcceptedWire,
+    UpdateProjectRequest,
     UpdateThreadRequest,
     gate_response_message,
     gate_wire,
@@ -174,14 +187,19 @@ from clue_design.documents import get_document as get_design_document
 from clue_design.errors import DesignNotFoundError
 from clue_obs import get_logger
 from clue_projections import (
+    DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
     DEFAULT_PROJECT_SIDEBAR_PAGE_SIZE,
     DEFAULT_THREAD_MESSAGE_PAGE_SIZE,
     DEFAULT_THREAD_PAGE_SIZE,
+    MAX_PROJECT_DIRECTORY_PAGE_SIZE,
     MAX_PROJECT_SIDEBAR_PAGE_SIZE,
     MAX_THREAD_MESSAGE_PAGE_SIZE,
     MAX_THREAD_PAGE_SIZE,
     InvalidCursorError,
+    ProjectDirectoryItemView,
     open_gate_kinds_for_threads,
+    project_directory_item,
+    project_directory_page,
     project_sidebar_page,
     thread_gates,
     thread_messages,
@@ -197,6 +215,7 @@ from clue_projections import (
 )
 from clue_research.icp import activate_icp_version
 from clue_spine import (
+    UNTITLED_PROJECT_NAME,
     confirm_project_product_set,
     create_project,
     current_project_product_set,
@@ -236,10 +255,18 @@ _REASON_STATUS: dict[str, tuple[int, str]] = {
     "project_not_found": (404, "PROJECT_NOT_FOUND"),
     "thread_not_found": (404, "THREAD_NOT_FOUND"),
     "thread_archived": (409, "THREAD_ARCHIVED"),
+    "project_archived": (409, "PROJECT_ARCHIVED"),
+    "project_running": (409, "PROJECT_RUNNING"),
+    # A system project is a scope anchor the directory never shows, so its refusal has to read
+    # like a missing row on this surface — naming it would disclose a project the human never
+    # filed. The tool's own reason code stays ``project_system`` for the journal.
+    "project_system": (404, "PROJECT_NOT_FOUND"),
+    "project_draft": (409, "PROJECT_DRAFT"),
+    "project_title_reserved": (422, "PROJECT_TITLE_RESERVED"),
+    "brand_not_found": (404, "BRAND_NOT_FOUND"),
 }
 
 _HOME_PROJECT_NAMESPACE = uuid5(NAMESPACE_URL, "clue-home-project-bootstrap")
-_UNTITLED_PROJECT = "Untitled project"
 _HOME_SUGGESTIONS = (
     "Find target accounts for our new campaign",
     "Research the buying committee for a target account",
@@ -252,7 +279,7 @@ def _framed(*parts: str) -> str:
 
 
 def _design_artifact_list_item(
-    project_id: str, document: Mapping[str, Any]
+    project_id: str, document: Mapping[str, Any], *, settings: Settings | None = None
 ) -> DesignArtifactListItemWire:
     """One gallery row, carrying only what the document itself records.
 
@@ -262,9 +289,33 @@ def _design_artifact_list_item(
     the document's own artifact type and page size ride the wire and a document
     that records neither yields ``None`` for both. A card then says nothing
     rather than something false; its name is its identity.
+
+    Spec 2026-09-19 §3.8: the document's account rides along too, in the artifacts
+    page's own shape, and stays ``None`` when the document names no account.
     """
 
     fields = design_document_card_fields(document)
+    account = (
+        DesignArtifactAccountWire(
+            id=str(document["account_id"]),
+            name=str(document["account_name"]),
+            domain=document["account_domain"],
+            logo_path=(
+                brandfetch_logo_url(
+                    str(document["account_domain"]), client_id=settings.brandfetch_client_id
+                )
+                if settings is not None and document.get("account_domain")
+                else None
+            ),
+            account_entity_id=(
+                None
+                if document["account_entity_id"] is None
+                else str(document["account_entity_id"])
+            ),
+        )
+        if document.get("account_id") is not None
+        else None
+    )
     return DesignArtifactListItemWire(
         id=str(document["id"]),
         project_id=project_id,
@@ -279,6 +330,7 @@ def _design_artifact_list_item(
         artifact_type=fields["artifact_type"],
         width_px=fields["width_px"],
         height_px=fields["height_px"],
+        account=account,
     )
 
 
@@ -292,19 +344,6 @@ def _home_project_id(*, workspace_id: str, idempotency_key: str) -> str:
             _framed(workspace_id, idempotency_key),
         ).hex
     )
-
-
-def _first_thread_title(message: str) -> str:
-    """Apply R0's exact Unicode-whitespace and 80-code-point title rule."""
-
-    normalized = re.sub(r"\s+", " ", message.strip())
-    if len(normalized) <= 80:
-        return normalized
-    prefix = normalized[:79]
-    boundary = prefix.rfind(" ")
-    if boundary > 0:
-        prefix = prefix[:boundary]
-    return prefix + "…"
 
 
 def chat_workspace_resolver(
@@ -603,6 +642,8 @@ def _context_entity_wire(entity: ComposerContextEntity) -> ComposerContextEntity
         secondary_label=entity.secondary_label,
         image_url=entity.image_url,
         version=entity.version,
+        account_id=entity.account_id,
+        account_name=entity.account_name,
     )
 
 
@@ -611,8 +652,9 @@ async def _validated_submission_context(
     *,
     workspace_id: str,
     refs: tuple[Any, ...],
-    design_leg_document_id: str | None = None,
+    design_leg_document_ids: tuple[str, ...] = (),
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
     requested = tuple(
         DomainObjectRef(
@@ -620,6 +662,7 @@ async def _validated_submission_context(
             object_type=ref.object_type,
             object_id=ref.object_id,
             version=ref.version,
+            note=ref.note,
         )
         for ref in refs
     )
@@ -628,8 +671,9 @@ async def _validated_submission_context(
             conn,
             workspace_id=workspace_id,
             refs=requested,
-            design_leg_document_id=design_leg_document_id,
+            design_leg_document_ids=design_leg_document_ids,
             storage=storage,
+            project_id=project_id,
         )
     except ContextReferenceError as exc:
         if exc.code == "CONTEXT_REF_LIMIT_EXCEEDED":
@@ -647,10 +691,44 @@ async def _validated_submission_context(
         ) from exc
 
 
-def _composer_capabilities() -> HomeComposerCapabilitiesWire:
+async def _validated_submission_attachments(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    refs: Sequence[AttachmentRefRequest],
+    settings: Settings,
+    storage: StorageBackend | None,
+) -> tuple[ValidatedAttachment, ...]:
+    """Prove a turn's attachment receipts, or refuse the turn. Never a partial acceptance."""
+
+    if refs and storage is None:
+        raise _refuse(
+            status_code=503,
+            code="CAPABILITY_UNAVAILABLE",
+            message="this deployment has no artifact storage for attachments",
+        )
+    try:
+        return await validated_attachment_refs(
+            conn,
+            workspace_id=workspace_id,
+            refs=refs,
+            settings=settings,
+        )
+    except AttachmentReferenceError as exc:
+        status_code = {
+            "ATTACHMENT_NOT_FOUND": 404,
+            "ATTACHMENT_LIMIT_EXCEEDED": 422,
+            "ATTACHMENT_DUPLICATE": 422,
+        }.get(exc.code, 409)
+        raise _refuse(status_code=status_code, code=exc.code, message=exc.message) from exc
+
+
+def _composer_capabilities(*, storage_available: bool) -> HomeComposerCapabilitiesWire:
+    """Attachments are offered exactly when this deployment can durably hold their bytes."""
+
     return HomeComposerCapabilitiesWire(
         context_refs=True,
-        attachments=False,
+        attachments=storage_available,
         agent_profile_selection=True,
     )
 
@@ -772,6 +850,69 @@ def build_chat_router(
             ) from exc
         return dict(result.references)
 
+    async def _directory_items(
+        workspace_id: str, views: Sequence[ProjectDirectoryItemView]
+    ) -> tuple[ProjectDirectoryItemWire, ...]:
+        """Dress a page of directory rows with their live conversation activity.
+
+        Two queries for the whole page, not two per card: the directory read already carried each
+        project's active thread ids, so the badges are counted over one gate read and one
+        running-turn read for the page.
+        """
+
+        thread_ids = tuple(t for view in views for t in view.thread_ids)
+        open_gates = await open_gate_kinds_for_threads(
+            workspace_id=workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        busy = await threads_running(
+            workspace_id=workspace_id,
+            thread_ids=thread_ids,
+            conn_factory=conn_factory,
+        )
+        return tuple(
+            ProjectDirectoryItemWire(
+                id=view.project_id,
+                title=view.title,
+                description=view.description,
+                href=f"/projects/{view.project_id}",
+                status=view.status,
+                pinned=view.pinned,
+                brand_id=view.brand_id,
+                product_id=view.product_id,
+                created_at=view.created_at.isoformat(),
+                updated_at=view.updated_at.isoformat(),
+                archived_at=(None if view.archived_at is None else view.archived_at.isoformat()),
+                activity=ProjectActivityWire(
+                    chats=view.chat_count,
+                    running=sum(1 for t in view.thread_ids if t in busy),
+                    needs_input=sum(1 for t in view.thread_ids if open_gates.get(t)),
+                ),
+            )
+            for view in views
+        )
+
+    async def _directory_item_or_404(
+        workspace_id: str, project_id: str
+    ) -> ProjectDirectoryItemWire:
+        """The one directory row, or the same not-found sentence the tools use.
+
+        The read applies the directory's lens, so a system anchor, a draft, and another tenant's
+        project are all 404 here — a caller cannot reach by id what the listing hides.
+        """
+
+        view = await project_directory_item(
+            workspace_id=workspace_id, project_id=project_id, conn_factory=conn_factory
+        )
+        if view is None:
+            raise _refuse(
+                status_code=404,
+                code="PROJECT_NOT_FOUND",
+                message="no such project in this workspace",
+            )
+        return (await _directory_items(workspace_id, (view,)))[0]
+
     # --- Home bootstrap ------------------------------------------------------------------------
 
     @router.get("/home")
@@ -779,8 +920,8 @@ def build_chat_router(
         """Return only the real, workspace-scoped inputs the Home composer may use.
 
         Context entries come from Lane C's governed workspace reads. The one advertised profile is
-        the promoted Head-of-ABM GPT-5.6 Terra profile; attachments remain unavailable because no
-        durable upload-receipt endpoint exists yet.
+        the promoted Head-of-ABM Grok 4.6 profile; attachments are offered exactly when this
+        deployment composed an artifact store to hold the uploaded bytes.
         """
 
         _require(who, PERMISSION_PROJECT_READ)
@@ -788,6 +929,7 @@ def build_chat_router(
             brands = await list_brands_for_workspace(conn, who.workspace_id)
             context_entities = await list_composer_context_entities(
                 conn,
+                settings=settings,
                 workspace_id=who.workspace_id,
             )
         return HomeResponse(
@@ -797,7 +939,7 @@ def build_chat_router(
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
                 suggestions=_HOME_SUGGESTIONS,
             )
         )
@@ -826,12 +968,6 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="creating a project requires an Idempotency-Key header",
                 )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
-                )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
 
             key = idempotency_key.strip()
@@ -849,7 +985,6 @@ def build_chat_router(
                 thread_id=thread_id,
                 idempotency_key=key,
             )
-            title = _first_thread_title(body.message)
             digest = content_address(body.message.encode())
 
             async with conn_factory() as conn:
@@ -876,6 +1011,13 @@ def build_chat_router(
                     refs=body.context_refs,
                     storage=storage,
                 )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
+                    storage=storage,
+                )
 
                 project = await get_project(conn, project_id)
                 if project is None:
@@ -884,13 +1026,12 @@ def build_chat_router(
                         project_id=project_id,
                         workspace_id=who.workspace_id,
                         brand_id=body.brand_id,
-                        name=_UNTITLED_PROJECT,
+                        name=UNTITLED_PROJECT_NAME,
                         status="active",
                     )
                 elif (
                     project.workspace_id != who.workspace_id
                     or project.brand_id != body.brand_id
-                    or project.name != _UNTITLED_PROJECT
                     or project.status != "active"
                 ):
                     raise _refuse(
@@ -904,11 +1045,15 @@ def build_chat_router(
                     thread_id=thread_id,
                     workspace_id=who.workspace_id,
                     project_id=project_id,
-                    title=title,
+                    title=None,
                     created_by_user_id=who.user_id,
                     created_via_membership_id=who.membership_id,
                 )
-                if thread.project_id != project_id or thread.title != title:
+                # The title is no longer part of the replay identity: it is born null, generated
+                # after the first completed turn, and may have been renamed by hand since (spec
+                # 2026-09-18-conversation-naming-design §4.6). The message digest on the
+                # submission is what proves the request is the same.
+                if thread.project_id != project_id:
                     raise _refuse(
                         status_code=409,
                         code="IDEMPOTENCY_CONFLICT",
@@ -927,12 +1072,19 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.project_id != project_id
                         or existing.thread_id != thread_id
                         or existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -978,6 +1130,7 @@ def build_chat_router(
                             message_sha256=captured.artifact_ref.sha256,
                             idempotency_key=key,
                             context_refs=context_refs,
+                            attachment_refs=attachments,
                             agent_profile_id=agent_profile_id,
                         )
                     except SubmissionConflict as exc:
@@ -1019,7 +1172,7 @@ def build_chat_router(
                     ),
                     thread=ProjectBootstrapThreadWire(
                         id=thread.id,
-                        title=title,
+                        title=thread.title,
                         href=href,
                         project_id=project_id,
                         created_at=thread.created_at.isoformat(),
@@ -1034,6 +1187,75 @@ def build_chat_router(
                     href=href,
                 )
             )
+
+    # Registered before ``GET /projects/{project_id}``: Starlette matches in registration order,
+    # so a literal path that a parametrised sibling would also match has to come first (the
+    # ``/projects/sidebar`` route below already relies on this).
+    @router.get("/projects")
+    async def project_directory_route(
+        who: PrincipalDep,
+        status: Annotated[Literal["active", "archived"], Query()] = "active",
+        limit: Annotated[
+            int,
+            Query(ge=1, le=MAX_PROJECT_DIRECTORY_PAGE_SIZE),
+        ] = DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
+        cursor: Annotated[str | None, Query()] = None,
+    ) -> ProjectDirectoryResponse:
+        """One keyset page of this workspace's marketing projects, pinned first."""
+
+        _require(who, PERMISSION_PROJECT_READ)
+        try:
+            page = await project_directory_page(
+                workspace_id=who.workspace_id,
+                status=status,
+                limit=limit,
+                cursor=cursor,
+                conn_factory=conn_factory,
+            )
+        except InvalidCursorError as exc:
+            raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
+        return ProjectDirectoryResponse(
+            data=await _directory_items(who.workspace_id, page.items),
+            meta=SidebarPageMeta(next_cursor=page.next_cursor),
+        )
+
+    @router.post("/projects/blank", status_code=201)
+    async def create_blank_project_route(
+        body: CreateBlankProjectRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> ProjectDirectoryItemResponse:
+        """Create an empty project the human named, with no thread and no turn.
+
+        The Idempotency-Key is **required**, as it is for the Home bootstrap: the project id is
+        derived from it, so a retried create returns the same project instead of a second one.
+        """
+
+        _require(who, PERMISSION_PROJECT_WRITE)
+        if not idempotency_key or not idempotency_key.strip():
+            raise _refuse(
+                status_code=400,
+                code="IDEMPOTENCY_KEY_REQUIRED",
+                message="creating a project requires an Idempotency-Key header",
+            )
+        key = idempotency_key.strip()
+        project_id = (
+            "prj_" + uuid5(_HOME_PROJECT_NAMESPACE, f"{who.workspace_id}:blank:{key}").hex[:24]
+        )
+        references = await _invoke(
+            "create_project",
+            {
+                "project_id": project_id,
+                "brand_id": body.brand_id,
+                "title": body.title,
+                "description": body.description,
+            },
+            who=who,
+            idempotency_key=f"blank-project:{key}",
+        )
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, str(references["id"]))
+        )
 
     @router.get("/projects/sidebar")
     async def project_sidebar_route(
@@ -1075,6 +1297,8 @@ def build_chat_router(
                     id=project.project_id,
                     title=project.title,
                     href=f"/projects/{project.project_id}",
+                    pinned=project.pinned,
+                    updated_at=project.updated_at.isoformat(),
                     conversations=tuple(
                         SidebarConversationWire(
                             id=thread.thread_id,
@@ -1135,7 +1359,10 @@ def build_chat_router(
                 project_id=project_id,
             )
         return DesignArtifactListResponse(
-            data=tuple(_design_artifact_list_item(project_id, document) for document in documents)
+            data=tuple(
+                _design_artifact_list_item(project_id, document, settings=settings)
+                for document in documents
+            )
         )
 
     @router.get("/projects/{project_id}/design-artifacts/{artifact_id}")
@@ -1209,10 +1436,13 @@ def build_chat_router(
                 if project is None
                 else await list_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                 )
             )
-        if project is None:
+        # A system project is the invisible per-brand scope anchor, not a project the human filed:
+        # the directory never lists it, so the shell must not serve it either.
+        if project is None or project.kind == "system":
             raise _refuse(
                 status_code=404,
                 code="PROJECT_NOT_FOUND",
@@ -1222,32 +1452,96 @@ def build_chat_router(
             data=ProjectShellWire(
                 id=project.project_id,
                 title=project.name,
+                description=project.description,
                 brand_id=project.brand_id,
                 product_id=project.product_id,
                 status=project.status,
+                pinned=project.pinned,
                 created_at=project.created_at.isoformat(),
+                updated_at=project.updated_at.isoformat(),
+                archived_at=(
+                    None if project.archived_at is None else project.archived_at.isoformat()
+                ),
                 context_entities=tuple(_context_entity_wire(entity) for entity in context_entities),
                 agent_profiles=_agent_profile_options(),
                 default_agent_profile_id=PROJECT_CONVERSATION_AGENT_PROFILE_ID,
-                composer_capabilities=_composer_capabilities(),
+                composer_capabilities=_composer_capabilities(storage_available=storage is not None),
             )
         )
 
     @router.patch("/projects/{project_id}")
-    async def rename_project_route(
+    async def update_project_route(
         project_id: str,
-        body: RenameProjectRequest,
+        body: UpdateProjectRequest,
         who: PrincipalDep,
         idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
-    ) -> RenameProjectResponse:
+    ) -> ProjectDirectoryItemResponse:
+        """Rename, re-describe and/or pin one project.
+
+        Two independent governed mutations dispatched from one body, the way
+        ``update_thread_route`` does it: any label edit — title, objective, or both — is one
+        ``update_project_details@1`` call, and the pin toggle is always its own
+        ``set_project_pinned@1`` call. They cannot share one call, because pinning an archived
+        project is allowed and relabelling one is not.
+
+        The route dispatches; it decides nothing. Every refusal here is the tool's:
+        ``update_project_details@1`` is what refuses ``project_archived`` (409) and
+        ``project_system`` (a 404 on this surface), and no status is inspected in this function.
+        The one read it does make is the current directory row, because a title-only edit must
+        keep the objective the human wrote and a description-only edit must keep the title —
+        ``update_project_details@1`` takes both labels together, so whichever one the body omits
+        has to be supplied from the row. ``_directory_item_or_404`` applies the directory's lens,
+        so that read also 404s a system anchor, a draft, or another tenant's project.
+
+        ``rename_project@1`` stays registered for replay and for the sidebar's contract history;
+        this surface no longer calls it.
+        """
+
         _require(who, PERMISSION_PROJECT_WRITE)
-        references = await _invoke(
-            "rename_project",
-            {"project_id": project_id, "title": body.title},
+        if body.title is not None or body.description is not None:
+            current = await _directory_item_or_404(who.workspace_id, project_id)
+            await _invoke(
+                "update_project_details",
+                {
+                    "project_id": project_id,
+                    "title": body.title if body.title is not None else current.title,
+                    "description": (
+                        body.description if body.description is not None else current.description
+                    ),
+                },
+                who=who,
+                idempotency_key=(None if idempotency_key is None else f"{idempotency_key}:details"),
+            )
+        if body.pinned is not None:
+            await _invoke(
+                "set_project_pinned",
+                {"project_id": project_id, "pinned": body.pinned},
+                who=who,
+                idempotency_key=(None if idempotency_key is None else f"{idempotency_key}:pinned"),
+            )
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, project_id)
+        )
+
+    @router.post("/projects/{project_id}/archive")
+    async def set_project_archived_route(
+        project_id: str,
+        body: SetProjectArchivedRequest,
+        who: PrincipalDep,
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> ProjectDirectoryItemResponse:
+        """Archive a project or restore it. Reversible, and never a delete."""
+
+        _require(who, PERMISSION_PROJECT_WRITE)
+        await _invoke(
+            "set_project_archived",
+            {"project_id": project_id, "archived": body.archived},
             who=who,
             idempotency_key=idempotency_key,
         )
-        return RenameProjectResponse(data=RenameProjectWire.model_validate(references))
+        return ProjectDirectoryItemResponse(
+            data=await _directory_item_or_404(who.workspace_id, project_id)
+        )
 
     @router.post("/projects/{project_id}/composer-context/prepare")
     async def prepare_project_composer_context_route(
@@ -1302,14 +1596,17 @@ def build_chat_router(
                     object_type=ref.object_type,
                     object_id=ref.object_id,
                     version=ref.version,
+                    note=ref.note,
                 )
                 for ref in body.context_refs
             )
             try:
                 prepared = await prepare_composer_context_entities(
                     conn,
+                    settings=settings,
                     workspace_id=who.workspace_id,
                     refs=requested,
+                    project_id=project_id,
                 )
             except ContextReferenceError as exc:
                 raise _refuse(
@@ -1497,14 +1794,15 @@ def build_chat_router(
         except InvalidCursorError as exc:
             raise _refuse(status_code=422, code="INVALID_CURSOR", message=str(exc)) from exc
         all_refs = tuple(ref for item in page.items for ref in item.refs)
-        has_design_assets = any(ref.object_type == "design_asset" for ref in all_refs)
-        if include is None and not has_design_assets:
+        has_presented = any(ref.object_type in PRESENTED_REF_TYPES for ref in all_refs)
+        if include is None and not has_presented:
             return message_list_response(page, thread_id=thread_id)
         async with conn_factory() as conn:
-            presentations = await design_asset_ref_presentations(
+            presentations = await context_ref_presentations(
                 conn,
                 workspace_id=who.workspace_id,
                 refs=all_refs,
+                storage=storage,
             )
             bodies = None
             if include is not None:
@@ -2216,12 +2514,6 @@ def build_chat_router(
                     code="IDEMPOTENCY_KEY_REQUIRED",
                     message="submitting a turn requires an Idempotency-Key header",
                 )
-            if body.attachment_refs:
-                raise _refuse(
-                    status_code=409,
-                    code="CAPABILITY_UNAVAILABLE",
-                    message="this deployment does not accept attachments",
-                )
             agent_profile_id = _selected_agent_profile_id(body.agent_profile_id)
             turn_id = turn_id_for_submission(
                 workspace_id=who.workspace_id,
@@ -2284,6 +2576,7 @@ def build_chat_router(
                         object_type=ref.object_type,
                         object_id=ref.object_id,
                         version=ref.version,
+                        note=ref.note,
                     )
                     for ref in body.context_refs
                 )
@@ -2315,10 +2608,17 @@ def build_chat_router(
                         workspace_id=who.workspace_id,
                         turn_id=turn_id,
                     )
+                    existing_attachments = await submission_attachment_refs(
+                        conn,
+                        workspace_id=who.workspace_id,
+                        turn_id=turn_id,
+                    )
                     if (
                         existing.message_sha256 != digest
                         or existing.agent_profile_id != agent_profile_id
                         or existing_context_refs != requested_context_refs
+                        or tuple(item.upload_id for item in existing_attachments)
+                        != tuple(ref.upload_id for ref in body.attachment_refs)
                     ):
                         raise _refuse(
                             status_code=409,
@@ -2347,13 +2647,35 @@ def build_chat_router(
                 # idempotent replay above is proved from its immutable receipt,
                 # so a design document advancing after acceptance cannot make
                 # the accepted turn unreplayable.
+                #
+                # Spec §3.7: one leg holds many documents, so the composer's design tags are
+                # validated against the leg's whole SET. A leg born before the join table was
+                # written falls back to its own pinned document.
+                design_leg_document_ids: tuple[str, ...] = ()
+                if open_leg is not None:
+                    design_leg_document_ids = tuple(
+                        str(row["document_id"])
+                        for row in await design_leg_dal.list_leg_documents(
+                            conn,
+                            workspace_id=who.workspace_id,
+                            leg_id=str(open_leg["id"]),
+                        )
+                    )
+                    if not design_leg_document_ids and open_leg.get("document_id"):
+                        design_leg_document_ids = (str(open_leg["document_id"]),)
                 context_refs = await _validated_submission_context(
                     conn,
                     workspace_id=who.workspace_id,
                     refs=body.context_refs,
-                    design_leg_document_id=(
-                        None if open_leg is None else open_leg.get("document_id")
-                    ),
+                    design_leg_document_ids=design_leg_document_ids,
+                    storage=storage,
+                    project_id=project_id,
+                )
+                attachments = await _validated_submission_attachments(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=body.attachment_refs,
+                    settings=settings,
                     storage=storage,
                 )
                 # Founder ruling 2026-08-19 (Slice B): on a budget-controls-disabled deployment,
@@ -2428,6 +2750,7 @@ def build_chat_router(
                         message_sha256=captured.artifact_ref.sha256,
                         idempotency_key=idempotency_key,
                         context_refs=context_refs,
+                        attachment_refs=attachments,
                         agent_profile_id=agent_profile_id,
                         # P3.1: the design-leg clarification echo (None on non-design turns;
                         # the Home bootstrap path never carries one — a first turn has no

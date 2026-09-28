@@ -1,10 +1,18 @@
 # Settings section — frontend ⇄ backend integration design
 
-**Status:** design for founder review, 2026-09-15. Nothing in this document is implemented.
-**Branch:** `research-streaming` (worktree `san-salvador`). **Founder:** Aryan.
+**Status (updated 2026-09-16):** implementation in progress. Profile/Workspace authority fixes,
+workspace Research fields registry/API, all research catalog callers, custom-value/evidence
+projections, and the Research fields management UI are implemented. The founder approved the
+interactive preview and reuse of Settings primitives; the visual gate is satisfied. Pages/Billing
+remain dummy frontends. Pages V1 contracts and generated-research acceptance remain open. Real
+invitation email receipt and acceptance are confirmed; the invitee's selected workspace/redirect
+and remaining membership lifecycle walk still need direct observation. The
+[completion plan](../plans/2026-09-16-settings-integration-completion.md) tracks these separately.
+**Original design branch:** `research-streaming` (worktree `san-salvador`).
+**Implementation branch:** `settings-page` (worktree `irvine`). **Founder:** Aryan.
 **Discussion record:** `_memory/2026-09-14-settings-integration-exploration.md` (committed as `9c1e791f9`).
-**Presentation truth:** the co-founder's dummy frontend, served at `http://localhost:3000/settings`,
-source at `/Users/aryankeshri/conductor/workspaces/clue-frontend/live-backend-v1` (branch
+**Presentation truth:** the co-founder's dummy frontend, originally served at `http://localhost:3000/settings`,
+historical source path `/Users/aryankeshri/conductor/workspaces/clue-frontend/live-backend-v1` (branch
 `integration/live-backend-v1`, commit `64232a0`, 2026-09-13). Its frontend-authored contract
 proposal is `docs/api-contracts/settings.md` in that checkout; Figma page `Settings-dev-ready`,
 node `1735:38951`.
@@ -12,10 +20,10 @@ node `1735:38951`.
 ## 1. What this integrates, and what it does not
 
 The dummy's Settings section has nine screens in two groups. Personal: Profile, Connections, MCP
-server. Admin: Workspace, Members, Integrations, Pages, Data model, Billing. This repo's
-`apps/frontend` has no settings feature, no `/settings` route, and no profile menu in the sidebar
-(`/settings` on the lane frontend is a 404). Every screen is lifted from the dummy verbatim and
-bound to real data at the repository seam, per `apps/frontend/docs/architecture/frontend.md` and
+server. Admin: Workspace, Members, Integrations, Pages, Data model, Billing. At the original
+exploration, `apps/frontend` had no Settings feature, route or profile menu; those now exist.
+The integration lifts screens from the dummy and binds the approved live sections to real data
+at the repository seam, per `apps/frontend/docs/architecture/frontend.md` and
 the presentation-truth rule: no invented screens, no raw backend strings in the UI.
 
 Founder rulings from the 2026-09-14 discussion fix the scope:
@@ -28,16 +36,19 @@ Founder rulings from the 2026-09-14 discussion fix the scope:
 | Connections, MCP server, Integrations | Lifted exactly as the dummy's inert "Coming soon" previews | Yes (static) |
 | Billing | Stays a dummy | Yes (static, see §8) |
 | Pages | Stays a dummy | Yes (static, see §8) |
-| Data model | Re-scoped with the co-founder to "Research fields" before anything is wired | Fully specified in §9; the build is gated on the redrawn frames |
+| Research fields | Approved preview replaces Data model; retain entity overview and old field links | Live management UI and backend implemented; generated-research acceptance pending |
 
 Two cross-cutting rulings apply to every editable field: **autosave on blur** with an ephemeral
 confirmation card, and **the sidebar shows the signed-in person's display name**, never a
 placeholder.
 
-Two assumptions are carried until the founder says otherwise (they were asked, not yet answered):
+Original assumptions and subsequent founder rulings:
 
-- **A1.** The Billing and Pages dummies get the same "Coming soon" overlay the dummy already uses
-  for Connections, so fixture numbers ("300 / 500 credits") are never read as real.
+- **A1 — superseded by latest founder follow-up, 2026-09-15.** Billing and Pages show their existing
+  dummy frontends without the "Coming soon" overlay. Pages is part of V1 and still awaits development;
+  the earlier permission to retain its overlay is withdrawn. Data model also remains clickable with
+  its original dummy until visual approval. That approval arrived on 2026-09-16; the live Research
+  fields screen replaces Fields, and old Display links redirect to Fields.
 - **A2.** The static "Clue workspace" caption under the person's name in the profile menu becomes
   the real workspace name (a data binding into an existing slot).
 
@@ -126,7 +137,7 @@ Response:
 
 ```json
 { "workspace_id": "ws_…", "name": "Insight Health AI",
-  "website": "https://insighthealth.ai", "logo_url": "/api/clue/design-public/asset-store/<digest>" }
+  "website": "https://insighthealth.ai", "logo_url": "/api/clue/design/assets/<asset_id>/bytes" }
 ```
 
 - `name` is `workspace.name`. Rename is a new spine function `rename_workspace(conn, workspace_id,
@@ -138,8 +149,8 @@ Response:
   response carries it as a plain string or null; a PATCH that includes `website` is refused with
   `400 FIELD_READ_ONLY`.
 - `logo_url` is the primary logo of the latest approved `design_brand_kit` for the workspace's
-  provisioning brand (`self_serve_provisioning.brand_id`), served through the existing public
-  asset-store proxy the brand-context page already uses; null when no kit or no logo exists, and
+  provisioning brand (`self_serve_provisioning.brand_id`), served through the existing authenticated
+  asset proxy used by the app; null when no kit or no logo exists, and
   the component then shows the designed briefcase icon. No upload.
 
 ### 3.3 Members
@@ -167,9 +178,11 @@ table shows:
 ] }
 ```
 
-- Members come from `workspace_membership` joined to `platform_user`; statuses `active` and
-  `suspended` render as `active`, `revoked` renders as `removed` (kept in the list so Re-admit has
-  something to act on), `invited` memberships (legacy state) render as `invited`. `joined_on` is
+- Members come from `workspace_membership` joined to `platform_user`; `active` renders as active.
+  **Founder ruling 2026-09-16:** `suspended` stays visibly Suspended and read-only, with no Re-admit
+  action. This supersedes the original active-state mapping. `revoked` renders as `removed` (kept
+  in the list so Re-admit has something to act on), `invited` memberships (legacy state) render as
+  `invited`. `joined_on` is
   `activated_at`'s date.
 - Pending invitations come from `workspace_invitation` with status `pending` and a future
   `expires_at`; `name` is null and the table shows the address. Accepted, revoked and expired
@@ -184,8 +197,8 @@ Invite (`POST …/invitations`): for each address, after validation and de-dupli
 as today), role, `invited_by_membership_id`, and `expires_at` 30 days out to match Clerk's
 one-month expiry; (2) asks Clerk to send the email (§4). The response lists one outcome per
 address: `sent`, `created_no_email` (§4, existing Clerk account), `already_member`,
-`already_invited`, `invalid`. Partial success is normal and the frontend shows one card per
-outcome class ("3 invitations sent", "1 already a member").
+`already_invited`, `invalid`. Partial success is normal and the frontend shows one aggregate confirmation card
+listing outcome counts ("3 invitations sent · 1 already a member").
 
 Revoke invitation: `revoke_workspace_invitation` plus Clerk's revoke of the matching Clerk
 invitation id (stored on our row, §5). Change role: `change_workspace_member_role`. Remove:
@@ -228,13 +241,20 @@ role and permissions.
 `public_metadata = { clue_invitation_id }`. Clerk sends the email from the Invitation template
 (branded in the Clerk dashboard under Customization, Emails). The Clerk invitation id is stored on
 our row so revocation can be mirrored. Limit: 100 creations per hour per instance; a `429` is
-surfaced as outcome `rate_limited` and the Clue row is still created (the admin can retry later;
-no automatic retry).
+surfaced as outcome `rate_limited` and the Clue row is still created. **Founder ruling 2026-09-16:**
+to retry a rate-limited or failed delivery, revoke the pending invitation and invite again. Keep
+that behavior; no automatic retry or resend action is required.
 
 **Landing.** Clerk sends the invitee to our redirect URL with its sign-up ticket appended. A new
 page `src/app/(auth)/invite/accept/page.tsx` runs Clerk's ticket sign-up through the existing
 onboarding auth driver (extended with the ticket strategy), which auto-verifies the address, then
 redirects to `/session/establish?invite=<token>`.
+
+**Live acceptance correction, 2026-09-16.** The configured Clerk instance requires a password.
+The invitation form therefore collects first name, last name and password; the adapter calls
+`signUp.create({strategy: "ticket", ticket, firstName, lastName, password})`, because Clerk v7's
+`ticket()` helper does not accept the password. Errors preserve entered values, and incomplete
+sign-ups never activate a session. Credentials remain inside the browser-to-Clerk flow.
 
 **Establishing.** `session/establish` gains one step: it calls `POST /auth/v1/invitations/accept`
 (with the token when present, without it otherwise) **before** resolving the protected session,
@@ -271,8 +291,9 @@ independently:
 - `workspace_field_definition`: the namespace CHECK widens from `client.%` to `client.%`,
   `account.%` or `contact.%`; the pack CHECK becomes "pack rows are `client`, research rows have
   `pack IS NULL` and a `field_class` of `account` or `contact`"; `promoted_from_proposal_id`
-  becomes nullable (its FK and UNIQUE tolerate nulls); `client_kb_role` admits the value
-  `research`; a nullable `label TEXT` column is added for the display name as typed.
+  becomes nullable (its FK and UNIQUE tolerate nulls); drop `pack NOT NULL`; `client_kb_role`
+  admits `research`; add nullable `label TEXT`. The UPDATE trigger permits only research
+  label/description changes with an exact version increment. Preserve all legacy Client-KB checks.
 - No change to `workspace_field_retirement`; retirement already keys on `(workspace_id, field_key)`.
 
 `alembic heads` stays single; `make db-smoke` on a throwaway database is the gate.
@@ -303,11 +324,17 @@ dummies by ruling, not a fallback for a failed read.
 
 ### 6.2 Page composition
 
+Responsive navigation ruling (2026-09-16): at widths up to 860px, collapse Settings navigation
+behind a sidebar icon beside the page heading. It opens the same vertical navigation in a left
+drawer; do not convert it into a horizontal top bar. Close on navigation, outside click or Escape,
+restore focus to the trigger, and dismiss the drawer when returning to the permanent desktop
+sidebar. Use the existing sidebar icon, dialog primitive and design tokens.
+
 The catch-all route parses the section, entity and view with the dummy's `SettingsRouteSchema`,
-loads only the section's data on the server (profile, workspace or members), and renders the
-lifted `SettingsScreen`. Connections, MCP server, Integrations, Billing and Pages render from the
-placeholder module, the first three under the dummy's existing overlay and the last two under the
-same overlay per assumption A1.
+loads only the section's data on the server (profile, workspace, members or the selected entity's
+research fields), and renders `SettingsScreen`. Connections, MCP server, Integrations, Billing and
+Pages render from the placeholder module. Only Connections, MCP server and Integrations retain the
+overlay. Research fields uses the live registry with the approved management UI (§9).
 
 ### 6.3 Autosave
 
@@ -365,9 +392,10 @@ than creating rows that no email will ever follow.
 
 ## 8. Static sections
 
-Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing and
-Pages are dummies by ruling; their data comes from the placeholder module and, under A1, they sit
-under the coming-soon overlay. Re-scope notes recorded for when they become real:
+Connections, MCP server and Integrations are the dummy's previews and stay inert. Billing and Pages
+expose their dummy frontends directly using the placeholder module. Pages remains
+in V1 scope; its backend integration is still pending. Re-scope notes recorded for when they become
+real:
 
 - **Billing.** Usage-only v1 over lane 3's cost read (`GET /cost/report`) once it merges: a plan
   record per workspace (name, included credits, expiry) set by the founders, credits derived from
@@ -379,7 +407,13 @@ under the coming-soon overlay. Re-scope notes recorded for when they become real
   brand kit rather than uploads; a fallback URL; head/body snippets with a security review; no
   custom domain, no indexing toggles, no llms.txt.
 
-## 9. Data model → Research fields: full specification (build gated on the redraw)
+## 9. Data model → Research fields: specification (design approved 2026-09-16)
+
+The founder approved the interactive preview on 2026-09-16. The live Research fields screen now
+replaces the dummy Data model and connects creation, editing and retirement to the existing scoped
+API. Accounts/Contacts overview and `/fields` links remain; old `/display` links redirect. Live
+create/edit/reload checks pass; retirement confirmation and generated-research acceptance are
+tracked separately in the completion plan.
 
 ### 9.1 What the page is
 
@@ -394,8 +428,8 @@ are a different thing (fit criteria for one motion).
 Kept from the dummy: the two-entity list (Accounts, Contacts), the per-entity fields table, the
 Create field button, the per-row ellipsis. Dropped: the Type, Editable by and AI fill columns, the
 Relationships tab, the Display tab, and Restore defaults. Added: a Description column, a Create
-field form, and a two-item row menu. The redraw the co-founder owes is exactly that list; §9.7
-names the two frames that do not exist yet.
+field form, and a row menu for editing the name/instruction and retiring the field. The founder-approved preview
+in §9.7 supplies the two required frames.
 
 ### 9.2 Rows
 
@@ -445,7 +479,7 @@ membership; the three writes require `workspace.manage_settings` (§2.3).
 
 **Create.** The key is derived from the label: lower-case, every run of non-alphanumerics becomes
 one underscore, leading and trailing underscores trimmed, prefixed by the entity's namespace
-(`account.` or `contact.`); a label that reduces to nothing is `400 LABEL_INVALID`. The description
+(`account.` or `contact.`); a label that reduces to nothing is `400 LABEL_INVALID`. The label is trimmed to 1–200 characters. The description
 is required, 1 to 2000 characters, because an instruction-less field cannot be researched. The
 key must not collide with a global key (`409 KEY_TAKEN`, message names the platform field) or
 with any workspace row including a retired one (`409 KEY_TAKEN`, message suggests appending a
@@ -474,12 +508,15 @@ table, which is exactly the cross-tenant leak §9 exists to avoid. The overlay i
 its `client.*`-only shape was the old dynamic Client-KB lane's policy, not a property of the
 substrate (the table is on the Phase-6 keep list as claim-store substrate).
 
-Changes, all additive:
+Changes to the shared registry:
 
 1. **Schema** (§5, second revision): namespace CHECK widened to `client.%`, `account.%`,
    `contact.%`; pack CHECK split so research rows carry `pack IS NULL` and `field_class` of
    `account` or `contact`; `promoted_from_proposal_id` nullable; `client_kb_role` admits
-   `research`; `label TEXT NULL` added.
+   `research`; `label TEXT NULL` added. Drop the old `pack NOT NULL` constraint.
+   Replace the UPDATE trigger with the narrow research-label/description/version guard; keep
+   Client-KB rows and research identity, scopes, shape and creator metadata immutable. A populated
+   downgrade refuses rather than deleting research definitions or claims.
 2. **`register_workspace_research_field(conn, *, workspace_id, entity, label, description,
    created_by)`**, a sibling of `register_workspace_field` that forces the research shape:
    `field_key` derived as in §9.3, `field_class` from `classify_field_key`, `value_type = "json"`,
@@ -488,33 +525,43 @@ Changes, all additive:
    project_neutral`, `product_scope = forbidden`, `client_kb_role = "research"`,
    `promotion_policy_version = "settings-v1"`, `promoted_by = "human:<user_id>"`,
    `promoted_from_proposal_id = NULL`, `presentation = "text"`. The global-collision check and the
-   workspace erasure guard are reused unchanged. The existing `register_workspace_field` keeps
-   its Client-KB contract untouched.
+   workspace erasure guard are reused. Global and workspace registration share a transaction
+   lock for each key and check collisions in both directions. Existing Client-KB shape stays intact.
 3. **`update_workspace_research_field(conn, *, workspace_id, field_key, label, description)`**:
-   an in-place `UPDATE` of the two display columns with `definition_version + 1`, refused for
-   `client_kb_role != 'research'`. The registry docstring's "immutable" wording gains the
-   sentence: a research field's label and description are editable because they are the human's
-   instruction, not the claim's shape.
+   partial label/description updates under a row lock, with exactly `definition_version + 1`
+   when text changes. No-op patches do not advance the version; disjoint patches preserve each
+   other. Refuse non-research and missing/retired rows. Immutable keys never change with labels.
 4. **The two catalog readers** (`clue_api/arv2/account_research_store.py`) take `workspace_id`
    and union the workspace's active, unretired research rows into the menu: `account.%` into the
-   account job's catalog, `contact.%` into the person job's. Both call sites already hold the
-   workspace id (`run.workspace_id` in the driver, `request.workspace_id` in the launch). The
+   account job's catalog, `contact.%` into the person job's. All three call sites supply the
+   workspace id: account and queued-person composition in the driver, plus direct person launch. The
    structuring prompt renders each menu entry as key plus description, so a workspace field is
    researched on the next job with no further change. The docstring "every registered account.*
    and core.* field, exactly as the registry holds it" stays true: the registry now holds them.
-5. **The lenient claim writer** needs no change: a workspace key is on the menu, so it is
-   never re-filed as proposed; and `check_claim_writable` resolves it through the overlay.
-6. **The accounts-list custom-column query** (`frontend_read/v1_shared.py`, `_CUSTOM_FIELDS_SQL`)
-   drops the `pack = 'client'` filter and selects `account.%` research rows for the account
-   pages, reading `label` for the column header (falling back to the key-derived label). The
-   accounts table already renders these as variable columns and needs no change. Contact research
-   fields have no designed slot on any contact screen; their claims are written and served on the
-   contact detail payload but stay invisible until the co-founder designs one (the standing rule).
+5. **The lenient claim writer's registry gate** distinguishes retired/erased workspace keys from
+   unknown fields. These refusals never trigger global proposed-field fallback. Shared definition
+   locks remain held through claim insertion; retirement takes a conflicting lock. Jobs already
+   composed keep their context, but subsequent writes after retirement refuse through the existing
+   per-draft failure receipts without discarding successful sibling claims.
+6. **Custom values and evidence** preserve the existing Client-KB columns and additionally select
+   populated active `account.%` research fields for accounts, using the label with a key fallback.
+   Contact research fields are served only in contact detail payloads through the existing use
+   policy; no new contact UI slot is introduced. Values carry `claimId`; evidence carries optional
+   `researchFieldKey`. The account detail reuses the existing source chip and Sources control.
+   Stored page citations and scoped custom claims authorize evidence without generation, including
+   retired fields. Erased fields and another workspace/subject remain refused.
 
 Recorded follow-up, not in scope: `_register_proposed_field` in the lenient writer still
 registers an agent-invented key in the **global** table. With the overlay accepting `account.*`
 and `contact.*` rows, proposed fields should be filed per workspace instead. That is a Track R
 change with its own review because it alters what every workspace's menu contains.
+
+**2026-09-16: detailed follow-up plan requested.** Track R is now covered by
+[Workspace-local agent-proposed research fields](../plans/2026-09-16-workspace-agent-proposed-fields.md):
+trusted registration, manager controls, namespaces/facets, historical global-definition containment,
+concurrency/lifecycle tests and versioned agent documentation. This is planning only; automatic
+global registration is still current. The [agent guidance](../../agents/research-field-scope.md)
+separates that behavior from prepared replacement instructions and their activation gates.
 
 ### 9.5 Frontend
 
@@ -549,7 +596,13 @@ Accounts with a real instruction, launch account research on one already-researc
 see the claim appear as a column in the accounts table with its evidence; then retire the field
 and see the column disappear while the account's evidence stays readable.
 
-### 9.7 Frames the co-founder owes before the build
+### 9.7 Frames required before the visual build
+
+The 2026-09-16 scheduling amendment permits backend/contract implementation ahead of these
+frames. The founder approved the interactive preview on 2026-09-16, authorizing composition with the
+existing Settings primitives. The approved design preserves the entity overview, renders origin/
+creator/date beneath Name, places Create inline above the table, uses in-place edits and retirement
+confirmation, and stacks field cells at narrow widths. The visual gate is satisfied.
 
 1. The **Research fields table** per entity: Name, Description, ellipsis; the Create field
    button in the existing toolbar position; the header without the Fields/Relationships/Display
@@ -579,7 +632,7 @@ revert-on-failure, the role display mapping).
 viewport, recorded under `.context/settings-acceptance/`. Any visual difference is a defect in the
 lift, not a design change.
 
-**Live walk on the san-salvador stack** (founder-driven, unseeded): sign in; open Settings from
+**Live walk on the isolated Irvine stack** (founder-driven, unseeded): sign in; open Settings from
 the profile menu; set a display name and see the sidebar change; rename the workspace; invite a
 second address you control, receive the Clerk email, accept it, and see the row move from Invited
 to a join date; change its role; remove it; re-admit it; revoke a pending invitation. Every step
@@ -591,19 +644,24 @@ must show its confirmation card, and every failure must show the envelope messag
 - A workspace-level home for the website and the rebuild-from-new-site flow.
 - Avatar upload (the design has no control; Clerk holds an image nobody shows).
 - Viewer role in the UI (a three-way dropdown is a later design request).
-- Billing and Pages: §8. Per-workspace filing of agent-proposed fields: §9.4 follow-up.
+- Billing integration stays outside this build. Pages is required for V1 but awaits its §8 contract
+  and completion-plan phase 8. Per-workspace filing of agent-proposed fields: §9.4 follow-up.
 - Migrating the two Clerk secrets into one shared secret store; today both processes read their
   own env.
 
 ## 12. Build order
 
+This is the original build order. The [2026-09-16 completion plan](../plans/2026-09-16-settings-integration-completion.md)
+records what already exists and the proposed remaining sequence, including concrete registry,
+retirement and evidence-access corrections discovered by tracing the current code.
+
 1. Migration and the email backfill path; profile read and PATCH; workspace read and rename.
 2. Frontend lift: feature, route, profile menu, confirmation card, autosave; Profile and Workspace
-   bound; static sections under the overlay; sidebar person from the profile read.
+   bound; static sections presented per §8; sidebar person from the profile read.
 3. Members read and the five management writes; Members screen bound, read-only for callers
    without the permission.
 4. Clerk invitation sending, the invite landing page, acceptance route, and the establish hook.
 5. Contract doc, `.env.example` parity, parity screenshots, live walk.
-6. **Gated on the two frames in §9.7:** the registry revision and `register_workspace_research_field`;
+6. **Visual gate satisfied by the approved preview (§9.7):** the registry revision and `register_workspace_research_field`;
    the two catalog readers taking `workspace_id`; the custom-column query; the four routes; the
    Research fields screen; the §9.6 live proof.

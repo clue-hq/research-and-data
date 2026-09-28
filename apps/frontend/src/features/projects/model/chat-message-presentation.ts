@@ -27,6 +27,16 @@ export function designReferenceThumbnailUrl(digest: string): string {
   return `/api/clue/design-public/asset-store/${digest}`;
 }
 
+/**
+ * Same-origin, authenticated byte route for one chat upload.
+ *
+ * An attachment ref names a content-addressed artifact key, which no browser may
+ * fetch directly; the upload id is the tenant-scoped handle the BFF will serve.
+ */
+export function chatUploadBytesUrl(uploadId: string): string {
+  return `/api/clue/frontend/v1/uploads/${encodeURIComponent(uploadId)}/bytes`;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -79,4 +89,18 @@ export function humanizeMessageBody(body: string): string {
     .replace(/\bworkspace_id\s*:\s*/gi, "Workspace: ")
     .replace(/\bgate_id\s*:\s*/gi, "Proposal: ")
     .replace(/\bexpected_subject_sha256\s*:\s*/gi, "");
+}
+
+/**
+ * A chip label that stays one line: names over `max` characters keep their
+ * head and their extension around an ellipsis (`long_name…txt`), so a file is
+ * still recognisable without the chip growing past the message. The full
+ * name stays on the chip's `title`.
+ */
+export function truncateAttachmentLabel(label: string, max = 60): string {
+  if (label.length <= max) return label;
+  const dot = label.lastIndexOf(".");
+  const ext = dot > 0 && label.length - dot <= 10 ? label.slice(dot + 1) : "";
+  const head = label.slice(0, Math.max(1, max - ext.length - 1));
+  return `${head}…${ext}`;
 }

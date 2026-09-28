@@ -7,10 +7,11 @@
 //! machinery Accept/Reject (0c) and future Compare/Revert ride on.
 
 use lumen_core::{
-    build_structured_edit_batch, layout_operations, layout_scene, AutoLayoutDirection,
-    AutoLayoutNode, AutoLayoutProps, Dimension, DocumentId, EditErrorKind, LayoutMode,
-    LayoutOptions, Node, NodeId, NodeKind, Operation, Orientation, Page, PageId, PagePreset,
-    PageSize, ParentRef, PositionMode, Rect, Scene, SizeSpec, StructuredEditInstruction, Unit,
+    build_freeze_layout, build_structured_edit_batch, layout_operations, layout_scene,
+    AutoLayoutDirection, AutoLayoutNode, AutoLayoutProps, Dimension, DocumentId, EditErrorKind,
+    LayoutAnchor, LayoutMode, LayoutOptions, Node, NodeId, NodeKind, Operation, Orientation, Page,
+    PageId, PagePreset, PageSize, ParentRef, PositionMode, Rect, Scene, SizeSpec,
+    StructuredEditInstruction, TextAlign, TextNode, TextWrap, Unit,
 };
 
 fn scene_with_page(width: f64, height: f64) -> Scene {
@@ -914,5 +915,583 @@ fn convert_to_free_bakes_the_containers_own_hug_dimension() {
         scene_json(&restored),
         before,
         "the convert inverse restores Hug exactly"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 2026-09-20 — freeze/bake parity for `fill` containers and hug-width text.
+//
+// The freeze bakes a node's Stack-solved extents so the Free mode the human
+// then edits in shows exactly what the solve showed. Two dimensions used to
+// escape that bake and re-resolve differently on the Free side:
+//
+//   * a CONTAINER's `fill` — the Stack solve treats a nested cross-axis `fill`
+//     as hug (the children are built with no definite parent size), while Free
+//     mode resolves `fill` against the parent's OUTER box, so a hugged pill row
+//     snapped to the artboard edge on the first grab;
+//   * a TEXT child's `hug` WIDTH — wrapped at the container width by the solve,
+//     it measures unbounded in Free mode and unwraps across the artboard.
+//
+// Every test below asserts the same three things: whole-scene zero motion, a
+// byte-identical inverse, and the specific dimension that must now be baked.
+// ---------------------------------------------------------------------------
+
+fn row_layout(id: &str, width: f64, height: f64, gap: f64) -> Node {
+    let mut node = auto_layout(id, width, height, gap);
+    node.kind = NodeKind::AutoLayout(AutoLayoutNode {
+        direction: AutoLayoutDirection::Row,
+        wrap: false,
+    });
+    node
+}
+
+/// Modelled on `tests/assets_pipeline.rs::text_node`, but wrapping — the
+/// heuristic measurer wraps at the available width, which is the whole point
+/// of the hug-width text cases below.
+///
+/// 20pt at the default 1.2 line-height ratio gives a whole-pixel 24.0 line
+/// box on purpose. The Stack solve reports taffy's whole-pixel ROUNDED
+/// geometry while the Free path natural-sizes unrounded, so a fractional
+/// line box makes a surviving Hug HEIGHT look like sub-pixel "motion" — a
+/// pre-existing rounding contract (`layout.rs` ~1187) that has nothing to do
+/// with what these tests pin.
+fn text(id: &str, content: &str, width: Dimension, height: Dimension) -> Node {
+    let mut node = Node::new(
+        NodeId::from(id),
+        NodeKind::Text(TextNode {
+            content: content.to_owned(),
+            font_family: "Inter".to_owned(),
+            font_size: 20.0,
+            font_weight: 600,
+            align: TextAlign::Left,
+            wrap: TextWrap::Wrap,
+            style_token: None,
+            ..TextNode::default()
+        }),
+    );
+    node.size = SizeSpec { width, height };
+    node
+}
+
+fn all_solved(scene: &Scene) -> Vec<(String, Rect)> {
+    let ids = scene
+        .nodes
+        .keys()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>();
+    ids.into_iter()
+        .map(|id| {
+            let bounds = solved(scene, &id);
+            (id, bounds)
+        })
+        .collect()
+}
+
+/// Freeze the whole scene, assert nothing moved and that the inverse restores
+/// the pre-freeze scene byte-identically, and hand back the frozen scene
+/// (re-laid-out) for the per-test dimension assertions.
+fn frozen_zero_motion(scene: &Scene) -> Scene {
+    let before_geometry = all_solved(scene);
+    let before_json = scene_json(scene);
+
+    let batch = build_freeze_layout(scene).expect("freeze builds");
+    let mut frozen = scene.clone();
+    frozen.apply_operations(batch.operations.clone()).unwrap();
+
+    let mut restored = frozen.clone();
+    restored
+        .apply_operations(batch.inverse_operations.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        scene_json(&restored),
+        before_json,
+        "the freeze inverse must restore the pre-freeze scene exactly"
+    );
+
+    apply_layout(&mut frozen);
+    for (id, bounds) in &before_geometry {
+        assert_eq!(&solved(&frozen, id), bounds, "{id} moved during freeze");
+    }
+    frozen
+}
+
+fn size_of(scene: &Scene, id: &str) -> SizeSpec {
+    scene.nodes[&NodeId::from(id)].size.clone()
+}
+
+/// The harvested ad's pill fixture: a padded 1080×1080 artboard, a `fill × hug`
+/// products column, and three `fill × hug` padded rows each hugging a 577-wide
+/// label. Returns the scene UNLAID — callers `apply_layout` themselves.
+fn pills_scene() -> Scene {
+    let mut scene = scene_with_page(1080.0, 1080.0);
+    let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 18.0);
+    artboard.layout = Some(AutoLayoutProps {
+        gap: 18.0,
+        padding: [48.0, 52.0, 48.0, 52.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), artboard);
+
+    let mut products = auto_layout("products", 0.0, 0.0, 10.0);
+    products.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Hug,
+    };
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("artboard")),
+        products,
+    );
+
+    for id in ["row_md", "row_in", "row_dac"] {
+        let mut row = auto_layout(id, 0.0, 0.0, 0.0);
+        row.size = SizeSpec {
+            width: Dimension::Fill { weight: 1.0 },
+            height: Dimension::Hug,
+        };
+        row.layout = Some(AutoLayoutProps {
+            padding: [14.0, 20.0, 14.0, 20.0],
+            ..AutoLayoutProps::default()
+        });
+        insert(&mut scene, ParentRef::Node(NodeId::from("products")), row);
+        insert(
+            &mut scene,
+            ParentRef::Node(NodeId::from(id)),
+            rect(&format!("{id}_label"), 577.0, 41.0),
+        );
+    }
+    scene
+}
+
+/// The 2026-09-20 defect, in the shape it shipped in: the harvested ad's pill
+/// rows are `fill × hug` containers under a `fill × hug` column, and the Stack
+/// solve hugged them (617) because their parent has no definite cross-axis
+/// size. Keeping `fill` through the freeze let Free mode re-resolve them
+/// against the artboard content box (976) on the very first click.
+#[test]
+fn freeze_layout_bakes_a_fill_containers_solved_width() {
+    let mut scene = pills_scene();
+    apply_layout(&mut scene);
+
+    assert_eq!(
+        solved(&scene, "row_md").width,
+        617.0,
+        "fixture sanity: the row hugged its 577 label plus 20+20 padding"
+    );
+    assert_eq!(
+        solved(&scene, "products").width,
+        976.0,
+        "fixture sanity: the column filled the artboard's 1080-52-52 content box"
+    );
+
+    let frozen = frozen_zero_motion(&scene);
+    for id in ["row_md", "row_in", "row_dac"] {
+        assert_eq!(
+            size_of(&frozen, id).width,
+            Dimension::Fixed(617.0),
+            "{id}'s fill width must bake to the extent the solve gave it"
+        );
+    }
+    assert_eq!(size_of(&frozen, "products").width, Dimension::Fixed(976.0));
+}
+
+/// A lone `fill × fixed` container under a padded artboard: the bake is the
+/// parent's CONTENT width (976), never its outer box (1080).
+#[test]
+fn freeze_layout_bakes_a_fill_container_under_a_padded_parent_to_the_content_width() {
+    let mut scene = scene_with_page(1080.0, 1080.0);
+    let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 0.0);
+    artboard.layout = Some(AutoLayoutProps {
+        padding: [48.0, 52.0, 48.0, 52.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), artboard);
+
+    let mut band = auto_layout("band", 0.0, 120.0, 0.0);
+    band.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(120.0),
+    };
+    insert(&mut scene, ParentRef::Node(NodeId::from("artboard")), band);
+    apply_layout(&mut scene);
+
+    assert_eq!(solved(&scene, "band").width, 976.0, "fixture sanity");
+
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        size_of(&frozen, "band").width,
+        Dimension::Fixed(976.0),
+        "the content width, never the artboard's 1080 outer box"
+    );
+}
+
+/// Weighted main-axis `fill`: the bake must keep each child's SHARE, not its
+/// weight — a Free re-resolve has no siblings to divide against.
+#[test]
+fn freeze_layout_bakes_weighted_fill_row_children_to_their_shares() {
+    let mut scene = scene_with_page(1200.0, 600.0);
+    let bar = row_layout("bar", 900.0, 100.0, 0.0);
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), bar);
+
+    for (id, weight) in [("wide", 2.0), ("narrow", 1.0)] {
+        let mut cell = auto_layout(id, 0.0, 100.0, 0.0);
+        cell.size = SizeSpec {
+            width: Dimension::Fill { weight },
+            height: Dimension::Fixed(100.0),
+        };
+        insert(&mut scene, ParentRef::Node(NodeId::from("bar")), cell);
+    }
+    apply_layout(&mut scene);
+
+    assert_eq!(solved(&scene, "wide").width, 600.0, "fixture sanity");
+    assert_eq!(solved(&scene, "narrow").width, 300.0, "fixture sanity");
+
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(size_of(&frozen, "wide").width, Dimension::Fixed(600.0));
+    assert_eq!(size_of(&frozen, "narrow").width, Dimension::Fixed(300.0));
+}
+
+/// `layout.rs::flow_context`'s main-axis fallback: a `fill` child of a Row
+/// whose fixed siblings already consume the whole main content is demoted to
+/// its natural (hugged) size. The bake must record THAT, not the row width.
+#[test]
+fn freeze_layout_bakes_main_axis_fill_fallback_to_natural_size() {
+    let mut scene = scene_with_page(1200.0, 600.0);
+    let bar = row_layout("bar", 300.0, 60.0, 0.0);
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), bar);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("bar")),
+        rect("hog", 300.0, 60.0),
+    );
+    let mut flexi = auto_layout("flexi", 0.0, 60.0, 0.0);
+    flexi.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(60.0),
+    };
+    insert(&mut scene, ParentRef::Node(NodeId::from("bar")), flexi);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("flexi")),
+        rect("flexi_label", 120.0, 60.0),
+    );
+    apply_layout(&mut scene);
+
+    let natural = solved(&scene, "flexi").width;
+    assert_eq!(
+        natural, 120.0,
+        "fixture sanity: the fallback demoted the fill child to its hugged content"
+    );
+
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(size_of(&frozen, "flexi").width, Dimension::Fixed(natural));
+}
+
+/// A hug-width text the solve wrapped at the container width: its WIDTH must
+/// bake (otherwise Free mode measures it unbounded and it unwraps across the
+/// artboard), while its HEIGHT keeps hugging so it re-measures honestly.
+#[test]
+fn freeze_layout_bakes_a_wrapped_hug_width_text_to_its_solved_width() {
+    let mut scene = scene_with_page(800.0, 800.0);
+    let column = auto_layout("column", 300.0, 400.0, 0.0);
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), column);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("column")),
+        text(
+            "copy",
+            "A deliberately long sentence that has to wrap several times inside a three hundred pixel column before it runs out of words.",
+            Dimension::Hug,
+            Dimension::Hug,
+        ),
+    );
+    apply_layout(&mut scene);
+
+    let solved_copy = solved(&scene, "copy");
+    assert!(
+        solved_copy.height > 20.0,
+        "fixture sanity: the sentence wrapped to more than one line (height {})",
+        solved_copy.height
+    );
+
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        size_of(&frozen, "copy").width,
+        Dimension::Fixed(solved_copy.width),
+        "the wrapped width must survive into Free mode"
+    );
+    assert_eq!(
+        size_of(&frozen, "copy").height,
+        Dimension::Hug,
+        "the K1 rider is narrowed to HEIGHT: hug text still re-measures vertically"
+    );
+}
+
+/// The agent's headline shape (`fill × hug`): the width bakes to the solved
+/// extent, the height keeps hugging.
+#[test]
+fn freeze_layout_keeps_a_fill_x_hug_text_hugging_its_height() {
+    let mut scene = scene_with_page(800.0, 800.0);
+    let mut column = auto_layout("column", 400.0, 400.0, 0.0);
+    column.layout = Some(AutoLayoutProps {
+        padding: [20.0, 30.0, 20.0, 30.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), column);
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("column")),
+        text(
+            "headline",
+            "Everything you need to ship a brand-true campaign in one afternoon.",
+            Dimension::Fill { weight: 1.0 },
+            Dimension::Hug,
+        ),
+    );
+    apply_layout(&mut scene);
+
+    let solved_headline = solved(&scene, "headline");
+    assert_eq!(
+        solved_headline.width, 340.0,
+        "fixture sanity: the headline filled the 400-30-30 content box"
+    );
+
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        size_of(&frozen, "headline").width,
+        Dimension::Fixed(340.0),
+        "a fill text width bakes like any other fill"
+    );
+    assert_eq!(
+        size_of(&frozen, "headline").height,
+        Dimension::Hug,
+        "hug height survives the freeze"
+    );
+}
+
+/// `align_x: Stretch` sizes a cross-axis child from the container, not from
+/// its own dimension — the bake must record the stretched extent.
+#[test]
+fn freeze_layout_bakes_stretch_aligned_children() {
+    let mut scene = scene_with_page(800.0, 800.0);
+    let mut column = auto_layout("column", 400.0, 300.0, 12.0);
+    column.layout = Some(AutoLayoutProps {
+        gap: 12.0,
+        padding: [10.0, 24.0, 10.0, 24.0],
+        align_x: LayoutAnchor::Stretch,
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), column);
+    for id in ["bar_one", "bar_two"] {
+        let mut child = rect(id, 0.0, 30.0);
+        child.size = SizeSpec {
+            width: Dimension::Hug,
+            height: Dimension::Fixed(30.0),
+        };
+        insert(&mut scene, ParentRef::Node(NodeId::from("column")), child);
+    }
+    apply_layout(&mut scene);
+
+    let stretched = solved(&scene, "bar_one").width;
+    assert_eq!(
+        stretched, 352.0,
+        "fixture sanity: stretched across the 400-24-24 content box"
+    );
+
+    let frozen = frozen_zero_motion(&scene);
+    for id in ["bar_one", "bar_two"] {
+        assert_eq!(size_of(&frozen, id).width, Dimension::Fixed(stretched));
+    }
+}
+
+/// A wrapping Row: the children sit on several lines, and the freeze must bake
+/// those line positions without re-flowing them.
+#[test]
+fn freeze_layout_bakes_a_wrapping_row() {
+    let mut scene = scene_with_page(800.0, 800.0);
+    let mut bar = row_layout("bar", 500.0, 300.0, 0.0);
+    bar.kind = NodeKind::AutoLayout(AutoLayoutNode {
+        direction: AutoLayoutDirection::Row,
+        wrap: true,
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), bar);
+    for index in 0..5 {
+        insert(
+            &mut scene,
+            ParentRef::Node(NodeId::from("bar")),
+            rect(&format!("tile_{index}"), 200.0, 50.0),
+        );
+    }
+    apply_layout(&mut scene);
+
+    assert_ne!(
+        solved(&scene, "tile_0").y,
+        solved(&scene, "tile_2").y,
+        "fixture sanity: the row wrapped onto a second line"
+    );
+
+    // Zero motion across a wrapped row is the whole assertion here.
+    let frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        frozen.nodes[&NodeId::from("bar")]
+            .layout
+            .as_ref()
+            .unwrap()
+            .layout_mode,
+        LayoutMode::Free
+    );
+}
+
+/// The single-container convert shares `baked_container_size`, so it bakes the
+/// container's own `fill` too — with its Stack parent left alone, proving the
+/// bake records the solve rather than tracking the parent.
+#[test]
+fn convert_container_layout_bakes_the_containers_own_fill() {
+    let mut scene = scene_with_page(1080.0, 1080.0);
+    let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 0.0);
+    artboard.layout = Some(AutoLayoutProps {
+        padding: [48.0, 52.0, 48.0, 52.0],
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), artboard);
+    let mut products = auto_layout("products", 0.0, 0.0, 10.0);
+    products.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Hug,
+    };
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("artboard")),
+        products,
+    );
+    insert(
+        &mut scene,
+        ParentRef::Node(NodeId::from("products")),
+        rect("tile", 400.0, 60.0),
+    );
+    apply_layout(&mut scene);
+
+    let before_geometry = all_solved(&scene);
+    let before_json = scene_json(&scene);
+
+    let batch = build_structured_edit_batch(
+        &scene,
+        &instruction(serde_json::json!({
+            "kind": "convert_container_layout",
+            "node_id": "products",
+            "layout_mode": "free"
+        })),
+    )
+    .expect("convert builds");
+    let mut converted = scene.clone();
+    batch
+        .apply_checked(&mut converted)
+        .expect("convert applies");
+
+    let mut restored = converted.clone();
+    restored
+        .apply_operations(batch.inverse_operations.clone().unwrap())
+        .unwrap();
+    assert_eq!(
+        scene_json(&restored),
+        before_json,
+        "the convert inverse restores Fill exactly"
+    );
+
+    apply_layout(&mut converted);
+    for (id, bounds) in &before_geometry {
+        assert_eq!(&solved(&converted, id), bounds, "{id} moved during convert");
+    }
+    assert_eq!(
+        size_of(&converted, "products").width,
+        Dimension::Fixed(976.0),
+        "the container's own fill bakes on the way out of the solve"
+    );
+    assert_eq!(
+        converted.nodes[&NodeId::from("artboard")]
+            .layout
+            .as_ref()
+            .unwrap()
+            .layout_mode,
+        LayoutMode::Stack,
+        "the parent stays in the solve"
+    );
+}
+
+/// Item 2 (2026-09-20): a `fill` child of a FREE container is the container's padded
+/// content box, exactly as it would be in Stack mode — never the outer box.
+#[test]
+fn free_container_fill_children_resolve_against_the_content_box() {
+    let mut scene = scene_with_page(1080.0, 1080.0);
+    let mut artboard = auto_layout("artboard", 1080.0, 1080.0, 0.0);
+    artboard.layout = Some(AutoLayoutProps {
+        padding: [48.0, 52.0, 48.0, 52.0],
+        layout_mode: LayoutMode::Free,
+        ..AutoLayoutProps::default()
+    });
+    insert(&mut scene, ParentRef::Page(PageId::from("page")), artboard);
+    let mut band = rect("band", 0.0, 60.0);
+    band.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(60.0),
+    };
+    band.transform.x = 52.0;
+    band.transform.y = 48.0;
+    insert(&mut scene, ParentRef::Node(NodeId::from("artboard")), band);
+    apply_layout(&mut scene);
+    let solved_band = solved(&scene, "band");
+    assert_eq!(solved_band.width, 976.0, "fill = outer 1080 − 52 − 52");
+    assert_eq!(
+        (solved_band.x, solved_band.y),
+        (52.0, 48.0),
+        "position is the author's transform, outer-relative"
+    );
+}
+
+/// Stack/Free parity on the Task 1 pills fixture: freeze the padded artboard,
+/// then drop a NEW `fill × fixed` band into the frozen (Free) container. The
+/// width it resolves to must be the same 976 the Stack solve hands a `fill`
+/// child — a human editing after the handoff gets the same geometry rules.
+#[test]
+fn a_fill_child_added_after_the_freeze_matches_the_stack_solves_width() {
+    let mut scene = pills_scene();
+    apply_layout(&mut scene);
+    assert_eq!(
+        solved(&scene, "products").width,
+        976.0,
+        "fixture sanity: the Stack solve fills the 1080-52-52 content box"
+    );
+
+    let mut frozen = frozen_zero_motion(&scene);
+    assert_eq!(
+        frozen.nodes[&NodeId::from("artboard")]
+            .layout
+            .as_ref()
+            .unwrap()
+            .layout_mode,
+        LayoutMode::Free,
+        "the freeze puts the artboard in Free mode"
+    );
+
+    let mut band = rect("band", 0.0, 60.0);
+    band.size = SizeSpec {
+        width: Dimension::Fill { weight: 1.0 },
+        height: Dimension::Fixed(60.0),
+    };
+    band.transform.x = 52.0;
+    band.transform.y = 900.0;
+    insert(&mut frozen, ParentRef::Node(NodeId::from("artboard")), band);
+    apply_layout(&mut frozen);
+
+    let solved_band = solved(&frozen, "band");
+    assert_eq!(
+        solved_band.width,
+        solved(&scene, "products").width,
+        "Free-mode fill matches the Stack solve's fill: the padded content box"
+    );
+    assert_eq!(
+        (solved_band.x, solved_band.y),
+        (52.0, 900.0),
+        "the new child keeps the author's outer-relative transform"
     );
 }

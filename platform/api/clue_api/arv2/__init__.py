@@ -77,7 +77,6 @@ from clue_api.arv2.discovery_launch import (
     launch_arv2_discovery,
     read_icp_document,
     read_pinned_icp,
-    request_relaxed_pass,
 )
 from clue_api.arv2.errors import (
     Arv2Error,
@@ -402,7 +401,6 @@ __all__ = [
     "redact_headers",
     "redact_url",
     "report_output_schema",
-    "request_relaxed_pass",
     "substring_verdict",
     "transcription_input_from_enclosure",
     "websets_halt_rule",

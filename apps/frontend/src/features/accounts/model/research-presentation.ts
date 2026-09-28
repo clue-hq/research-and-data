@@ -2,16 +2,19 @@ import type { ResearchEvidence, ResearchItem, ResearchSection } from "./research
 
 /**
  * The Sources list for a page: one record per distinct source URL actually
- * cited by the page's sections. A claim id is admitted because the page cites
- * it — never because of how the id is spelled.
+ * cited by the page's sections or explicitly served as custom-field evidence.
+ * Retiring a field removes its column while its authorized sources remain available.
  */
 export function researchSources(sections: ResearchSection[], evidence: ResearchEvidence[]) {
   const claimIds = new Set(sections.flatMap((section) => [
     ...(section.intro ?? []).flatMap((sentence) => sentence.claimIds),
     ...section.items.flatMap((item) => [...item.body.flatMap((sentence) => sentence.claimIds), ...(item.sendLine?.claimIds ?? [])]),
   ]));
-  const records = evidence.filter((record) => record.sourceUrl && claimIds.has(record.claimId));
-  return [...new Map(records.map((record) => [record.sourceUrl!, record])).values()];
+  for (const record of evidence) {
+    if (claimIds.has(record.claimId)) for (const id of record.supportingClaimIds ?? []) claimIds.add(id);
+  }
+  const records = evidence.filter((record) => record.researchFieldKey || ((record.sourceUrl || record.sourceKind) && claimIds.has(record.claimId)));
+  return [...new Map(records.map((record) => [record.sourceUrl ?? record.claimId, record])).values()];
 }
 
 export function researchCountLabel(sections: ResearchSection[]) {

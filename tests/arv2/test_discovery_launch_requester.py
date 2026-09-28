@@ -38,6 +38,7 @@ def _request(**overrides: Any) -> Arv2DiscoveryRequest:
         "workspace_id": "ws-1",
         "project_id": "prj-1",
         "requested_by_user_id": "svc_execution_worker",
+        "request_key": "turn-action:ask-1",
     }
     payload.update(overrides)
     return Arv2DiscoveryRequest(**payload)

@@ -345,6 +345,7 @@ function parsePrioritySection(
     empty: false,
     restricted: config.restricted ?? false,
     defaultOpen: key === "buying-signals" || key === "why-this-person",
+    pending: false,
     intro: [],
     items: blocks.map((block, index) =>
       parsePriorityItem(
@@ -402,6 +403,7 @@ function parseBulletSection(
     empty: false,
     restricted,
     defaultOpen: false,
+    pending: false,
     intro: [],
     items,
   };
@@ -431,6 +433,7 @@ function parseFitSection(body: string, options: BuildSpecOptions) {
     empty: false,
     restricted: false,
     defaultOpen: true,
+    pending: false,
     intro: [],
     items,
   } satisfies ResearchSection;
@@ -461,6 +464,7 @@ function parseNumberedSection(body: string, options: BuildSpecOptions) {
     empty: false,
     restricted: false,
     defaultOpen: true,
+    pending: false,
     intro: [],
     items,
   } satisfies ResearchSection;
@@ -479,6 +483,7 @@ function parseLabeledParagraphs(
     empty: false,
     restricted: false,
     defaultOpen: false,
+    pending: false,
     intro: [],
     items: blockList(body)
       .filter((block) => block.startsWith("**"))
@@ -552,6 +557,16 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
         options,
         true,
       ),
+      {
+        key: "miscellaneous",
+        h1: "Miscellaneous",
+        empty: true,
+        restricted: false,
+        defaultOpen: false,
+        pending: false,
+        emptyMessage: "No additional research findings have been published yet.",
+        items: [],
+      },
     ],
   };
 }
@@ -568,6 +583,7 @@ function buildOverview(options: BuildSpecOptions): ResearchDisplayBlock {
         empty: false,
         restricted: false,
         defaultOpen: true,
+        pending: false,
         intro: blockList(whatZafranDoes).map((paragraph) =>
           inlineSentence(paragraph, evidenceByUrl),
         ),
@@ -633,6 +649,16 @@ function buildContact(options: BuildSpecOptions): ResearchDisplayBlock {
         options,
         true,
       ),
+      {
+        key: "miscellaneous",
+        h1: "Miscellaneous",
+        empty: true,
+        restricted: false,
+        defaultOpen: false,
+        pending: false,
+        emptyMessage: "No additional research findings have been published yet.",
+        items: [],
+      },
     ],
   };
 }

@@ -11,12 +11,13 @@ policy number. Nothing here drops context or fails a turn to stay under a budget
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID, uuid5
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -43,6 +44,9 @@ from clue_core import AssemblyRequest, ContextAssembly, MemoryType, ScopeStack
 from clue_obs import get_logger
 
 __all__ = [
+    "IMAGE_TOKEN_ALLOWANCE",
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CompiledContextCard",
     "ContextAssemblyPolicy",
     "ContextAssemblyReceipt",
@@ -65,6 +69,16 @@ __all__ = [
 log = get_logger("clue_agents.context")
 
 _ORDER = tuple(ContextLayer)
+
+#: What one image on a turn is *reported* to cost against its layer budget (spec 2026-09-18).
+#:
+#: An image rides the user message as a data-url part, so the utf-8 byte counter that measures
+#: every other candidate would either miss it entirely (the bytes are not in ``budget_text``) or,
+#: if it were handed the base64, wildly overstate it — providers bill an image by its tiles, not
+#: by its transport encoding. A flat per-image allowance keeps the reported number honest enough
+#: to reason about without pretending to know the provider's tiling. Budgets are reporting-only
+#: (founder ruling 2026-09-14), so this number can never cost a turn its context or fail it.
+IMAGE_TOKEN_ALLOWANCE = 1_000
 
 #: Layers whose budget retains the **newest** candidates rather than the first ones in canonical
 #: (``stable_key``) order — FI Lane D D0, charter §1.1.
@@ -126,6 +140,10 @@ class ContextCandidate(ContextValue):
     materialized_path: str | None = None
     required: bool = False
     interrupted: bool = False
+    #: Images the model sees beside this candidate's text (spec 2026-09-18, ruling 1 and 2).
+    #: Pointers only, like every other ref here — the assembler reads the bytes once, at the one
+    #: moment the message is built, and they are never part of the candidate's durable receipt.
+    image_refs: tuple[ArtifactRef, ...] = ()
 
     @model_validator(mode="after")
     def interruption_is_history(self) -> ContextCandidate:
@@ -139,6 +157,12 @@ class ContextCandidate(ContextValue):
         if self.interrupted:
             return INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + self.body
         return self.body
+
+    @property
+    def image_token_allowance(self) -> int:
+        """The reported cost of this candidate's images; see :data:`IMAGE_TOKEN_ALLOWANCE`."""
+
+        return IMAGE_TOKEN_ALLOWANCE * len(self.image_refs)
 
 
 class ContextReceiptRef(ContextValue):
@@ -481,8 +505,9 @@ class FocusLayerSource:
 class HistoryLayerSource:
     layer = ContextLayer.L6_CONVERSATION
 
-    def __init__(self, artifacts: AgentArtifactReader) -> None:
+    def __init__(self, artifacts: AgentArtifactReader, *, images_max: int = 20) -> None:
         self._artifacts = artifacts
+        self._images_max = images_max
 
     async def load(
         self,
@@ -492,8 +517,27 @@ class HistoryLayerSource:
         history: Sequence[HistoryMessageRef],
     ) -> Sequence[ContextCandidate]:
         del profile
+        ordered = sorted(history, key=lambda value: value.sequence)
+        # Ruling 2 (2026-09-18): a picture the user already sent stays visible for the rest of the
+        # conversation, so the model can still be asked about it three turns later. Bytes are not
+        # free, so a thread carries at most ``images_max`` of them and the newest win the cap
+        # (``0`` = no cap). Walking newest-first is what makes "newest win" true.
+        budget = None if self._images_max == 0 else self._images_max
+        kept: dict[int, tuple[ArtifactRef, ...]] = {}
+        for item in reversed(ordered):
+            images = tuple(
+                ref for ref in item.attachment_refs if ref.media_type.lower().startswith("image/")
+            )
+            if item.role != "user" or not images:
+                continue
+            if budget is None:
+                kept[item.sequence] = images
+            elif budget > 0:
+                take = images[-budget:]
+                kept[item.sequence] = take
+                budget -= len(take)
         result: list[ContextCandidate] = []
-        for item in sorted(history, key=lambda value: value.sequence):
+        for item in ordered:
             if item.body_ref.workspace_id != request.constitution.workspace_id:
                 raise ValueError("history ref crosses the turn workspace boundary")
             body = (await self._artifacts.read(item.body_ref)).decode("utf-8")
@@ -505,6 +549,7 @@ class HistoryLayerSource:
                     role=item.role,
                     origin="history",
                     interrupted=item.interrupted and item.role == "assistant",
+                    image_refs=kept.get(item.sequence, ()),
                 )
             )
         return result
@@ -537,6 +582,34 @@ class CapturedTurnDescription(Protocol):
     async def describe(self, request: AgentTurnRequest) -> CapturedTurnIdentity | None: ...
 
 
+class AttachmentDescription(Protocol):
+    """What one attachment is called, where its file sits, and which family it belongs to.
+
+    ``family`` is ``"text"``, ``"image"`` or ``"document"`` — it decides only which tool the
+    sentence tells the agent to open the file with, never whether the file is there.
+    """
+
+    @property
+    def filename(self) -> str: ...
+
+    @property
+    def workspace_path(self) -> str | None: ...
+
+    @property
+    def family(self) -> str: ...
+
+
+class AttachmentDescriber(Protocol):
+    """Name each attachment by its filename, its workspace path, and its family.
+
+    Structural for the same reason :class:`CapturedTurnDescription` is: the durable rows an
+    attachment is named from live at the api composition root, and L7 only ever reads the three
+    values above. Keyed by ``artifact_key`` — the one identity a turn's attachment refs carry.
+    """
+
+    async def describe(self, request: AgentTurnRequest) -> Mapping[str, AttachmentDescription]: ...
+
+
 class TurnLayerSource:
     layer = ContextLayer.L7_TURN
 
@@ -545,9 +618,11 @@ class TurnLayerSource:
         artifacts: AgentArtifactReader,
         *,
         captured_turn: CapturedTurnDescription | None = None,
+        attachments: AttachmentDescriber | None = None,
     ) -> None:
         self._artifacts = artifacts
         self._captured_turn = captured_turn
+        self._attachments = attachments
 
     async def load(
         self,
@@ -560,17 +635,55 @@ class TurnLayerSource:
         body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
         result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
-        # may later use an authorized tool to inspect an allowed attachment.
+        # may later use an authorized tool to inspect an allowed attachment. A describer turns
+        # those pointers into the words a human would use — the file's name, the one path the
+        # worker syncs it to, and the tool that opens that family — so the model can open what it
+        # needs instead of guessing from a hash. With no describer (or an attachment the describer
+        # does not know) the pointer line is unchanged: naming nothing is better than naming it
+        # wrong.
+        described: Mapping[str, AttachmentDescription] = (
+            await self._attachments.describe(request) if self._attachments is not None else {}
+        )
         for index, ref in enumerate(request.attachment_refs):
+            info = described.get(ref.artifact_key)
+            size = f"{ref.byte_count:,} bytes"
+            # A local of its own, never ``body``: that name already holds the words the human
+            # typed, and reusing it here would hand the model an attachment line as its own
+            # most-recent instruction.
+            description: str
+            if info is None:
+                description = (
+                    "Attachment reference only: "
+                    f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
+                    f"media_type={ref.media_type} byte_count={ref.byte_count}"
+                )
+            elif info.workspace_path is None:
+                # Fallback for a describer that names no path (the production one always does):
+                # claim only what is true without a synced file — the image is in the message.
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) is attached to this '
+                    "message as an image."
+                )
+            else:
+                # One sentence per file: what it is, where its one copy sits, and how to open it.
+                # An image is named too — the model sees it here, but code reads it from the path.
+                if info.family == "text":
+                    opener = "open it with read_file."
+                elif info.family == "image":
+                    opener = "it is also shown to you as an image in this message."
+                else:
+                    # Every other family is bytes read_file would refuse; run_python reads any of
+                    # them, so it is also the honest answer for a family L7 does not recognise.
+                    opener = "open it with run_python."
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) was attached to '
+                    f"this message. It is at {info.workspace_path}; {opener}"
+                )
             result.append(
                 ContextCandidate(
                     stable_key=f"200-{index:06d}-attachment:{ref.artifact_key}",
                     ref=ref,
-                    body=(
-                        "Attachment reference only: "
-                        f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
-                        f"media_type={ref.media_type} byte_count={ref.byte_count}"
-                    ),
+                    body=description,
                     role="system",
                 )
             )
@@ -637,12 +750,41 @@ class TurnLayerSource:
                 origin="current_user_instruction",
                 materialized_path="inputs/user-message.txt",
                 required=True,
+                # An image cannot be read with ``read_file``; the only way a model sees one is
+                # beside the words it was sent with, so the turn's images ride this message.
+                # Everything else on the turn stays a pointer the agent opens deliberately.
+                image_refs=tuple(
+                    ref
+                    for ref in request.attachment_refs
+                    if ref.media_type.lower().startswith("image/")
+                ),
             )
         )
         return result
 
 
-def _message(candidate: ContextCandidate) -> BaseMessage:
+def _message(candidate: ContextCandidate, images: Mapping[str, bytes] | None = None) -> BaseMessage:
+    """Turn one candidate into the message the model reads.
+
+    ``images`` maps ``artifact_key`` to the bytes the assembler already read for this turn; a
+    candidate carrying :attr:`ContextCandidate.image_refs` becomes a multipart human message whose
+    first part is its text and whose remaining parts are the images as data urls (the shape the
+    Task-1 probe proved the Head-of-ABM model accepts). ``None`` means no images were read, which
+    is the only thing a text-only candidate ever needs.
+    """
+
+    if candidate.role == "user" and candidate.image_refs:
+        read = images or {}
+        parts: list[str | dict[Any, Any]] = [{"type": "text", "text": candidate.body}]
+        for ref in candidate.image_refs:
+            encoded = base64.b64encode(read[ref.artifact_key]).decode("ascii")
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{ref.media_type};base64,{encoded}"},
+                }
+            )
+        return HumanMessage(content=parts)
     if candidate.role == "system":
         return SystemMessage(content=candidate.body)
     if candidate.role == "user":
@@ -673,6 +815,7 @@ class DeterministicAgentContextAssembler:
         receipts: ContextReceiptStore,
         token_counter: Utf8ByteTokenCounter | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        artifacts: AgentArtifactReader | None = None,
     ) -> None:
         source_map = {source.layer: source for source in sources}
         if len(source_map) != len(sources) or tuple(sorted(source_map, key=_ORDER.index)) != _ORDER:
@@ -684,6 +827,9 @@ class DeterministicAgentContextAssembler:
         if self._counter.version != policy.token_counter_version:
             raise ValueError("token counter version differs from context policy")
         self._clock = clock
+        # Only an image-carrying candidate needs bytes, so a composition with no image path may
+        # leave this ``None`` and stay valid; assembly fails loudly the moment one shows up.
+        self._artifacts = artifacts
 
     def _retain(
         self,
@@ -710,7 +856,9 @@ class DeterministicAgentContextAssembler:
         del budget
         order = tuple(reversed(candidates)) if layer in _RETAIN_NEWEST_LAYERS else tuple(candidates)
         return {
-            candidate.stable_key: self._counter.count(candidate.budget_text) for candidate in order
+            candidate.stable_key: self._counter.count(candidate.budget_text)
+            + candidate.image_token_allowance
+            for candidate in order
         }
 
     async def assemble(
@@ -726,6 +874,8 @@ class DeterministicAgentContextAssembler:
         materializations: list[ContextMaterialization] = []
         seen_paths: set[str] = set()
         current_instructions: list[ContextCandidate] = []
+        # Image bytes, keyed by ``artifact_key`` and read exactly once for the whole turn.
+        images: dict[str, bytes] = {}
 
         for layer in _ORDER:
             candidates = sorted(
@@ -746,6 +896,20 @@ class DeterministicAgentContextAssembler:
                     and layer is not ContextLayer.L7_TURN
                 ):
                     raise ValueError("only l7_turn may emit the current user instruction")
+                for image_ref in candidate.image_refs:
+                    if image_ref.workspace_id != request.constitution.workspace_id:
+                        raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
+            # Every image is read before a single message is built, and each one exactly once: the
+            # same attachment can be named by more than one candidate, and a turn must never pay
+            # twice for the same bytes. A candidate carrying images with no reader composed is a
+            # composition error, not a turn the model gets to see half of.
+            for candidate in candidates:
+                for image_ref in candidate.image_refs:
+                    if image_ref.artifact_key in images:
+                        continue
+                    if self._artifacts is None:
+                        raise ValueError("image candidates need an artifact reader")
+                    images[image_ref.artifact_key] = await self._artifacts.read(image_ref)
             budget = self._policy.budget_for(layer)
             retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
@@ -776,7 +940,7 @@ class DeterministicAgentContextAssembler:
                 hashes.append(digest)
                 if candidate.interrupted:
                     messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
-                messages.append(_message(candidate))
+                messages.append(_message(candidate, images))
                 receipt_refs.append(
                     ContextReceiptRef(
                         layer=layer,
@@ -816,11 +980,24 @@ class DeterministicAgentContextAssembler:
         current_instruction = current_instructions[0]
         if current_instruction.ref != request.user_message_artifact_ref:
             raise ValueError("current user instruction differs from the turn message artifact")
-        if (
-            not messages
-            or not isinstance(messages[-1], HumanMessage)
-            or messages[-1].content != current_instruction.body
-        ):
+        if not messages:
+            raise ValueError("current user instruction must be the final opening-context message")
+        final = messages[-1]
+        # The instruction's words are the message's text, whether it is a plain string or the
+        # multipart shape an image-carrying turn takes; the check is over the words either way.
+        final_text = (
+            final.content
+            if isinstance(final.content, str)
+            else next(
+                (
+                    part["text"]
+                    for part in final.content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                ),
+                None,
+            )
+        )
+        if not isinstance(final, HumanMessage) or final_text != current_instruction.body:
             raise ValueError("current user instruction must be the final opening-context message")
 
         aggregate_payload = {

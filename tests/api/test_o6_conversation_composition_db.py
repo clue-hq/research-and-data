@@ -505,6 +505,7 @@ async def _run_turn(
     submission: Any,
     worker_id: str,
     streaming: bool = False,
+    namer: Any | None = None,
 ) -> Any:
     """Dispatch, claim and run one queued turn through the production AGENT_TURN handler."""
 
@@ -539,6 +540,7 @@ async def _run_turn(
         # here runs in, instead of opening the bridge's own engine and committing.
         project_writer_conn_factory=stack.conn_factory,
         streaming=streaming,
+        namer=namer,
     )
     return await handler.handle(
         WorkContext(
@@ -826,12 +828,14 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 # rather than retyped, so adding a chapter does not make this assertion stale.
                 # `head-of-abm@v55` adds the three document skills — the procedures for the ICP,
                 # the personas and the plan, each written as a file under `project/` — so the
-                # committed surface names those too.
+                # committed surface names those too. `@v58` adds `code-execution`, the procedure
+                # for the sandbox it grants in the same version.
                 assert {item["name"] for item in manifest["skills"]} == {
                     "stage0-interview",
                     "icp-authoring",
                     "persona-authoring",
                     "plan-authoring",
+                    "code-execution",
                 } | {f"manual-{chapter}" for chapter in MANUAL_CHAPTERS}
                 surface = {f"{pin['name']}@{pin['version']}" for pin in manifest["tools"]}
                 assert "launch_arv2_account_research@1" in surface
@@ -1369,3 +1373,60 @@ def test_a_turn_that_writes_the_plan_mints_the_document_and_shows_it_as_the_plan
     # Generous: a cold lane database, a compiled library and two model rounds all happen inside
     # this one call, and a slow database must fail as a failure rather than as a bridge timeout.
     process_bridge().run(scenario(), timeout_s=600.0)
+
+
+class _RecordingNamer:
+    def __init__(self) -> None:
+        self.requests: list[Any] = []
+
+    async def name(self, request: Any) -> Any:
+        from clue_api.conversation_naming import NamingOutcome
+
+        self.requests.append(request)
+        return NamingOutcome(chat_title="Start with GI", project_name=None, skipped_reason=None)
+
+
+def test_the_production_turn_hands_its_opening_exchange_to_the_namer(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        async with postgres_agent_checkpointer(ExecutionId(uuid4())):
+            pass
+        async with rollback_conn() as conn:
+            workspace_id = f"o6nm-{uuid4().hex[:8]}"
+            project = await seed_project(conn, workspace_id, name="Named project")
+            stack = await _build_stack(conn, tmp_path=tmp_path)
+            namer = _RecordingNamer()
+            try:
+                submission = await _capture_submission(
+                    conn,
+                    artifacts=stack.artifacts,
+                    workspace_id=workspace_id,
+                    project_id=project.project_id,
+                    brand_id=project.brand_id,
+                    label="naming",
+                    message_body="Who should we target first?",
+                )
+                result = await _run_turn(
+                    conn,
+                    stack,
+                    workspace_id=workspace_id,
+                    submission=submission,
+                    worker_id="o6nm-worker",
+                    streaming=True,
+                    namer=namer,
+                )
+                assert result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
+                assert len(namer.requests) == 1
+                request = namer.requests[0]
+                assert request.workspace_id == workspace_id
+                assert request.project_id == project.project_id
+                assert request.thread_id == submission.thread_id
+                assert request.turn_id == submission.turn_id
+                assert request.user_message == "Who should we target first?"
+                assert (
+                    request.assistant_message
+                    == "I read the brand's knowledge. Shall we start with GI?"
+                )
+            finally:
+                stack.workspaces.close()
+
+    run_async(scenario())

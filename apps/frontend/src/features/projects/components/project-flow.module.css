@@ -90,6 +90,12 @@
   box-shadow: var(--clue-ds-shadow-card-subtle), 0 0 0 2px white;
 }
 
+/* Ruling 5: while a file drag is over the chat, the composer is the drop
+   target — a dashed outline and nothing else (no overlay, no copy). */
+.composer[data-drop-target="true"] {
+  border: 1px dashed var(--clue-ds-color-border-neutral);
+}
+
 .composerBody {
   display: flex;
   min-width: 0;
@@ -114,6 +120,30 @@
 
 .composerAttachments::-webkit-scrollbar {
   display: none;
+}
+
+.chatAttachment {
+  max-width: 100%;
+  border-color: var(--clue-ds-color-primitives-gray-alpha-100);
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-neutral);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+}
+
+.chatAttachment:hover {
+  border-color: var(--clue-ds-color-primitives-gray-alpha-200);
+  background: var(--clue-ds-color-bg-subtle);
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.chatAttachmentPreview {
+  background: transparent;
+}
+
+.chatAttachmentPreview > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .composerAttachmentError {
@@ -151,8 +181,8 @@
   padding: 6px 8px;
   color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 15px;
-  line-height: 22px;
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
@@ -171,11 +201,11 @@
 .composerParagraph {
   /* Slate's absolute placeholder must share the text's padded line origin. */
   position: relative;
-  min-height: 22px;
+  min-height: var(--clue-ds-product-component-chat-body-line-height);
   margin: 0;
 }
 
-.composerMention {
+.chatMention {
   display: inline-block;
   margin: 0 1px;
   border: 0;
@@ -184,17 +214,22 @@
   padding: 0;
   color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  line-height: 22px;
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
+  max-width: 100%;
+  min-width: 0;
   user-select: none;
   vertical-align: baseline;
   transition: background var(--clue-ds-product-motion-duration-fast) ease,
     box-shadow var(--clue-ds-product-motion-duration-fast) ease;
 }
 
-.composerMentionVisual {
+.chatMentionVisual {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
+  min-width: 0;
   vertical-align: -2px;
 }
 
@@ -202,26 +237,25 @@
   display: block;
 }
 
-.composerMentionVisual > span:last-child {
-  border-bottom: 1px solid var(--clue-ds-color-border-neutral);
-  line-height: 19px;
+.chatMentionLabel {
+  border-bottom: 1px solid var(--clue-ds-color-primitives-gray-alpha-200);
+  line-height: calc(var(--clue-ds-product-component-chat-body-line-height) - 3px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: border-color var(--clue-ds-product-motion-duration-fast) ease;
 }
 
-.composerMention:hover .composerMentionVisual > span:last-child {
+.chatMention:hover .chatMentionLabel {
   border-bottom-color: var(--clue-ds-color-content-subtle);
 }
 
-.composerMention img {
+.chatMentionLogo {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
   object-fit: contain;
-}
-
-.composerMention .composerMentionAvatar {
-  border-radius: 50%;
-  object-fit: cover;
 }
 
 .composerMentionSelected {
@@ -230,7 +264,7 @@
   box-shadow: 0 0 0 1px #9fc5f8;
 }
 
-.composerMentionSelected .composerMentionVisual > span:last-child {
+.composerMentionSelected .chatMentionLabel {
   border-bottom-color: transparent;
 }
 
@@ -435,6 +469,49 @@
   text-align: left;
 }
 
+.entityRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.entityRow[data-nested="true"] {
+  padding-left: 28px;
+}
+
+.entityRow > .entityOption {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entityExpand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.entityExpand:hover {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.entityExpandChevron {
+  display: inline-flex;
+  transition: transform var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-standard);
+}
+
+.entityExpand[aria-expanded="true"] .entityExpandChevron {
+  transform: rotate(90deg);
+}
+
 .entityPickerEmpty {
   margin: 0;
   padding: 20px 12px;
@@ -442,6 +519,65 @@
   font-size: 13px;
   line-height: 18px;
   text-align: center;
+}
+
+.pickerCategory {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.pickerCategory > span {
+  flex: 1 1 auto;
+}
+
+.pickerCategory > small {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+}
+
+.pickerCategory:hover,
+.pickerCategory[data-active="true"] {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.pickerBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* ProjectIcon renders an <img>, so the chevron is flipped by element, not by tag. */
+.pickerBack > * {
+  transform: rotate(180deg);
+}
+
+.entityIcon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .modelOption {
@@ -851,7 +987,7 @@
   max-width: 100%;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 
@@ -2733,11 +2869,13 @@
   align-items: flex-end;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 
 .messageText {
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
   min-width: 0;
   max-width: 100%;
   margin: 0;
@@ -2748,37 +2886,9 @@
 .messageContextRefs {
   display: flex;
   max-width: 100%;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.messageContextRefs > span {
-  overflow: hidden;
-  max-width: 240px;
-  border: 0.5px solid var(--clue-ds-color-border-neutral);
-  border-radius: 999px;
-  background: var(--clue-ds-color-bg-page);
-  color: var(--clue-ds-color-content-neutral);
-  font-size: 11px;
-  line-height: 18px;
-  padding: 0 7px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.messageContextRefs > .messageReferenceImage {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding-left: 3px;
-}
-
-.messageReferenceThumbnail {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border-radius: 999px;
-  object-fit: cover;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .gateAnswerReceipt {
@@ -2926,23 +3036,8 @@
  * styles.
  *
  * Styled as a developer tool throughout: monospace addresses, muted notes, a
- * dashed frame. It is never rendered in a production deployment, because the
- * affordance that opens it is not rendered when the capability probe 404s.
+ * dashed frame. The inspector is no longer mounted in the chat interface.
  */
-.turnLensTrigger {
-  margin-left: auto;
-  border: 0.5px dashed var(--clue-ds-color-border-subtle);
-  border-radius: 4px;
-  background: transparent;
-  padding: 1px 6px;
-  color: var(--clue-ds-color-content-subtle);
-  font-size: 10px;
-  line-height: 14px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .turnLensPanel {
   display: flex;
   position: absolute;

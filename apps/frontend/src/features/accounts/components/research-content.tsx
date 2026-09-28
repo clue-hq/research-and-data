@@ -1,15 +1,12 @@
 "use client";
 
-import Link from "next/link";
+import Link from "./research-link";
 import { Popover } from "@base-ui/react/popover";
 import { DesignIcon } from "@/components/ui/design-icon";
 import {
-  ArrowLeft,
-  ArrowRight,
   Check,
   Copy,
   ExternalLink,
-  LockKeyhole,
 } from "lucide-react";
 import {
   Fragment,
@@ -28,177 +25,14 @@ import type {
   ResearchSentence,
 } from "../model/research-display";
 import type { Account } from "../model/account";
+import { anySectionPending, usePendingSectionsRefresh } from "../hooks/use-pending-sections-refresh";
 import { ContactAvatar } from "./contact-avatar";
 import { FitBadge } from "./account-detail-primitives";
 import { presentResearchItem } from "./research-item-presentation";
 import { isNewResearch, researchSources } from "../model/research-presentation";
 import styles from "./account-research.module.css";
-
-function sourceLabel(domain: string | null) {
-  return domain?.replace(/^www\./, "") ?? "";
-}
-
-function evidenceDates(evidence: ResearchEvidence) {
-  return [
-    evidence.mediaTimestamp,
-  ].filter((value): value is string => Boolean(value));
-}
-
-function SourceIcon({ evidence }: { evidence: ResearchEvidence }) {
-  // The favicon is resolved from the served domain through this app's own proxy
-  // route; the served `faviconUrl` is not a precondition and is never fetched
-  // directly (contract v1: "the frontend resolves favicons by domain").
-  if (evidence.sourceDomain) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        alt=""
-        aria-hidden="true"
-        className={styles.sourceFavicon}
-        src={`/api/source-favicon?domain=${encodeURIComponent(evidence.sourceDomain)}`}
-      />
-    );
-  }
-
-  return (
-    <LockKeyhole
-      aria-hidden="true"
-      className={styles.sourceFaviconFallback}
-      size={12}
-      strokeWidth={1.5}
-    />
-  );
-}
-
-export function SourceChip({
-  evidence,
-  relatedEvidence,
-}: {
-  evidence: ResearchEvidence;
-  relatedEvidence?: ResearchEvidence[];
-}) {
-  const sources = useMemo(() => {
-    const records = relatedEvidence?.length ? relatedEvidence : [evidence];
-    return Array.from(
-      new Map(records.map((record) => [record.claimId, record])).values(),
-    );
-  }, [evidence, relatedEvidence]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const activeEvidence = sources[Math.min(activeIndex, sources.length - 1)]!;
-  const firstEvidence = sources[0]!;
-  const label = sourceLabel(firstEvidence.sourceDomain);
-  const inlineLabel = label || "Record";
-  const activeLabel = sourceLabel(activeEvidence.sourceDomain);
-  const activeMeta = [
-    ...evidenceDates(activeEvidence),
-    activeEvidence.provider,
-  ].filter((value): value is string => Boolean(value));
-  const chipContent = (
-    <>
-      <SourceIcon evidence={firstEvidence} />
-      <span className={styles.sourceName}>{inlineLabel}</span>
-      {sources.length > 1 ? (
-        <span className={styles.sourceCount}>+{sources.length - 1}</span>
-      ) : null}
-    </>
-  );
-
-  const move = (direction: -1 | 1) => {
-    setActiveIndex((current) => {
-      const next = current + direction;
-      if (next < 0) return sources.length - 1;
-      if (next >= sources.length) return 0;
-      return next;
-    });
-  };
-
-  return (
-    <Popover.Root>
-      <Popover.Trigger
-        aria-label={firstEvidence.sourceUrl ? `Open ${label} source` : "View record details"}
-        nativeButton={!firstEvidence.sourceUrl}
-        role={firstEvidence.sourceUrl ? "link" : "button"}
-        render={firstEvidence.sourceUrl ? <a href={firstEvidence.sourceUrl} target="_blank" rel="noreferrer" /> : undefined}
-        className={`${styles.sourceChip} ${firstEvidence.sourceUrl ? "" : styles.privateSource}`}
-        closeDelay={180}
-        delay={180}
-        openOnHover
-      >
-        {chipContent}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner align="start" collisionPadding={16} sideOffset={8} className={styles.sourcePositioner}>
-          <Popover.Popup
-        aria-label={`${activeLabel} source details`}
-        className={styles.sourcePopover}
-        initialFocus={false}
-      >
-        {sources.length > 1 ? (
-          <span className={styles.popoverToolbar}>
-            <span className={styles.popoverNav}>
-              <button
-                aria-label="Previous source"
-                className={styles.popoverNavButton}
-                onClick={() => move(-1)}
-                type="button"
-              >
-                <ArrowLeft aria-hidden="true" size={14} strokeWidth={1.5} />
-              </button>
-              <button
-                aria-label="Next source"
-                className={styles.popoverNavButton}
-                onClick={() => move(1)}
-                type="button"
-              >
-                <ArrowRight aria-hidden="true" size={14} strokeWidth={1.5} />
-              </button>
-            </span>
-            <span className={styles.popoverCounter}>
-              {activeIndex + 1}/{sources.length}
-            </span>
-          </span>
-        ) : null}
-
-        <span className={styles.popoverBody}>
-          <span className={styles.popoverSource}>
-            <SourceIcon evidence={activeEvidence} />
-            <span>{activeLabel || "Private record"}</span>
-          </span>
-          <span className={styles.popoverTitle}>
-            {activeEvidence.title ?? "Verified private record"}
-          </span>
-          {activeEvidence.quote ? (
-            <span className={styles.popoverQuote}>
-              “{activeEvidence.quote}”
-            </span>
-          ) : null}
-          {activeEvidence.researchExcerpt && !activeEvidence.quote ? (
-            <span className={styles.popoverQuote}>
-              <span className={styles.sendLineChannel}>Research excerpt</span>
-              {activeEvidence.researchExcerpt}
-            </span>
-          ) : null}
-          {activeMeta.length ? (
-            <span className={styles.popoverMeta}>{activeMeta.join(" · ")}</span>
-          ) : null}
-          {activeEvidence.sourceUrl ? (
-            <a
-              className={styles.popoverOpen}
-              href={activeEvidence.sourceUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Open source
-              <ExternalLink aria-hidden="true" size={12} strokeWidth={1.5} />
-            </a>
-          ) : null}
-        </span>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
+import { SourceChip, SourceIcon, sourceLabel } from "./source-chip";
+export { SourceChip } from "./source-chip";
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -297,7 +131,7 @@ function EvidenceRun({
 
   return evidence.map((record) => (
     <span className={styles.evidenceRun} key={record.claimId}>
-      <SourceChip evidence={record} />
+      <SourceChip evidence={record} relatedEvidence={[record, ...(record.supportingClaimIds ?? []).map((id) => evidenceById.get(id)).filter((entry): entry is ResearchEvidence => Boolean(entry))]} />
     </span>
   ));
 }
@@ -328,10 +162,12 @@ function SentenceContent({
 
     return (
       <Fragment key={`${index}-${segment.text}`}>
+        {index === 0 && sentence.kind && sentence.kind !== "fact" ? <span className={styles.sendLineChannel}>{sentence.kind === "inference" ? "Interpretation" : sentence.kind === "qualified" ? "Needs verification" : sentence.kind === "quote" ? "Source quote" : "Research gap"}: </span> : null}
         {activeLead ? (
           <span className={styles.inlineLeadTitle}>{activeLead}</span>
         ) : null}
         <ContactLinkedText contacts={contacts} text={remainder} />
+        {index === segments.length - 1 && sentence.qualifications?.length ? <span className={styles.popoverMeta}> ({sentence.qualifications.join("; ")})</span> : null}
         <EvidenceRun
           claimIds={segment.claimIds}
           evidenceById={evidenceById}
@@ -609,6 +445,12 @@ function presentationFor(section: ResearchSection, index: number) {
   );
 }
 
+function SectionGaps({ section }: { section: ResearchSection }) {
+  return section.gaps?.length ? <ul aria-label={`${section.h1} research gaps`} className={styles.emptyState}>
+    {section.gaps.map((gap) => <li key={gap}>{gap}</li>)}
+  </ul> : null;
+}
+
 function ReadingSection({
   evidenceById, section, prefix, lastVisit = null, name = "this account",
 }: {
@@ -627,12 +469,13 @@ function ReadingSection({
         </h2>
       </summary>
       <div className={styles.sectionContent}>
+        <SectionGaps section={section} />
         {section.intro?.map((sentence, index) => (
           <p className={styles.sentence} key={index}>
             <SentenceContent contacts={[]} evidenceById={evidenceById} sentence={sentence} />
           </p>
         ))}
-        {!section.items.length && !section.intro?.length ? <p className={styles.emptyState}>{section.emptyMessage ?? `No ${section.h1.toLowerCase()} information found for ${name}.`}</p> : null}
+        {!section.items.length && !section.intro?.length && !section.gaps?.length ? <p className={styles.emptyState}>{section.emptyMessage ?? `No ${section.h1.toLowerCase()} information found for ${name}.`}</p> : null}
         {section.items.map((item) => (
           <Fragment key={item.id}>
             {isNewResearch(item, evidenceById, lastVisit) ? <span className={styles.newLabel}>New since your last visit</span> : null}
@@ -672,13 +515,13 @@ function ResearchTools({
           {summary.length ? <p className={styles.sourceRecordMeta}>{summary.join(" · ")}</p> : null}
           <ul>
             {sources.map((record) => (
-              <li key={record.sourceUrl}>
-                <a href={record.sourceUrl!} target="_blank" rel="noreferrer">
+              <li key={record.sourceUrl ?? record.claimId}>
+                {record.researchFieldKey ? <SourceChip evidence={record} relatedEvidence={[record, ...(record.supportingClaimIds ?? []).map((id) => evidenceById.get(id)).filter((entry): entry is ResearchEvidence => Boolean(entry))]} /> : <a href={record.sourceUrl!} target="_blank" rel="noreferrer">
                   <SourceIcon evidence={record} />
                   <span className={styles.inventoryTitle}>{record.title ?? record.sourceDomain}</span>
                   <span className={styles.inventoryDomain}>{sourceLabel(record.sourceDomain)}</span>
                   <ExternalLink size={12} aria-hidden="true" />
-                </a>
+                </a>}
               </li>
             ))}
           </ul>
@@ -687,6 +530,7 @@ function ResearchTools({
       <section className={`${styles.researchPanel} ${styles.internalNotes}`} hidden={panel !== "notes"} id={`${prefix}-notes`} aria-label="Internal notes">
         <p className={styles.notesLabel}>Do not use in outreach</p>
         {notes.map((section) => <div key={section.key}>
+          <SectionGaps section={section} />
           {section.intro?.map((sentence, index) => <p className={styles.sentence} key={index}><SentenceContent contacts={[]} evidenceById={evidenceById} sentence={sentence} /></p>)}
           {section.items.map((item) => <ResearchItemView reading evidenceById={evidenceById} item={item} key={item.id} />)}
         </div>)}
@@ -703,6 +547,7 @@ export function ResearchDocument({
   accountId?: string;
   summary?: string[];
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
   const prefix = useId();
   const [lastVisit, setLastVisit] = useState<string | null>(null);
   useEffect(() => {
@@ -737,6 +582,7 @@ export function ResearchStack({
   contactId?: string;
   name?: string;
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
   const prefix = useId();
   const evidenceById = useMemo(() => new Map(evidence.map((item) => [item.claimId, item])), [evidence]);
   const displaySections = sections.map((section) => ({
@@ -770,6 +616,8 @@ export function ResearchOverview({
   overallFit?: Account["overallFit"];
   sections: ResearchSection[];
 }) {
+  usePendingSectionsRefresh(anySectionPending(sections));
+  const sourcesId = useId();
   const evidenceById = useMemo(
     () => new Map(evidence.map((item) => [item.claimId, item])),
     [evidence],
@@ -802,6 +650,7 @@ export function ResearchOverview({
               </h2>
             </Heading>
             <div className={stacked ? styles.sectionContent : undefined}>
+            <SectionGaps section={section} />
             {section.intro?.length ? (
               <div className={styles.overviewIntro}>
                 {section.intro.map((sentence, sentenceIndex) => (
@@ -865,6 +714,9 @@ export function ResearchOverview({
           </Section>
         );
       })}
+      {evidence.some((record) => record.researchFieldKey) ? (
+        <ResearchTools evidence={evidence} evidenceById={evidenceById} sections={sections} prefix={sourcesId} />
+      ) : null}
     </div>
   );
 }
@@ -963,10 +815,10 @@ export function BuyingCommitteeTable({
                 <td>
                   <span>{member.title}</span>
                 </td>
-                <td>{member.persona}</td>
+                <td>{member.persona}{member.membershipState && member.membershipState !== "supported" ? <p className={styles.committeeRole}>Needs verification</p> : null}</td>
                 <td>
                   <span className={styles.committeeLinks}>
-                    {member.email ? (
+                    {member.email && member.outreachEligible === false ? <span>{member.email}</span> : member.email ? (
                       <a
                         className={styles.committeeLink}
                         href={`mailto:${member.email}`}
@@ -997,7 +849,7 @@ export function BuyingCommitteeTable({
                     ) : null}
                   </span>
                 </td>
-                <td className={styles.committeeWhy}>{member.whyTheyMatter}</td>
+                <td className={styles.committeeWhy}>{member.whyTheyMatter}{member.membershipGaps?.map((gap) => <p key={gap}>{gap}</p>)}</td>
               </tr>
             ))}
           </tbody>

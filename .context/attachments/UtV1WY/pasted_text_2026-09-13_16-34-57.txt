@@ -1,0 +1,641 @@
+For your architecture, I would **not build a custom telemetry/cost platform**. I’d use four existing pieces, each for what it is good at:
+
+| Concern                      | Tool I’d use          | Purpose                                                                       |
+| ---------------------------- | --------------------- | ----------------------------------------------------------------------------- |
+| Normal application logs      | **structlog**         | Errors, debugging, business events                                            |
+| Agent/LLM tracing            | **Langfuse**          | Agent graph, tool calls, LLM calls, latency, tokens, LLM cost                 |
+| Standard distributed tracing | **OpenTelemetry**     | Correlate FastAPI → agent → HTTP/API → DB → workers                           |
+| Durable usage/cost metering  | **OpenMeter**         | Exa, Firecrawl, enrichment APIs, compute, credits, quotas, per-customer usage |
+| Unified LLM gateway          | **LiteLLM, optional** | Normalize many LLM providers + central budgets/spend                          |
+
+This gives you something like:
+
+```text
+                         ┌─────────────────────┐
+                         │      structlog      │
+                         │ application logging │
+                         └─────────────────────┘
+
+User Request
+    │
+    ▼
+┌──────────────────────────────────────────────┐
+│            OpenTelemetry context             │
+│       trace_id / run_id / user_id            │
+└──────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────── Agent Run ───────────────────┐
+│                                             │
+│ DeepAgent                                   │
+│   │                                         │
+│   ├── LLM call ───────────────► Langfuse    │
+│   │      $0.014                             │
+│   │                                         │
+│   ├── Research Agent                        │
+│   │    ├─ LLM ────────────────► Langfuse    │
+│   │    └─ Exa Webset ─────────► OpenMeter   │
+│   │                              $0.12       │
+│   │                                         │
+│   ├── Enrichment Agent                      │
+│   │    ├─ LLM ────────────────► Langfuse    │
+│   │    ├─ People Data API ─────► OpenMeter  │
+│   │    └─ Scraper API ─────────► OpenMeter  │
+│   │                                         │
+│   └── Final LLM ───────────────► Langfuse    │
+│                                             │
+└─────────────────────────────────────────────┘
+
+               total run cost
+                    ↓
+              $0.387 / run
+```
+
+That is the architecture I'd use for Clue.
+
+### 1. Make Langfuse your AI observability layer
+
+Since you are already working with Langfuse, you're actually most of the way there.
+
+Langfuse's LangGraph integration automatically sees chains, agents, retrievers, tools and LLM generations. For nested/multi-agent LangGraph systems, you can keep them under the same trace, which is exactly what you want for DeepAgent-style orchestration. ([Langfuse][1])
+
+A run can look like:
+
+```text
+campaign_research                  $0.241
+│
+├── planner_agent                  $0.018
+│   └── gpt-5.6                    $0.018
+│
+├── account_research_agent         $0.163
+│   ├── claude-sonnet              $0.041
+│   ├── exa_search
+│   ├── exa_websets
+│   └── enrichment_agent
+│       └── gpt-5.6-mini           $0.022
+│
+└── synthesis_agent                $0.060
+    ├── gpt-5.6                    $0.052
+    └── embedding                  $0.008
+```
+
+Langfuse automatically tracks token usage and cost for supported models and allows custom model definitions/prices. It can distinguish input/output/cached/reasoning-style usage buckets, and ingested provider cost takes precedence over inferred cost. ([Langfuse][2])
+
+So you should **not write your own OpenAI/Anthropic token-cost calculator**.
+
+For LangGraph:
+
+```python
+from langfuse.langchain import CallbackHandler
+
+langfuse_handler = CallbackHandler()
+
+result = graph.invoke(
+    input,
+    config={
+        "callbacks": [langfuse_handler],
+        "run_name": "account-research",
+    },
+)
+```
+
+Langfuse's callback uses LangChain/LangGraph's existing event system, so individual LLM and tool executions get traced automatically. ([Langfuse][1])
+
+Then propagate things like:
+
+```python
+with propagate_attributes(
+    user_id=user_id,
+    session_id=session_id,
+    tags=["account-research"],
+    metadata={
+        "workspace_id": workspace_id,
+        "campaign_id": campaign_id,
+        "run_id": run_id,
+    },
+):
+    ...
+```
+
+That metadata becomes extremely important later.
+
+---
+
+## 2. Use OpenTelemetry underneath everything
+
+I would make **OpenTelemetry your common observability standard**, rather than inventing your own `TelemetryContext`.
+
+OTel can automatically instrument common Python libraries. For example, HTTPX has an official instrumentation package that can trace HTTP requests without modifying each call. ([OpenTelemetry][3])
+
+You can install instrumentation for things such as:
+
+```text
+FastAPI
+HTTPX
+requests
+SQLAlchemy
+Redis
+gRPC
+etc.
+```
+
+Conceptually:
+
+```python
+HTTPXClientInstrumentor().instrument()
+```
+
+and suddenly:
+
+```python
+await client.post("https://api.exa.ai/...")
+```
+
+can automatically produce an HTTP span containing things like:
+
+```text
+HTTP POST
+api.exa.ai
+200
+1.84 sec
+```
+
+You didn't write tracing logic around every request.
+
+OpenTelemetry also gives you **context propagation**.
+
+So this:
+
+```text
+request
+  ↓
+DeepAgent
+  ↓
+ResearchAgent
+  ↓
+Exa client
+  ↓
+background worker
+  ↓
+database
+```
+
+can all retain the same:
+
+```text
+trace_id
+```
+
+Langfuse itself increasingly uses OpenTelemetry internally, so you're aligning with an ecosystem standard rather than creating another tracing abstraction. ([Langfuse][4])
+
+---
+
+# 3. External API cost is a slightly different problem
+
+This is the important bit.
+
+There is **no universal library that can automatically determine the dollar cost of every external API request**.
+
+Because:
+
+```text
+OpenAI
+    → tokens
+
+Exa Search
+    → searches / pages / results
+
+Exa Websets
+    → Webset operations / enrichments
+
+Firecrawl
+    → credits
+
+People-data provider
+    → contacts revealed
+
+Browser service
+    → browser minutes
+
+Image model
+    → images / megapixels
+
+AWS
+    → CPU / memory / seconds
+```
+
+OpenTelemetry can automatically tell you:
+
+```text
+Exa request happened
+duration = 2.4 sec
+status = 200
+```
+
+but it cannot magically know:
+
+```text
+this Exa request cost $0.047
+```
+
+because that is a **business/pricing concept**, not an HTTP concept.
+
+For that I would use **OpenMeter**.
+
+OpenMeter is specifically designed for event-based usage metering: API requests, AI tokens, compute, etc. It supports SDKs and collectors rather than requiring you to build a metering database yourself. ([OpenMeter by Kong][5])
+
+Your application emits:
+
+```json
+{
+  "type": "external_api_usage",
+  "subject": "workspace_123",
+  "data": {
+    "provider": "exa",
+    "operation": "webset_search",
+    "units": 1,
+    "run_id": "run_xyz"
+  }
+}
+```
+
+OpenMeter handles:
+
+```text
+collection
+aggregation
+deduplication
+metering
+customer attribution
+limits
+entitlements
+usage reporting
+```
+
+It uses CloudEvents as its usage-event format and supports Python SDKs. ([OpenMeter by Kong][6])
+
+Even better, OpenMeter's Collector supports **event enrichment**, including deriving cost from usage events. That lets you move cost calculation outside your application code. ([OpenMeter by Kong][7])
+
+Instead of:
+
+```python
+# Bad
+
+cost = exa_pages * 0.001   # scattered everywhere
+```
+
+your application says:
+
+```text
+provider = exa
+operation = content_page
+quantity = 17
+```
+
+and your metering layer applies:
+
+```text
+17 pages
+   ×
+Exa price effective 2026-09-01
+   =
+$X
+```
+
+That's a much healthier architecture.
+
+---
+
+# 4. Your common Python module should therefore be very small
+
+I would create something like:
+
+```text
+platform/
+└── observability/
+    ├── __init__.py
+    │
+    ├── logging.py
+    │     structlog setup
+    │
+    ├── tracing.py
+    │     OpenTelemetry + Langfuse
+    │
+    ├── context.py
+    │     run_id / user_id / workspace_id
+    │
+    ├── metering.py
+    │     OpenMeter
+    │
+    └── providers/
+          exa.py
+          firecrawl.py
+          people_data.py
+          browser.py
+```
+
+But the provider files should **not implement telemetry infrastructure**.
+
+They should contain only the tiny bit that cannot be generalized:
+
+```python
+def extract_exa_usage(response):
+    return {
+        "provider": "exa",
+        "operation": "webset",
+        "units": ...
+    }
+```
+
+Everything after that is handled by your common metering layer.
+
+You might expose a function like:
+
+```python
+meter_usage(
+    provider="exa",
+    operation="webset_search",
+    quantity=10,
+    run_id=run_id,
+    user_id=user_id,
+    workspace_id=workspace_id,
+)
+```
+
+or a decorator:
+
+```python
+@metered("exa", "webset_search")
+async def create_webset(...):
+    ...
+```
+
+The implementation underneath emits the OpenMeter event.
+
+That is about the **maximum amount of custom telemetry code I would build**.
+
+---
+
+# 5. LLMs can be even easier if you introduce LiteLLM
+
+If Clue is going to call:
+
+```text
+OpenAI
+Anthropic
+Gemini
+OpenRouter
+Bedrock
+Azure OpenAI
+...
+```
+
+I would seriously consider putting **LiteLLM Proxy** in front of the models.
+
+Then instead of:
+
+```text
+Agent A ──► OpenAI
+Agent B ──► Anthropic
+Agent C ──► OpenRouter
+Agent D ──► Gemini
+```
+
+you get:
+
+```text
+                  ┌──► OpenAI
+Agents ─► LiteLLM ├──► Anthropic
+                  ├──► Gemini
+                  ├──► OpenRouter
+                  └──► Bedrock
+```
+
+LiteLLM already provides centralized cost tracking, spend management, budgets and per-project/user attribution, while exposing a common OpenAI-style interface across 100+ models. ([LiteLLM][8])
+
+And importantly:
+
+```text
+LiteLLM
+    ↓
+Langfuse
+```
+
+is already a supported integration. Langfuse can capture LiteLLM-returned cost information directly. ([Langfuse][9])
+
+So your LLM stack becomes:
+
+```text
+Agent
+  ↓
+LiteLLM
+  ↓
+model provider
+
+  simultaneously
+
+LiteLLM → Langfuse
+```
+
+You get two different benefits:
+
+**LiteLLM**
+
+```text
+Routing
+Retries
+Provider abstraction
+Budgets
+Rate limits
+Spend controls
+```
+
+**Langfuse**
+
+```text
+Which agent called it?
+Why?
+Prompt?
+Response?
+Latency?
+Tokens?
+Cost?
+Which parent run?
+```
+
+They complement each other.
+
+I would **not add LiteLLM purely for observability**, though. If you already have good provider abstraction, Langfuse alone is enough for LLM cost tracking.
+
+---
+
+# 6. Track cost at four levels
+
+This is particularly important for an agent-native product.
+
+I'd make every usage record attributable to:
+
+```text
+run
+↓
+agent
+↓
+operation/tool
+↓
+provider request
+```
+
+For example:
+
+```text
+run_9fe2                           $0.437
+│
+├── planner-agent                 $0.021
+│   └── GPT-5.6                   $0.021
+│
+├── account-discovery-agent       $0.284
+│   │
+│   ├── GPT-5.6                   $0.057
+│   ├── Exa Websets               $0.140
+│   ├── Exa enrichment            $0.062
+│   └── LinkedIn lookup           $0.025
+│
+└── synthesis-agent               $0.132
+    ├── Claude                     $0.096
+    └── GPT-5.6-mini               $0.036
+```
+
+Then you can aggregate the same events differently:
+
+```text
+Cost per run
+Cost per user
+Cost per workspace
+Cost per campaign
+Cost per agent
+Cost per tool
+Cost per provider
+Cost per feature
+Cost per discovered account
+Cost per generated asset
+Cost per successful research task
+```
+
+Langfuse already lets its metrics be sliced by user, session, tags, trace, feature/model and related dimensions. ([Langfuse][10])
+
+This becomes incredibly valuable when you eventually build your own credit system.
+
+For example:
+
+```text
+Customer used 10 Clue credits
+           │
+           ├── actual infrastructure cost = $0.37
+           │
+           ├── Exa                         = $0.19
+           ├── OpenAI                      = $0.11
+           ├── Anthropic                   = $0.04
+           └── other APIs                  = $0.03
+```
+
+OpenMeter is particularly suitable for that second layer because it supports metering, entitlements and thresholds rather than merely observability. ([OpenMeter by Kong][11])
+
+---
+
+# 7. One thing I would *not* do
+
+Don't do this:
+
+```text
+structlog
+   ↓
+log every API request
+   ↓
+parse logs
+   ↓
+manually count tokens
+   ↓
+manually calculate Exa cost
+   ↓
+write everything into Postgres
+   ↓
+build dashboards yourself
+```
+
+You'll end up accidentally creating your own version of:
+
+```text
+OpenTelemetry
++
+Langfuse
++
+OpenMeter
+```
+
+and maintaining provider pricing becomes painful.
+
+Also be careful not to send the **same LLM generation to Langfuse twice**. For example:
+
+```text
+LangGraph Callback
+     +
+LiteLLM Langfuse callback
+```
+
+can cause duplicate generations if both are configured to report the same request. Langfuse specifically warns that reporting one call through both an SDK and gateway can double-count cost. ([Langfuse][12])
+
+Pick one authoritative reporting path per LLM request.
+
+---
+
+# What I would implement in your codebase
+
+My stack for your platform would therefore be:
+
+1. **Keep `structlog` exactly as you have it.**
+2. **Standardize on OpenTelemetry context/traces.** Auto-instrument FastAPI, HTTPX, DB, Redis, etc.
+3. **Use Langfuse as the primary agent/LLM observability UI.** Plug its LangGraph callback into DeepAgent and other LangGraph agents. Let Langfuse calculate model costs automatically.
+4. **Use OpenMeter as the usage ledger for paid non-LLM APIs and eventually your Clue credit system.** Send billable units rather than scattering dollar calculations throughout your code.
+5. **Optionally introduce LiteLLM as your LLM gateway** if you need centralized model routing, budgets, fallback and spend enforcement.
+
+Then the fundamental object flowing through your system becomes:
+
+```python
+RunContext(
+    trace_id="...",
+    run_id="...",
+    user_id="...",
+    workspace_id="...",
+    campaign_id="...",
+)
+```
+
+Every Langfuse observation and OpenMeter usage event carries those identifiers.
+
+That gives you the really useful end state:
+
+```text
+                    ONE AGENT RUN
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+      Langfuse       OpenMeter       structlog
+          │              │              │
+      WHY/WHERE        HOW MUCH        WHAT
+      it happened      it cost         happened
+```
+
+**That division of responsibility is what I'd recommend rather than trying to make Langfuse, structlog, or OpenTelemetry alone do everything.** It also fits very naturally with your existing LangGraph/DeepAgent setup and the credit-management layer you were already considering for expensive research operations.
+
+[1]: https://langfuse.com/integrations/frameworks/langgraph?utm_source=chatgpt.com "Open Source Observability for LangGraph - Langfuse"
+[2]: https://langfuse.com/docs/observability/features/token-and-cost-tracking?utm_source=chatgpt.com "Token & Cost Tracking - Langfuse"
+[3]: https://opentelemetry.io/docs/languages/python/libraries/?utm_source=chatgpt.com "Using instrumentation libraries | OpenTelemetry"
+[4]: https://langfuse.com/docs?utm_source=chatgpt.com "Open Source AI Engineering Platform - Langfuse"
+[5]: https://openmeter.io/docs/metering/events/quickstart?utm_source=chatgpt.com "Get Started | OpenMeter by Kong"
+[6]: https://openmeter.io/docs/metering/events/usage-events?utm_source=chatgpt.com "Usage Events | OpenMeter by Kong"
+[7]: https://openmeter.io/docs/metering/events/event-enrichment?utm_source=chatgpt.com "Event Enrichment | OpenMeter by Kong"
+[8]: https://docs.litellm.ai/?utm_source=chatgpt.com "LiteLLM - Getting Started | liteLLM"
+[9]: https://langfuse.com/docs/observability/features/token-and-cost-tracking "Token & Cost Tracking - Langfuse"
+[10]: https://langfuse.com/docs/metrics/overview?utm_source=chatgpt.com "LLM Metrics & Analytics - Langfuse"
+[11]: https://openmeter.io/docs/integrations/notifications/quickstart?utm_source=chatgpt.com "Get Started | OpenMeter by Kong"
+[12]: https://langfuse.com/resources/engineering/llm-cost-management?utm_source=chatgpt.com "LLM Cost Management: Track and Control Spend - Langfuse"

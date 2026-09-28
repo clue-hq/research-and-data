@@ -67,6 +67,63 @@
 }
 
 /*
+ * Rung B (rich-text plan, 2026-08-24): the inline text-edit caret.
+ *
+ * The design subsystem's `TextEditOverlay` inline style, split the way this
+ * lane splits every ported surface: everything DATA-DRIVEN (the box, the
+ * rotation, the font metrics, the colour, the valign padding) stays inline on
+ * the element, because it is computed per node per zoom; everything constant
+ * lives here. The border is upstream's own `1px solid #256c70`, so the edit
+ * state reads the same in both editors.
+ *
+ * ── THE SURFACE IS A DELIBERATE DIVERGENCE (D1, live walk 2026-08-24) ─────
+ * Upstream is opaque WHITE (`TextEditOverlay.tsx:152`, `background: "#ffffff"`)
+ * and this file ported that faithfully. On the seeded dark-navy ad it made the
+ * caret unusable: the textarea inherits the NODE's fill for its text and its
+ * caret — here `#fff`, correct — and painted it on white, so the founder typed
+ * blind and only the blue selection highlight made anything readable.
+ *
+ * `transparent` is the fix, and it is the honest one rather than a second
+ * guess at a contrasting colour: the draw loop already SUPPRESSES the painted
+ * text under an open session, so what shows through is the artboard itself —
+ * exactly the background the node's fill was chosen against. Any opaque value
+ * re-introduces the defect for some artboard, which is why the pin in
+ * `adapter/scene-text-edit.test.ts` refuses one.
+ *
+ * Upstream keeps its white surface; this is not a port bug to send back.
+ *
+ * `transform-origin: top left` is load-bearing: it is the pivot the draw loop
+ * and the G-A outline rotate a node about, so a rotated node's caret lands on
+ * its glyphs. `resize: none` / `overflow: hidden` keep the surface exactly the
+ * node's box — a resize grip would be an affordance for a gesture the session
+ * has already refused. Unlike every other overlay in this file, pointer events
+ * stay ON: this one is the thing being typed into.
+ *
+ * A7a's valign padding is written imperatively by the overlay (a live DOM
+ * measurement), so `padding: 0` is the base it overrides — never a value React
+ * re-applies on top of it.
+ *
+ * ── THE STACKING ORDER (D3b, same walk) ──────────────────────────────────
+ * 41, ABOVE `.bannerLayer` (40) — it used to be 30, below it. The banners are
+ * INFORMATIONAL and the caret is the thing being typed into, so a banner that
+ * happens to overlap must never take its clicks. The banners stay visible and
+ * keep their own `pointer-events` exactly as they were; only the order moved.
+ */
+.textEditOverlay {
+  background: transparent;
+  border: 1px solid #256c70;
+  box-sizing: border-box;
+  margin: 0;
+  outline: none;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  resize: none;
+  transform-origin: top left;
+  z-index: 41;
+}
+
+/*
  * genad2 Task 5: the zero-page neutral state.
  *
  * FOUNDER-DESIGN FLAG (open, 2026-08-23) — this is NOT designed UI. The copy is
@@ -98,98 +155,146 @@
   transform: translate(-50%, -50%);
 }
 
-/*
- * Gate G-D (founder, 2026-08-21): the engine-forced banners.
- *
- * The ruling was "as is from the MVP editor, no separate banner" — so this is
- * the design subsystem's `.engine-disabled-banner` block
- * (`subsystems/clue-design/apps/editor/src/app/styles.css:912-974`), its tokens
- * resolved to the literal values that editor's `tokens.css` gives them, since
- * the platform shell defines no `--status-error*`. Read-only and degraded-text
- * share one treatment, which is the second half of the same ruling.
- *
- * Two deviations from a literal copy, both shown to the founder before ruling:
- *
- *  1. **The background is opaque.** Upstream is `rgba(207, 45, 86, 0.15)`, which
- *     only reads as pink because that editor's workspace is always light. Ours
- *     floats over the ARTBOARD, and over a dark ad the body text disappeared
- *     (previewed). `#efd7dd` is that exact wash composited over the workspace
- *     grey — same colour, no longer see-through.
- *  2. **The layer is a flex column.** Upstream pins both banners at
- *     `top: 14px`, so a simultaneous engine + measurement failure paints one
- *     over the other.
- *
- * `pointer-events` stays off on the layer and on for the banner itself, so the
- * canvas underneath keeps every gesture the banner does not need.
- */
+/* Product UI diagnostics use Clue tokens, independent of the ad's Brand Kit.
+ * Keep the stack transparent to canvas gestures outside each disclosure. */
 .bannerLayer {
-  align-items: center;
+  align-items: flex-end;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  left: 50%;
   pointer-events: none;
   position: absolute;
-  top: 14px;
-  transform: translateX(-50%);
-  width: min(680px, calc(100% - 32px));
+  right: 12px;
+  top: 10px;
+  width: min(420px, calc(100% - 24px));
   z-index: 40;
 }
 
 .banner {
-  align-items: flex-start;
-  background: #efd7dd;
-  border: 1px solid #cf2d56;
-  border-radius: 12px;
-  box-shadow: 0 6px 18px rgb(38 37 30 / 14%);
-  color: #26251e;
-  display: flex;
-  gap: 10px;
+  background: var(--clue-ds-color-bg-page);
+  border: var(--clue-ds-product-border-structural-width) solid var(--clue-ds-color-border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-typography-text-default-font-family), sans-serif;
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
   max-width: 100%;
-  padding: 12px 16px;
   pointer-events: auto;
+  position: relative;
+  width: fit-content;
+}
+
+.banner:has(.bannerDisclosure[open]) {
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  width: 100%;
+}
+
+.bannerSummary {
+  align-items: center;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  min-height: 32px;
+  padding: 6px 38px 6px 10px;
+}
+
+.bannerSummary::-webkit-details-marker {
+  display: none;
+}
+
+.bannerSummary:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+}
+
+.bannerSummary:focus-visible,
+.bannerDismiss:focus-visible {
+  outline: 2px solid var(--clue-ds-color-components-focus-ring);
+  outline-offset: 2px;
 }
 
 .bannerIcon {
-  color: #cf2d56;
+  color: var(--clue-ds-color-content-utility-warning);
   flex: none;
-  margin-top: 1px;
+}
+
+.banner[data-severity="error"] .bannerIcon {
+  color: var(--clue-ds-color-content-utility-critical);
+}
+
+.bannerTitle {
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bannerChevron {
+  color: var(--clue-ds-color-content-subtle);
+  flex: none;
+}
+
+.bannerDisclosure[open] .bannerChevron {
+  transform: rotate(180deg);
+}
+
+.bannerDismiss {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  display: flex;
+  height: 28px;
+  justify-content: center;
+  position: absolute;
+  right: 2px;
+  top: 2px;
+  width: 28px;
+}
+
+.bannerDismiss:hover {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.bannerList {
+  max-height: min(420px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .bannerBody {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.bannerTitle {
-  color: #cf2d56;
-  font-size: 13px;
-  font-weight: 700;
+  border-top: var(--clue-ds-product-border-structural-width) solid var(--clue-ds-color-border-subtle);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  gap: 6px;
+  line-height: var(--clue-ds-typography-text-default-line-height);
+  padding: 12px;
+  overflow-wrap: anywhere;
 }
 
 .bannerText {
-  color: rgb(38 37 30 / 92%);
-  font-size: 12.5px;
-  line-height: 1.45;
+  color: var(--clue-ds-color-content-subtle);
+  margin: 0;
+}
+
+.bannerGuidance {
+  border-left: 2px solid var(--clue-ds-color-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 10px;
 }
 
 .bannerCommand {
-  background: #ffffff;
-  border: 1px solid rgb(38 37 30 / 10%);
-  border-radius: 6px;
-  color: #26251e;
-  font-family: var(--font-mono, ui-monospace, sfmono-regular, menlo, monaco, consolas, monospace);
-  font-size: 11.5px;
-  max-width: 100%;
-  overflow: hidden;
-  padding: 3px 7px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: var(--clue-ds-typography-code-font-family), monospace;
+  font-size: var(--clue-ds-typography-code-font-size);
+  line-height: var(--clue-ds-typography-code-line-height);
+  white-space: pre-wrap;
 }
 
 .bannerCommandName {
-  color: #cf2d56;
-  font-weight: 700;
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
 }

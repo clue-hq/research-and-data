@@ -23,7 +23,12 @@ from clue_fleet import (
     WorkTaskRow,
 )
 from clue_fleet.work_worker import PAYLOAD_CONTEXT_KEYS
-from clue_obs.otel import carrier_from_current_span, collect_spans, traced_step
+from clue_obs.otel import (
+    CARRIER_KEYS,
+    carrier_from_current_span,
+    collect_spans,
+    traced_step,
+)
 
 
 class _Seeing:
@@ -108,3 +113,40 @@ def test_a_payload_without_a_carrier_starts_a_fresh_trace() -> None:
     assert fleet_span.parent is None
     assert seen["trace_id"] == fleet_span.get_span_context().trace_id
     assert set(PAYLOAD_CONTEXT_KEYS) >= {"workspace_id", "turn_id", "job_id", "run_id"}
+
+
+class _Strict:
+    """A handler whose payload model forbids extra keys — the design job envelope's shape.
+
+    ``DesignTurnEnvelope`` is ``extra="forbid"``, so the carrier the enqueue stamps into the
+    payload made every QUEUED design job unparseable (47 ``design_job.preamble_error`` failures
+    in the lane's logs on 2026-09-17). The carrier belongs to the queue, not to the work.
+    """
+
+    kind = FleetTaskKind.AGENT_TURN
+
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+        self.trace_ids: list[int] = []
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.payloads.append(dict(context.payload))
+        self.trace_ids.append(trace.get_current_span().get_span_context().trace_id)
+        if set(context.payload) & set(CARRIER_KEYS):
+            raise AssertionError(f"payload carries queue transport keys: {sorted(context.payload)}")
+        return WorkResult(outcome="done", references={})
+
+
+def test_the_handler_sees_no_carrier_keys_while_the_span_still_parents_on_them() -> None:
+    handler = _Strict()
+    with collect_spans() as exporter:
+        with traced_step("api.request") as api_span:
+            carrier = carrier_from_current_span()
+        assert set(carrier) & set(CARRIER_KEYS)  # the enqueue really did stamp one
+        _drain(handler, _row({**carrier, "workspace_id": "ws-1", "run_id": "run-1"}))
+    (payload,) = handler.payloads
+    assert payload == {"workspace_id": "ws-1", "run_id": "run-1"}
+    fleet_span = next(s for s in exporter.get_finished_spans() if s.name == "fleet.task")
+    assert fleet_span.parent is not None
+    assert fleet_span.parent.span_id == api_span.get_span_context().span_id
+    assert handler.trace_ids == [api_span.get_span_context().trace_id]

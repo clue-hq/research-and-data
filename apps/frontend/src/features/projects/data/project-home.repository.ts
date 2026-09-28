@@ -44,6 +44,7 @@ export function createHttpProjectHomeRepository(
               version: reference.version,
             })),
             attachment_refs: request.attachmentRefs.map((reference) => ({
+              upload_id: reference.uploadId,
               artifact_key: reference.artifactKey,
               sha256: reference.sha256,
               media_type: reference.mediaType,
@@ -65,7 +66,7 @@ export function createFixtureProjectHomeRepository(): ProjectHomeRepository {
       return ProjectHomeSchema.parse(projectHomeFixture);
     },
     async create({ idempotencyKey, ...input }) {
-      const { brandId, message } = ProjectBootstrapRequestSchema.parse(input);
+      const { brandId } = ProjectBootstrapRequestSchema.parse(input);
       const replay = accepted.get(idempotencyKey);
       if (replay) {
         return { ...replay, turn: { ...replay.turn, replayed: true } };
@@ -83,7 +84,8 @@ export function createFixtureProjectHomeRepository(): ProjectHomeRepository {
         },
         thread: {
           id: FIXTURE_THREAD_ID,
-          title: message.trim(),
+          // Born untitled; the conversation namer titles it after the first completed turn.
+          title: null,
           href,
           status: "running",
           pinned: false,

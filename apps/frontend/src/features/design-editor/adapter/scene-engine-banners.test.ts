@@ -198,3 +198,48 @@ it("names a command that exists in THIS repo (the one deviation, disclosed)", ()
   // And neither may be the upstream command, which does not exist here.
   assert.notEqual(engine.command, "npm run build:wasm");
 });
+
+it("names unresolved layout even when the font shaper is available", () => {
+  const [banner] = sceneEngineBanners(ACTIVE, "unsettled");
+  assert.equal(banner.title, "Text layout needs verification");
+  assert.match(banner.body, /could not confirm every text measurement/);
+});
+
+it("keeps blocking failures critical and advisory rendering issues as warnings", () => {
+  assert.equal(sceneEngineBanners(disabled("load_failed", null), "skia")[0].severity, "error");
+  assert.equal(sceneEngineBanners(ACTIVE, "heuristic")[0].severity, "warning");
+  assert.equal(sceneEngineBanners(ACTIVE, "unsettled")[0].severity, "warning");
+
+  for (const severity of ["warning", "error"] as const) {
+    const diagnostic = {
+      severity, phase: "brand" as const, code: "FONT_UNAVAILABLE",
+      message: "A font is unavailable.", subject: { kind: "document" as const }, hint: null,
+    };
+    assert.equal(sceneEngineBanners(ACTIVE, "skia", [diagnostic])[0].severity, severity);
+    assert.equal(sceneEngineBanners(ACTIVE, "skia", [], {
+      status: "ready", diagnostics: [diagnostic],
+    })[0].severity, severity);
+  }
+
+  // A blocked canvas remains critical even before a diagnostic arrives.
+  assert.equal(sceneEngineBanners(ACTIVE, "skia", [], {
+    status: "invalid", diagnostics: [],
+  })[0].severity, "error");
+});
+
+it("classifies blocked render context separately from fonts and does not claim a rendered fallback", () => {
+  const banners = sceneEngineBanners(ACTIVE, "heuristic", [{
+    severity: "warning", phase: "brand", code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+    message: "A font asset is unavailable.", subject: { kind: "document" }, hint: null,
+  }], { status: "invalid", diagnostics: [{
+    severity: "error", phase: "brand", code: "EDITOR_RENDER_MODE_UNSUPPORTED",
+    message: "Brand Kit does not declare mode theme.unknown", hint: "Select a supported theme.",
+    subject: { kind: "document" },
+  }] });
+  assert.equal(banners.length, 1);
+  assert.equal(banners[0].kind, "render-context");
+  assert.equal(banners[0].title, "Canvas rendering unavailable");
+  assert.match(banners[0].body, /theme\.unknown/);
+  assert.equal(banners[0].detail, "Select a supported theme.");
+  assert.doesNotMatch(JSON.stringify(banners), /Inter|font unavailable|geometry is approximate/);
+});

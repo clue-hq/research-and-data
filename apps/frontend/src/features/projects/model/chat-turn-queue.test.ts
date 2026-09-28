@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { ChatAttachmentRef } from "./chat-attachments";
 import {
   applyTurnStateOverrides,
   MessageSubmissionGuard,
@@ -19,6 +20,7 @@ function turn(turnId: string, state: TurnState, requestedAt: string): ChatTurn {
     lastEventId: null,
     generationAttempts: state === "queued" ? 0 : 1,
     submissionMessage: null,
+    derivation: null,
   };
 }
 
@@ -70,9 +72,14 @@ test("a durable terminal read supersedes an older running stream override", () =
 test("message duplicate protection blocks only the exact in-flight request", () => {
   const guard = new MessageSubmissionGuard();
   let key = 0;
-  const submission = (message: string, agentProfileId = "head-of-abm@v30") => ({
+  const submission = (
+    message: string,
+    agentProfileId = "head-of-abm@v30",
+    attachmentRefs: ChatAttachmentRef[] = [],
+  ) => ({
     message,
     contextRefs: [],
+    attachmentRefs,
     agentProfileId,
   });
   const first = guard.begin(
@@ -99,6 +106,23 @@ test("message duplicate protection blocks only the exact in-flight request", () 
     guard.begin(
       "thread-r5",
       submission("same message", "another-profile@v1"),
+      () => `key-${++key}`,
+    ),
+  );
+  // The same words carrying a file are a different request, not a duplicate.
+  assert.ok(
+    guard.begin(
+      "thread-r5",
+      submission("same message", "head-of-abm@v30", [
+        {
+          uploadId: "upl_1",
+          artifactKey: `ws_1/${"a".repeat(64)}`,
+          sha256: "a".repeat(64),
+          mediaType: "text/markdown",
+          byteCount: 12,
+          filename: "brief.md",
+        },
+      ]),
       () => `key-${++key}`,
     ),
   );

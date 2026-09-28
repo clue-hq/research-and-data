@@ -1,5 +1,40 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
+> **Factual visibility, 2026-09-22 — founder-adopted policy; implementation and activation pending.**
+> For the next research-quality profile, retain authorized, policy-permitted invalid observations
+> for audit while excluding them from ordinary factual summaries. Unresolved findings remain visible
+> as uncertainty; valid partial research can still render. This narrowly revises §2's annotation-only
+> presentation rule when that profile is implemented and activated. It does not require dropping
+> observations, relax privacy/use restrictions, introduce monetary vetoes, or alter current/historical
+> profile behavior today. The founder approved this policy, not application implementation or every
+> remaining frontend/schema choice. See the [quality spec §1.2](../superpowers/specs/2026-09-22-arv3-research-quality-design.md#12-policy-decisions-and-proposed-contract-changes)
+> and [implementation plan](../superpowers/plans/2026-09-22-arv3-research-quality.md).
+
+> **Committee discovery, 2026-09-22 — implemented; v2 default by founder instruction.** The v2 account
+> agent researches the company, reasons about buying responsibilities from its ICP and pinned
+> persona, then discovers unknown people through company-scoped AI Ark SMART title search.
+> This supersedes §3's name-scoped-only rule and R2/R3's web-first committee sequence **for v2**.
+> Selected profiles seed the existing person jobs; work-email and phone enrichment run alongside
+> person depth without another named search. Exhausted account Exa failure leaves a gap and
+> permits discovery. Web research fills gaps and corroborates profiles. Provider facts cite
+> saved artifacts/JSON paths; committee responsibility is the agent's separate assessment.
+> v1 resources remain intact for historical jobs. `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v2` is now
+> the default for new launches. The Probook/Zafran live canary remains outstanding; no live
+> acceptance or deployment is implied by this default change. R4 account discovery, media,
+> model settings and general-purpose `web_search@1` are unchanged. See the
+> [design](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
+> [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md) and
+> [acceptance record](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
+
+> **Scoped-field follow-up, 2026-09-16 (planning only).** The founder requested a detailed plan to
+> make agent-proposed research definitions workspace-local. The current lenient writer still
+> registers unknown definitions globally while keeping their claims private. The
+> [implementation plan](../superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md) covers
+> trusted registration, historical vocabulary containment and versioned deepagent/research
+> documentation. [Prepared agent guidance](../agents/research-field-scope.md) must activate with
+> the backend change. This amendment does not assert that the change is shipped or relax current
+> retirement, erasure, subject or privacy constraints under the “lenient” rule below.
+
 **This is the single authoritative plan. Version 1.6, 2026-09-07 (v1.6: the product-catalog child doc `ARV2-PRODUCT-CATALOG-CONTRACT.md` — Exa request shape, `ProductCatalogResearch@1` artifact, and rulings P1–P4: a project targets a **set** of products, versioned, one ICP per project over the whole set; v1.5: Aryan's rulings recorded — §8 R1–R13, §12 D1–D8 and D10–D13, data-source rulings S1–S12 with S10 = read-time relaxation; v1.4: data-source map child doc, `display_section_recipe` name, D13; v1.1: lenient write gate, checks as flag-controlled annotations, human-stated facts need no URL, all fields optional; v1.2: the interview never requires word-for-word recording; v1.3: contract v1 re-based on the 5 Sep frontend `live-backend-v1` @ `84f8ee7` — clause-level citation segments, research excerpts, actor-based activity, account artifacts, owner/creator, nullable fit score — and the D0 rulings reduced to what remains). Both founders ratify by initialing
 §12.** It consolidates every decision taken so far into one present-tense document. The earlier
 documents in `docs/specs/ARV2-*.md` remain as the audit trail; where they differ from this one, this
@@ -326,14 +361,31 @@ is served rather than inferred from a page (additive — the dummy's envelope Zo
   claims, claim ids valid and on-recipe, send lines present. **The single hard rule** (the floor, on
   by default): an `outreach_safe=false` claim cited outside a restricted section regenerates that
   section once, then serves the section without the offending item. A page is never blocked.
-- **Generation policy:** a section is generated **once, on first request** (lazy — an unopened
-  contact page costs nothing; the first open waits ~15 s), then **persisted and served as-is on every
-  later visit**. It is regenerated **only on invalidation, and only the affected sections**.
-  Invalidation is **recipe-scoped**: a section is stale when any claim for that subject whose
-  `field_key` is in the section's recipe is added, superseded, or has its `outreach_safe` flag
-  changed, or when the recipe/prompt version changes. On invalidation, serve the persisted block and
-  regenerate in the background, swapping the new row in when it lands. No scheduled regeneration;
-  `:batch` only for an accumulated invalidated set.
+- **Generation policy (2026-09-21 — written by the fleet, never inside a read):** a section is
+  written **once, by a fleet task** (`arv2_display_page`, one task per `(subject, page)`) and then
+  **persisted and served as-is on every later visit**. When each page is written: the account
+  **overview and insights pages** at **settle** — the account research job offers both after the
+  committee step, so the first human to open a researched account waits for nothing; the **contact
+  pages** of an account the **first time that account is opened** (its overview or its contacts
+  tab), all settled committee members at once, because an account nobody looks at costs nothing;
+  every other page on **its own first open**. A **read never writes**: it serves the blocks that are
+  stored, marks the sections the task will write `pending` with the one served sentence
+  `Synthesis in progress, please wait a few seconds.`, and offers the page's task — the client
+  re-reads the page every 5 s while any section is pending. A section that will *never* be written
+  (its recipe matches no claim) is **not** `pending` and keeps the ordinary empty state, so the
+  sentence is never a promise the page cannot keep. **Stale sections are served as stored and the
+  page is re-offered**, swapping the new row in when it lands. It is regenerated **only on
+  invalidation, and only the affected sections**. Invalidation is **recipe-scoped**: a section is
+  stale when any claim for that subject whose `field_key` is in the section's recipe is added,
+  superseded, or has its `outreach_safe` flag changed, or when the recipe/prompt version changes.
+  No scheduled regeneration; `:batch` only for an accumulated invalidated set. (With no work queue
+  composed — the CLI, a test root — the read falls back to the old inline write.)
+- **Shared blocks (2026-09-21):** the **insights** page does not re-synthesise a question another
+  page already answered. `context-only` is the overview's `watch-outs` block and `contact-insights`
+  is the committee's `why-this-person` blocks in committee order — the stored bodies only (same
+  items, same claim ids), under the insights page's own `h1` and open/closed default. They are never
+  `pending` on the insights page: their owner page carries that, and a stale owner is re-offered
+  from whichever page is being read. No synthesis is ever written from another synthesis.
 - **Empty state:** "No {section} information found for {name}." The H1 is never hidden.
 - **Presentation (frontend-owned, decided 5 Sep):** Notion-style heading toggles, closed by
   default and independently expandable; no tabs, no jump menu, no priority accents, no boxed copy
@@ -477,7 +529,9 @@ persona documents; background = one Agent run per discovered product. Seller-com
 Onboarding as a research pipeline (parallel research agents writing `.md` artifacts into the
 deepagent workspace), 2–5 ICP proposal artifacts, the prompt-driven interview, the final ICP
 artifact under project + brand context, durable project context (replacing scoped memory for v1),
-the Exa MCP search tool on the main agent, brand context, and the chat-shell output-pane motion
+the Exa MCP search tool on the main agent (landed 2026-09-22 as the direct governed tool
+`web_search@1`, not MCP — spec `docs/superpowers/specs/2026-09-22-web-search-tool-design.md`),
+brand context, and the chat-shell output-pane motion
 handoff. The Head-of-ABM skills adopt the co-founder's refinements content with three edits: every
 "route to memory" becomes "record in project context"; the copy-voice lint/reviewer-judge lines are
 removed (the em-dash and no-fabrication rules stay as prompt rules the agent applies itself); recon
@@ -594,3 +648,40 @@ Proof-of-concept runs and their reports (chicago worktree `.context/`): `arv2-cl
 `frontend-page-content` (the three Zafran pages as they must render), `ai-ark-canary`. The dummy
 frontend: `clue-frontend/port-of-spain` (accounts, insights, contact screens). Contract docs:
 `apps/frontend/docs/api-contracts/accounts.md`.
+
+## Media v3 amendment — approved 2026-09-22, activation pending
+
+The approved [media design](../superpowers/specs/2026-09-22-arv2-media-research-design.md)
+and [implementation plan](../superpowers/plans/2026-09-22-arv2-media-research.md) extend
+AI Ark v2 through an explicit `media_research` catalog capability. Only jobs pinned to v3
+use these changes. The launch default stays v2 until founder-triggered live acceptance.
+
+For v3, contextual media discovery replaces the fixed six-search sweep and blanket domain
+prohibitions. Public YouTube uses the narrow native-Gemini video route; public recordings,
+explicit publisher transcripts and captions become immutable, workspace-scoped evidence.
+Transcript search/open replaces excerpt-only access, and quote audits resolve saved spans.
+Supplied timing remains qualified; untimed speech remains valid. Metadata or ASR labels alone
+never establish a person's voice. Empty resolution does not consume a substantive item slot.
+
+AI Ark SMART role discovery within the exact company, seed reuse, independent work email and
+phone enrichment, and continuation after recorded Exa failure remain unchanged. Existing
+runtime/media allowances remain enforced, with durable seconds/source ownership. No new
+monetary/call-count/zero-yield stopping rule is introduced. Old v1/v2 catalog files and job pins
+remain immutable. This amendment records implementation authority, not live-provider or
+research-quality acceptance.
+
+The v3 public fetch adapter imports only the shared `official_site.safety` and
+`official_site.url_policy` primitives for URL admission, DNS validation and pinned redirects.
+These two modules are a narrow addition to the ARV2 import guard; the official-site acquisition
+engine and the quarantined research pipeline remain forbidden.
+
+
+## Research quality shared seams — implementation amendment, 2026-09-23
+
+The approved [quality design](../superpowers/specs/2026-09-22-arv3-research-quality-design.md)
+reuses only `clue_research.narrative.fields` and `.support` for the existing narrative field
+and two-sided support table, and `clue_research.compliance` for shared workspace/use policy.
+The import guard admits these substrate helpers explicitly; it still rejects the legacy
+narrative positioner, assembler, research graph and waterfall. Platform Langfuse callbacks and
+project-library change notifications are shared platform seams, not alternate research owners.
+This amendment does not promote a launch default or authorize historical data repair.

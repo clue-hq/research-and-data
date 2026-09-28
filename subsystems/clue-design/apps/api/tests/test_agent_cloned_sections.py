@@ -896,7 +896,17 @@ def test_a_web_turn_is_handed_the_workspaces_cloned_section_capability(
 
     captured: dict = {}
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+        callbacks=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
@@ -989,3 +999,26 @@ def test_a_row_with_no_recorded_page_url_reports_the_page_it_is_sorted_onto(
     assert section["fragment_id"] == row["fragment_id"]
     assert section["page_url"] == SOURCE_URL
     assert section["source_url"] == SOURCE_URL
+
+
+def test_a_campaign_variant_never_replaces_the_original_but_a_repair_does() -> None:
+    """Founder ruling 2026-09-04 (third solo Ramp run): the agent refused to derive a campaign
+    variant of Stripe's canonical hero because "deriving from the homepage hero would replace
+    Stripe's captured band for every future pin" — and under the old resolver it was RIGHT: a
+    released healthy child made the original a non-leaf, so pins of the original resolved to
+    the variant. A variant is a sibling band for one campaign; only a REPAIR supersedes."""
+    original = _lineage_row("a")
+    variant = _lineage_row("v", derived_from="a")
+    variant["derived_reason"] = (
+        "repair rung 3 (static fallback); trigger unrecorded; campaign variant: one CTA, eyebrow"
+    )
+    verdicts = resolve_fragment_lineages([original, variant])
+    # The original keeps resolving to itself; the variant is its own root, pinnable by id.
+    assert verdicts["a"].representative == "a"
+    assert verdicts["v"].root == "v" and verdicts["v"].representative == "v"
+
+    repair = _lineage_row("r1", derived_from="a")
+    repair["derived_reason"] = "repair rung 3 (static fallback); trigger height; inverse ink"
+    verdicts = resolve_fragment_lineages([_lineage_row("a", degraded=True), repair])
+    # A genuine repair still supersedes its broken original.
+    assert verdicts["a"].representative == "r1"

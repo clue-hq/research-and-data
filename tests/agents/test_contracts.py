@@ -296,14 +296,17 @@ def test_validated_plan_requires_stable_unique_operation_ids_and_budget() -> Non
         validated_at=NOW,
     )
     assert plan.operations[0].operation_id == operation.operation_id
+    over_estimate = {
+        **plan.model_dump(),
+        "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
+        "estimated_cost_millicents": 101,
+    }
     with pytest.raises(ValidationError, match="estimate exceeds"):
-        ValidatedPlan.model_validate(
-            {
-                **plan.model_dump(),
-                "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
-                "estimated_cost_millicents": 101,
-            }
-        )
+        ValidatedPlan.model_validate(over_estimate)
+    record_only = ValidatedPlan.model_validate({**over_estimate, "budget_mode": "record_only"})
+    assert record_only.estimated_cost_millicents == 101
+    assert record_only.budget_limit_millicents == 100
+    assert plan.budget_mode == "enforced"
 
 
 def test_delegation_contract_is_fresh_scoped_and_reference_only() -> None:
@@ -427,27 +430,49 @@ def test_frozen_contract_json_schema_digests() -> None:
     # above it. The field is optional and defaulted, so a finalization recorded before it existed
     # still validates on replay. The ritual is performed here, in the `head-of-abm@v56` mint,
     # because Task 7 landed the delta without it.
+    # Contract revision 2026-09-04 (web-editor annotations): ``DomainObjectRef`` gains an
+    # optional, bounded ``note`` — the marketer's own words about that one reference, written
+    # onto an element in the web editor. Every digest below except ``ValidatedPlan`` moved,
+    # because every one of these shapes embeds a domain ref somewhere; ``ValidatedPlan`` does
+    # not. The durable column landed in the same change (migration 4cbfa56e52a8), and the
+    # default keeps every existing construction valid.
+    # Merge 2026-09-17 (codex/design-agent-v1 into research-streaming): both ``note`` and
+    # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
+    # Research quality Q4: admit two specialist roles and explicit trusted budget mode.
+    # Existing plans decode to enforced; new roles are admitted by f4b30cb3d088.
+    # 2026-09-25: AgentPlan tool steps gain explicit retry_of failed-node references.
+    # Absent/empty retry_of is omitted on serialization, preserving historical proposal bytes.
     assert actual == {
-        "AgentProfile": "f96dadf75a3bdb1b27a77aaff4a4e2b07f73bc244c735d28cc8fa7eb507dda45",
-        "SkillBundle": "d9450a85d5db839b0c61affc04e94d5408079e18608404be8d4fb3703c3b5279",
+        "AgentProfile": "f4480edc18fd37250f861018a7448c38c36355d8cf087b59c4a037a7e0b8507e",
+        "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("1412542826971ca1513851d9ee63939548ea8c9282cb34b0bfd0b0a6e27526e6"),
-        "AgentTurnRequest": ("73dafed6373bd624f4c87fab8b9c26ea037aa173336b77836abe07f1788a6135"),
-        "AgentPlan": "883abc57af6fb248000b954b4e8cd7d09f0da32132558b79ad6cc308e63b662b",
-        "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("eb668a452768b5baf182291d73789928bc2f8723c416e314881ef7cae127d0c7"),
-        "DelegationResult": ("ad6660fa585a9c82fbacc157a2a07c55ca3073d35e89764b078709acb6a82ba6"),
+        "AgentConstitution": ("45ab9cf133eedcc2c6d9eff6409da1b186c7d99286d101278d72eb1185fbf0ee"),
+        "AgentTurnRequest": ("cd432d8372524ce2a2aa9e8977dfadfa3fa60eeb52a9bd5590b241d6a38161ac"),
+        "AgentPlan": "86b4deb6954a986879f257a8b0e3197f4880761b330e87c0e4bbc028a02d54c0",
+        "ValidatedPlan": ("cc19a5139945377d7a50fdde0ea8dba06de1882dcdd2215227379b5f94105fc1"),
+        "DelegationRequest": ("50953fc74274f844c3af26eab94d5897f759ffb6d8a8bf365b459664acbfae95"),
+        "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
         "SpecialistTaskEnvelope": (
-            "eb9313d3fe8525be55ae2e3be649b8140d64dffb2581328f46ff236a2baf133d"
+            "32a0b5d93d5ca52221d564eea1914b16425a1a9bb68f172799b364287eec48e3"
         ),
         "ContextBundleManifest": (
-            "5322dbc2d6bdb055d6642d0b2db2cfc9d9ecc992bb20b38fad9fd1d176f6d32a"
+            "3d4bcf33bedda5d6d88a90b4c86917561d27c7d542c2b9c953b4991b739ca0ea"
         ),
         "AgentFinalizeEnvelope": (
-            "aa4bece6a27451114161e6da024c8361945ad79f115013b8f85c6cd022f0960b"
+            "9c946fd10396d7dd002acc638a2e27f8729b62bd3b52a5bf188babe787c8dabe"
         ),
     }
+
+
+def test_tool_repair_metadata_is_explicit_and_absent_from_historical_plan_bytes():
+    from clue_agents.contracts import PlanToolStep
+
+    step = PlanToolStep(node_key="write", tool=tool_pin(), purpose="Write finding")
+    assert "retry_of" not in step.model_dump(mode="json")
+    repaired = step.model_copy(update={"retry_of": ("earlier-failure",)})
+    assert repaired.model_dump(mode="json")["retry_of"] == ["earlier-failure"]
+    assert repaired.arguments == {}

@@ -25,7 +25,7 @@ import re
 from collections.abc import Mapping
 from typing import Final
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The shared database-DSN environment variable. Owned/documented here (M0.4); the db/ package
@@ -82,6 +82,10 @@ class Secrets(BaseSettings):
     # (No explicit alias needed; that keeps the pydantic-mypy "dynamic alias" rule happy.)
     database_url: SecretStr | None = None
 
+    # Settings invitations and verified email backfill; JWT validation uses public JWKS.
+    # Env: CLUE_AUTH_CLERK_SECRET_KEY.
+    auth_clerk_secret_key: SecretStr | None = None
+
     # --- provider API keys (CLUE_<PROVIDER>_API_KEY) ---
     # One field per credentialed source manifest's auth_ref: ``extra="ignore"`` silently drops any
     # CLUE_* env var with no matching field, so a manifest auth_ref without a field here would never
@@ -114,6 +118,13 @@ class Secrets(BaseSettings):
     # Env: CLUE_CLOUDFLARE_API_TOKEN. Zone-scoped token with only "SSL and Certificates: Edit"
     # (spec §7.7); read by the custom-hostnames client and nothing else.
     cloudflare_api_token: SecretStr | None = None
+    # Production recording ASR. DEEPGRAM_API_KEY remains a trial-compatible alias.
+    deepgram_api_key: SecretStr | None = Field(  # type: ignore[pydantic-alias]
+        default=None,
+        validation_alias=AliasChoices(
+            "CLUE_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY", "deepgram_api_key"
+        ),
+    )
 
     # --- telemetry roots (lane 3 slice 2) ---
     # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).

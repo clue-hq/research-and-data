@@ -14,7 +14,6 @@ import inspect
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -29,9 +28,8 @@ from clue_api.arv2.discovery_launch import (
     enqueue_discovery_run,
     launch_arv2_discovery,
     read_pinned_icp,
-    request_relaxed_pass,
 )
-from clue_api.arv2.discovery_store import finish_discovery_run, read_discovery_run
+from clue_api.arv2.discovery_store import read_discovery_run
 from clue_fleet import FleetTaskKind
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
@@ -65,6 +63,7 @@ def _request(fixture: IcpFixture, **overrides: Any) -> Arv2DiscoveryRequest:
         "workspace_id": fixture.workspace_id,
         "project_id": fixture.project_id,
         "requested_by_user_id": USER_ID,
+        "request_key": "turn-action:ask-1",
         "target_count": 20,
     }
     payload.update(overrides)
@@ -94,11 +93,12 @@ def test_a_launch_creates_one_run_pinned_to_the_projects_icp_and_records_lineage
             assert run.brand_id == fixture.brand_id
             assert run.project_run_id == receipt.project_run_id
             assert run.requested_by_user_id == USER_ID
-            # The counts come from the settings when the request names none; the gate set comes
-            # from the document itself — no ``criterion`` marks, so its first three gates — and
-            # the run row records that resolution for every later attempt to compile from.
-            assert run.target_count == 20 and run.strict_count == 35
-            assert run.relaxed_enabled is True and run.relaxed_requested is False
+            # The relaxed flag comes from the settings when the request names none; the gate set
+            # comes from the document itself — no ``criterion`` marks, so its first three gates —
+            # and the run row records that resolution for every later attempt to compile from.
+            # Nothing is asked of the provider yet: the searches record their asks as they run.
+            assert run.target_count == 20 and run.asked is None
+            assert run.relaxed_enabled is True
             assert run.criteria_gate_keys == ("geography", "stage", "hiring")
             assert run.status == "not_started"
             assert receipt.replayed is False and receipt.to_enqueue is True
@@ -131,8 +131,9 @@ def test_a_launch_creates_one_run_pinned_to_the_projects_icp_and_records_lineage
     run_async(scenario())
 
 
-def test_the_same_request_replays_to_the_same_run(tmp_path: Any) -> None:
-    """Asking twice is one run: a human who clicked twice does not buy two long lists."""
+def test_the_same_ask_replays_to_the_same_run_and_a_new_ask_is_a_new_run(tmp_path: Any) -> None:
+    """The same ask retried is one run — a replayed turn does not buy two long lists — while a new
+    ask with the SAME numbers is a new run (founder ruling 2026-09-28: "find more" is a new run)."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -156,11 +157,21 @@ def test_the_same_request_replays_to_the_same_run(tmp_path: Any) -> None:
             ).scalar_one()
             assert count == 1
 
-            # A different ask is a different run — the target count is part of what was approved.
+            # A different target is a different run — it is part of what was approved.
             other = await launch_arv2_discovery(
                 conn, _request(fixture, target_count=40), settings=_settings(), storage=storage
             )
             assert other.run_id != first.run_id
+
+            # And asking again for the very same number, in a new action, is a new run too.
+            again = await launch_arv2_discovery(
+                conn,
+                _request(fixture, request_key="turn-action:ask-2"),
+                settings=_settings(),
+                storage=storage,
+            )
+            assert again.run_id not in {first.run_id, other.run_id}
+            assert again.replayed is False and again.to_enqueue is True
 
     run_async(scenario())
 
@@ -247,49 +258,6 @@ def test_the_pinned_icp_read_serves_the_document_the_brief_is_compiled_from(
                 "intent",
             ]
             assert document.body.lstrip().startswith("# Who we sell to")
-
-    run_async(scenario())
-
-
-def test_a_relaxed_pass_can_be_requested_only_on_a_finished_run(tmp_path: Any) -> None:
-    """A short list is information: the human asks for the relaxed pass, and only once it landed."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            storage = FsStorage(tmp_path)
-            fixture = await seed_icp_fixture(conn, storage)
-            receipt = await launch_arv2_discovery(
-                conn, _request(fixture), settings=_settings(), storage=storage
-            )
-
-            with pytest.raises(Arv2DiscoveryRefused) as running:
-                await request_relaxed_pass(
-                    conn, workspace_id=fixture.workspace_id, run_id=receipt.run_id
-                )
-            assert running.value.code == "run_not_finished"
-
-            with pytest.raises(Arv2DiscoveryRefused) as absent:
-                await request_relaxed_pass(conn, workspace_id=fixture.workspace_id, run_id=uuid4())
-            assert absent.value.code == "run_not_found"
-
-            await finish_discovery_run(
-                conn,
-                run_id=receipt.run_id,
-                status="completed",
-                found_strict=12,
-                found_relaxed=0,
-                analyzed=35,
-                receipt={"pool_exhausted": True},
-            )
-            relaxed = await request_relaxed_pass(
-                conn, workspace_id=fixture.workspace_id, run_id=receipt.run_id
-            )
-
-            run = await read_discovery_run(conn, run_id=receipt.run_id)
-            assert run is not None
-            assert run.status == "not_started" and run.relaxed_requested is True
-            assert relaxed.run_id == receipt.run_id and relaxed.to_enqueue is True
-            assert relaxed.project_run_id == receipt.project_run_id
 
     run_async(scenario())
 

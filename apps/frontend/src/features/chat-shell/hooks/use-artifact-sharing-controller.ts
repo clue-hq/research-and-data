@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { designBffConfig } from "@/features/design-editor/data/design-bff";
 import {
-  fetchWebPublishInfo,
-  publishWebDocument,
-  type WebPublishState,
-} from "@/features/design-editor/engine/webDocuments";
+  createHttpWebPublishRepository,
+  type WebPublishRepository,
+} from "@/features/design-editor/data/web-publish.repository";
 import {
-  publicLinkHost,
   slugifyArtifactTitle,
   type ArtifactAdvancedTab,
   type ArtifactPublishSettings,
@@ -18,132 +16,170 @@ import {
 } from "../model/artifact-sharing";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 
-/** The share menu's per-document transient state, stamped with the document it
- * was captured for so a switched document never inherits it. */
-interface ShareSession {
-  forDocumentId: string | null;
-  publishState: WebPublishState | null;
-  publishStatus: ArtifactPublishStatus;
-  statusMessage: string;
+/** What one publish attempt settled to.
+ *
+ * `url`/`pageUrls` are empty when the attempt failed, so a caller can render
+ * the outcome without narrowing; `message` is always the line to show — the
+ * server's refusal on a failure, "Published" on success.
+ */
+export interface ArtifactPublishOutcome {
+  status: Extract<ArtifactPublishStatus, "draft" | "published">;
+  url: string;
+  pageUrls: Record<string, string>;
+  message: string;
 }
 
-/** What a document with no share activity yet shows. Its `null` stamp matches
- * no web document, so a web artifact always starts empty; an ad (which has no
- * document and no publish backend) matches it and stays at these values. */
-const EMPTY_SESSION: ShareSession = {
-  forDocumentId: null,
-  publishState: null,
-  publishStatus: "draft",
-  statusMessage: "",
-};
+/**
+ * Publish through the seam and say what happened — the whole publish decision,
+ * with no React in it, so it is tested directly.
+ *
+ * A refusal (a taken slug, a bad slug, an unreachable API) is an outcome, not a
+ * throw: the menu goes back to `draft` and shows the server's own words.
+ */
+export async function publishWithRepository(
+  repository: WebPublishRepository,
+  documentId: string,
+  input: { slug: string; noindex: boolean },
+): Promise<ArtifactPublishOutcome> {
+  try {
+    const result = await repository.publish(documentId, input);
+    return {
+      message: "Published",
+      pageUrls: result.pageUrls,
+      status: "published",
+      url: result.url,
+    };
+  } catch (error) {
+    return {
+      message: error instanceof Error ? error.message : "Publish failed",
+      pageUrls: {},
+      status: "draft",
+      url: "",
+    };
+  }
+}
+
+/** One page of a published site, as the share menu lists it. */
+export interface ArtifactPageLinkRow {
+  /** What the row reads: the site root is "Home", every other route is itself. */
+  label: string;
+  route: string;
+  url: string;
+}
+
+/**
+ * Turn the server's route → URL map into the rows to list, site root first and
+ * the rest alphabetical, so a multi-page site always reads in the same order.
+ *
+ * Pure, so the ordering is tested without a React harness. A single-entry map
+ * still yields its one row — hiding the list for a one-page site is the
+ * component's call, not this helper's.
+ */
+export function pageLinkRows(
+  pageUrls: Record<string, string>,
+): ArtifactPageLinkRow[] {
+  return Object.entries(pageUrls)
+    .sort(([left], [right]) => {
+      if (left === right) return 0;
+      if (left === "/") return -1;
+      if (right === "/") return 1;
+      return left.localeCompare(right);
+    })
+    .map(([route, url]) => ({
+      label: route === "/" ? "Home" : route,
+      route,
+      url,
+    }));
+}
+
+/**
+ * Hand the browser a downloaded file: an object URL behind a hidden anchor,
+ * revoked as soon as the click has been dispatched.
+ *
+ * This is the only way to name a download the server named for us — a plain
+ * navigation to the export route would work too, but it cannot carry the BFF's
+ * session-scoped request the way the repository's fetch already did.
+ */
+function downloadBlob(blob: Blob, filename: string): void {
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(href);
+}
+
+/** The host shown in front of the slug in the link field — read off the URL the
+ * server gave us, never a constant of ours. Empty until there is one. */
+function shareHostOf(shareUrl: string): string {
+  if (!shareUrl) return "";
+  try {
+    return new URL(shareUrl).host;
+  } catch {
+    return "";
+  }
+}
 
 export function useArtifactSharingController({
-  kind,
-  title,
   documentId,
+  kind,
+  repository,
+  title,
 }: {
-  kind: ChatShellArtifactKind;
-  title: string;
-  /** The active web document, so the share menu reads and writes its real
-   * publish state. Ads have no publish backend and pass nothing. */
+  /** The design document behind the artifact. Absent while the stage has no
+   * document yet — publishing is then unavailable rather than faked. */
   documentId?: string | null;
+  kind: ChatShellArtifactKind;
+  /** Injected in tests and fixture mode; the real BFF-backed seam otherwise. */
+  repository?: WebPublishRepository;
+  title: string;
 }) {
   const [advancedTab, setAdvancedTab] =
     useState<ArtifactAdvancedTab>("page");
-  const [allowIndexing, setAllowIndexing] = useState(false);
+  // R-F1: an ordinary site indexes. The server ORs the document's durable ABM
+  // `noindex`, so leaving this on can never un-noindex an ABM account page.
+  const [allowIndexing, setAllowIndexing] = useState(true);
   const [copied, setCopied] = useState(false);
+  // FLAGGED F5: designed field, no backend contract yet
   const [customHtml, setCustomHtml] = useState("");
+  // FLAGGED F5: designed field, no backend contract yet
   const [description, setDescription] = useState("");
   const [editingSlug, setEditingSlug] = useState(false);
   const [lastExportFormat, setLastExportFormat] =
     useState<ArtifactShareExportFormat | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [session, setSession] = useState<ShareSession>(EMPTY_SESSION);
+  const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
+  const [publishStatus, setPublishStatus] =
+    useState<ArtifactPublishStatus>("draft");
+  // FLAGGED F5: designed field, no backend contract yet
   const [regenerateDescriptionOnPublish, setRegenerateDescriptionOnPublish] =
     useState(false);
   const [shareTitle, setShareTitle] = useState(title);
+  const [shareUrl, setShareUrl] = useState("");
   const [slug, setSlug] = useState(() => slugifyArtifactTitle(title));
+  const [slugDirty, setSlugDirty] = useState(false);
   const [slugDraft, setSlugDraft] = useState(slug);
+  const [statusMessage, setStatusMessage] = useState("");
   const [view, setView] = useState<ArtifactShareView>("main");
   const menuRef = useRef<HTMLDivElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const httpRepositoryRef = useRef<WebPublishRepository | null>(null);
 
-  // Only a web artifact has a publish backend; an ad passes no document, so the
-  // host segment stays empty and Publish stays inert.
-  const webDocumentId = kind === "web" ? (documentId ?? null) : null;
+  /** The seam, built lazily: `designBffConfig()` reads `window`, so it may only
+   * run in an event handler or an effect — never during a server render. */
+  const resolveRepository = useCallback(() => {
+    if (repository) return repository;
+    httpRepositoryRef.current ??= createHttpWebPublishRepository(
+      designBffConfig(),
+    );
+    return httpRepositoryRef.current;
+  }, [repository]);
 
-  // A switched document must not inherit the previous one's publish state. The
-  // session is STAMPED with the document it was captured for and DERIVED against
-  // the current one, rather than reset synchronously in an effect
-  // (react-hooks/set-state-in-effect) — the same idiom as
-  // `useWebArtifactSelection` / `useCustomComponentArtifact`. A stale document's
-  // leftovers are simply never served, and the first write after a switch starts
-  // from the empty session. The slug is deliberately NOT part of this: the fetch
-  // overwrites it from the backend when the new document is published, and an
-  // unpublished one keeps its title-derived slug, exactly as before.
-  const activeSession =
-    session.forDocumentId === webDocumentId ? session : EMPTY_SESSION;
-  const publishState = activeSession.publishState;
-  const publishStatus = activeSession.publishStatus;
-  const statusMessage = activeSession.statusMessage;
-
-  const updateSession = useCallback(
-    (
-      patch:
-        | Partial<Omit<ShareSession, "forDocumentId">>
-        | ((live: ShareSession) => Partial<Omit<ShareSession, "forDocumentId">>),
-    ) => {
-      setSession((live) => {
-        const base = live.forDocumentId === webDocumentId ? live : EMPTY_SESSION;
-        return {
-          ...base,
-          forDocumentId: webDocumentId,
-          ...(typeof patch === "function" ? patch(base) : patch),
-        };
-      });
-    },
-    [webDocumentId],
-  );
-
-  const setStatusMessage = useCallback(
-    (message: string) => updateSession({ statusMessage: message }),
-    [updateSession],
-  );
-
-  useEffect(() => {
-    if (!menuOpen || !webDocumentId) return;
-    let cancelled = false;
-    void fetchWebPublishInfo(designBffConfig(), webDocumentId)
-      .then((state) => {
-        if (cancelled) return;
-        updateSession({
-          publishState: state,
-          ...(state.published && state.slug ? { publishStatus: "published" as const } : {}),
-        });
-        if (state.published && state.slug) {
-          setSlug(state.slug);
-          setSlugDraft(state.slug);
-        }
-      })
-      .catch(() => {
-        // Leave the local state as it is; the publish action reports errors.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [menuOpen, updateSession, webDocumentId]);
-
-  const shareHost = publicLinkHost(
-    publishState?.customOrigin ?? publishState?.publicOrigin ?? null,
-  );
-
-  const shareUrl = useMemo(
-    () =>
-      publishState?.customUrl ??
-      publishState?.url ??
-      (publishState?.publicOrigin ? `${publishState.publicOrigin}/${slug}` : null),
-    [publishState, slug],
-  );
+  const publishable = kind === "web" && Boolean(documentId);
 
   const settings = useMemo<ArtifactPublishSettings>(
     () => ({
@@ -187,6 +223,42 @@ export function useArtifactSharingController({
     };
   }, [closeMenu]);
 
+  /** Opening the menu reads the document's real publish state, so the menu
+   * shows what the site is actually doing right now — including a publish made
+   * from somewhere else (the agent's own publish, another tab, the editor). */
+  useEffect(() => {
+    if (!menuOpen || !publishable || !documentId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await resolveRepository().state(documentId);
+        if (cancelled) return;
+        if (state.published && state.status === "active") {
+          setPublishStatus("published");
+          if (state.slug) {
+            setSlug(state.slug);
+            setSlugDraft(state.slug);
+          }
+          setShareUrl(state.url ?? "");
+          setPageUrls(state.pageUrls);
+          setSlugDirty(false);
+        } else {
+          setPublishStatus("draft");
+          setShareUrl("");
+          setPageUrls({});
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setStatusMessage(
+          error instanceof Error ? error.message : "Publish status unavailable",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [documentId, menuOpen, publishable, resolveRepository]);
+
   const toggleMenu = useCallback(() => {
     setMenuOpen((current) => {
       if (current) {
@@ -202,55 +274,49 @@ export function useArtifactSharingController({
     setEditingSlug(true);
   }, [slug]);
 
+  /** A new slug is a pending change, not an unpublishing: the site stays up at
+   * its current address until the marketer republishes. */
   const saveSlug = useCallback(() => {
     const nextSlug = slugifyArtifactTitle(slugDraft);
     setSlug(nextSlug);
     setSlugDraft(nextSlug);
     setEditingSlug(false);
-    updateSession({ publishStatus: "draft", statusMessage: "Publishing link updated" });
-  }, [slugDraft, updateSession]);
+    setSlugDirty(true);
+    setStatusMessage("Publishing link updated");
+  }, [slugDraft]);
 
-  const publishAsset = useCallback(() => {
-    if (!webDocumentId) return; // ads have no publish backend; the button stays inert
-    updateSession({ publishStatus: "publishing", statusMessage: "Publishing asset" });
-    void publishWebDocument(designBffConfig(), webDocumentId, slug)
-      .then((result) => {
-        updateSession((live) => ({
-          publishState: {
-            published: true,
-            slug: result.slug,
-            url: result.url,
-            customUrl: result.customUrl,
-            publicOrigin: result.publicOrigin ?? live.publishState?.publicOrigin ?? null,
-            customOrigin: result.customOrigin ?? live.publishState?.customOrigin ?? null,
-            docVersion: result.docVersion,
-            status: "active",
-            previousAvailable: result.previousAvailable,
-            updatedAt: live.publishState?.updatedAt ?? null,
-            publishId: result.publishId,
-            manifestDigest: result.manifestDigest,
-            packageDigest: result.packageDigest,
-            htmlDigest: result.htmlDigest,
-          },
-          publishStatus: "published",
-          statusMessage: "Asset published",
-        }));
-        setSlug(result.slug);
-        setSlugDraft(result.slug);
-      })
-      .catch((error: unknown) => {
-        updateSession({
-          publishStatus: "draft",
-          statusMessage: error instanceof Error ? error.message : "Publishing failed",
-        });
-      });
-  }, [slug, updateSession, webDocumentId]);
-
-  const copyLink = useCallback(async () => {
-    if (!shareUrl) {
-      setStatusMessage("Publish to get a link");
+  const publishAsset = useCallback(async () => {
+    if (kind !== "web") {
+      // Scene publishing has no backend contract; the menu says so rather than
+      // reporting a success that never happened.
+      setStatusMessage("Publishing is available for websites");
       return;
     }
+    if (!documentId) {
+      setStatusMessage("No document to publish yet");
+      return;
+    }
+    setPublishStatus("publishing");
+    setStatusMessage("Publishing asset");
+    const outcome = await publishWithRepository(
+      resolveRepository(),
+      documentId,
+      { noindex: !allowIndexing, slug },
+    );
+    setPublishStatus(outcome.status);
+    setStatusMessage(outcome.message);
+    if (outcome.status !== "published") return;
+    setShareUrl(outcome.url);
+    setPageUrls(outcome.pageUrls);
+    setSlugDirty(false);
+    window.dispatchEvent(
+      new CustomEvent("clue:artifact-publish-request", {
+        detail: { kind, settings },
+      }),
+    );
+  }, [allowIndexing, documentId, kind, resolveRepository, settings, slug]);
+
+  const copyLink = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
     } catch {
@@ -265,30 +331,41 @@ export function useArtifactSharingController({
     setStatusMessage("Link copied");
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopied(false), 1200);
-  }, [kind, setStatusMessage, shareUrl]);
+  }, [kind, shareUrl]);
 
+  /** Open the live page itself. There is nothing to preview until the site is
+   * actually on the air, so an unpublished document is told to publish rather
+   * than handed an empty tab. */
   const previewExternally = useCallback(() => {
-    if (!shareUrl) {
-      setStatusMessage("Publish to get a link");
-      return;
+    if (kind === "web") {
+      if (!shareUrl) {
+        setStatusMessage("Publish first to preview the live page");
+        return;
+      }
+      window.open(shareUrl, "_blank", "noopener,noreferrer");
+      setStatusMessage("Opened in a new tab");
+    } else {
+      setStatusMessage("External preview requested");
     }
     window.dispatchEvent(
       new CustomEvent("clue:artifact-preview-request", {
         detail: { kind, url: shareUrl },
       }),
     );
-    setStatusMessage("External preview requested");
-  }, [kind, setStatusMessage, shareUrl]);
+  }, [kind, shareUrl]);
 
+  /** Saved settings apply at the NEXT publish — the live site is untouched, so
+   * this marks pending changes instead of pretending the site went to draft. */
   const saveAdvancedSettings = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent("clue:artifact-publishing-settings-update", {
         detail: { kind, settings },
       }),
     );
-    updateSession({ publishStatus: "draft", statusMessage: "Publishing settings saved" });
+    setSlugDirty(true);
+    setStatusMessage("Publishing settings saved");
     setView("main");
-  }, [kind, settings, updateSession]);
+  }, [kind, settings]);
 
   const requestDescriptionGeneration = useCallback(() => {
     window.dispatchEvent(
@@ -297,19 +374,53 @@ export function useArtifactSharingController({
       }),
     );
     setStatusMessage("Description generation requested");
-  }, [kind, setStatusMessage, shareTitle]);
+  }, [kind, shareTitle]);
 
   const requestExport = useCallback(
     (format: ArtifactShareExportFormat) => {
       setLastExportFormat(format);
-      setStatusMessage(`${format} export requested`);
+      if (kind === "web" && documentId) {
+        // Both website formats are the same download against the same seam —
+        // the server renders the bytes and names the file — so they differ only
+        // in which repository call fetches them. The map is total over the
+        // format union, so a third format cannot silently fall through to the
+        // "requested" no-op below without the compiler saying so.
+        const webExport: Record<
+          ArtifactShareExportFormat,
+          (repository: WebPublishRepository) => Promise<{
+            blob: Blob;
+            filename: string;
+          }>
+        > = {
+          PDF: (repository) => repository.exportPdf(documentId),
+          ZIP: (repository) => repository.exportZip(documentId),
+        };
+        setStatusMessage(`Preparing ${format} export`);
+        void (async () => {
+          try {
+            const { blob, filename } = await webExport[format](
+              resolveRepository(),
+            );
+            downloadBlob(blob, filename);
+            setStatusMessage(`${format} downloaded`);
+          } catch (error) {
+            setStatusMessage(
+              error instanceof Error
+                ? error.message
+                : `${format} export failed`,
+            );
+          }
+        })();
+      } else {
+        setStatusMessage(`${format} export requested`);
+      }
       window.dispatchEvent(
         new CustomEvent("clue:artifact-export-request", {
           detail: { format, kind },
         }),
       );
     },
-    [kind, setStatusMessage],
+    [documentId, kind, resolveRepository],
   );
 
   return {
@@ -325,6 +436,7 @@ export function useArtifactSharingController({
       editingSlug,
       lastExportFormat,
       menuOpen,
+      pageUrls,
       previewExternally,
       publishAsset,
       publishStatus,
@@ -341,10 +453,11 @@ export function useArtifactSharingController({
       setShareTitle,
       setSlugDraft,
       setView,
-      shareHost,
+      shareHost: shareHostOf(shareUrl),
       shareTitle,
       shareUrl,
       slug,
+      slugDirty,
       slugDraft,
       statusMessage,
       toggleMenu,

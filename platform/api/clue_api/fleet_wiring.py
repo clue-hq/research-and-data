@@ -375,6 +375,7 @@ def build_multi_work_worker(
     onboarding_handler: WorkHandler | None = None,
     arv2_account_research_handler: WorkHandler | None = None,
     arv2_discovery_handler: WorkHandler | None = None,
+    arv2_display_page_handler: WorkHandler | None = None,
     queue: WorkQueue | None = None,
     leases: WorkLeaseStore | None = None,
     worker_id: str | None = None,
@@ -406,6 +407,9 @@ def build_multi_work_worker(
     deployment without ``arv2_discovery_enabled`` (or without ``CLUE_EXA_API_KEY``) composes no
     discovery driver, and kind-guarded here so a handler wired to the wrong keyword fails at
     construction rather than after a run has already claimed its row.
+
+    ``arv2_display_page_handler`` (spec 2026-09-12) is the same shape again: optional because a
+    deployment with the display flag off or no model key composes none, and kind-guarded here.
 
     ``CLUE_FLEET_WORKER_CONCURRENCY`` (founder ruling 2026-09-10) is threaded here like every
     other ``CLUE_FLEET_*`` knob: it is how many tasks THIS process drives at once. Several worker
@@ -448,6 +452,11 @@ def build_multi_work_worker(
         and arv2_discovery_handler.kind is not FleetTaskKind.ARV2_DISCOVERY
     ):
         raise ValueError("arv2_discovery_handler must own arv2_discovery tasks")
+    if (
+        arv2_display_page_handler is not None
+        and arv2_display_page_handler.kind is not FleetTaskKind.ARV2_DISPLAY_PAGE
+    ):
+        raise ValueError("arv2_display_page_handler must own arv2_display_page tasks")
     handlers: list[WorkHandler] = [
         # The one kind the 9d handler-safety audit found NOT safe to run concurrently on one
         # instance. Two independent reasons, both in code today:
@@ -481,6 +490,8 @@ def build_multi_work_worker(
         handlers.append(arv2_account_research_handler)
     if arv2_discovery_handler is not None:
         handlers.append(arv2_discovery_handler)
+    if arv2_display_page_handler is not None:
+        handlers.append(arv2_display_page_handler)
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

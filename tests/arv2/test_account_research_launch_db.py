@@ -63,7 +63,9 @@ from tests.arv2.icp_fixture import (
     pin_icp,
     seed_icp_document,
     seed_icp_fixture,
-    settings_for,
+)
+from tests.arv2.icp_fixture import (
+    settings_for as _settings_for,
 )
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
@@ -74,6 +76,12 @@ from tests.claimstore.conftest import (  # noqa: F401
     rollback_conn,
 )
 from tests.db.conftest import run_async
+
+
+def settings_for(**overrides: Any) -> Settings:
+    """Keep this legacy replay suite on its v1 fixtures; v2/v3 launches have their own tests."""
+    return _settings_for(**{"arv2_research_catalog_version": "v1", **overrides})
+
 
 pytestmark = pytest.mark.usefixtures("require_claimstore_db")
 

@@ -35,10 +35,11 @@ def test_project_rename_survives_fresh_reads_and_preserves_identity():
                     headers={**headers, "Idempotency-Key": "rename-project-once"},
                 )
                 assert response.status_code == 200, response.text
-                assert response.json()["data"] == {
-                    "id": project.project_id,
-                    "title": "Campaign planning",
-                }
+                # The PATCH now answers with the whole directory item (the projects screen reads
+                # the card it just edited), so the rename is asserted on its two fields rather
+                # than on the shape of the old rename-only body.
+                assert response.json()["data"]["id"] == project.project_id
+                assert response.json()["data"]["title"] == "Campaign planning"
                 replay = await client.patch(
                     path,
                     json={"title": "  Campaign planning  "},
@@ -87,7 +88,9 @@ def test_project_rename_survives_fresh_reads_and_preserves_identity():
         {"title": "   "},
         {"title": "x" * 201},
         {"title": None},
-        {"title": "Valid", "pinned": True},
+        # ``pinned`` is no longer an unsupported field — the PATCH carries the pin toggle now —
+        # so the unsupported-field case is a genuinely unknown key instead.
+        {"title": "Valid", "colour": "red"},
     ],
 )
 def test_project_rename_rejects_invalid_or_unsupported_fields(body):

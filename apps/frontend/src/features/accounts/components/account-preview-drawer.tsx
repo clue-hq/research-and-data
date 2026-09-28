@@ -1,5 +1,7 @@
 "use client";
 
+import { useResearchNavigation } from "./research-link";
+import { researchHref } from "../model/research-context";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { AccountDetail } from "../model/account-detail";
@@ -24,12 +26,14 @@ export function AccountPreviewFrame({
   onClose?: () => void;
 }) {
   const router = useRouter();
+  const navigation = useResearchNavigation();
   const transition = useDrawerTransition();
   const drawerRef = useRef<HTMLElement>(null);
   const contextual = Boolean(onClose);
   const navigate = (href: string) => {
-    router.prefetch(href);
-    transition.close(() => router.push(href, { scroll: false }));
+    const destination = researchHref(href, account.id, navigation?.context);
+    router.prefetch(destination);
+    transition.close(() => router.push(destination, { scroll: false }));
   };
   const close = () => onClose ? transition.close(onClose) : navigate("/accounts");
   useEffect(() => {

@@ -57,11 +57,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from clue_config import Secrets, Settings
 from clue_db import ConnFactory
+from clue_fleet import WorkQueue
 from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
 from clue_storage import StorageBackend
 
 if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.frontend_read.project_memory import MemoryWriteFactory
     from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 log = get_logger("clue_api.frontend_read")
@@ -238,6 +240,8 @@ def build_frontend_read_router(
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> APIRouter:
     """Build the workspace-scoped `/frontend/v1` router — **empty** unless the flag is on.
 
@@ -245,12 +249,19 @@ def build_frontend_read_router(
     tenant scoping cannot be forgotten route-by-route. ``conn_factory`` is the connection seam those
     readers bind to.
 
+    ``memory_write_factory`` reaches exactly one place too: the project home's memory panel. It
+    is ``None`` on a deployment with no model gateway (the scoped-memory seam's reconciliation
+    needs a judge), and the memory writes then refuse loudly while their list still serves.
+
     ``secrets`` reaches exactly one place: the D3 display seam. **One**
     :class:`~clue_api.frontend_read.display_pages.DisplayPages` is built here and shared by every
     endpoint that serves a generated page, because its in-flight regeneration table has to be
     shared — two instances would schedule two rewrites of the same page. Without a key (or with
     generation switched off) the seam is a pure projection, so a router built without ``secrets``
     behaves exactly as it did before this argument existed.
+
+    ``work_queue`` reaches exactly one place, the display seam: with it a read schedules page
+    writes on the fleet; without it the seam writes inline (tests, a queue-less deployment).
     """
 
     router = APIRouter(
@@ -274,8 +285,14 @@ def build_frontend_read_router(
     from clue_api.frontend_read.discovery_status import register_discovery_status_route
     from clue_api.frontend_read.display_pages import DisplayPages
     from clue_api.frontend_read.project_documents import register_project_document_routes
+    from clue_api.frontend_read.project_instructions import (
+        register_project_instructions_routes,
+    )
+    from clue_api.frontend_read.project_memory import register_project_memory_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
+    from clue_api.frontend_read.settings import register_settings_routes
     from clue_api.frontend_read.settings_pages import register_settings_pages_routes
+    from clue_api.frontend_read.uploads import register_upload_routes
 
     allow_local_mutations = (
         settings.projections_auth_mode == "local_header" and not settings.auth_enabled
@@ -292,7 +309,9 @@ def build_frontend_read_router(
             if evidence_storage is None
             else DurableAgentArtifactStore(storage=evidence_storage, conn_factory=conn_factory)
         ),
+        queue=work_queue,
     )
+    register_settings_routes(router, conn_factory=conn_factory, settings=settings, secrets=secrets)
     register_accounts_list_routes(router, conn_factory=conn_factory, settings=settings)
     # Static ``/accounts/bulk-*`` paths must be registered before the Account/Contact UUID routes,
     # otherwise Starlette would match a capability segment as ``{account_id}`` and return a 422.
@@ -327,6 +346,32 @@ def build_frontend_read_router(
         allow_local_mutations=allow_local_mutations,
         # The human's PUT refreshes the project library it just moved (2026-09-14).
         library=project_library,
+    )
+    # The project home's Instructions panel, which is one of those documents (spec 2026-09-19).
+    register_project_instructions_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+        library=project_library,
+    )
+    # The project home's Memory panel — the human's own notes, written through the scoped-memory
+    # write seam rather than a table this surface owns (spec 2026-09-19 §2.7).
+    register_project_memory_routes(
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        memory_write_factory=memory_write_factory,
+        allow_local_mutations=allow_local_mutations,
+    )
+    # Chat attachments: the upload receipt and the bytes behind a transcript chip (spec
+    # 2026-09-18).
+    register_upload_routes(
+        router,
+        conn_factory=conn_factory,
+        storage=evidence_storage,
+        settings=settings,
+        allow_local_mutations=allow_local_mutations,
     )
     # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
     register_artifact_routes(router, conn_factory=conn_factory)
@@ -388,6 +433,8 @@ def install_frontend_read_surface(
     contact_email_lookup: Any | None = None,
     secrets: Secrets | None = None,
     project_library: ProjectLibraryRefresher | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
+    work_queue: WorkQueue | None = None,
 ) -> None:
     """Mount enabled routers and always own errors under the reserved frontend-read prefix.
 
@@ -407,6 +454,8 @@ def install_frontend_read_surface(
                 contact_email_lookup=contact_email_lookup,
                 secrets=secrets,
                 project_library=project_library,
+                memory_write_factory=memory_write_factory,
+                work_queue=work_queue,
             )
         )
 

@@ -78,6 +78,7 @@ from clue_api.agent_turn_submission import (
     get_submission,
     lock_thread_queue,
     message_artifact_ref,
+    submission_attachment_refs,
     submission_context_refs,
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
@@ -101,6 +102,7 @@ from clue_api.conversation_capture import (
     CONVERSATION_CONTEXT_BINDING_KIND,
     project_client_entity_id,
 )
+from clue_api.conversation_naming import ConversationNamer
 from clue_api.conversation_turns import (
     CONVERSATION_RECIPE_KEY,
     CONVERSATION_RECIPE_VERSION,
@@ -116,6 +118,7 @@ from clue_api.design_leg_wiring import (
 )
 from clue_api.frontend_read import latest_project_run_context
 from clue_api.langfuse_callbacks import build_langfuse_callbacks
+from clue_api.project_attachments import sync_project_attachments
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_INDEX_CARD_MEDIA_TYPE,
     CompiledProjectFile,
@@ -420,6 +423,14 @@ class ProjectConversationTurnRunner:
                 workspace_id=workspace_id,
                 turn_id=turn_id,
             )
+            # The files the human attached to this exact message, in the order they attached
+            # them. Read here beside the focus refs because both are the same durable fact about
+            # one submission: what the person sent with their words.
+            submission_attachments = await submission_attachment_refs(
+                conn,
+                workspace_id=workspace_id,
+                turn_id=turn_id,
+            )
             # Existing pins are read before replay so a committed retry can prove which scope the
             # original attempt used without consulting mutable project/recon state. A legacy
             # committed turn can predate S3.1 and legitimately have no receipt; never invent one
@@ -513,6 +524,7 @@ class ProjectConversationTurnRunner:
                         thread_id=submission.thread_id,
                     ),
                     stream=stream,
+                    scope_pin=scope_pin,
                 ),
                 submission=submission,
                 turn_id=turn_id,
@@ -755,6 +767,19 @@ class ProjectConversationTurnRunner:
                 pin_created=project_pin_created,
                 replayed_from_pin=pinned_tree_name is not None,
             )
+        # Spec 2026-09-19 §3.2: every file attached in this project, byte for byte, beside the
+        # threads. Synced here — on the worker that owns the workspace root — never by the API.
+        # Unconditional: an attachment is the human's own file and does not depend on whether
+        # this runner composes the project's knowledge library.
+        async with self._conn_factory() as conn:
+            await sync_project_attachments(
+                self._engine.components.workspaces,
+                self._engine.components.artifacts,
+                conn,
+                workspace_id=workspace_id,
+                project_id=scope.project_id,
+            )
+        mounts = replace(mounts, attachments=True)
         revision = await self._recipes.get_by_identity(
             scope_type=RecipeScopeType.SYSTEM,
             workspace_id=None,
@@ -883,6 +908,7 @@ class ProjectConversationTurnRunner:
                 ),
                 user_message_artifact_ref=user_message_ref,
                 focus_refs=submission_focus_refs,
+                attachment_refs=tuple(item.ref for item in submission_attachments),
                 requested_at=submission.requested_at,
             )
             brand_knowledge_index = context_bundle.artifact("brand_knowledge_index")
@@ -942,6 +968,10 @@ class ProjectConversationTurnRunner:
                     submitted_by_user_id=submission.submitted_by_user_id,
                     submitted_via_membership_id=submission.submitted_via_membership_id,
                     stream=stream,
+                    # The exact mount table this turn's lease was acquired with, so the code
+                    # sandbox binds the directories the model's own file tools see — including
+                    # a replayed turn's pinned project tree — rather than re-deriving them.
+                    mounts=mounts,
                 ),
                 submission=submission,
                 turn_id=request.turn_id,
@@ -1649,7 +1679,13 @@ def build_design_leg_exit_judge(
     model_holder: list[object] = []
 
     async def judge(
-        *, brief: str, history: tuple[tuple[str, str], ...], message: str
+        *,
+        brief: str,
+        history: tuple[tuple[str, str], ...],
+        message: str,
+        artifacts: tuple[str, ...] = (),
+        artifact: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None:
         try:
             if not model_holder:
@@ -1661,11 +1697,26 @@ def build_design_leg_exit_judge(
                         max_retries=policy.max_retries,
                         # The judgment is one small JSON object; the role's generation
                         # budget would be waste here.
-                        max_output_tokens=min(policy.max_output_tokens, 200),
+                        # v2's answer carries a sentence or two of reasoning as well, and
+                        # v3's can carry a clarifying question on top of that — a truncated
+                        # verdict is an unparseable one, which costs a whole fail-safe turn.
+                        max_output_tokens=min(policy.max_output_tokens, 600),
                         temperature=0.0,
+                        # Lane 3 slice 5: the judge's own spend is design spend. ``role``
+                        # labels every usage record and span this instance produces, so the
+                        # call is attributable even though it writes no durable receipt —
+                        # it runs outside any turn, so there is no turn to hang one on.
+                        role=AgentRole.DESIGN.value,
                     )
                 )
-            prompt = render_exit_judgment_prompt(brief=brief, history=history, message=message)
+            prompt = render_exit_judgment_prompt(
+                brief=brief,
+                history=history,
+                message=message,
+                artifacts=artifacts,
+                artifact=artifact,
+                tags=tags,
+            )
             # Lane 3 slice 3b: the judge is an `evaluator` in its own trace, and the direct
             # model call carries the LangChain handler so its generation nests underneath.
             # The rendered prompt stays OUT of the observation — only the turn's message and
@@ -1679,7 +1730,15 @@ def build_design_leg_exit_judge(
                 observation(
                     "design-leg.exit_judge",
                     as_type="evaluator",
-                    input={"message": message, "history_turns": len(history)},
+                    input={
+                        "message": message,
+                        "history_turns": len(history),
+                        # v3: the whole numbered list the judge was asked to address, so a
+                        # trace shows which artifacts were on the table when it answered.
+                        "artifacts": list(artifacts),
+                        "artifact": artifact,
+                        "tags": list(tags),
+                    },
                 ) as current,
             ):
                 completion = await model_holder[0].ainvoke(prompt, **call_kwargs)  # type: ignore[attr-defined]
@@ -1697,6 +1756,13 @@ def build_design_leg_exit_judge(
     return judge
 
 
+#: Said once, so the batch entry point cannot drift from the single-run one.
+_DESIGN_LANE_UNAVAILABLE_MESSAGE = (
+    "this thread's design leg needs the design lane, but the worker composed none; "
+    "set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
+)
+
+
 class _DesignLaneUnavailable:
     """The fail-loud lane for a deployment that drains chat turns but no design work.
 
@@ -1706,10 +1772,11 @@ class _DesignLaneUnavailable:
 
     async def drive(self, *, envelope: object) -> None:
         del envelope
-        raise RuntimeError(
-            "this thread's design leg needs the design lane, but the worker composed none; "
-            "set CLUE_DESIGN_RUNTIME_ENABLED on the fleet deployment"
-        )
+        raise RuntimeError(_DESIGN_LANE_UNAVAILABLE_MESSAGE)
+
+    async def drive_batch(self, *, envelopes: object) -> None:
+        del envelopes
+        raise RuntimeError(_DESIGN_LANE_UNAVAILABLE_MESSAGE)
 
 
 def build_agent_turn_work_handler(
@@ -1729,6 +1796,8 @@ def build_agent_turn_work_handler(
     design_lane: DesignLegLaneDriver | None = None,
     design_exit_judge: DesignLegExitJudge | None = None,
     design_leg_finisher: DesignLegFinisher | None = None,
+    design_preference_context_enabled: bool = False,
+    namer: ConversationNamer | None = None,
     conn_factory: ConnFactory = transaction,
     project_writer_conn_factory: ConnFactory = bridge_transaction,
     streaming: bool = True,
@@ -1753,6 +1822,9 @@ def build_agent_turn_work_handler(
     ``project_writer_conn_factory`` is the transaction the versioned ``project/`` mount's writes
     open. It defaults to the bridge loop's own engine because those writes happen off this
     worker's loop, and it is separate from ``conn_factory`` for exactly that reason.
+
+    ``namer`` (conversation naming, 2026-09-18) names an untitled chat/project after the first
+    completed turn; ``None`` keeps the placeholders.
     """
 
     engine = build_conversation_turn_engine(
@@ -1766,6 +1838,7 @@ def build_agent_turn_work_handler(
         requested_memory_types=(MemoryType.PREFERENCE, MemoryType.BEHAVIORAL_LEARNING),
         context_policy=project_conversation_context_policy(),
         child_runner=child_runner,
+        namer=namer,
         conn_factory=conn_factory,
     )
     design_legs_runner = DesignLegTurnRunner(
@@ -1776,6 +1849,8 @@ def build_agent_turn_work_handler(
         lane=design_lane if design_lane is not None else _DesignLaneUnavailable(),
         exit_judge=design_exit_judge,
         finisher=design_leg_finisher,
+        # Staged until output-history erasure closure and preference writes are validated.
+        memory=memory if design_preference_context_enabled else None,
         conn_factory=conn_factory,
     )
     return AgentTurnWorkHandler(

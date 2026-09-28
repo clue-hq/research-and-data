@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "../../components/research-link";
 import { DesignIcon } from "@/components/ui/design-icon";
 import { ContactAvatar } from "../../components/contact-avatar";
 import type { AccountContactSummary } from "../../model/account-contact";
@@ -127,14 +127,15 @@ export function ContactRow({
               : components.badgeNeutral
           }`}
         >
-          {contact.influence}
+          {contact.influence ?? "Unverified"}
         </span>
       </div>
       <div className="flex min-w-0 items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
         {shownContact.emailLabel ? (
           <a
             className="truncate underline decoration-[var(--clue-border-neutral)] underline-offset-2 hover:text-[var(--clue-content-default)]"
-            href={`mailto:${shownContact.emailLabel}`}
+            href={shownContact.outreachEligible === false ? undefined : `mailto:${shownContact.emailLabel}`}
+                aria-disabled={shownContact.outreachEligible === false || undefined}
           >
             {shownContact.emailLabel}
           </a>

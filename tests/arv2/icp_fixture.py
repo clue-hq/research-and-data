@@ -221,6 +221,7 @@ async def pin_icp(
     artifact_key_: str,
     artifact_sha256: str,
     icp_key: str = ICP_KEY,
+    user_id: str = USER_ID,
 ) -> None:
     """Append the project's ICP pin, the way the gate approval does.
 
@@ -245,12 +246,23 @@ async def pin_icp(
             "icp_key": icp_key,
             "artifact_key": artifact_key_,
             "artifact_sha256": artifact_sha256,
-            "user_id": USER_ID,
+            "user_id": user_id,
         },
     )
 
 
-async def seed_icp_fixture(conn: AsyncConnection, storage: FsStorage) -> IcpFixture:
+async def seed_icp_fixture(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    *,
+    workspace_id: str = WORKSPACE,
+    user_id: str = USER_ID,
+    account_records: tuple[tuple[str, str], ...] = (
+        ("Probook", "probook.ai"),
+        ("Zafran", "zafran.io"),
+    ),
+    document_path: str = "audience/icp-clue-abm-buyers.md",
+) -> IcpFixture:
     """The whole launch prerequisite set: spine, a confirmed product set, accounts, a confirmed ICP.
 
     Deliberately NOT seeded: an ``icp_spec`` row, an ``account_research_directive``, or any Stage-0
@@ -258,8 +270,8 @@ async def seed_icp_fixture(conn: AsyncConnection, storage: FsStorage) -> IcpFixt
     does need is the project's own ICP pin, which is a record of a human approval, not Stage-0
     machinery.
     """
-    project = await seed_project(conn, WORKSPACE)
-    await create_platform_user(conn, user_id=USER_ID, display_name="R2 launch test")
+    project = await seed_project(conn, workspace_id)
+    await create_platform_user(conn, user_id=user_id, display_name="R2 launch test")
     product = await create_product(
         conn, brand_id=project.brand_id, workspace_id=project.workspace_id, name="Clue"
     )
@@ -269,11 +281,11 @@ async def seed_icp_fixture(conn: AsyncConnection, storage: FsStorage) -> IcpFixt
         project_id=project.project_id,
         product_ids=[str(product.product_id)],
         gate_id=uuid4(),
-        confirmed_by_user_id=USER_ID,
+        confirmed_by_user_id=user_id,
     )
     assert confirmed is not None
     accounts: list[EntityId] = []
-    for name, domain in (("Probook", "probook.ai"), ("Zafran", "zafran.io")):
+    for name, domain in account_records:
         accounts.append(
             await insert_account_entity(
                 conn, canonical_name=name, primary_domain=domain, workspace_id=project.workspace_id
@@ -284,7 +296,7 @@ async def seed_icp_fixture(conn: AsyncConnection, storage: FsStorage) -> IcpFixt
         storage,
         workspace_id=project.workspace_id,
         brand_id=str(project.brand_id),
-        path="audience/icp-clue-abm-buyers.md",
+        path=document_path,
     )
     # The project pins that confirmed version, exactly as the ICP gate's approval does. Every
     # launch resolves its ICP from this row (founder rulings 2026-09-10).
@@ -296,6 +308,7 @@ async def seed_icp_fixture(conn: AsyncConnection, storage: FsStorage) -> IcpFixt
         document_id=document_id,
         artifact_key_=key,
         artifact_sha256=sha,
+        user_id=user_id,
     )
     return IcpFixture(
         workspace_id=project.workspace_id,

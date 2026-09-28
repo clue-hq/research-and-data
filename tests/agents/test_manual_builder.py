@@ -16,7 +16,12 @@ from clue_agents.manual import build as manual
 from clue_api.manual_build import build_facts, load_toolbelt, main
 
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v54"
+#: The profile the builder itself describes. It tracked `v54` — the version that first disclosed
+#: the manual — until `open_design_leg@4` stopped being registered (the tool promoted to `@5` in
+#: place, as every promotion on this entry has), which made an older profile's exact grant
+#: unresolvable against the live belt and this fixture fail on a tool that no longer exists. The
+#: fixture follows the builder's own pin instead, so it always describes a grant the belt serves.
+PROFILE_VERSION = manual.PROFILE_VERSION
 
 
 @pytest.fixture(scope="module")
@@ -39,6 +44,8 @@ def test_tools_chapter_has_one_section_per_granted_tool_in_profile_order(
 ) -> None:
     chapter = manual.build_tools_chapter(toolbelt, profile, notes)
     granted = [pin.name for pin in profile.tools]  # type: ignore[attr-defined]
+    # v61 replaces the two ICP/product gate tools with one automatic targeting tool.
+    # 21 since head-of-abm@v62 granted web_search@1.
     assert len(granted) == 21
 
     headings = [line[3:].strip() for line in chapter.body.splitlines() if line.startswith("## ")]

@@ -51,7 +51,7 @@ from lumen_agent.prompts import (
 from lumen_agent.tools import render as render_mod
 from lumen_agent.tools.substrate import LumenDesignTools
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 from test_deepagent_harness import _install_deepagents_stub, _tool_name
 
 
@@ -290,13 +290,31 @@ def test_author_render_tool_does_not_checkpoint_but_the_orchestrators_does(
     monkeypatch.setattr(
         tools,
         "export_preview_bundle",
+        # The full bundle shape: since task 4b the checkpoint predicate reads the
+        # canonical/critic summaries, not the folded reviewer verdict.
         lambda **_: json.dumps(
             {
+                "canonical": {
+                    "status": "ok",
+                    "artifacts": [{"format": "svg", "validation_errors": []}],
+                    "validation_errors": [],
+                },
+                "critic": {
+                    "status": "ok",
+                    "artifacts": [
+                        {
+                            "format": "png",
+                            "path": str(png),
+                            "validation_errors": [],
+                        }
+                    ],
+                    "validation_errors": [],
+                },
                 "reviewer": {
                     "status": "ok",
                     "validation_errors": [],
                     "artifacts": [{"format": "png", "path": str(png)}],
-                }
+                },
             }
         ),
     )
@@ -1413,11 +1431,12 @@ def test_budget_breach_finalizes_with_warnings_and_a_gap(tmp_path, monkeypatch) 
 
     assert payload["status"] == "completed_with_warnings"
     assert payload["stop_reason"] == "budget_exhausted_llm_calls"
-    assert "45" in payload["summary"]
+    assert "unverified" in payload["summary"]
     # The honest incompleteness is in the ledger, not only in a log line.
     assert tools.gaps
     assert "budget" in tools.gaps[-1]["summary"]
     assert tools.gaps[-1]["area"] == "agent_protocol"
+    assert "45" in tools.gaps[-1]["evidence"]
     # And the run STILL emitted its §7 metrics.
     assert (tools.trace_dir / "metrics.json").exists()
 
@@ -1444,11 +1463,14 @@ def test_a_budget_breach_after_the_agent_finalized_keeps_the_real_final(
     _install_deepagents_stub(monkeypatch, capture)
     breach = BudgetExhausted(BUDGET_LLM_CALLS, 45.0, 45.0)
     holder = _install_budget_agent(monkeypatch, breach, with_content=True)
-    real_invoke = _BudgetBlowingAgent.invoke
 
     def invoke_after_finalize(self, *args, **kwargs):
-        holder["tools"].finalize_run("accepted", "reviewer_accepted", "shipped")
-        return real_invoke(self, *args, **kwargs)
+        prepare_acceptance_evidence(holder["tools"])
+        result = holder["tools"].finalize_run("accepted", "reviewer_accepted", "shipped")
+        assert json.loads(result)["status"] == "accepted"
+        # This case is a late budget signal with unchanged accepted evidence.
+        # The general helper above also authors a new scene before raising.
+        raise breach
 
     monkeypatch.setattr(_BudgetBlowingAgent, "invoke", invoke_after_finalize)
 

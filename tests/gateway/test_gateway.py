@@ -34,6 +34,7 @@ from clue_gateway import (
 )
 from clue_obs import capture_events
 from clue_obs.otel import SPAN_LLM_GATEWAY_CALL, collect_spans
+from tests._model_ids import assert_well_formed_model_id
 
 # --- fixtures ---------------------------------------------------------------
 
@@ -425,8 +426,9 @@ def test_model_id_is_config_swappable() -> None:
     assert default_model == default_gateway_config().judge_model
     assert swapped_model == "openai/gpt-4o"
     assert swapped_model != default_model
-    # The unoverlaid *code* default is separately a code fact, independent of any deployment.
-    assert GatewayConfig().judge_model == "anthropic/claude-3.5-sonnet"
+    # The unoverlaid *code* default is a well-formed id; WHICH model it is belongs to the
+    # deployment (``CLUE_JUDGE_MODEL``), not to this test.
+    assert_well_formed_model_id(GatewayConfig().judge_model)
 
 
 def test_completion_cost_is_returned_to_caller() -> None:

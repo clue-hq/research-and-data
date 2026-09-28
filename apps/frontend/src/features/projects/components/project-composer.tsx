@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { SquareIcon } from "lucide-react";
 import { composerAction, hasComposerDraft } from "../model/composer-action";
+import { CHAT_ATTACHMENT_ACCEPT } from "../model/chat-attachments";
 import { Attachments } from "@/components/ai-elements/attachments";
 import type { ProjectComposerAttachment as ProjectComposerAttachmentData } from "../model/project-composer";
 import type {
@@ -10,7 +11,7 @@ import type {
   ProjectModelOption,
 } from "../model/project-workspace";
 import { ModelPicker } from "./model-picker";
-import { ProjectComposerAttachment } from "./project-composer-attachment";
+import { ChatAttachment } from "./chat-attachment";
 import {
   ProjectComposerEditor,
   type ProjectComposerEditorHandle,
@@ -27,6 +28,7 @@ export function ProjectComposer({
   attachmentLabel = "Attach files",
   attachments = [],
   disabled = false,
+  dropActive = false,
   entities = [],
   modelPickerOpen = false,
   models = [],
@@ -43,6 +45,7 @@ export function ProjectComposer({
   stopping = false,
   prompt,
   sendDisabled = false,
+  submittableWithoutPrompt = false,
   selectedEntities = [],
   selectedEntityIds = [],
   selectedModel,
@@ -54,6 +57,10 @@ export function ProjectComposer({
   attachmentLabel?: string;
   attachments?: ProjectComposerAttachmentData[];
   disabled?: boolean;
+  /** A file drag is over the surface that owns this composer (task 14, ruling
+   * 5): the only feedback is the dashed outline the CSS draws off
+   * `data-drop-target`. The drop itself is the owner's — this stays presentational. */
+  dropActive?: boolean;
   entities?: ProjectEntity[];
   modelPickerOpen?: boolean;
   models?: ProjectModelOption[];
@@ -70,6 +77,11 @@ export function ProjectComposer({
   stopping?: boolean;
   prompt: string;
   sendDisabled?: boolean;
+  /** Web annotations (slice 2, R-A2): the caller is carrying context that IS
+   * the message — numbered annotation chips above the composer — so an empty
+   * box is a legitimate send, and the turn's text is the caller's to decide.
+   * Defaults false: every other composer keeps its "type something" rule. */
+  submittableWithoutPrompt?: boolean;
   selectedEntities?: ProjectEntity[];
   selectedEntityIds?: string[];
   selectedModel?: ProjectModelOption;
@@ -80,7 +92,8 @@ export function ProjectComposer({
   const editorRef = useRef<ProjectComposerEditorHandle>(null);
   const [submitting, setSubmitting] = useState(false);
   const action = composerAction({ running: running && Boolean(onStop), stopping,
-    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments),
+    // An annotation-only turn (web lane) is a draft even with an empty prompt.
+    hasDraft: hasComposerDraft(prompt, selectedEntityIds, attachments) || submittableWithoutPrompt,
     disabled, sendDisabled, submitting });
   const handleContextChange = useCallback(
     (entityIds: string[]) => {
@@ -99,7 +112,10 @@ export function ProjectComposer({
       const currentPrompt =
         promptOverride ?? editorRef.current?.getPrompt() ?? prompt;
       const currentEntityIds = editorRef.current?.getEntityIds() ?? [];
-      if (!hasComposerDraft(currentPrompt, currentEntityIds, attachments)) {
+      if (
+        !hasComposerDraft(currentPrompt, currentEntityIds, attachments) &&
+        !submittableWithoutPrompt
+      ) {
         return;
       }
 
@@ -112,7 +128,16 @@ export function ProjectComposer({
         setSubmitting(false);
       }
     },
-    [attachments, disabled, onSubmit, prompt, sendDisabled, submitting, stopping],
+    [
+      attachments,
+      disabled,
+      onSubmit,
+      prompt,
+      sendDisabled,
+      stopping,
+      submittableWithoutPrompt,
+      submitting,
+    ],
   );
 
   return (
@@ -124,6 +149,7 @@ export function ProjectComposer({
       ]
         .filter(Boolean)
         .join(" ")}
+      data-drop-target={dropActive || undefined}
       onSubmit={(event) => {
         event.preventDefault();
         void submitCurrentDraft();
@@ -133,7 +159,7 @@ export function ProjectComposer({
         {attachments.length && onAttachmentRemove ? (
           <Attachments className={styles.composerAttachments} variant="inline">
             {attachments.map((attachment) => (
-              <ProjectComposerAttachment
+              <ChatAttachment
                 attachment={attachment}
                 key={attachment.id}
                 onRemove={onAttachmentRemove}
@@ -147,6 +173,7 @@ export function ProjectComposer({
           </p>
         ) : null}
         <ProjectComposerEditor
+          categoriesEnabled={variant !== "home"}
           disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
@@ -165,10 +192,7 @@ export function ProjectComposer({
           {onAttachmentFiles ? (
             <label aria-label={attachmentLabel} className={styles.iconButton}>
               <input
-                accept={
-                  attachmentAccept ??
-                  ".csv,.doc,.docx,.gif,.jpeg,.jpg,.pdf,.png,.webp,.xls,.xlsx"
-                }
+                accept={attachmentAccept ?? CHAT_ATTACHMENT_ACCEPT}
                 disabled={disabled || submitting || attachmentInputDisabled}
                 multiple
                 onChange={(event) => {
@@ -182,12 +206,12 @@ export function ProjectComposer({
           ) : null}
           {onEntitySelect ? (
             <button
-              aria-label="Add account or contact context"
+              aria-label="Add context"
               aria-haspopup="listbox"
               className={styles.contextButton}
               disabled={disabled}
               onClick={() => editorRef.current?.openMentionPicker()}
-              title="Add account or contact context"
+              title="Add context"
               type="button"
             >
               @

@@ -47,6 +47,22 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # The operating manual: v9 without the specialist-delegation paragraph this surface
         # withholds, and with Stage 0 pointing at the `manual-*` chapters. Lexical, not numeric.
         "prompt:head-of-abm@v10",
+        # The code sandbox: v10 with the "no code execution" clause replaced by the one route
+        # that now exists — `run_python`, inside the container its manual entry describes.
+        "prompt:head-of-abm@v11",
+        # One ask, many artifacts: v11 with the two design paragraphs replaced by the one that
+        # covers every designed page and tells the agent to list one item per artifact.
+        "prompt:head-of-abm@v12",
+        # The leg's first turn starts itself: v12 with one sentence changed, because opening a
+        # leg now queues that leg's first design turn instead of waiting for the user to speak.
+        "prompt:head-of-abm@v13",
+        # Web search: v13 with the paragraph that orders the lookups — the claims for an account
+        # or a contact, the seller's knowledge files for the seller, `web_search` only when those
+        # come back empty, and the answer that says which facts came from a search.
+        "prompt:head-of-abm@v14",
+        "prompt:head-of-abm@v15",
+        "prompt:head-of-abm@v16",
+        "prompt:head-of-abm@v17",
         "prompt:head-of-abm@v2",
         "prompt:head-of-abm@v3",
         "prompt:head-of-abm@v4",
@@ -76,9 +92,14 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:account-gap-research@v1",
         "skill:account-gap-research@v2",
         "skill:account-gap-research@v3",
+        "skill:account-research-briefing@v1",
+        "skill:account-research-briefing@v2",
         "skill:artifact-review@v1",
         "skill:audience-persona@v1",
         "skill:audience-persona@v2",
+        # How to open a file the framework's own tools cannot read: the `run_python@1` sandbox,
+        # the container's folders, and one reading recipe per attachable document format.
+        "skill:code-execution@v1",
         "skill:content-exemplar@v1",
         # The three document skills. Each one carries the whole procedure for one document
         # the Head of ABM now writes as a file under `project/`, and grants no tool;
@@ -87,6 +108,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # while `head-of-abm@v55` keeps the v1 bytes it pins.
         "skill:icp-authoring@v1",
         "skill:icp-authoring@v2",
+        # Automatic project targeting (head-of-abm@v61, base): the authoring skill re-minted at v3.
+        "skill:icp-authoring@v3",
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
@@ -94,70 +117,197 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # any other and the capability map discloses it with its path. Four of them (errors,
         # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
         # is their only writer; the other eleven are hand written and founder reviewed. Every
-        # chapter is here FOUR times: `head-of-abm@v55` and `@v56` each changed the grant the
-        # manual describes, and `@v57` changed the two limits its generated `limits` chapter
-        # renders. A catalog version is immutable, so the library re-minted at v2, v3 and v4
-        # while v54 keeps the v1 bytes, v55 the v2 bytes and v56 the v3 bytes.
+        # chapter is here SEVEN times: `head-of-abm@v55` and `@v56` each changed the grant the
+        # manual describes, `@v57` changed the two limits its generated `limits` chapter renders,
+        # `@v58` grants `run_python@1` and mounts `attachments/`, `@v59` moves `open_design_leg`
+        # to `@5`, and `@v60` mints a version its generated chapters render into their title. A
+        # catalog version is immutable, so the library re-minted at v2 through v7 while v54 keeps
+        # the v1 bytes, v55 the v2 bytes, v56 the v3, v57 the v4, v58 the v5 and v59 the v6.
         "skill:manual-accounts-research@v1",
+        "skill:manual-accounts-research@v10",
+        "skill:manual-accounts-research@v11",
+        "skill:manual-accounts-research@v12",
         "skill:manual-accounts-research@v2",
         "skill:manual-accounts-research@v3",
         "skill:manual-accounts-research@v4",
+        "skill:manual-accounts-research@v5",
+        "skill:manual-accounts-research@v6",
+        "skill:manual-accounts-research@v7",
+        "skill:manual-accounts-research@v8",
+        "skill:manual-accounts-research@v9",
         "skill:manual-claims@v1",
+        "skill:manual-claims@v10",
+        "skill:manual-claims@v11",
+        "skill:manual-claims@v12",
         "skill:manual-claims@v2",
         "skill:manual-claims@v3",
         "skill:manual-claims@v4",
+        "skill:manual-claims@v5",
+        "skill:manual-claims@v6",
+        "skill:manual-claims@v7",
+        "skill:manual-claims@v8",
+        "skill:manual-claims@v9",
         "skill:manual-discovery@v1",
+        "skill:manual-discovery@v10",
+        "skill:manual-discovery@v11",
+        "skill:manual-discovery@v12",
         "skill:manual-discovery@v2",
         "skill:manual-discovery@v3",
         "skill:manual-discovery@v4",
+        "skill:manual-discovery@v5",
+        "skill:manual-discovery@v6",
+        "skill:manual-discovery@v7",
+        "skill:manual-discovery@v8",
+        "skill:manual-discovery@v9",
         "skill:manual-documents-decisions@v1",
+        "skill:manual-documents-decisions@v10",
+        "skill:manual-documents-decisions@v11",
+        "skill:manual-documents-decisions@v12",
         "skill:manual-documents-decisions@v2",
         "skill:manual-documents-decisions@v3",
         "skill:manual-documents-decisions@v4",
+        "skill:manual-documents-decisions@v5",
+        "skill:manual-documents-decisions@v6",
+        "skill:manual-documents-decisions@v7",
+        "skill:manual-documents-decisions@v8",
+        "skill:manual-documents-decisions@v9",
         "skill:manual-errors@v1",
+        "skill:manual-errors@v10",
+        "skill:manual-errors@v11",
+        "skill:manual-errors@v12",
         "skill:manual-errors@v2",
         "skill:manual-errors@v3",
         "skill:manual-errors@v4",
+        "skill:manual-errors@v5",
+        "skill:manual-errors@v6",
+        "skill:manual-errors@v7",
+        "skill:manual-errors@v8",
+        "skill:manual-errors@v9",
         "skill:manual-fields@v1",
+        "skill:manual-fields@v10",
+        "skill:manual-fields@v11",
+        "skill:manual-fields@v12",
         "skill:manual-fields@v2",
         "skill:manual-fields@v3",
         "skill:manual-fields@v4",
+        "skill:manual-fields@v5",
+        "skill:manual-fields@v6",
+        "skill:manual-fields@v7",
+        "skill:manual-fields@v8",
+        "skill:manual-fields@v9",
         "skill:manual-gates-authority@v1",
+        "skill:manual-gates-authority@v10",
+        "skill:manual-gates-authority@v11",
+        "skill:manual-gates-authority@v12",
         "skill:manual-gates-authority@v2",
         "skill:manual-gates-authority@v3",
         "skill:manual-gates-authority@v4",
+        "skill:manual-gates-authority@v5",
+        "skill:manual-gates-authority@v6",
+        "skill:manual-gates-authority@v7",
+        "skill:manual-gates-authority@v8",
+        "skill:manual-gates-authority@v9",
         "skill:manual-glossary@v1",
+        "skill:manual-glossary@v10",
+        "skill:manual-glossary@v11",
+        "skill:manual-glossary@v12",
         "skill:manual-glossary@v2",
         "skill:manual-glossary@v3",
         "skill:manual-glossary@v4",
+        "skill:manual-glossary@v5",
+        "skill:manual-glossary@v6",
+        "skill:manual-glossary@v7",
+        "skill:manual-glossary@v8",
+        "skill:manual-glossary@v9",
         "skill:manual-humans-screens@v1",
+        "skill:manual-humans-screens@v10",
+        "skill:manual-humans-screens@v11",
+        "skill:manual-humans-screens@v12",
         "skill:manual-humans-screens@v2",
         "skill:manual-humans-screens@v3",
         "skill:manual-humans-screens@v4",
+        "skill:manual-humans-screens@v5",
+        "skill:manual-humans-screens@v6",
+        "skill:manual-humans-screens@v7",
+        "skill:manual-humans-screens@v8",
+        "skill:manual-humans-screens@v9",
         "skill:manual-index@v1",
+        "skill:manual-index@v10",
+        "skill:manual-index@v11",
+        "skill:manual-index@v12",
         "skill:manual-index@v2",
         "skill:manual-index@v3",
         "skill:manual-index@v4",
+        "skill:manual-index@v5",
+        "skill:manual-index@v6",
+        "skill:manual-index@v7",
+        "skill:manual-index@v8",
+        "skill:manual-index@v9",
         "skill:manual-limits@v1",
+        "skill:manual-limits@v10",
+        "skill:manual-limits@v11",
+        "skill:manual-limits@v12",
         "skill:manual-limits@v2",
         "skill:manual-limits@v3",
         "skill:manual-limits@v4",
+        "skill:manual-limits@v5",
+        "skill:manual-limits@v6",
+        "skill:manual-limits@v7",
+        "skill:manual-limits@v8",
+        "skill:manual-limits@v9",
         "skill:manual-siblings@v1",
+        "skill:manual-siblings@v10",
+        "skill:manual-siblings@v11",
+        "skill:manual-siblings@v12",
         "skill:manual-siblings@v2",
         "skill:manual-siblings@v3",
         "skill:manual-siblings@v4",
+        "skill:manual-siblings@v5",
+        "skill:manual-siblings@v6",
+        "skill:manual-siblings@v7",
+        "skill:manual-siblings@v8",
+        "skill:manual-siblings@v9",
         "skill:manual-tools@v1",
+        "skill:manual-tools@v10",
+        "skill:manual-tools@v11",
+        "skill:manual-tools@v12",
         "skill:manual-tools@v2",
         "skill:manual-tools@v3",
         "skill:manual-tools@v4",
+        "skill:manual-tools@v5",
+        "skill:manual-tools@v6",
+        "skill:manual-tools@v7",
+        "skill:manual-tools@v8",
+        "skill:manual-tools@v9",
         "skill:manual-turn@v1",
+        "skill:manual-turn@v10",
+        "skill:manual-turn@v11",
+        "skill:manual-turn@v12",
         "skill:manual-turn@v2",
         "skill:manual-turn@v3",
         "skill:manual-turn@v4",
+        "skill:manual-turn@v5",
+        "skill:manual-turn@v6",
+        "skill:manual-turn@v7",
+        "skill:manual-turn@v8",
+        "skill:manual-turn@v9",
         "skill:manual-workspace@v1",
+        "skill:manual-workspace@v10",
+        "skill:manual-workspace@v11",
+        "skill:manual-workspace@v12",
         "skill:manual-workspace@v2",
         "skill:manual-workspace@v3",
         "skill:manual-workspace@v4",
+        # The attachments mount: v4 plus the `attachments/` row, the chapter that says what is in
+        # that folder and which tool opens each kind of file, and what a sandboxed script may
+        # write. The other fourteen chapters re-mint at v5 alongside it, because
+        # `head-of-abm@v58` grants `run_python@1` and one profile version pins one manual
+        # version for every chapter.
+        "skill:manual-workspace@v5",
+        "skill:manual-workspace@v6",
+        "skill:manual-workspace@v7",
+        "skill:manual-workspace@v8",
+        "skill:manual-workspace@v9",
         "skill:persona-authoring@v1",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v1",
@@ -212,6 +362,14 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # `prefixes`, and a `spilled_to` receipt read from its own file in chunks — and the four
         # read addresses `head-of-abm@v56` grants in its front matter.
         "skill:stage0-interview@v33",
+        # Attached files: v33 with the §1 bullet that names `attachments/` and sends the agent to
+        # the code-execution skill before it opens one, and the §7c read-map line for a file.
+        "skill:stage0-interview@v34",
+        "skill:stage0-interview@v35",
+        "skill:stage0-interview@v36",
+        "skill:stage0-interview@v37",
+        "skill:stage0-interview@v38",
+        "skill:stage0-interview@v39",
         "skill:stage0-interview@v4",
         "skill:stage0-interview@v5",
         "skill:stage0-interview@v6",
@@ -231,6 +389,12 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:content-drafter@v4",
         "profile:content-drafter@v5",
         "profile:design@v1",
+        # The account reads: v1 plus `read_project_accounts@1`, `read_account_research@2` and
+        # `read_claims@1`, so a 1:1 creative opens the target account's research itself. Nothing
+        # else moves — same prompt, same 50 v1 pins, same model and workspace policy.
+        "profile:design@v2",
+        # web_search@1: v2 plus the open-web search. Nothing else moves.
+        "profile:design@v3",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",
@@ -312,7 +476,29 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         # 1800 and `max_model_rounds` 100, and the manual at `manual-*@v4` because its generated
         # `limits` chapter renders both.
         "profile:head-of-abm@v57",
+        # The code sandbox and the project's attachments: v57 with `run_python@1` granted,
+        # `attachments` on the readable prefixes, `code-execution@v1` pinned, stage0-interview
+        # v34, prompt head-of-abm v11 and the manual at `manual-*@v5`.
+        "profile:head-of-abm@v58",
+        # One ask, many artifacts: v58's exact surface with `open_design_leg@5` (an `artifacts`
+        # list in place of the one `title`), prompt head-of-abm v12 and the manual at
+        # `manual-*@v6` because its generated `tools` chapter renders the grant.
+        "profile:head-of-abm@v59",
         "profile:head-of-abm@v6",
+        # The leg's first turn starts itself: v59's exact surface with prompt head-of-abm v13,
+        # which no longer tells the user to speak before generation begins, and the manual at
+        # `manual-*@v7` because its generated chapters render the profile version in their title.
+        "profile:head-of-abm@v60",
+        # web_search@1 granted; prompt v14; manual v8.
+        "profile:head-of-abm@v61",
+        # web_search@1 granted; prompt v15; manual v9 (re-minted on the research-streaming merge).
+        "profile:head-of-abm@v62",
+        "profile:head-of-abm@v63",
+        "profile:head-of-abm@v64",
+        # Turn limits become operator settings; prompt v17; manual v11.
+        "profile:head-of-abm@v65",
+        # Discovery rebuild: exact count, top-up websets, find more is a new run; manual v12.
+        "profile:head-of-abm@v66",
         "profile:head-of-abm@v7",
         "profile:head-of-abm@v8",
         "profile:head-of-abm@v9",

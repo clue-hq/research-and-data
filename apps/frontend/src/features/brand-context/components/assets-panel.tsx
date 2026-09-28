@@ -1,16 +1,17 @@
-import type { CSSProperties, FocusEvent, KeyboardEvent } from "react";
+import { SelectField } from "@/components/ui/select-field";
+export { AssetDetailDialog } from "./asset-detail-dialog";
+import { CreativeTypeSchema, UsageRoleSchema, AssetSourceSchema, assetLabel } from "../model/asset-context";
+import type { FocusEvent, KeyboardEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
-import type { BrandKitActionsController } from "../hooks/use-brand-kit-actions";
 import type { BrandAsset, BrandAssetSortKey } from "../model/brand-context";
 import { BrandContextIcon } from "./brand-context-icon";
-import { BrandKitActionsRow } from "./brand-kit-actions";
 import styles from "./brand-context.module.css";
 
 function AssetVisual({ asset }: { asset: BrandAsset }) {
   if (asset.visual.kind === "image") {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img alt="" className={styles.assetImage} src={asset.visual.imagePath} />
+      <img alt="" loading="lazy" className={styles.assetImage} src={asset.visual.imagePath} />
     );
   }
 
@@ -144,10 +145,8 @@ function AssetSortHeader({
 }
 
 export function AssetsHeader({
-  brandKitActions,
   controller,
 }: {
-  brandKitActions: BrandKitActionsController;
   controller: BrandContextController;
 }) {
   return (
@@ -155,15 +154,7 @@ export function AssetsHeader({
       <div className={styles.assetPageTitleRow}>
         <h1>Assets</h1>
         <div className={styles.headerActions}>
-          <BrandKitActionsRow controller={brandKitActions} />
-          <button
-            aria-label={controller.shareCopied ? "Assets link copied" : "Copy assets link"}
-            className={styles.documentLinkButton}
-            onClick={controller.shareCurrentView}
-            type="button"
-          >
-            <BrandContextIcon name="link" size={14} />
-          </button>
+          <button className={styles.primaryButton} type="button" disabled={!controller.assetLibrary.canWrite} onClick={() => controller.assetLibrary.setOpen(true)}>Upload assets{controller.assetLibrary.uploads.length ? ` (${controller.assetLibrary.uploads.length})` : ""}</button>
         </div>
       </div>
       <div className={styles.assetToolbar}>
@@ -177,36 +168,22 @@ export function AssetsHeader({
           />
         </label>
         <div className={styles.assetToolbarRight}>
-          <div
-            className={styles.assetFilterControl}
-            onBlur={(event) => closeWhenFocusLeaves(event, controller.closeAssetFilter)}
-          >
-            <button
-              aria-expanded={controller.assetFilterOpen}
-              aria-haspopup="menu"
-              className={`${styles.assetFilterButton} ${controller.assetCategoryFilter !== "all" ? styles.assetFilterButtonActive : ""}`}
-              onClick={controller.toggleAssetFilter}
-              type="button"
-            >
-              Filter
-              <BrandContextIcon name="chevron" size={12} />
-            </button>
-            {controller.assetFilterOpen ? (
-              <div aria-label="Filter assets by type" className={styles.assetFilterMenu} role="menu">
-                {controller.assetFilterOptions.map((option) => (
-                  <button
-                    aria-checked={controller.assetCategoryFilter === option.value}
-                    key={option.value}
-                    onClick={() => controller.setAssetCategoryFilter(option.value)}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>{option.label}</span>
-                    {controller.assetCategoryFilter === option.value ? <BrandContextIcon name="check" size={12} /> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          <div className={styles.assetToolbarFilters}>
+            <label className={styles.assetFilterField}>Type
+              <SelectField ariaLabel="Filter by creative type" value={controller.creativeTypeFilter}
+                onValueChange={controller.setCreativeTypeFilter}
+                options={[{value: "all", label: "All types"}, ...CreativeTypeSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
+            <label className={styles.assetFilterField}>Used as
+              <SelectField ariaLabel="Filter by usage" value={controller.usageFilter}
+                onValueChange={controller.setUsageFilter}
+                options={[{value: "all", label: "Any usage"}, ...UsageRoleSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
+            <label className={styles.assetFilterField}>Source
+              <SelectField ariaLabel="Filter by source" value={controller.sourceFilter}
+                onValueChange={controller.setSourceFilter}
+                options={[{value: "all", label: "All sources"}, ...AssetSourceSchema.options.map(value => ({value, label: assetLabel(value)}))]} />
+            </label>
           </div>
           <div aria-label="Asset view" className={styles.iconSegmentedControl}>
             <button aria-label="Grid view" aria-pressed={controller.assetView === "grid"} className={controller.assetView === "grid" ? styles.iconSegmentActive : ""} onClick={() => controller.setAssetView("grid")} type="button">
@@ -230,10 +207,13 @@ export function AssetsPanel({ controller }: { controller: BrandContextController
           {controller.filteredAssets.map((asset) => (
             <article className={`${styles.assetCard} ${controller.assetMenuId === asset.id ? styles.assetCardMenuOpen : ""}`} key={asset.id}>
               <button aria-label={`Open ${asset.name}`} className={styles.assetCardOpen} onClick={() => controller.openAsset(asset.id)} type="button">
-                <span className={styles.assetCardPreview}><AssetVisual asset={asset} /></span>
+                <span className={styles.assetCardPreview}>
+                  <AssetVisual asset={asset} />
+                  {asset.origin === "kit" ? <span className={styles.assetCardBadge}>Brand</span> : null}
+                </span>
               </button>
               <div className={styles.assetCardMeta}>
-                <AssetNameEditor asset={asset} controller={controller} />
+                <div><AssetNameEditor asset={asset} controller={controller} /><small className={styles.assetAnalysisStatus}>{assetLabel(asset.context?.creative_type ?? "unknown")} · {assetLabel(asset.context?.status ?? "stale")}</small></div>
                 <AssetActions asset={asset} controller={controller} />
               </div>
             </article>
@@ -285,77 +265,6 @@ export function AssetsPanel({ controller }: { controller: BrandContextController
         </div>
       )}
       {!controller.filteredAssets.length ? <div className={styles.assetEmptyState}>No assets match this view.</div> : null}
-    </div>
-  );
-}
-
-export function AssetDetailDialog({ controller }: { controller: BrandContextController }) {
-  const asset = controller.selectedAsset;
-  if (!asset || !controller.assetDraft) return null;
-
-  const gradientStyle: CSSProperties | undefined = asset.visual.kind === "gradient"
-    ? { background: `linear-gradient(135deg, ${asset.visual.colors.join(", ")})` }
-    : undefined;
-
-  return (
-    <div
-      className={styles.dialogBackdrop}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) controller.closeAsset();
-      }}
-      role="presentation"
-    >
-      <section aria-label={`${asset.name} details`} aria-modal="true" className={`${styles.assetDialog} clue-panel-enter`} role="dialog">
-        <button aria-label="Close asset details" className={styles.dialogClose} onClick={controller.closeAsset} type="button"><BrandContextIcon name="close" size={16} /></button>
-        <div className={styles.assetDialogPreview} style={gradientStyle}>
-          {asset.visual.kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img alt={asset.name} src={asset.visual.imagePath} />
-          ) : null}
-        </div>
-        <div className={styles.assetDialogDetails}>
-          <div className={styles.dialogTitleRow}>
-            <h2>Details</h2>
-          </div>
-          <div className={styles.detailField}>
-            <div className={styles.detailFieldLabel}>
-              <label htmlFor="asset-name">Title</label>
-              <button aria-label="Edit title" className={styles.fieldEditButton} onClick={() => controller.setAssetEditingField("name")} type="button"><BrandContextIcon name="edit" size={12} /></button>
-            </div>
-            {controller.assetEditingField === "name" ? (
-              <input
-                autoFocus
-                id="asset-name"
-                onBlur={() => controller.setAssetEditingField(null)}
-                onChange={(event) => controller.setAssetDraft("name", event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") controller.setAssetEditingField(null);
-                }}
-                value={controller.assetDraft.name}
-              />
-            ) : <p>{controller.assetDraft.name}</p>}
-          </div>
-          <div className={styles.detailField}>
-            <div className={styles.detailFieldLabel}>
-              <label htmlFor="asset-description">Description</label>
-              <button aria-label="Edit description" className={styles.fieldEditButton} onClick={() => controller.setAssetEditingField("description")} type="button"><BrandContextIcon name="edit" size={12} /></button>
-            </div>
-            {controller.assetEditingField === "description" ? (
-              <textarea
-                autoFocus
-                id="asset-description"
-                onBlur={() => controller.setAssetEditingField(null)}
-                onChange={(event) => controller.setAssetDraft("description", event.target.value)}
-                value={controller.assetDraft.description}
-              />
-            ) : <p>{controller.assetDraft.description}</p>}
-          </div>
-          <dl className={styles.assetFacts}>
-            <div><dt>Size</dt><dd>{asset.sizeLabel}</dd></div>
-            <div><dt>Dimensions</dt><dd>{asset.dimensions}</dd></div>
-          </dl>
-        </div>
-      </section>
     </div>
   );
 }

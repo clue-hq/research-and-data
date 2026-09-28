@@ -66,8 +66,8 @@ from clue_api.frontend_read.contract_v1 import (
 )
 from clue_api.url_safety import safe_public_url
 from clue_config import Settings
-from clue_core import Claim, EntityId, EntityType, UseClass, decode_jsonb_scalar
-from clue_research.claimstore import WorkspaceScope
+from clue_core import Claim, ClaimId, EntityId, decode_jsonb_scalar
+from clue_research.claimstore import WorkspaceScope, claims_by_ids
 from clue_research.compliance import WorkspacePolicy
 
 __all__ = [
@@ -86,6 +86,7 @@ __all__ = [
     "contact_last_modified",
     "current_position_start",
     "custom_fields_for",
+    "custom_field_evidence_for",
     "education_label",
     "email_facts",
     "employee_band",
@@ -146,15 +147,14 @@ def arv2_display_allowed(claim: Claim, policy: WorkspacePolicy) -> bool:
     ``identity_binding`` is **never** consulted (ruling S10); see the module docstring.
     """
 
-    if claim.entity_type is EntityType.ACCOUNT:
-        return True
-    if claim.use_class is UseClass.SENSITIVE:
-        return policy.display_sensitive
-    if claim.outreach_safe is False:
-        return False
-    if claim.use_class is UseClass.PERSONAL_PUBLIC_NON_SENSITIVE:
-        return policy.display_personal_public_non_sensitive
-    return policy.display_professional_public
+    from clue_research.compliance.display import research_display_allowed
+
+    return research_display_allowed(
+        entity_type=claim.entity_type,
+        use_class=claim.use_class,
+        outreach_safe=claim.outreach_safe,
+        policy=policy,
+    )
 
 
 # --- the label maps -------------------------------------------------------------------------------
@@ -937,44 +937,54 @@ PRIMARY_CUSTOM_FIELDS = 4
 
 #: The tenant-local registry rows joined to the live claims that fill them.
 #:
-#: ``workspace_field_definition`` has no ``created_at`` (only ``promoted_at``, which moves when a
-#: definition is re-promoted), so "registry order" is ``field_key`` — stable, so which four fields
-#: are ``primary`` does not silently change under the user.
+#: Preserve the established ``field_key`` ordering, so which four fields are ``primary`` does
+#: not change when the human edits a research instruction or label.
 #:
 #: ``active`` is filtered *and* retirement is joined: the table's own CHECK forbids ``active =
 #: false``, so retirement is the mechanism a workspace field actually stops by, exactly as
 #: ``list_effective_fields`` resolves it. (That helper is not reused here because
-#: ``ResolvedFieldDefinition`` does not carry ``presentation``, which the wire model needs.)
+#: this is a bulk latest-value projection, rather than a catalog read.)
 _CUSTOM_FIELDS_SQL = """
     WITH defs AS (
-        SELECT w.field_key, w.description, w.presentation
+        SELECT w.field_key, w.description, w.presentation, w.label, w.client_kb_role
         FROM workspace_field_definition w
         LEFT JOIN workspace_field_retirement r
           ON r.workspace_id = w.workspace_id AND r.field_key = w.field_key
         WHERE w.workspace_id = :definition_workspace_id
-          AND w.pack = 'client'
+          AND ((w.pack = 'client' AND :entity_kind = 'account') OR
+               (w.client_kb_role = 'research' AND w.field_key LIKE :field_prefix))
           AND w.active
-          AND r.field_key IS NULL
+          AND (CAST(:include_retired AS boolean) OR r.field_key IS NULL)
           AND NOT EXISTS (
               SELECT 1 FROM workspace_dynamic_client_kb_erasure e
               WHERE e.workspace_id = w.workspace_id
           )
     )
     SELECT DISTINCT ON (c.entity_id, c.field_key)
-        c.entity_id, c.field_key, c.value_json, d.description, d.presentation
+        c.entity_id, c.field_key, c.value_json, d.description, d.presentation,
+        d.label, d.client_kb_role, c.id
     FROM claim c
     JOIN defs d ON d.field_key = c.field_key
     WHERE c.entity_id IN :entity_ids
       AND c.superseded_by IS NULL
+      AND c.entity_type::text = :entity_kind
+      AND (d.client_kb_role <> 'research' OR
+           (c.reuse_scope = 'tenant_private' AND c.workspace_id = :definition_workspace_id))
       AND ({scope_sql})
     ORDER BY c.entity_id, c.field_key, c.collected_at DESC, c.id DESC
 """
 
 
 async def custom_fields_for(
-    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_ids: Sequence[EntityId],
+    entity_kind: Literal["account", "contact"] = "account",
+    include_retired: bool = False,
+    policy: WorkspacePolicy | None = None,
 ) -> dict[EntityId, list[AccountCustomField]]:
-    """The client-pack custom variables each account actually holds (decision 7).
+    """Scoped custom values with their claim references, including legacy client-pack variables.
 
     A registry row with no live claim on an account does not appear on that account: an empty
     custom field is noise, not information. Where a field has several live claims the newest
@@ -992,24 +1002,72 @@ async def custom_fields_for(
             {
                 "definition_workspace_id": workspace_id,
                 "entity_ids": list(account_ids),
+                "entity_kind": entity_kind,
+                "field_prefix": f"{entity_kind}.%",
+                "include_retired": include_retired,
                 **scope_params,
             },
         )
     ).all()
 
+    allowed: set[str] | None = None
+    if entity_kind == "contact":
+        if policy is None:
+            raise ValueError("Contact custom fields require the workspace display policy.")
+        claims = await claims_by_ids(
+            conn,
+            [ClaimId(row[7]) for row in rows],
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+        allowed = {str(key) for key, claim in claims.items() if arv2_display_allowed(claim, policy)}
     fields: dict[EntityId, list[AccountCustomField]] = {}
-    for entity_id, field_key, raw_value, description, presentation in rows:
+    for entity_id, field_key, raw_value, description, presentation, label, role, claim_id in rows:
+        if allowed is not None and str(claim_id) not in allowed:
+            continue
         served = fields.setdefault(EntityId(uuid.UUID(str(entity_id))), [])
         served.append(
             AccountCustomField(
                 id=str(field_key),
-                label=_text(description) or str(field_key),
+                label=(
+                    _text(label) or str(field_key).rsplit(".", 1)[-1].replace("_", " ").capitalize()
+                )
+                if role == "research"
+                else _text(description) or str(field_key),
                 value=render_value_text(str(field_key), decode_jsonb_scalar(raw_value)),
                 presentation=cast(Presentation, str(presentation)),
                 primary=len(served) < PRIMARY_CUSTOM_FIELDS,
+                claim_id=str(claim_id),
             )
         )
     return fields
+
+
+async def custom_field_evidence_for(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_id: EntityId,
+    entity_kind: Literal["account", "contact"] = "account",
+    policy: WorkspacePolicy | None = None,
+) -> list[ResearchEvidence]:
+    """Retirement hides the column, not its evidence. Erasure and subject policy still apply.
+
+    Used by both the detail payload and artifact authorization, independent of generated prose.
+    """
+    fields = await custom_fields_for(
+        conn,
+        workspace_id=workspace_id,
+        account_ids=[subject_id],
+        entity_kind=entity_kind,
+        include_retired=True,
+        policy=policy,
+    )
+    keys = {field.claim_id: field.id for field in fields.get(subject_id, ()) if field.claim_id}
+    evidence = await research_evidence_for(conn, workspace_id=workspace_id, claim_ids=keys)
+    return [
+        record.model_copy(update={"research_field_key": keys[record.claim_id]})
+        for record in evidence
+    ]
 
 
 # --- last modified --------------------------------------------------------------------------------
@@ -1285,6 +1343,16 @@ async def research_evidence_for(
     if not ids:
         return []
     refs = await evidence_for_ids(conn, workspace_id=workspace_id, claim_ids=ids)
+    # A value argument exposes its account-side support as inspectable source cards too.
+    # This is a bounded reference expansion, not an extraction or a model call.
+    seen = {r.claim_id for r in refs}
+    for _ in range(3):
+        support_ids = sorted({cid for r in refs for cid in r.supporting_claim_ids} - seen)
+        if not support_ids:
+            break
+        extra = await evidence_for_ids(conn, workspace_id=workspace_id, claim_ids=support_ids[:300])
+        refs.extend(extra)
+        seen.update(support_ids)
     served: list[ResearchEvidence] = []
     for ref in refs:
         wire: dict[str, Any] = dict(ref.to_wire())

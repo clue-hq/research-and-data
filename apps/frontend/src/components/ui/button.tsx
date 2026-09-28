@@ -22,6 +22,23 @@ const transparentVariant = [
   "disabled:shadow-none",
 ].join(" ")
 
+// Settings design lift: additive so existing button variants keep their appearance.
+const primaryVariant = [
+  "[background-color:var(--clue-ds-color-components-button-bg-brand-default)]",
+  "[border-color:var(--clue-ds-color-components-button-border-brand-default)]",
+  "[color:var(--clue-ds-color-content-knockout)]",
+  "[box-shadow:var(--clue-ds-product-component-button-effect-resting-primary)]",
+  "hover:[background-color:var(--clue-ds-color-components-button-bg-brand-hover)]",
+  "active:[background-color:var(--clue-ds-color-components-button-bg-brand-pressed)]",
+  "active:shadow-none",
+  "focus-visible:[background-color:var(--clue-ds-color-components-button-bg-brand-default)]",
+  "focus-visible:[box-shadow:var(--clue-ds-product-component-button-effect-focus-primary)]",
+  "disabled:border-transparent",
+  "disabled:[background-color:var(--clue-ds-color-components-button-bg-brand-disabled)]",
+  "disabled:[color:var(--clue-ds-color-content-disabled)]",
+  "disabled:shadow-none",
+].join(" ")
+
 const mdSize = [
   "h-[var(--clue-ds-product-component-button-md-height)]",
   "gap-[var(--clue-ds-product-component-button-gap)]",
@@ -51,6 +68,7 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
         transparent: transparentVariant,
+        primary: primaryVariant,
       },
       size: {
         default:

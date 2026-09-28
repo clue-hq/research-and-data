@@ -178,21 +178,50 @@ def transient_upstream_failure(error: BaseException) -> bool:
         # An in-body Responses error is the authoritative verdict, and must be read BEFORE any
         # status: ``langchain_openai`` re-raises it with the raw HTTP response attached, and that
         # response is the 200 the failing body arrived in.
+        #
+        # Two vocabularies arrive in that ``code`` field. The Responses enum is a string
+        # (``server_error``). OpenRouter's proxy layer instead relays the UPSTREAM HTTP status
+        # as the code — seen live twice on 2026-09-04 as ``{"message": "Auth context expired",
+        # "code": 502}`` on a 136 s and a 236 s grok generation, each of which discarded a whole
+        # web turn. A numeric code is therefore read as the status it is.
+        numeric = _numeric_code(code)
+        if numeric is not None:
+            return _transient_status(numeric)
         return code in _TRANSIENT_RESPONSE_ERROR_CODES
     status = getattr(error, "status_code", None)
     if status is None:
         status = getattr(getattr(error, "response", None), "status_code", None)
-    return isinstance(status, int) and (status >= 500 or status in _TRANSIENT_STATUS_CODES)
+    return isinstance(status, int) and _transient_status(status)
+
+
+def _transient_status(status: int) -> bool:
+    """429 = rate limited, 408/409 = request timeout / conflict, >=500 = upstream fault."""
+
+    return status >= 500 or status in _TRANSIENT_STATUS_CODES
 
 
 def _response_error_code(argument: object) -> str | None:
-    """The Responses ``error.code`` an exception argument carries, if it is one."""
+    """The in-body ``error.code`` an exception argument carries, if it is one.
+
+    A string enum member is returned as is; an integer (OpenRouter relaying the upstream HTTP
+    status) is returned as its decimal text so the caller reads both through one path.
+    """
 
     if isinstance(argument, Mapping):
         code = argument.get("code")
     else:
         code = getattr(argument, "code", None)
+    if isinstance(code, bool):
+        return None
+    if isinstance(code, int):
+        return str(code)
     return code if isinstance(code, str) else None
+
+
+def _numeric_code(code: str) -> int | None:
+    """The HTTP status a ``code`` field spells, or ``None`` when it is an enum word."""
+
+    return int(code) if code.isdigit() else None
 
 
 def _transient_retry_backoff_s(error: Exception, attempt: int) -> float | None:

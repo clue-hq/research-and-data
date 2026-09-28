@@ -122,10 +122,10 @@ async def _seed_discovery_run(
         text(
             "INSERT INTO arv2_discovery_run (run_id, workspace_id, project_id, brand_id, "
             "project_run_id, icp_artifact_key, icp_artifact_sha256, icp_key, icp_version, "
-            "requested_by_user_id, request_sha256, target_count, strict_count, relaxed_enabled, "
+            "requested_by_user_id, request_sha256, target_count, relaxed_enabled, "
             "criteria_gate_keys, status, asked, found_strict, found_relaxed) "
             "VALUES (:run, :ws, :project, :brand, :project_run, :key, :sha, 'gi-groups', 1, "
-            ":user, :request_sha, 20, 35, true, CAST(:gates AS jsonb), 'completed', :asked, "
+            ":user, :request_sha, 20, true, CAST(:gates AS jsonb), 'completed', :asked, "
             ":found_strict, :found_relaxed)"
         ),
         {
@@ -159,7 +159,7 @@ async def _seed_candidate(
 ) -> None:
     """One candidate. ``judged`` writes a verdict row, which is what ``verified`` counts.
 
-    The pre-spend dispositions (``duplicate_of_existing``, ``not_chosen_before``) are stamped
+    The pre-spend dispositions (``duplicate_of_existing``, ``found_before``) are stamped
     before any gate is asked, so a candidate carrying one has no verdicts and ``status.md`` must
     not report it as a company the platform checked.
     """

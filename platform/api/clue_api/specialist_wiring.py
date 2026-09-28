@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import Literal, Protocol, cast
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID, uuid5
 
+from langchain.agents.middleware.types import AgentMiddleware
 from sqlalchemy import text
 
 from clue_agents import (
@@ -17,6 +20,7 @@ from clue_agents import (
     AgentModelProvider,
     AgentProfileRegistry,
     AgentResourceMaterializer,
+    AgentTurnOutcome,
     AgentTurnRequest,
     AgentWorkspaceLease,
     ContextLayer,
@@ -96,6 +100,36 @@ class SpecialistExecutionFactory(Protocol):
         resolved_profile: ResolvedAgentProfile,
         budget_limit_millicents: int,
     ) -> SpecialistExecutionAdapter: ...
+
+
+class RecordOnlySpecialistExecutionFactory(SpecialistExecutionFactory, Protocol):
+    """Opt-in trusted adapter; legacy factories cannot silently relax monetary policy."""
+
+    def record_only(
+        self,
+        *,
+        request: AgentTurnRequest,
+        resolved_profile: ResolvedAgentProfile,
+        budget_limit_millicents: int,
+    ) -> SpecialistExecutionAdapter: ...
+
+
+@dataclass(frozen=True)
+class SpecialistRuntimeBindings:
+    """Trusted per-child extensions; never supplied by the model's delegation arguments."""
+
+    backend: object | None = None
+    middleware: tuple[AgentMiddleware[Any, Any, Any], ...] = ()
+    before_work: Callable[[], Awaitable[None]] | None = None
+    # Trusted run allowance, never a model-supplied delegation option. None retains the profile.
+    max_model_rounds: int | None = None
+    disable_runtime_timeout: bool = False
+
+
+SpecialistBindingFactory = Callable[
+    [AgentTurnRequest, ResolvedAgentProfile, AgentWorkspaceLease],
+    Awaitable[SpecialistRuntimeBindings],
+]
 
 
 class SpecialistSpendReader(Protocol):
@@ -197,6 +231,13 @@ def _budget_limit(body: bytes) -> int:
     return limit
 
 
+def _budget_mode(body: bytes) -> Literal["enforced", "record_only"]:
+    value = json.loads(body).get("mode", "enforced")
+    if value not in ("enforced", "record_only"):
+        raise ValueError("child budget mode is malformed")
+    return cast(Literal["enforced", "record_only"], value)
+
+
 def _context_is_fresh(context: object) -> bool:
     manifest = getattr(context, "manifest", None)
     layers = getattr(manifest, "layers", ())
@@ -232,8 +273,10 @@ class FreshWakeSpecialistRunner:
         materializer: AgentResourceMaterializer | None = None,
         crash_hook: AgentExecutionCrashHook = _no_crash,
         conn_factory: ConnFactory = transaction,
+        bindings: SpecialistBindingFactory | None = None,
     ) -> None:
         self._parent_request = parent_request
+        self._bindings = bindings
         self._profiles = profiles
         self._models = models
         self._turns = turns
@@ -323,6 +366,18 @@ class FreshWakeSpecialistRunner:
                 requested_at=self._parent_request.requested_at,
             )
             await self._turns.create(request=child_request, profile=resolved_profile.profile)
+            bindings = (
+                await self._bindings(child_request, resolved_profile, lease)
+                if self._bindings is not None
+                else SpecialistRuntimeBindings()
+            )
+            if bindings.before_work is not None:
+                await bindings.before_work()
+            prior = await self._turns.load_committed_outcome(
+                turn_id=child_request.turn_id, workspace_id=workspace_id
+            )
+            if prior is not None:
+                return await self._result(request, child_execution_id, prior)
             context = await self._contexts.assemble(
                 request=child_request,
                 profile=resolved_profile.profile,
@@ -368,10 +423,15 @@ class FreshWakeSpecialistRunner:
                     ),
                 )
 
-            budget_limit = _budget_limit(
-                await self._artifacts.read(request.child_budget_envelope_ref)
-            )
-            execution = self._execution_factory(
+            budget_body = await self._artifacts.read(request.child_budget_envelope_ref)
+            budget_limit = _budget_limit(budget_body)
+            budget_mode = _budget_mode(budget_body)
+            factory = self._execution_factory
+            if budget_mode == "record_only":
+                if not callable(getattr(factory, "record_only", None)):
+                    raise ValueError("child execution does not support record-only budgeting")
+                factory = cast(RecordOnlySpecialistExecutionFactory, factory).record_only
+            execution = factory(
                 request=child_request,
                 resolved_profile=resolved_profile,
                 budget_limit_millicents=budget_limit,
@@ -393,53 +453,74 @@ class FreshWakeSpecialistRunner:
                 lease=lease,
                 artifacts=self._artifacts,
                 required_output_path=task.required_output_path,
+                before_work=bindings.before_work,
             ).build()
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
                     models=self._models,
                     execution=execution,
-                    max_runtime_s=resolved_profile.profile.turn_timeout_s,
-                    max_rounds=resolved_profile.profile.max_model_rounds,
+                    max_runtime_s=(
+                        None
+                        if bindings.disable_runtime_timeout
+                        else resolved_profile.profile.turn_timeout_s
+                    ),
+                    max_rounds=(
+                        bindings.max_model_rounds
+                        if bindings.max_model_rounds is not None
+                        else resolved_profile.profile.max_model_rounds
+                    ),
+                    middleware=bindings.middleware,
                 ),
                 turns=self._turns,
                 artifacts=self._artifacts,
+                before_work=bindings.before_work,
+                conn_factory=self._conn_factory,
             ).run(
                 request=child_request,
                 resolved_profile=resolved_profile,
                 context=context,
                 lease=lease,
                 tools=governed_tools,
+                backend=bindings.backend,
             )
-            if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
-                raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
-            envelope = AgentFinalizeEnvelope.model_validate_json(
-                await self._artifacts.read(outcome.finalization_ref)
-            )
-            if envelope.execution_id != child_execution_id:
-                raise ValueError("child finalization belongs to another execution")
-            spend = await self._spend.spend_millicents(
-                execution_id=child_execution_id,
-                workspace_id=workspace_id,
-            )
-            if spend < 0 or spend > budget_limit:
-                raise ValueError("child reported spend outside its durable budget envelope")
-            result_status: Literal["completed", "awaiting_input", "blocked"]
-            if outcome.status is AgentExecutionStatus.COMPLETED:
-                result_status = "completed"
-            elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
-                result_status = "awaiting_input"
-            else:
-                result_status = "blocked"
-            return DelegationResult(
-                delegation_id=request.delegation_id,
-                parent_execution_id=request.parent_execution_id,
-                child_execution_id=child_execution_id,
-                status=result_status,
-                output_refs=envelope.output_refs,
-                domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
-                finalization_ref=outcome.finalization_ref,
-                spend_millicents=spend,
-                completed_at=envelope.finalized_at,
-            )
+            return await self._result(request, child_execution_id, outcome)
         finally:
             lease.release()
+
+    async def _result(
+        self, request: DelegationRequest, child_execution_id: ExecutionId, outcome: AgentTurnOutcome
+    ) -> DelegationResult:
+        workspace_id = request.task_artifact_ref.workspace_id
+        budget_body = await self._artifacts.read(request.child_budget_envelope_ref)
+        budget_limit, budget_mode = _budget_limit(budget_body), _budget_mode(budget_body)
+        if outcome.status is AgentExecutionStatus.FAILED or outcome.finalization_ref is None:
+            raise RuntimeError(outcome.failure_code or "specialist_turn_failed")
+        envelope = AgentFinalizeEnvelope.model_validate_json(
+            await self._artifacts.read(outcome.finalization_ref)
+        )
+        if envelope.execution_id != child_execution_id:
+            raise ValueError("child finalization belongs to another execution")
+        spend = await self._spend.spend_millicents(
+            execution_id=child_execution_id,
+            workspace_id=workspace_id,
+        )
+        if spend < 0 or (budget_mode == "enforced" and spend > budget_limit):
+            raise ValueError("child reported spend outside its durable budget envelope")
+        result_status: Literal["completed", "awaiting_input", "blocked"]
+        if outcome.status is AgentExecutionStatus.COMPLETED:
+            result_status = "completed"
+        elif outcome.status is AgentExecutionStatus.AWAITING_INPUT:
+            result_status = "awaiting_input"
+        else:
+            result_status = "blocked"
+        return DelegationResult(
+            delegation_id=request.delegation_id,
+            parent_execution_id=request.parent_execution_id,
+            child_execution_id=child_execution_id,
+            status=result_status,
+            output_refs=envelope.output_refs,
+            domain_refs=(*envelope.domain_refs, *envelope.open_gate_refs),
+            finalization_ref=outcome.finalization_ref,
+            spend_millicents=spend,
+            completed_at=envelope.finalized_at,
+        )

@@ -23,6 +23,12 @@ from py_lumen_obs import bind_request_id, get_logger, unbind_context
 from py_lumen_obs.testing import capture_events
 
 
+def _spend_test_stamp():
+    from clue_spend import LedgerStamp
+
+    return LedgerStamp(workspace_id="ws_image_tests")
+
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MINIMAL_SCENE_PATH = REPO_ROOT / "crates/lumen-core/fixtures/minimal_scene.json"
 GENERATED_RASTER_ASSET_PATH = (
@@ -981,6 +987,10 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
 
     monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
     asset_id = upload_logo(client).json()["asset"]["id"]
+    cache_dir = tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    record = HybridRepository().require_asset_record(asset_id)["asset"]
+    for digest, _mime in record_digests(record):
+        cache_blob_path(cache_dir, digest).unlink(missing_ok=True)
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_agent_turn_preview(
@@ -995,29 +1005,19 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
     assert entry["record"]["id"] == asset_id
     assert entry["record"]["status"] == "ready"
 
-    # The read-through actually ran: the turn's engine cache holds the bytes at
-    # `sha256/{ab}/{digest}`. That single path is what BOTH readers compute —
-    # `view("asset:…")` via `blob_path_for_digest`, and the ENGINE at render via
-    # `StoreBackedResolver`'s digest fallback (a `clue-storage` location is not
-    # `local-store`, so it resolves through `digest_relative_path`, which is
-    # `cache_relative_path` byte for byte). Without this materialization the
-    # manifest is a promise the render cannot keep: `asset.bytes_missing`, an
-    # empty chip where the image should be.
-    cache_dir = (
-        tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
-    )
+    # Inventory is metadata-only. Bytes arrive on explicit inspection or placement.
+    cache_dir = tmp_path / "engine-cache" / os.environ["LUMEN_DEV_WORKSPACE_ID"]
     digests = [digest for digest, _mime in record_digests(entry["record"])]
     assert digests
-    for digest in digests:
-        assert cache_blob_path(cache_dir, digest).is_file(), digest
+    assert all(not cache_blob_path(cache_dir, digest).is_file() for digest in digests)
+    config.asset_materializer(asset_id)
+    assert all(cache_blob_path(cache_dir, digest).is_file() for digest in digests)
 
 
-def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
+def test_agent_turn_asset_library_keeps_older_assets_without_a_recent_cap(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The bound is a real cap on the most-recently-updated rows, not a suggestion:
-    a workspace library can be large, and every entry costs read-through bytes plus
-    prompt-cache surface in `view`'s available-ids text."""
+    """Full metadata coverage replaces the old recent-only materialization cap."""
     from lumen_api import main as main_mod
     from lumen_api.main import repo_root, run_agent_turn_preview
     from lumen_api.models import AgentTurnPreviewRequest
@@ -1035,7 +1035,7 @@ def test_agent_turn_asset_library_is_bounded_to_the_most_recent(
         workspace_id=os.environ["LUMEN_DEV_WORKSPACE_ID"],
     )
     library = captured["config"].asset_library
-    assert list(library) == [newer], library
+    assert set(library) == {older, newer}, library
 
 
 def test_scene_turn_asset_library_drops_unplaceable_kinds(
@@ -1810,6 +1810,13 @@ def test_agent_response_edit_applied_maps_to_proposed_with_advisory_diagnostics(
         "stop_reason": "edit_scoped_acceptance",
         "run_id": "run_edit_scoped",
         "summary": "Requested edit applied and verified.",
+        "draft_verification": {
+            "scene_stamp": "current-scene",
+            "preflight": {"status": "current", "scene_stamp": "current-scene", "iteration": 1,
+                          "has_blocking_errors": False, "diagnostics": []},
+            "preview": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+            "review": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+        },
         "preview_paths": [],
         "ops_valid_through_iteration": 1,
         "critique": {
@@ -1908,7 +1915,7 @@ def test_agent_turn_preview_request_accepts_previous_turn_outcome() -> None:
 
 def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> None:
     # Agent-quality: a run that exhausts its repair budget holding a
-    # preflight-clean best draft finalizes as `completed_with_warnings`. That
+    # preflight-clean best draft can finalize as `completed_with_warnings`. That
     # draft must reach the editor as a reviewable PROPOSAL (Accept/Reject),
     # not "failed" — with the unresolved critique as advisory warnings. The
     # critique arrives wrapped in the loop's last feedback envelope.
@@ -1922,6 +1929,13 @@ def test_agent_response_completed_with_warnings_maps_to_proposed(tmp_path) -> No
         "stop_reason": "max_iterations_reached",
         "run_id": "run_best_draft",
         "summary": "Repair budget reached. Returned the best preflight-clean draft.",
+        "draft_verification": {
+            "scene_stamp": "current-scene",
+            "preflight": {"status": "current", "scene_stamp": "current-scene", "iteration": 1,
+                          "has_blocking_errors": False, "diagnostics": []},
+            "preview": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+            "review": {"status": "current", "scene_stamp": "current-scene", "iteration": 1},
+        },
         "preview_paths": [],
         "ops_valid_through_iteration": 1,
         "critique": {
@@ -4033,6 +4047,67 @@ def test_generate_asset_route_runs_registry_providers(client: TestClient) -> Non
     assert unknown.json()["detail"]["code"] == "provider.unknown"
 
 
+class _SpendPostTransport:
+    """Adapts a ``httpx.post``-shaped stub onto ``clue_spend``'s transport seam.
+
+    Lane 3 slice 5 moved the image model's HTTP call behind the provider caller, so patching
+    ``httpx.post`` no longer intercepts it. Rather than rewrite twenty stubs, this calls each one
+    with the arguments it was written against — ``(url, json=…, headers=…, timeout=…)`` — and turns
+    its response object back into an ``HttpResponse``.
+
+    The metering key the seam adds (``usage: {"include": True}``) is stripped BEFORE the stub sees
+    the body, and recorded on ``self.metering`` instead, so every "the request body is exactly
+    this" assertion below keeps pinning what the IMAGE PROVIDER built. That the seam adds the key
+    is pinned in its own suite (``test_spend_scope``), where it belongs.
+    """
+
+    def __init__(self, post) -> None:
+        self._post = post
+        self.metering: list = []
+
+    def send(self, request):
+        from clue_spend import HttpResponse
+
+        body = json.loads(request.body) if request.body else None
+        if isinstance(body, dict) and "usage" in body:
+            self.metering.append(body.pop("usage"))
+        response = self._post(
+            request.url,
+            json=body,
+            headers=dict(request.headers),
+            timeout=request.timeout_s,
+        )
+        status = int(response.status_code)
+        content = getattr(response, "content", None)
+        if content is not None:
+            raw = content
+        elif status >= 400 and getattr(response, "text", None):
+            raw = response.text.encode("utf-8")
+        else:
+            raw = json.dumps(response.json()).encode("utf-8")
+        return HttpResponse(
+            status=status, headers=dict(getattr(response, "headers", {}) or {}), body=raw
+        )
+
+
+def _patch_image_post(monkeypatch: pytest.MonkeyPatch, post) -> _SpendPostTransport:
+    """Point the process-wide UNSCOPED spend caller at ``post`` for the duration of one test.
+
+    These tests call ``image_provider.generate``/``edit`` directly, outside any request or job, so
+    there is no scope open — which is exactly what the unscoped fallback is for. ``monkeypatch``
+    owns the restore; the warn flag is pre-set so a test's caplog is not polluted by the seam's
+    one-time "no scope open" warning.
+    """
+    from lumen_api import spend
+
+    transport = _SpendPostTransport(post)
+    monkeypatch.setattr(
+        spend, "_UNSCOPED", spend._new_scope(_spend_test_stamp(), transport), raising=False
+    )
+    monkeypatch.setattr(spend, "_UNSCOPED_WARNED", True, raising=False)
+    return transport
+
+
 def _tiny_png(width: int = 8, height: int = 8, rgba=(64, 120, 200, 255)) -> bytes:
     """A minimal but valid RGBA PNG the Rust asset probe can decode."""
     import struct
@@ -4162,7 +4237,7 @@ def test_image_provider_openrouter_chat_completion_shape(
         captured.update(url=url, json=json, headers=headers)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
 
     result = image_provider.generate(
         prompt="a calm clinic waiting room",
@@ -4200,7 +4275,7 @@ def test_image_provider_surfaces_no_image_response(monkeypatch: pytest.MonkeyPat
         def json(self) -> dict:
             return {"choices": [{"message": {"content": "I can't make that image."}}]}
 
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+    _patch_image_post(monkeypatch, lambda *a, **k: _FakeResponse())
 
     with pytest.raises(image_provider.ImageGenerationError) as excinfo:
         image_provider.generate(prompt="anything")
@@ -4313,8 +4388,9 @@ def test_w14_blank_or_sentinel_model_id_resolves_to_the_verified_working_model(
     assert "openai/gpt-image-2" in image_provider._IMAGE_API_ONLY_MODEL_IDS
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, model_id: str
 ) -> None:
     """W1.4: a wrong IMAGE_MODEL_ID surfaces as a generic 'no endpoints found'
     404 that reads like a provider outage (it cost the Apollo POC a restart to
@@ -4322,13 +4398,13 @@ def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
 
     The typed error still propagates unchanged — this adds a diagnostic, not a
     behavior change."""
-    _image_model_env(monkeypatch, "openai/gpt-image-2")
+    _image_model_env(monkeypatch, model_id)
     body = (
         '{"error":{"message":"No endpoints found that support the requested '
         'output modalities: image, text"}}'
     )
-    monkeypatch.setattr(
-        "httpx.post", lambda *a, **k: _StubResponse({}, status_code=404, text=body)
+    _patch_image_post(
+        monkeypatch, lambda *a, **k: _StubResponse({}, status_code=404, text=body)
     )
 
     with (
@@ -4339,9 +4415,10 @@ def test_w14_model_not_found_404_logs_the_config_fix_not_just_the_error(
 
     assert excinfo.value.code == "image_model.http_error"
     logged = caplog.text
-    assert "openai/gpt-image-2" in logged
+    assert model_id in logged
     assert "IMAGE-API" in logged.upper()
-    assert "openai/gpt-5.4-image-2" in logged  # names the fix
+    assert "IMAGE_MODEL_API_STYLE=images" in logged
+    assert "Set IMAGE_MODEL_ID=" not in logged  # preserve the selected model
 
 
 def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
@@ -4365,7 +4442,7 @@ def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
             return _StubResponse(_TEXT_ONLY_RESPONSE)
         return _image_response(png)
 
-    monkeypatch.setattr("httpx.post", flaky_post)
+    _patch_image_post(monkeypatch, flaky_post)
     result = image_provider.generate(prompt="a holographic yellow wash")
     assert result.image_bytes == png
     assert calls["n"] == 2, "a text-only answer must be retried exactly once"
@@ -4379,7 +4456,7 @@ def test_w17a_text_only_response_is_retried_exactly_once_then_fails_typed(
         always["n"] += 1
         return _StubResponse(_TEXT_ONLY_RESPONSE)
 
-    monkeypatch.setattr("httpx.post", always_text)
+    _patch_image_post(monkeypatch, always_text)
     with pytest.raises(image_provider.ImageGenerationError) as excinfo:
         image_provider.generate(prompt="something it will refuse")
     assert excinfo.value.code == "image_model.no_image"
@@ -4398,7 +4475,7 @@ def test_w17a_other_typed_errors_are_still_never_retried(
         calls["n"] += 1
         return _StubResponse({}, status_code=404, text="nope")
 
-    monkeypatch.setattr("httpx.post", http_error)
+    _patch_image_post(monkeypatch, http_error)
     with pytest.raises(image_provider.ImageGenerationError):
         image_provider.generate(prompt="anything")
     assert calls["n"] == 1
@@ -4420,7 +4497,7 @@ def test_w17b_aspect_ratio_rides_the_request_structurally(
         captured.update(url=url, json=json)
         return _image_response(png)
 
-    monkeypatch.setattr("httpx.post", capture_post)
+    _patch_image_post(monkeypatch, capture_post)
     image_provider.generate(prompt="a holographic yellow wash", aspect_ratio="16:9")
     assert captured["json"]["image_config"] == {"aspect_ratio": "16:9"}
     # Belt and braces: providers clamp to their own subset, so the prompt hint stays.
@@ -4462,7 +4539,7 @@ def test_w17b_result_reports_actual_dimensions_not_the_request(
     _image_model_env(monkeypatch)
 
     # The exact POC shape: 16:9 asked, a square delivered.
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(1024, 8)))
+    _patch_image_post(monkeypatch, lambda *a, **k: _image_response(_tiny_png(1024, 8)))
     ignored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
     assert (ignored.width, ignored.height) == (1024, 8)
     assert ignored.requested_aspect_ratio == "16:9"
@@ -4472,14 +4549,14 @@ def test_w17b_result_reports_actual_dimensions_not_the_request(
     assert "output 1024x8" in notes
 
     # An honored ratio reports honored, and adds no complaint to provenance.
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(32, 18)))
+    _patch_image_post(monkeypatch, lambda *a, **k: _image_response(_tiny_png(32, 18)))
     honored = image_provider.generate(prompt="a wash", aspect_ratio="16:9")
     assert (honored.width, honored.height) == (32, 18)
     assert honored.aspect_ratio_honored is True
     assert not any("did not honor" in note for note in honored.provenance["notes"])
 
     # No ask -> the question is unanswerable, not False.
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _image_response(_tiny_png(8, 8)))
+    _patch_image_post(monkeypatch, lambda *a, **k: _image_response(_tiny_png(8, 8)))
     assert image_provider.generate(prompt="a wash").aspect_ratio_honored is None
 
 
@@ -4732,7 +4809,7 @@ def test_image_provider_edit_builds_multimodal_content(
         captured.update(url=url, json=json, headers=headers)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
 
     result = image_provider.edit(
         prompt="remove the background completely",
@@ -4787,7 +4864,7 @@ def test_image_provider_generate_builds_reference_conditioned_content(
         captured.update(url=url, json=json, headers=headers)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
 
     result = image_provider.generate(
         prompt="a focused surgeon in an operating theatre",
@@ -4851,7 +4928,7 @@ def test_image_provider_generate_without_references_is_bare_string(
         captured.update(json=json)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
 
     image_provider.generate(prompt="a quiet mountain lake at dawn", aspect_ratio="16:9")
     content = captured["json"]["messages"][0]["content"]
@@ -4894,12 +4971,14 @@ def _capture_images_api_post(
         captured.update(url=url, json=json, headers=headers, timeout=timeout)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
     return captured
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_image_provider_images_api_generation_body(
     monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
 ) -> None:
     # The founder's generation sample, minus `stream` (we are synchronous):
     # top-level prompt + structured aspect_ratio + quality + background. No
@@ -4909,6 +4988,7 @@ def test_image_provider_images_api_generation_body(
     # test_image_provider_images_api_transparency_is_prose_only). "auto" is what
     # both founder sample bodies carry; do not "tidy up" the default away.
     _images_api_settings(monkeypatch)
+    monkeypatch.setattr(settings, "image_model_id", model_id)
     out_png = _tiny_png(8, 8, rgba=(3, 3, 3, 255))
     captured = _capture_images_api_post(monkeypatch, out_png)
 
@@ -4920,11 +5000,11 @@ def test_image_provider_images_api_generation_body(
     )
     assert result.image_bytes == out_png
     assert result.mime_type == "image/png"
-    assert result.model == "openai/gpt-image-2"
+    assert result.model == model_id
 
     assert captured["url"] == "https://openrouter.ai/api/v1/images"
     assert captured["json"] == {
-        "model": "openai/gpt-image-2",
+        "model": model_id,
         "prompt": "a calm clinic waiting room\n\nBrand/style direction: warm palette",
         "aspect_ratio": "16:9",
         "quality": "high",
@@ -5037,13 +5117,16 @@ def test_image_provider_images_api_square_default_is_sent_structurally(
     assert captured["json"]["aspect_ratio"] == "1:1"
 
 
+@pytest.mark.parametrize("model_id", ["openai/gpt-image-2", "openai/gpt-image-2.5-flare"])
 def test_image_provider_images_api_input_references_match_the_founder_sample(
     monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
 ) -> None:
     # Reference-conditioned generation: `input_references` typed dicts in caller
-    # order. The founder's sample used https URLs; we send base64 data: URLs,
-    # which is the one thing the first live call must confirm.
+    # order. The founder's sample used https URLs; we send base64 data: URLs.
+    # This verifies transport serialization, not live provider support or quality.
     _images_api_settings(monkeypatch)
+    monkeypatch.setattr(settings, "image_model_id", model_id)
     ref_a = _tiny_png(8, 8, rgba=(200, 40, 40, 255))
     ref_b = _tiny_png(8, 8, rgba=(40, 40, 200, 255))
     captured = _capture_images_api_post(monkeypatch, _tiny_png(8, 8))
@@ -5054,6 +5137,7 @@ def test_image_provider_images_api_input_references_match_the_founder_sample(
         reference_images=[(ref_a, "image/png"), (ref_b, "image/png")],
     )
     body = captured["json"]
+    assert body["model"] == model_id
     assert body["input_references"] == [
         {
             "type": "image_url",
@@ -5132,7 +5216,7 @@ def test_image_provider_images_api_decodes_b64_then_url(
         def json(self) -> dict:
             return payloads["body"]
 
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+    _patch_image_post(monkeypatch, lambda *a, **k: _FakeResponse())
 
     payloads["body"] = {"data": [{"b64_json": base64.b64encode(png).decode("ascii")}]}
     assert image_provider.generate(prompt="x").image_bytes == png
@@ -5192,7 +5276,7 @@ def test_image_provider_images_api_url_fetch_follows_redirects(
         fetched.update(url=url, timeout=timeout, **kwargs)
         return _FakeGetResponse()
 
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    _patch_image_post(monkeypatch, lambda *a, **k: _FakePostResponse())
     monkeypatch.setattr("httpx.get", fake_get)
 
     result = image_provider.generate(prompt="a signed-url result")
@@ -5221,7 +5305,7 @@ def test_image_provider_images_api_url_fetch_rejects_a_non_image(
         headers = {"content-type": "text/html; charset=utf-8"}
         content = b"<html><body>Access denied</body></html>"
 
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakePostResponse())
+    _patch_image_post(monkeypatch, lambda *a, **k: _FakePostResponse())
     monkeypatch.setattr("httpx.get", lambda *a, **k: _FakeGetResponse())
 
     with pytest.raises(image_provider.ImageGenerationError) as excinfo:
@@ -5241,7 +5325,7 @@ def test_image_provider_images_api_garbage_response_is_bad_response(
         def json(self) -> dict:
             return {"error": {"message": "model unavailable"}}
 
-    monkeypatch.setattr("httpx.post", lambda *a, **k: _FakeResponse())
+    _patch_image_post(monkeypatch, lambda *a, **k: _FakeResponse())
     with pytest.raises(image_provider.ImageGenerationError) as excinfo:
         image_provider.generate(prompt="anything")
     assert excinfo.value.code == "image_model.bad_response"
@@ -5273,7 +5357,7 @@ def test_image_provider_chat_style_request_bodies_are_unchanged(
         captured.update(url=url, json=json, headers=headers)
         return _FakeResponse()
 
-    monkeypatch.setattr("httpx.post", fake_post)
+    _patch_image_post(monkeypatch, fake_post)
 
     # (1) plain generation — bare-string content, prose hints, image modality.
     image_provider.generate(
@@ -5355,19 +5439,19 @@ def test_image_model_api_style_rejects_a_typo(monkeypatch: pytest.MonkeyPatch) -
     assert Settings().image_model_api_style == "chat"
 
 
-def test_generation_key_reference_digests(client: TestClient) -> None:
+def test_generation_key_reference_digests() -> None:
     # RC2 D-RC2.3: reference_digests participate only when truthy (existing keys
-    # byte-identical), order-insensitively.
+    # byte-identical). Reference order is part of the composition contract.
     from lumen_api import image_cache
 
     base = image_cache.generation_key(prompt="a hero", model="m")
     # No digests / empty list -> identical to the pre-RC2 key (byte-compatible).
     assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=None) == base
     assert image_cache.generation_key(prompt="a hero", model="m", reference_digests=[]) == base
-    # Truthy digests change the key, and their order does not matter.
+    # Truthy digests change the key, including when their order changes.
     with_refs = image_cache.generation_key(prompt="a hero", model="m", reference_digests=["b", "a"])
     assert with_refs != base
-    assert with_refs == image_cache.generation_key(
+    assert with_refs != image_cache.generation_key(
         prompt="a hero", model="m", reference_digests=["a", "b"]
     )
     # Different reference pixels -> different key.

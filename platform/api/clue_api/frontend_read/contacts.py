@@ -28,9 +28,9 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -80,6 +80,8 @@ from clue_api.frontend_read.v1_shared import (
     account_logo_path,
     contact_last_modified,
     current_position_start,
+    custom_field_evidence_for,
+    custom_fields_for,
     education_label,
     email_facts,
     iso_utc,
@@ -96,7 +98,6 @@ from clue_core import Claim, ClaimId, ContactEntity, EntityId, EntityType
 from clue_db import ConnFactory
 from clue_research.claimstore import (
     WorkspaceScope,
-    claims_by_ids,
     claims_for_entities,
     current_values,
 )
@@ -246,6 +247,8 @@ async def read_account_contacts(
     *,
     workspace_id: str,
     account_id: uuid.UUID,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
 ) -> AccountContactsResponseV1:
     """The account's contacts table in **contract v1** (decisions 2, 12, 13).
 
@@ -261,7 +264,13 @@ async def read_account_contacts(
     canonical, _name = await _resolve_account(
         conn, workspace_id=workspace_id, account_id=account_id
     )
-    members = await committee(conn, workspace_id=workspace_id, account_id=str(canonical))
+    members = await committee(
+        conn,
+        workspace_id=workspace_id,
+        account_id=str(canonical),
+        project_id=project_id,
+        context_id=context_id,
+    )
     if not members:
         return AccountContactsResponseV1(data=(), meta=AccountContactsMeta(total=0))
 
@@ -289,9 +298,29 @@ async def read_account_contacts(
                 # ``page`` is offered for a member this read actually found claims for. E5's
                 # addressability rule is wider (any live claim, or a written section), so a linked
                 # row is always servable — the reverse is deliberately not promised.
-                has_page=bool(own),
+                has_page=bool(own) or member.membership_state is not None,
             )
         )
+    rows = [
+        row.model_copy(
+            update={
+                "membership_state": member.membership_state,
+                "outreach_eligible": member.outreach_eligible,
+                "membership_gaps": member.membership_gaps,
+                **(
+                    {"influence": None}
+                    if member.membership_state not in (None, "supported")
+                    else {}
+                ),
+                **(
+                    {"persona": persona_display(member.persona) or "Needs verification"}
+                    if member.membership_state
+                    else {}
+                ),
+            }
+        )
+        for row, member in zip(rows, members, strict=True)
+    ]
     return AccountContactsResponseV1(data=tuple(rows), meta=AccountContactsMeta(total=len(rows)))
 
 
@@ -442,6 +471,8 @@ async def read_contact_profile(
     contact_id: uuid.UUID,
     display: DisplayPages,
     now: datetime,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
 ) -> AccountContactDetailResponseV1:
     """One contact page in **contract v1** (decisions 13, 14), or :class:`ContactNotFound`.
 
@@ -468,7 +499,20 @@ async def read_contact_profile(
         )
     except SubjectNotFound as exc:
         raise ContactNotFound(str(contact_id)) from exc
-    if not _same_entity(subject.account_id, str(canonical_account)):
+    from clue_api.arv2.quality_read import select_quality_context
+
+    selection = await select_quality_context(
+        conn,
+        workspace_id=workspace_id,
+        subject_id=uuid.UUID(str(canonical_contact)),
+        subject_kind="contact",
+        account_id=uuid.UUID(str(canonical_account)),
+        project_id=project_id,
+        context_id=context_id,
+    )
+    if not _same_entity(subject.account_id, str(canonical_account)) and (
+        selection is None or selection.scope is None
+    ):
         raise ContactNotFound(str(contact_id))
 
     live = await claims_for_entities(
@@ -480,9 +524,12 @@ async def read_contact_profile(
         subject_kind="contact",
         subject_id=str(canonical_contact),
         page=CONTACT_PAGE,
+        project_id=project_id,
+        context_id=context_id,
+        account_id=uuid.UUID(str(canonical_account)),
         generate=bool(live),
     )
-    if not live and not _has_stored_section(page):
+    if not live and not _has_stored_section(page) and selection is None:
         raise ContactNotFound(str(contact_id))
 
     policy = await load_workspace_policy(conn, workspace_id=workspace_id)
@@ -506,7 +553,30 @@ async def read_contact_profile(
         has_page=True,
     )
 
-    members = await committee(conn, workspace_id=workspace_id, account_id=str(canonical_account))
+    members = await committee(
+        conn,
+        workspace_id=workspace_id,
+        account_id=str(canonical_account),
+        project_id=project_id,
+        context_id=context_id,
+    )
+    own_member = next((m for m in members if m.id == str(canonical_contact)), None)
+    if selection is not None:
+        row = row.model_copy(
+            update={
+                "membership_state": own_member.membership_state if own_member else "excluded",
+                "membership_gaps": own_member.membership_gaps
+                if own_member
+                else ("Not in this project's committee.",),
+                "outreach_eligible": bool(own_member and own_member.outreach_eligible),
+                "persona": persona_display(own_member.persona) if own_member else "Excluded",
+                **(
+                    {"influence": None}
+                    if not own_member or own_member.membership_state != "supported"
+                    else {}
+                ),
+            }
+        )
     member_facts = await committee_claims(
         conn,
         workspace_id=workspace_id,
@@ -537,6 +607,22 @@ async def read_contact_profile(
             )
         ),
     )
+
+    custom_fields = await custom_fields_for(
+        conn,
+        workspace_id=workspace_id,
+        account_ids=[canonical_contact],
+        entity_kind="contact",
+        policy=policy,
+    )
+    field_evidence = await custom_field_evidence_for(
+        conn,
+        workspace_id=workspace_id,
+        subject_id=canonical_contact,
+        entity_kind="contact",
+        policy=policy,
+    )
+    evidence = list({record.claim_id: record for record in [*evidence, *field_evidence]}.values())
 
     # The account's mark-type logo, if it carries one (founder ruling 2026-09-11) — one small
     # neutral read, served through the platform's logo route like the accounts list does.
@@ -590,6 +676,7 @@ async def read_contact_profile(
             overview_paragraphs=(),
             evidence=(),
             research_evidence=tuple(evidence),
+            custom_fields=tuple(custom_fields.get(canonical_contact, ())),
             # Always present, even when every section is empty: an all-empty block is still a
             # block, and the frontend renders the page grammar from it.
             contact_display=ResearchDisplayBlock.model_validate(page.display_block),
@@ -631,6 +718,9 @@ async def _served_claim_ids(
     workspace_id: str,
     contact_id: EntityId,
     display: DisplayPages,
+    project_id: str | None = None,
+    context_id: uuid.UUID | None = None,
+    account_id: uuid.UUID | None = None,
 ) -> frozenset[str]:
     """Every claim id this person's contact page actually serves evidence for.
 
@@ -646,6 +736,9 @@ async def _served_claim_ids(
         subject_kind="contact",
         subject_id=str(contact_id),
         page=CONTACT_PAGE,
+        project_id=project_id,
+        context_id=context_id,
+        account_id=account_id,
         generate=False,
     )
     served = set(page.cited_claim_ids)
@@ -668,6 +761,16 @@ async def _served_claim_ids(
     # so an unrenderable location authorises nothing here either.
     if location_claim is not None and location_label(location_claim.value_json) is not None:
         served.add(str(location_claim.id))
+    served.update(
+        row.claim_id
+        for row in await custom_field_evidence_for(
+            conn,
+            workspace_id=workspace_id,
+            subject_id=contact_id,
+            entity_kind="contact",
+            policy=policy,
+        )
+    )
     return frozenset(served)
 
 
@@ -699,15 +802,31 @@ def register_contact_routes(
 
     @router.get("/accounts/{account_id}/contacts")
     async def list_account_contacts(
-        workspace_id: WorkspaceDep, account_id: uuid.UUID
+        workspace_id: WorkspaceDep,
+        account_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> AccountContactsResponseV1:
         async with conn_factory() as conn:
             try:
-                return await read_account_contacts(
+                served = await read_account_contacts(
                     conn,
                     workspace_id=workspace_id,
                     account_id=account_id,
+                    project_id=project_id,
+                    context_id=context_id,
                 )
+                # Spec 2026-09-12 §2 "on open": the contacts tab is one of the three opens that
+                # start the members' pages. Idempotent on the fleet; a seam without a queue is a
+                # no-op here. The canonical (survivor) id, the same one the read resolved — a
+                # merged loser's id names no committee.
+                canonical, _name = await _resolve_account(
+                    conn, workspace_id=workspace_id, account_id=account_id
+                )
+                await display.offer_contact_pages(
+                    conn, workspace_id=workspace_id, account_id=str(canonical)
+                )
+                return served
             except AccountNotFound as exc:
                 raise _account_404() from exc
 
@@ -716,6 +835,8 @@ def register_contact_routes(
         workspace_id: WorkspaceDep,
         account_id: uuid.UUID,
         contact_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> AccountContactDetailResponseV1:
         async with conn_factory() as conn:
             try:
@@ -726,6 +847,8 @@ def register_contact_routes(
                     contact_id=contact_id,
                     display=display,
                     now=datetime.now(UTC),
+                    project_id=project_id,
+                    context_id=context_id,
                 )
             except AccountNotFound as exc:
                 raise _account_404() from exc
@@ -738,6 +861,8 @@ def register_contact_routes(
         account_id: uuid.UUID,
         contact_id: uuid.UUID,
         claim_id: uuid.UUID,
+        project_id: Annotated[str | None, Query(alias="projectId")] = None,
+        context_id: Annotated[uuid.UUID | None, Query(alias="contextId")] = None,
     ) -> Response:
         """Stream evidence only when this person's own contact page actually serves it."""
 
@@ -763,18 +888,39 @@ def register_contact_routes(
                 )
             except SubjectNotFound as exc:
                 raise _evidence_404() from exc
-            if not _same_entity(subject.account_id, str(canonical_account)):
+            from clue_api.arv2.quality_read import select_quality_context
+
+            selection = await select_quality_context(
+                conn,
+                workspace_id=workspace_id,
+                subject_id=survivor,
+                subject_kind="contact",
+                account_id=canonical_account,
+                project_id=project_id,
+                context_id=context_id,
+            )
+            if not _same_entity(subject.account_id, str(canonical_account)) and (
+                selection is None or selection.scope is None
+            ):
                 raise _evidence_404()
             served = await _served_claim_ids(
-                conn, workspace_id=workspace_id, contact_id=survivor, display=display
+                conn,
+                workspace_id=workspace_id,
+                contact_id=survivor,
+                display=display,
+                project_id=project_id,
+                context_id=context_id,
+                account_id=canonical_account,
             )
             if str(claim_id) not in served:
                 raise _evidence_404()
             typed_claim_id = ClaimId(claim_id)
-            resolved = await claims_by_ids(
+            from clue_research.claimstore.quality import inspectable_claims_by_ids
+
+            resolved = await inspectable_claims_by_ids(
                 conn,
-                (typed_claim_id,),
-                scope=WorkspaceScope.for_workspace(workspace_id),
+                workspace_id=workspace_id,
+                claim_ids=[typed_claim_id],
             )
             claim = resolved.get(typed_claim_id)
             if claim is None:

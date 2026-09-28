@@ -22,10 +22,11 @@ definition is rejected (a field's contract does not silently change underneath i
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
-from datetime import timedelta
+from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, JsonValue
@@ -43,6 +44,7 @@ from clue_core import (
     decode_jsonb,
     default_research_scope,
     field_namespace,
+    is_valid_field_key,
     resolve_product_scope,
     resolve_research_scope,
     resolve_reuse_scope,
@@ -155,6 +157,9 @@ class ResolvedFieldDefinition(BaseModel):
     promoted_from_proposal_id: UUID | None = None
     promotion_policy_version: str | None = None
     promoted_by: str | None = None
+    created_at: datetime | None = None
+    label: str | None = None
+    presentation: str = "text"
 
 
 class WorkspaceFieldDefinitionError(ValueError):
@@ -162,7 +167,15 @@ class WorkspaceFieldDefinitionError(ValueError):
 
 
 class WorkspaceFieldRetiredError(ValueError):
-    """A caller attempted to retire an absent/already-retired workspace field."""
+    """A workspace field is absent/retired; never eligible for unknown-field registration."""
+
+
+class ResearchFieldInputError(WorkspaceFieldDefinitionError):
+    """Invalid label, description or entity in a human-authored research definition."""
+
+
+class ResearchFieldKeyTaken(WorkspaceFieldDefinitionError):
+    """A research key is reserved by platform vocabulary or a local definition."""
 
 
 class WorkspaceDynamicClientKbErasedError(ValueError):
@@ -402,7 +415,8 @@ _WORKSPACE_SELECT = (
     "w.corroboration_min, w.single_source_sufficient, w.equality_mode, w.description, "
     "(w.active AND r.field_key IS NULL) AS active, w.pack, "
     "w.definition_version AS version, w.promoted_at AS created_at, w.workspace_id, "
-    "w.client_kb_role, w.promoted_from_proposal_id, w.promotion_policy_version, w.promoted_by"
+    "w.client_kb_role, w.promoted_from_proposal_id, w.promotion_policy_version, w.promoted_by, "
+    "w.label, w.presentation"
 )
 
 
@@ -442,6 +456,9 @@ def _row_to_resolved(
         promoted_from_proposal_id=row.get("promoted_from_proposal_id"),
         promotion_policy_version=row.get("promotion_policy_version"),
         promoted_by=row.get("promoted_by"),
+        created_at=row.get("created_at"),
+        label=row.get("label"),
+        presentation=row.get("presentation", "text"),
     )
 
 
@@ -653,6 +670,14 @@ async def register_field(
         pack=pack,
     )
 
+    await _lock_field_registration(conn, field_def.field_key)
+    if (
+        await conn.execute(
+            text("SELECT 1 FROM workspace_field_definition WHERE field_key = :key LIMIT 1"),
+            {"key": field_def.field_key},
+        )
+    ).scalar_one_or_none() is not None:
+        raise WorkspaceFieldDefinitionError("This key is reserved for workspace vocabulary.")
     existing = await _get_row(conn, field_def.field_key)
     if existing is not None:
         current = _comparable(
@@ -762,6 +787,7 @@ async def register_workspace_field(
     if value_schema is None:
         raise WorkspaceFieldDefinitionError("tenant-local Client-KB fields require value_schema")
     validate_workspace_field_schema(value_schema)
+    await _lock_field_registration(conn, field_def.field_key)
     if await _get_row(conn, field_def.field_key) is not None:
         raise WorkspaceFieldDefinitionError(
             f"field_key {field_def.field_key!r} collides with platform-global vocabulary; "
@@ -865,6 +891,217 @@ async def register_workspace_field(
     return _row_to_resolved(created, origin=FieldRegistryOrigin.WORKSPACE)
 
 
+async def _lock_field_registration(conn: AsyncConnection, field_key: str) -> None:
+    # Both global and workspace registration use this transaction lock, including absent keys.
+    # No definition details from another workspace need to leave the substrate.
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"field-registry:{field_key}"},
+    )
+
+
+async def _lock_workspace_field(
+    conn: AsyncConnection, workspace_id: str, field_key: str, *, shared: bool = False
+) -> bool:
+    lock = "SHARE" if shared else "UPDATE"
+    return (
+        await conn.execute(
+            text(
+                "SELECT field_key FROM workspace_field_definition "
+                "WHERE workspace_id = :ws AND field_key = :key FOR " + lock
+            ),
+            {"ws": workspace_id, "key": field_key},
+        )
+    ).scalar_one_or_none() is not None
+
+
+def _research_text(value: str, *, label: bool) -> str:
+    value = value.strip()
+    limit = 200 if label else 2000
+    if not value or len(value) > limit:
+        name = "Name" if label else "Description"
+        raise ResearchFieldInputError(f"{name} must contain 1–{limit} characters.")
+    return value
+
+
+def research_field_key(entity: str, label: str) -> str:
+    if entity not in ("accounts", "contacts"):
+        raise ResearchFieldInputError("Choose Accounts or Contacts.")
+    slug = re.sub(r"[^a-z0-9]+", "_", _research_text(label, label=True).lower()).strip("_")
+    if not slug:
+        raise ResearchFieldInputError("Name must contain a letter or number.")
+    return f"{entity[:-1]}.{slug}"
+
+
+async def register_workspace_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    entity: str,
+    label: str,
+    description: str,
+    created_by: str,
+) -> ResolvedFieldDefinition:
+    """Register a human's research instruction; the substrate owns all shape/scope properties."""
+    if not created_by.startswith("human:") or not created_by.removeprefix("human:"):
+        raise PermissionError("Research field creation requires human authority.")
+    return await _register_research_field(
+        conn,
+        workspace_id=workspace_id,
+        key=research_field_key(entity, label),
+        label=label,
+        description=description,
+        created_by=created_by,
+        policy="settings-v1",
+    )
+
+
+async def register_agent_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    run_id: str,
+) -> ResolvedFieldDefinition:
+    """A trusted research producer may propose neutral, tenant-local account/contact vocabulary.
+
+    Field meaning must later be reviewed separately from any particular subject's observations.
+    No model-supplied evidence or description enters either catalog through this path.
+    """
+    if not field_key.startswith(("account.", "contact.")) or not is_valid_field_key(field_key):
+        raise WorkspaceFieldDefinitionError("Proposed research keys require account/contact scope")
+    if not run_id:
+        raise PermissionError("Research field proposal requires its producing run")
+    await _lock_field_registration(conn, field_key)
+    existing = await get_effective_field(
+        conn, scope=FieldRegistryScope.for_workspace(workspace_id), field_key=field_key
+    )
+    if existing is not None:
+        if not existing.active:
+            raise WorkspaceFieldRetiredError("Research field is retired")
+        return existing
+    label = field_key.split(".", 1)[1].replace("_", " ").replace(".", " / ")
+    return await _register_research_field(
+        conn,
+        workspace_id=workspace_id,
+        key=field_key,
+        label=label,
+        description=f"Proposed research field: {label}. Meaning requires review; not evidence.",
+        created_by=f"agent:{run_id}",
+        policy="research-quality-v1",
+    )
+
+
+async def _register_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    key: str,
+    label: str,
+    description: str,
+    created_by: str,
+    policy: str,
+) -> ResolvedFieldDefinition:
+    label = _research_text(label, label=True)
+    description = _research_text(description, label=False)
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
+    await _lock_field_registration(conn, key)
+    if await _get_row(conn, key) is not None:
+        raise ResearchFieldKeyTaken(f"The platform field {key} already uses this name.")
+    if (
+        await _get_workspace_row(
+            conn, workspace_id=workspace_id, field_key=key, include_retired=True
+        )
+        is not None
+    ):
+        raise ResearchFieldKeyTaken(
+            "This name is already used, including retired fields. Add a qualifier."
+        )
+    await conn.execute(
+        text("""
+        INSERT INTO workspace_field_definition (
+            workspace_id, field_key, value_type, pass_kind, field_class, pack,
+            client_kb_role, promoted_from_proposal_id, promotion_policy_version,
+            promoted_by, research_scope, product_scope, label, description
+        ) VALUES (
+            :ws, :key, 'json', 'deep', CAST(:kind AS field_class), NULL,
+            'research', NULL, :policy, :by, 'project_neutral', 'forbidden',
+            :label, :description
+        )
+    """),
+        {
+            "ws": workspace_id,
+            "key": key,
+            "kind": classify_field_key(key).value,
+            "by": created_by,
+            "policy": policy,
+            "label": label,
+            "description": description,
+        },
+    )
+    row = await _get_workspace_row(conn, workspace_id=workspace_id, field_key=key)
+    assert row is not None
+    return _row_to_resolved(row, origin=FieldRegistryOrigin.WORKSPACE)
+
+
+async def update_workspace_research_field(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    field_key: str,
+    label: str | None = None,
+    description: str | None = None,
+) -> ResolvedFieldDefinition:
+    """Only human-facing instruction text is mutable; key and claim shape never change."""
+    await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
+    await _lock_workspace_field(conn, workspace_id, field_key)
+    row = await _get_workspace_row(conn, workspace_id=workspace_id, field_key=field_key)
+    if row is None:
+        raise WorkspaceFieldRetiredError("Research field is missing or retired.")
+    if row["client_kb_role"] != "research":
+        raise WorkspaceFieldDefinitionError("Only research field descriptions can be edited.")
+    new_label = _research_text(label, label=True) if label is not None else row["label"]
+    new_description = (
+        _research_text(description, label=False) if description is not None else row["description"]
+    )
+    if (new_label, new_description) != (row["label"], row["description"]):
+        await conn.execute(
+            text("""
+            UPDATE workspace_field_definition SET label=:label, description=:description,
+                definition_version=definition_version+1
+            WHERE workspace_id=:ws AND field_key=:key
+        """),
+            {
+                "label": new_label,
+                "description": new_description,
+                "ws": workspace_id,
+                "key": field_key,
+            },
+        )
+    updated = await _get_workspace_row(conn, workspace_id=workspace_id, field_key=field_key)
+    assert updated is not None
+    return _row_to_resolved(updated, origin=FieldRegistryOrigin.WORKSPACE)
+
+
+async def list_research_fields(
+    conn: AsyncConnection, *, workspace_id: str, entity: Literal["accounts", "contacts"]
+) -> tuple[ResolvedFieldDefinition, ...]:
+    """The single research menu selection shared by Settings and account/person composition."""
+    rows = await list_effective_fields(conn, scope=FieldRegistryScope.for_workspace(workspace_id))
+
+    def selected(row: ResolvedFieldDefinition) -> bool:
+        key = row.field_def.field_key
+        if row.origin is FieldRegistryOrigin.WORKSPACE:
+            return row.client_kb_role == "research" and key.startswith(f"{entity[:-1]}.")
+        return (
+            key.startswith(("account.", "core."))
+            if entity == "accounts"
+            else key.startswith("contact.") or key == "core.work_email"
+        )
+
+    return tuple(row for row in rows if selected(row))
+
+
 async def retire_workspace_field(
     conn: AsyncConnection,
     *,
@@ -878,6 +1115,7 @@ async def retire_workspace_field(
     if not retired_by.startswith("human:"):
         raise PermissionError("workspace field retirement requires human authority")
     await assert_workspace_dynamic_client_kb_active(conn, workspace_id=workspace_id)
+    await _lock_workspace_field(conn, workspace_id, field_key)
     existing = await _get_workspace_row(
         conn, workspace_id=workspace_id, field_key=field_key, include_retired=True
     )
@@ -1257,6 +1495,32 @@ async def check_claim_writable(
         if reuse_scope is ReuseScope.TENANT_PRIVATE and workspace_id is not None
         else FieldRegistryScope.global_only()
     )
+    if scope.workspace_id is not None:
+        # Preserve the existing global-claim API for historical scopes. A real workspace is
+        # locked against erasure first, before its definition row, in the same order as editors.
+        await conn.execute(
+            text("SELECT workspace_id FROM workspace WHERE workspace_id=:ws FOR KEY SHARE"),
+            {"ws": scope.workspace_id},
+        )
+        local = await _lock_workspace_field(conn, scope.workspace_id, str(field_key), shared=True)
+        if (local or await _get_row(conn, str(field_key)) is None) and (
+            await workspace_dynamic_client_kb_is_erased(conn, workspace_id=scope.workspace_id)
+        ):
+            raise WorkspaceDynamicClientKbErasedError("Workspace field access has been erased.")
+        if (
+            local
+            and (
+                await conn.execute(
+                    text(
+                        "SELECT 1 FROM workspace_field_retirement "
+                        "WHERE workspace_id=:ws AND field_key=:key"
+                    ),
+                    {"ws": scope.workspace_id, "key": str(field_key)},
+                )
+            ).scalar_one_or_none()
+            is not None
+        ):
+            raise WorkspaceFieldRetiredError("Research field is retired; new claims are refused.")
     definition = await validate_effective_value(
         conn, scope=scope, field_key=field_key, value_json=value_json
     )

@@ -175,6 +175,7 @@ fn node_text_patch_updates_only_target_and_clears_computed() {
             width: 3.0,
             height: 4.0,
         },
+        text_lines: Vec::new(),
     });
 
     let batch = build_modify_operations(
@@ -333,6 +334,7 @@ fn clone_subtree_creates_deterministic_ids_and_clears_computed() {
             width: 3.0,
             height: 4.0,
         },
+        text_lines: Vec::new(),
     });
 
     let batch = build_clone_subtree(
@@ -402,6 +404,7 @@ fn inverse_round_trip_for_node_modify_restores_computed() {
             width: 3.0,
             height: 4.0,
         },
+        text_lines: Vec::new(),
     });
 
     let batch = build_modify_operations(

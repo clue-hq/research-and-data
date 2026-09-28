@@ -109,6 +109,13 @@ def _retention_eligible_sql(*, claim_alias: str = "claim") -> str:
     )
 
 
+def _quality_eligible_sql(*, claim_alias: str = "claim") -> str:
+    # Lazy import keeps the correction helper and read predicate behind the same substrate seam.
+    from clue_research.claimstore.quality import eligible_sql
+
+    return eligible_sql(claim_alias)
+
+
 def _insert_params(claim: Claim) -> dict[str, object]:
     """Bind parameters for one INSERT, serializing the JSONB payloads through ``core``."""
     discovery = claim.discovery_provenance
@@ -305,6 +312,42 @@ async def supersede_claims(
     return new_id
 
 
+async def supersede_with_existing(
+    conn: AsyncConnection,
+    old_id: ClaimId,
+    replacement_id: ClaimId,
+    *,
+    workspace_id: str,
+    entity_id: EntityId,
+) -> None:
+    """Link an existing validated replacement while preserving both observations.
+
+    This is the shared correction seam for callers that already wrote/reused an evidence-backed
+    replacement. Locks and exact subject/field checks prevent cross-entity or stale replacement.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id,field_key,superseded_by FROM claim WHERE id=ANY(:ids) "
+                    "AND workspace_id=:ws AND entity_id=:entity ORDER BY id FOR UPDATE"
+                ),
+                {"ids": sorted({old_id, replacement_id}), "ws": workspace_id, "entity": entity_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    if len(rows) != 2 or len({r["field_key"] for r in rows}) != 1:
+        raise ValueError("supersession requires distinct claims on the same subject and field")
+    if any(r["superseded_by"] is not None for r in rows):
+        raise ValueError("supersession requires two live claims")
+    await conn.execute(
+        text("UPDATE claim SET superseded_by=:new WHERE id=:old"),
+        {"new": replacement_id, "old": old_id},
+    )
+
+
 async def record_verification(
     conn: AsyncConnection,
     claim_id: ClaimId,
@@ -353,7 +396,8 @@ async def claims_for(
     """Raw claim history for an entity (audit / time-travel / provenance index).
 
     Returns the live claims by default (``superseded_by IS NULL``); pass
-    ``include_superseded=True`` for the full append-only history. This is the *raw* reader — the
+    ``include_superseded=True`` for the full append-only history, including invalid/unresolved
+    observations. Ordinary reads honor recorded quality decisions. The
     deterministic "current truth" merge is :func:`clue_research.claimstore.current_value` (M1.2),
     not here. ``scope`` is **required** (M2.5 — fail-closed): there is no fail-open default, so no
     read path can accidentally cross tenants. An operator/audit caller passes
@@ -367,6 +411,7 @@ async def claims_for(
         WHERE entity_id = :entity_id
           AND (CAST(:field_key AS text) IS NULL OR field_key = :field_key)
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY collected_at DESC, id
         """
@@ -407,6 +452,7 @@ async def claims_for_entities(
         WHERE entity_id IN :entity_ids
           {field_clause}
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND (CAST(:include_superseded AS boolean) OR {retention_sql})
           AND {scope_sql}
         ORDER BY field_key, collected_at DESC, id
@@ -468,6 +514,7 @@ async def claims_by_ids(
         FROM claim
         WHERE id IN :ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND (CAST(:include_expired AS boolean) OR {retention_sql})
           AND {scope_sql}
         """
@@ -516,6 +563,7 @@ async def entities_with_field_claim(
         WHERE field_key = :field_key
           AND (CAST(:run_id AS uuid) IS NULL OR run_id = :run_id)
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY entity_id
         """
@@ -564,6 +612,7 @@ async def claims_for_runs(
         FROM claim
         WHERE run_id IN :run_ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY run_id, collected_at DESC, id
         """

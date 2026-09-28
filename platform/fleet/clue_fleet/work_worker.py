@@ -28,7 +28,7 @@ from clue_fleet.queue import (
     WorkTaskRow,
 )
 from clue_obs import bound_context, get_logger
-from clue_obs.otel import context_from_carrier, get_tracer, safe_attributes
+from clue_obs.otel import CARRIER_KEYS, context_from_carrier, get_tracer, safe_attributes
 from clue_obs.sentry import capture
 
 log = get_logger("clue_fleet.work_worker")
@@ -168,6 +168,7 @@ class LeasedWorkWorker:
         self._task_stale_after = task_stale_after
         self._concurrency = concurrency
         self._stop = asyncio.Event()
+        self._active_work: set[WorkId] = set()
 
     def stop(self) -> None:
         self._stop.set()
@@ -326,6 +327,22 @@ class LeasedWorkWorker:
     async def _run_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
     ) -> None:
+        # Slots share a worker identity. The DB lease permits same-holder reacquisition, so
+        # another slot must not replace the fence of a still-running task for this work ID.
+        # Across processes the existing durable lease remains the authority.
+        if task.work_id in self._active_work:
+            await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
+            await self._sleep(self._poll_interval)
+            return
+        self._active_work.add(task.work_id)
+        try:
+            await self._run_leased_task(task, handler, slot=slot)
+        finally:
+            self._active_work.remove(task.work_id)
+
+    async def _run_leased_task(
+        self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
+    ) -> None:
         t_acquire = asyncio.get_running_loop().time()
         lease = await self._leases.acquire(
             work_id=task.work_id,
@@ -344,7 +361,15 @@ class LeasedWorkWorker:
             work_id=task.work_id,
             worker_id=self.worker_id,
             lease_generation=generation,
-            payload=task.payload,
+            # The W3C trace carrier belongs to the QUEUE, not to the work. ``_with_trace_carrier``
+            # stamps ``traceparent``/``tracestate`` into every enqueued payload, and a handler
+            # whose payload model forbids extra keys (``DesignTurnEnvelope`` is ``extra="forbid"``)
+            # therefore refused every QUEUED job it was ever handed — 47 ``design_job.
+            # preamble_error`` failures in one lane's logs on 2026-09-17. Stripped HERE and not at
+            # the parse: ``_handle_in_context`` reads the carrier off ``task.payload`` (the row, not
+            # this context) for the span parent, so the trace still joins the enqueue's trace while
+            # the handler sees exactly the payload its caller wrote.
+            payload={k: v for k, v in task.payload.items() if k not in CARRIER_KEYS},
             stop_requested=self._stop,
             lease_lost=lease_lost,
             task_attempt=task.attempts,

@@ -1,0 +1,19 @@
+{
+  "type": "deep-reasoning",
+  "numResults": 20,
+  "outputSchema": {
+    "type": "text"
+  },
+  "contents": {
+    "text": {
+      "maxCharacters": 10000
+    },
+    "highlights": {
+      "maxCharacters": 2000
+    },
+    "extras": {
+      "links": 10,
+      "imageLinks": 3
+    }
+  }
+}

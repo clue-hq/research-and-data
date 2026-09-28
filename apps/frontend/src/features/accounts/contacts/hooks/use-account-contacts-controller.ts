@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useResearchNavigation } from "../../components/research-link";
 import { loadAccountContact } from "../../data/accounts.actions";
 import type {
   AccountContactDetail,
@@ -14,6 +15,9 @@ export function useAccountContactsController(
   accountId: string,
   contacts: AccountContactSummary[],
 ) {
+  const navigation = useResearchNavigation();
+  const projectId = navigation?.context.projectId;
+  const contextId = navigation?.context.contextId;
   const [search, setSearch] = useState("");
   // The drawer's contact is whichever row was clicked; nothing is prefetched.
   const [previewContact, setPreviewContact] =
@@ -51,9 +55,9 @@ export function useAccountContactsController(
 
   const openPreview = useCallback(
     async (contactId: string) => {
-      setPreviewContact(await loadAccountContact(accountId, contactId));
+      setPreviewContact(await loadAccountContact(accountId, contactId, { projectId, contextId }));
     },
-    [accountId],
+    [accountId, projectId, contextId],
   );
 
   const visibleContacts = useMemo(() => {

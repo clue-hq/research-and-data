@@ -1,3 +1,4 @@
+import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountDetailResponseSchema,
   type AccountDetail,
@@ -8,7 +9,7 @@ import { fetchRead } from "./frontend-api";
 import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountDetailsRepository {
-  get(accountId: string): Promise<AccountDetail | null>;
+  get(accountId: string, context?: ResearchContextQuery): Promise<AccountDetail | null>;
 }
 
 export const fixtureAccountDetailsRepository: AccountDetailsRepository = {
@@ -36,8 +37,8 @@ export function createHttpAccountDetailsRepository(
   read: typeof fetchRead = fetchRead,
 ): AccountDetailsRepository {
   return {
-    async get(accountId) {
-      const body = await read(`/accounts/${encodeURIComponent(accountId)}`, {
+    async get(accountId, context) {
+      const body = await read(withResearchContext(`/accounts/${encodeURIComponent(accountId)}`, context), {
         recordNotFoundAllowed: true,
       });
       if (body === null) return null;
@@ -49,10 +50,11 @@ export function createHttpAccountDetailsRepository(
 export async function getAccountDetails(
   accountId: string,
   read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
 ): Promise<AccountDetail | null> {
   const repository = accountsFixtureMode()
     ? fixtureAccountDetailsRepository
     : createHttpAccountDetailsRepository(read);
 
-  return repository.get(accountId);
+  return repository.get(accountId, context);
 }

@@ -24,8 +24,7 @@ Permission = Literal[
 # B1's initial internal policy revision. B2 resolves this version at authorization time; moving
 # the mapping into data later does not change the role/permission seam. Revision 2 adds the
 # founder-ratified Home-bootstrap authority: operators, admins and owners may create projects;
-# viewers remain read-only. Revision 3 adds ``workspace.manage_settings`` — the authority behind
-# every Settings write (Settings → Pages custom domains) — to admins and owners only.
+# viewers remain read-only. Revision 3 separates workspace settings from member management.
 ROLE_POLICY_VERSION = 3
 
 _READ: frozenset[Permission] = frozenset({"project.read", "thread.read"})
@@ -39,11 +38,7 @@ _OPERATE: frozenset[Permission] = _READ | frozenset(
     }
 )
 _MANAGE: frozenset[Permission] = _OPERATE | frozenset(
-    {
-        "research.approve_spend",
-        "workspace.manage_members",
-        "workspace.manage_settings",
-    }
+    {"research.approve_spend", "workspace.manage_members", "workspace.manage_settings"}
 )
 
 ROLE_PERMISSIONS: Mapping[RoleKey, frozenset[Permission]] = MappingProxyType(

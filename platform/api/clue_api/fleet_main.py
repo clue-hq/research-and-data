@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
 )
 from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
 from clue_api.arv2.icp_authoring import DbIcpAuthoringService
 from clue_api.arv2.onboarding_driver import (
     IcpRef,
@@ -94,6 +95,7 @@ from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.conversation_naming import build_conversation_namer
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -101,6 +103,8 @@ from clue_api.design_fleet import (
     start_design_reaper,
 )
 from clue_api.design_leg_wiring import build_design_leg_finisher
+from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
+from clue_api.design_platform_reads import build_design_platform_reads_factory
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -170,6 +174,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
@@ -773,17 +778,36 @@ def _build_arv2_account_research_handler(
             ),
         )
         return None
+    from clue_api.quality_research_wiring import build_quality_job_runner
+
     return build_arv2_account_research_handler(
         settings,
         secrets,
         storage=storage,
         artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         model_provider=model_provider,
+        quality_runner=build_quality_job_runner(
+            settings=settings, storage=storage, connections=transaction, models=model_provider
+        ),
         # R3: an account job that resolves a committee creates one person job per member and offers
         # it here, on this process's own queue — the same one the launch service uses, so a fanned
         # out person job is queued through exactly the machinery that drains it.
         queue=queue,
     )
+
+
+async def _quality_reconcile_loop(
+    handler: Arv2AccountResearchWorkHandler, settings: Settings
+) -> None:
+    while True:
+        try:
+            offered = await handler.sweep_quality()
+            if offered:
+                log.info("arv2.quality.continuations_offered", count=offered)
+        except Exception as error:
+            log.warning("arv2.quality.continuation_sweep_failed", exc_info=True)
+            capture(error)
+        await asyncio.sleep(settings.arv2_quality_reconcile_interval_s)
 
 
 def _build_arv2_discovery_handler(
@@ -1000,6 +1024,17 @@ async def _serve() -> None:
         # mirrors the account page's display gate, whose tier-4 arm is armed by
         # ``verification_enabled``.
         arv2_reads = DbArv2ReadService(settings=settings)
+        # The code sandbox's one registry (spec 2026-09-19 §3.4), built HERE because two
+        # composition steps need the SAME object: the toolbelt, whose ``run_python@1`` looks a
+        # turn up in it, and the platform components, whose conversation engine registers the
+        # turn in it while it holds the lease. Two instances would mean a tool that can never
+        # find the turn the engine bound. With the sandbox off nothing is composed, both sides
+        # get ``None``, and the tool refuses by name.
+        sandbox_workspaces = (
+            SandboxWorkspaces(max_runs_per_turn=settings.sandbox_max_runs_per_turn)
+            if settings.sandbox_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
@@ -1038,6 +1073,7 @@ async def _serve() -> None:
             project_documents=project_documents,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
+            sandbox_workspaces=sandbox_workspaces,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -1112,6 +1148,31 @@ async def _serve() -> None:
         # conversation turn (profiles, models, workspaces, artifacts, turn journal), so the one
         # composition is shared by both switches rather than duplicated per surface.
         agent_turn_handler: AgentTurnWorkHandler | None = None
+        memory = (
+            memory_assembly_factory(settings, transaction)
+            if settings.chat_enabled
+            or (settings.design_runtime_enabled and settings.design_preference_context_enabled)
+            else None
+        )
+        design_preference_resolver_factory = (
+            build_configured_design_preference_resolver_factory(
+                settings=settings, memory=memory, conn_factory=transaction
+            )
+            if memory is not None
+            else None
+        )
+        # Design note 2026-09-19: what a design LEG turn may read from the platform mid-turn —
+        # the target account's research through the governed tools, and the seller's pinned
+        # knowledge. Composed HERE, with this worker's journaled invoker and storage, because the
+        # design runtime opens no platform database; gated on the same switch as the lane below,
+        # since a deployment that runs no design work has nothing to read for.
+        design_platform_reads_factory = (
+            build_design_platform_reads_factory(
+                invoker=tool_invoker, storage=storage, conn_factory=transaction
+            )
+            if settings.design_runtime_enabled
+            else None
+        )
         platform_components: AgentPlatformComponents | None = None
         if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
@@ -1120,8 +1181,19 @@ async def _serve() -> None:
                 gateway_config=gateway_config,
                 storage=storage,
                 tools=registry,
+                sandbox_workspaces=sandbox_workspaces,
             )
         if settings.chat_enabled and platform_components is not None:
+            assert memory is not None
+            # Conversation naming (2026-09-18 §4.1): composed once at boot. It states its own
+            # absence — off by flag, or no OpenRouter key — and a worker without one simply
+            # leaves every chat and Home project on its placeholder name.
+            namer = build_conversation_namer(
+                settings=settings,
+                secrets=secrets,
+                artifacts=platform_components.artifacts,
+                conn_factory=transaction,
+            )
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
                 tools=registry,
@@ -1131,7 +1203,7 @@ async def _serve() -> None:
                 recipes=recipe_reader,
                 starter=starter,
                 parameters=execution_parameters,
-                memory=memory_assembly_factory(settings, transaction),
+                memory=memory,
                 queue=work_queue,
                 # ARV2 onboarding O6: the same backend the onboarding synthesis seam receives —
                 # the turn reads its pinned brand-knowledge documents from it.
@@ -1139,7 +1211,11 @@ async def _serve() -> None:
                 # P3.4: the design-leg lane. Same switch as the design_job handler below —
                 # a worker that drains design work can also drive a leg's design turns
                 # inline; one that does not composes the fail-loud unavailable lane.
-                design_lane=build_design_leg_lane_driver(enabled=settings.design_runtime_enabled),
+                design_lane=build_design_leg_lane_driver(
+                    enabled=settings.design_runtime_enabled,
+                    preference_resolver_factory=design_preference_resolver_factory,
+                    platform_reads_factory=design_platform_reads_factory,
+                ),
                 # P3.7: the §2.2 exit bridge — the design role's own catalog model judges
                 # each leg message pre-dispatch, and the governed finish tool executes a
                 # finish verdict. Same switch as the lane: without the design runtime the
@@ -1153,6 +1229,8 @@ async def _serve() -> None:
                     else None
                 ),
                 design_leg_finisher=build_design_leg_finisher(invoker=tool_invoker),
+                design_preference_context_enabled=settings.design_preference_context_enabled,
+                namer=namer,
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,
@@ -1267,6 +1345,14 @@ async def _serve() -> None:
         # R4: the discovery drain. No model provider — a discovery run is Websets plus Exa Answer
         # and a pile of arithmetic, not an agent loop.
         arv2_discovery_handler = _build_arv2_discovery_handler(settings, secrets, storage=storage)
+        # Spec 2026-09-12: the page writer. No model provider object — the runner reads the key
+        # itself, the way the web seam's production factory does. The artifact sink is injected
+        # from outside the lane, like the discovery lane's (Global Constraint 7).
+        arv2_display_page_handler = build_arv2_display_page_handler(
+            settings,
+            secrets,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        )
         worker = build_multi_work_worker(
             settings,
             driver=driver,
@@ -1280,8 +1366,15 @@ async def _serve() -> None:
             onboarding_handler=onboarding_handler,
             arv2_account_research_handler=arv2_account_research_handler,
             arv2_discovery_handler=arv2_discovery_handler,
+            arv2_display_page_handler=arv2_display_page_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
-            design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
+            design_handler=build_design_job_handler(
+                enabled=settings.design_runtime_enabled,
+                preference_resolver_factory=design_preference_resolver_factory,
+                # The same reads the inline leg lane above composes: a queued design job and an
+                # inline leg turn are one unit of work and must see one platform.
+                platform_reads_factory=design_platform_reads_factory,
+            ),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
@@ -1325,6 +1418,11 @@ async def _serve() -> None:
             storage=storage,
         )
         external_research_wake = _start_external_research_wake(settings)
+        quality_reconcile = (
+            asyncio.create_task(_quality_reconcile_loop(arv2_account_research_handler, settings))
+            if arv2_account_research_handler is not None
+            else None
+        )
         try:
             await run_worker(worker)
         finally:
@@ -1338,6 +1436,7 @@ async def _serve() -> None:
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,
+                quality_reconcile,
             ):
                 if background is None:
                     continue

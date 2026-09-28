@@ -38,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.display.gather import SectionInput
 from clue_api.arv2.display.prompts import PROMPT_VERSION
-from clue_api.arv2.display.recipes import RECIPE_VERSION, SectionRecipe
+from clue_api.arv2.display.recipes import PAGE_SUBJECT_KIND, RECIPE_VERSION, SectionRecipe
 from clue_api.arv2.display.runner import SectionDraft
 from clue_core import decode_jsonb
 
@@ -132,7 +132,7 @@ _LIVE_SQL = text(
       AND subject_kind = :subject_kind
       AND subject_id = :subject_id
       AND page = :page
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 
@@ -144,7 +144,7 @@ _SUPERSEDE_ONE_SQL = text(
       AND subject_id = :subject_id
       AND page = :page
       AND section_key = :section_key
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 
@@ -156,7 +156,7 @@ _SUPERSEDE_MANY_SQL = text(
       AND subject_id = :subject_id
       AND page = :page
       AND section_key = ANY(CAST(:section_keys AS text[]))
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 
@@ -333,8 +333,13 @@ async def stale_sections(
     Only sections that *have* a live block are examined: a section nobody has written is not
     stale, it is unwritten, and the caller already knows the difference. The result is in recipe
     order, and a section with no reason is absent rather than present-and-empty.
+
+    A recipe with ``shared_from`` owns no block, so it is never examined here: it is stale exactly
+    when its owner is, and its owner's page is where that is scanned and repaired.
     """
-    written = [recipe for recipe in recipes if recipe.section_key in blocks]
+    written = [
+        recipe for recipe in recipes if recipe.shared_from is None and recipe.section_key in blocks
+    ]
     if not written:
         return []
 
@@ -398,8 +403,47 @@ def _stored_list(block: LiveBlock | None, key: str) -> list[Any]:
     return list(stored) if isinstance(stored, list) else []
 
 
+async def shared_blocks(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    page: str,
+    recipes: Sequence[SectionRecipe],
+    subject_id: str,
+    member_ids: Sequence[str],
+) -> dict[str, list[LiveBlock]]:
+    """For every recipe of ``page`` with ``shared_from``, the owner's live blocks, in the order
+    the sharer renders them: the same subject when the owner page is about the sharer's subject
+    kind, else one per committee member (committee order). A member with no owner block
+    contributes nothing."""
+    out: dict[str, list[LiveBlock]] = {}
+    for recipe in recipes:
+        if recipe.shared_from is None:
+            continue
+        owner_page, owner_key = recipe.shared_from
+        owner_kind = PAGE_SUBJECT_KIND[owner_page]
+        subjects = [subject_id] if owner_kind == PAGE_SUBJECT_KIND[page] else list(member_ids)
+        found: list[LiveBlock] = []
+        for owner_subject in subjects:
+            blocks = await live_blocks(
+                conn,
+                workspace_id=workspace_id,
+                subject_kind=owner_kind,
+                subject_id=owner_subject,
+                page=owner_page,
+            )
+            block = blocks.get(owner_key)
+            if block is not None:
+                found.append(block)
+        out[recipe.section_key] = found
+    return out
+
+
 def compose_display_block(
-    page: str, recipes: Sequence[SectionRecipe], blocks: Mapping[str, LiveBlock]
+    page: str,
+    recipes: Sequence[SectionRecipe],
+    blocks: Mapping[str, LiveBlock],
+    shared: Mapping[str, Sequence[LiveBlock]] = {},  # noqa: B006 — read-only default
 ) -> dict[str, Any]:
     """The stored page, in recipe order, in the shape the frontend receives.
 
@@ -407,16 +451,26 @@ def compose_display_block(
     materialised them, and re-shaping them here would be a second place for the contract to drift.
     A section with no block is ``empty``, and so is a block that said nothing; the page grammar is
     fixed either way, so every section is served whether or not it has words in it.
+
+    A recipe with ``shared_from`` has no block of its own: its items are the concatenated items of
+    the owner blocks ``shared`` carries for it, rendered under *this* page's ``h1``, ``restricted``
+    and ``defaultOpen``. An intro is only carried through when exactly one owner block answers for
+    the section — several people's prose run together is not an introduction to anything.
     """
     sections: list[dict[str, Any]] = []
     for recipe in recipes:
-        block = blocks.get(recipe.section_key)
-        items = _stored_list(block, "items")
-        intro = _stored_list(block, "intro")
+        if recipe.shared_from is not None:
+            owners = list(shared.get(recipe.section_key, ()))
+            items = [item for owner in owners for item in _stored_list(owner, "items")]
+            intro = _stored_list(owners[0], "intro") if len(owners) == 1 else []
+        else:
+            block = blocks.get(recipe.section_key)
+            items = _stored_list(block, "items")
+            intro = _stored_list(block, "intro")
         section: dict[str, Any] = {
             "key": recipe.section_key,
             "h1": recipe.h1,
-            "empty": block is None or (not items and not intro),
+            "empty": not items and not intro,
             "items": items,
         }
         if recipe.narrative:
@@ -425,6 +479,30 @@ def compose_display_block(
         section["defaultOpen"] = recipe.default_open
         sections.append(section)
     return {"page": page, "sections": sections}
+
+
+def cited_claim_ids(
+    recipes: Sequence[SectionRecipe],
+    blocks: Mapping[str, LiveBlock],
+    shared: Mapping[str, Sequence[LiveBlock]] = {},  # noqa: B006 — read-only default
+) -> tuple[str, ...]:
+    """Every claim the composed page cites, in recipe order, deduped.
+
+    A shared section contributes every owner block's citations: the page shows those words, so it
+    must offer their evidence, and the evidence drawer is keyed on the ids this returns.
+    """
+
+    def _of(recipe: SectionRecipe) -> tuple[str, ...]:
+        if recipe.shared_from is not None:
+            return tuple(
+                claim_id
+                for owner in shared.get(recipe.section_key, ())
+                for claim_id in owner.cited_claim_ids
+            )
+        block = blocks.get(recipe.section_key)
+        return block.cited_claim_ids if block is not None else ()
+
+    return tuple(dict.fromkeys(claim_id for recipe in recipes for claim_id in _of(recipe)))
 
 
 def insight_summary(display_block: Mapping[str, Any], committee_size: int) -> list[str]:

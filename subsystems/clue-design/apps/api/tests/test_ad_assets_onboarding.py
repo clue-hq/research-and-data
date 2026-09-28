@@ -43,6 +43,19 @@ TINY_PNG = bytes.fromhex(
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_asset_describer(monkeypatch):
+    from asset_analysis_fixture import analysis
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.describe import DescribeResult
+    class Describer:
+        active = True
+        def describe(self, items):
+            return [DescribeResult(item.asset_id, "Ad", "Ad", "Reference", [],
+                                   analysis=analysis("Ad", item.source_occurrences)) for item in items]
+    monkeypatch.setattr(pipeline, "resolve_describer", lambda: Describer())
+
+
 def _pages() -> list[AdLibraryPage]:
     provider = AdyntelProvider(api_key="k", email="e@example.com")
     return [
@@ -183,6 +196,9 @@ def _fetch_creative(url: str) -> tuple[bytes, str]:
 @pytest.fixture
 def lane_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    # Pipeline tests drive the offered job with injected providers in _run_job;
+    # an embedded worker would race that drive with the production providers.
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", False, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +232,10 @@ def _no_live_http(monkeypatch: pytest.MonkeyPatch) -> None:
             "an injected seam and one of them was missed"
         )
 
-    for name in ("get", "post", "request", "stream"):
+    # ``Client`` is on the list since lane 3 slice 5: the lane's paid calls go through
+    # ``clue_spend.HttpxTransport``, which builds an ``httpx.Client`` rather than calling the
+    # module-level ``post``. Without it the guard would pass while the lane really dialled out.
+    for name in ("get", "post", "request", "stream", "Client", "AsyncClient"):
         monkeypatch.setattr(httpx, name, refuse, raising=False)
 
 
@@ -377,6 +396,7 @@ def _offer(
     brand_kit_id: str,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> str:
     offered = client.post(
         "/brand-ad-assets/onboard",
@@ -387,6 +407,7 @@ def _offer(
             "advertiser_name": "Ramp",
             "max_pages": max_pages,
             "max_creatives": max_creatives,
+            "harvest_only": harvest_only,
         },
     )
     assert offered.status_code == 200, offered.text
@@ -404,6 +425,7 @@ def _run_job(
     provider: Any = None,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> dict:
     """Offer one job through the route, then DRIVE it here, and return the terminal row.
 
@@ -421,7 +443,8 @@ def _run_job(
     from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
 
     job_id = _offer(
-        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages
+        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages,
+        harvest_only=harvest_only,
     )
     run_ad_assets_onboarding(
         str(tmp_path / "engine-cache" / client.headers["X-Workspace-Id"]),
@@ -436,6 +459,36 @@ def _run_job(
     job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     job["evidence"] = _evidence(client, job_id)
     return job
+
+
+def test_manual_harvest_keeps_originals_without_calling_creative_models(
+    tmp_path: Path, lane_on: None,
+) -> None:
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    class NoModelCalls:
+        active = True
+
+        def distil(self, previews):
+            raise AssertionError("harvest-only must not analyze or generate imagery")
+
+    def no_generation(*args, **kwargs):
+        raise AssertionError("harvest-only must not generate imagery")
+
+    job = _run_job(
+        client, tmp_path, brand_kit_id=brand_kit_id,
+        distiller=NoModelCalls(), generate=no_generation, harvest_only=True,
+    )
+    assert job["status"] == "succeeded", job
+    steps = job["evidence"]["steps"]
+    assert steps["record"]["count"] > 0
+    assert steps["distill"]["status"] == "skipped"
+    assert steps["pregenerate"]["status"] == "skipped"
+    assert "harvest-only" in steps["distill"]["reason"]
+    assert job["outcome"]["status"] == "partial"
+    assert job["outcome"]["card_written"] is False
+    assert job["outcome"]["assets_generated"] == 0
 
 
 def test_a_full_run_harvests_distils_and_pregenerates(
@@ -516,7 +569,7 @@ def test_an_empty_harvest_says_so_at_the_top_level(
     assert outcome["card_written"] is False
     assert outcome["assets_generated"] == 0
     # The steps that never ran are NAMED, rather than being absent keys nobody notices.
-    assert outcome["steps_not_reached"] == ["custody", "record", "distill", "pregenerate"]
+    assert outcome["steps_not_reached"] == ["custody", "record", "enrich", "distill", "pregenerate"]
     assert "0 ad(s) kept" in outcome["summary"]
     assert "No ad-DNA card was written." in outcome["summary"]
 
@@ -779,6 +832,7 @@ def test_the_fleet_worker_executes_an_ad_assets_job(
     lease and fence as every other design job. Everything the pipeline does is asserted by the
     tests above, which drive the runner directly (see ``_run_job``).
     """
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", True, raising=False)
     client = _client(tmp_path)
     brand_kit_id = _seed_brand_kit(client)
     _install_stub_runner(

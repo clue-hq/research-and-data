@@ -20,7 +20,12 @@ export interface SettingsNavigationItem {
 }
 
 export const personalSettingsNavigation: SettingsNavigationItem[] = [
-  { href: "/settings/profile", icon: "profile", label: "Profile", section: "profile" },
+  {
+    href: "/settings/profile",
+    icon: "profile",
+    label: "Profile",
+    section: "profile",
+  },
   {
     href: "/settings/connections",
     icon: "connections",
@@ -42,7 +47,12 @@ export const adminSettingsNavigation: SettingsNavigationItem[] = [
     label: "Workspace",
     section: "workspace",
   },
-  { href: "/settings/members", icon: "members", label: "Members", section: "members" },
+  {
+    href: "/settings/members",
+    icon: "members",
+    label: "Members",
+    section: "members",
+  },
   {
     href: "/settings/integrations",
     icon: "integrations",
@@ -53,8 +63,13 @@ export const adminSettingsNavigation: SettingsNavigationItem[] = [
   {
     href: "/settings/data-model",
     icon: "data-model",
-    label: "Data model",
+    label: "Research fields",
     section: "data-model",
   },
-  { href: "/settings/billing", icon: "billing", label: "Billing", section: "billing" },
+  {
+    href: "/settings/billing",
+    icon: "billing",
+    label: "Billing",
+    section: "billing",
+  },
 ];

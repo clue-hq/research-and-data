@@ -36,6 +36,18 @@ test("authentication disabled refuses with 503 before any forwarding", async () 
   assert.equal(body.error.code, "AUTHENTICATION_NOT_CONFIGURED");
 });
 
+test("an upload cannot follow a workspace cookie changed after file selection", async () => {
+  let forwarded = false;
+  const response = await handleDesignProxyRequest(
+    new Request("http://localhost/api/clue/design/assets", {
+      method: "POST", headers: {"X-Expected-Workspace-Id": "ws_original"}, body: "file",
+    }), ["assets"], dependencies({fetchImpl: async () => {forwarded = true; return Response.json({});}}),
+  );
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, "WORKSPACE_CHANGED");
+  assert.equal(forwarded, false);
+});
+
 test("a disallowed mutation origin is refused with 403", async () => {
   const response = await handleDesignProxyRequest(
     new Request("http://localhost/api/clue/design/documents", { method: "POST" }),

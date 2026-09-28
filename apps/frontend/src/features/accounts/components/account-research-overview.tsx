@@ -1,4 +1,5 @@
-import Link from "next/link";
+import Link from "./research-link";
+import { ResearchQualityNotice } from "./research-quality-notice";
 import { ArrowRight } from "lucide-react";
 import type { AccountDetail } from "../model/account-detail";
 import readability from "./account-readability.module.css";
@@ -64,6 +65,7 @@ export function AccountResearchBody({ account }: { account: AccountDetail }) {
 
   return (
     <div className={`${components.detailBody} ${styles.accountOverviewBody}`}>
+      <ResearchQualityNotice quality={account.overviewDisplay?.researchQuality} path={`/accounts/${account.id}`} />
       {sectionsBeforeCommittee.length > 0 ? (
         <ResearchOverview
           accountId={account.id}

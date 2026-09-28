@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
 import type { OnboardingDraft, OnboardingFlow } from "../model/onboarding";
 import styles from "./onboarding.module.css";
 
@@ -51,22 +52,19 @@ export function ProfileScreen({
       </ProfileField>
 
       <ProfileField label="What's your role?">
-        <span className={styles.selectShell}>
-          <select
-            aria-label="Role"
-            onChange={(event) => onDraftChange("role", event.target.value)}
-            value={draft.role}
-          >
-            <option value="">Select</option>
-            {profile.roleOptions.map((role) => (
-              <option key={role} value={role}>{role}</option>
-            ))}
-          </select>
-          <ChevronDown />
-        </span>
+        <SelectField
+          ariaLabel="Role"
+          className={styles.roleSelect}
+          onValueChange={(value) => onDraftChange("role", value)}
+          options={[
+            { value: "", label: "Select" },
+            ...profile.roleOptions.map((role) => ({ value: role, label: role })),
+          ]}
+          value={draft.role}
+        />
       </ProfileField>
 
-      <ProfileField label="Company name">
+      <ProfileField hint="Leave blank to use your website's name" label="Company name">
         <input
           aria-label="Company name"
           onChange={(event) => onDraftChange("companyName", event.target.value)}
@@ -100,24 +98,19 @@ export function ProfileScreen({
 
 function ProfileField({
   children,
+  hint,
   label,
 }: {
   children: React.ReactNode;
+  hint?: string;
   label: string;
 }) {
   return (
     <label className={styles.profileField}>
       <span>{label}</span>
       {children}
+      {hint ? <small className={styles.profileFieldHint}>{hint}</small> : null}
     </label>
-  );
-}
-
-function ChevronDown() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
-      <path d="m6 8 4 4 4-4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
-    </svg>
   );
 }
 

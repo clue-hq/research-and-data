@@ -238,6 +238,7 @@ def test_unchanged_scene_rerender_surfaces_fact_and_trace(tmp_path, monkeypatch)
     assert "unchanged_rerender_recorded" in _trace_events(tools)
 
     # A mutation between renders → the next export carries NO unchanged fact.
+    tools.scene["meta"]["title"] = "A changed scene"
     tools.scene_update_sources.append("structured_edit")
     third = json.loads(tools.export_preview_bundle(critic_format="png"))
     assert "unchanged" not in third
