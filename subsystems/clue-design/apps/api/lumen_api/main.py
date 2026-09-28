@@ -2105,6 +2105,17 @@ def create_app(
             Own ads only (D2): exactly one of ``company_domain`` / ``page_id``, both naming the
             CLIENT's own advertiser. There is no competitor input in v1.
             """
+            if payload.phase == "card":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.card_phase_is_internal",
+                        "message": (
+                            "the card phase is offered by the worker once a harvest and a brand "
+                            "kit both exist; request phase 'full' to run everything at once"
+                        ),
+                    },
+                )
             domain = (payload.company_domain or "").strip()
             page = (payload.page_id or "").strip()
             if bool(domain) == bool(page):
@@ -2126,9 +2137,21 @@ def create_app(
                         "message": "max_pages and max_creatives must both be at least 1",
                     },
                 )
-            # Fail here rather than in the worker: an unknown kit would only surface as a
-            # foreign-key error at the very end, after the harvest had already been paid for.
-            repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
+            if payload.phase == "full":
+                if payload.brand_kit_id is None or payload.brand_kit_version is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "ad_assets.brand_kit_required",
+                            "message": (
+                                "a full run pins its card to a brand kit; name one, or request "
+                                "phase 'harvest' to collect the ads before any kit exists"
+                            ),
+                        },
+                    )
+                # Fail here rather than in the worker: an unknown kit would only surface as a
+                # foreign-key error at the very end, after the harvest had already been paid for.
+                repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
 
             job = _offer_ingestion(repo, "ad_assets", payload.model_dump())
             return {"schema_version": 1, "job": ingestion_job_dto(job)}

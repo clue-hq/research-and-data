@@ -38,8 +38,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api import projections_app, projections_main, run_composition
 from clue_api.brand_kit_ingestion import (
-    ONBOARD_AD_ASSETS_PATH,
     INGEST_WEBSITE_PATH,
+    ONBOARD_AD_ASSETS_PATH,
     AdHarvestConfig,
     BrandKitWebsiteIngestion,
     build_brand_kit_ingestion_trigger,

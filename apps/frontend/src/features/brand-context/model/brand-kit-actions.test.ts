@@ -130,6 +130,16 @@ test("a running or queued ingestion holds the button", () => {
   );
 });
 
+test("an ad-assets job neither holds the button nor claims the brand is extracting", () => {
+  // Onboarding runs an ad harvest beside the website ingestion; it builds no kit.
+  const adsRunning = [job({ kind: "ad_assets", status: "running", website_url: null })];
+  assert.deepEqual(reExtractState(KIT, adsRunning), {
+    kind: "ready",
+    request: { url: "https://stripe.com", brand_kit_id: "brand_kit_ing_1" },
+  });
+  assert.equal(panelEmptyMessage("colors", adsRunning), "No colors yet.");
+});
+
 test("neither a kit nor a url on record leaves nothing to re-extract", () => {
   assert.deepEqual(reExtractState(null, []), { kind: "unavailable" });
   assert.deepEqual(reExtractState({ ...KIT, sourceUrl: null }, []), { kind: "unavailable" });

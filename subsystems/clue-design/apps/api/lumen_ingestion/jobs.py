@@ -114,11 +114,13 @@ class IngestionJobStore:
             )
         )
 
-    def list_recent(self, limit: int = 50) -> list[JsonObject]:
-        """Most-recent jobs first (by created_at, then job_id as a tiebreak)."""
+    def list_recent(
+        self, limit: int = 50, *, kinds: Optional[tuple[str, ...]] = None
+    ) -> list[JsonObject]:
+        """Most-recent jobs first (by created_at, then job_id as a tiebreak); ``kinds`` narrows."""
         return self._bridge._run(
             lambda conn: design_ingestion.list_recent(
-                conn, workspace_id=self.workspace_id, limit=limit
+                conn, workspace_id=self.workspace_id, limit=limit, kinds=kinds
             )
         )
 
@@ -184,7 +186,9 @@ class StageReporter(Protocol):
 def run_ingestion_job(
     store: IngestionJobStore,
     job_id: str,
-    work: Callable[[StageReporter], "tuple[str, int, Optional[str]]"],
+    work: Callable[[StageReporter], "tuple[Optional[str], Optional[int], Optional[str]]"],
+    *,
+    on_complete: Optional[Callable[[], Any]] = None,
 ) -> None:
     """Drive a job to a terminal state. Never raises.
 
@@ -200,6 +204,10 @@ def run_ingestion_job(
     and stop, never to retry and never to stamp ``failed`` over the live attempt's work. So a
     fence is caught, logged loudly (a zombie is visible in the logs) and returned from — the job
     is terminalized by whoever actually owns it.
+
+    ``on_complete`` runs once the job has been durably marked ``succeeded`` by THIS attempt, and
+    never after a failure or a fence. It is follow-on work (the ad-assets card offer), so its own
+    failure is logged and swallowed: the job it follows has already finished.
     """
     if not _fenced_guard(store.set_running, job_id, job_id=job_id, write="set_running"):
         return
@@ -223,7 +231,7 @@ def run_ingestion_job(
             write="fail",
         )
         return
-    _fenced_guard(
+    completed = _fenced_guard(
         store.complete,
         job_id,
         brand_kit_id,
@@ -232,6 +240,11 @@ def run_ingestion_job(
         job_id=job_id,
         write="complete",
     )
+    if completed and on_complete is not None:
+        try:
+            on_complete()
+        except Exception:  # noqa: BLE001 - follow-on work must never touch the finished job
+            logger.exception("ingestion_job.on_complete_failed", job_id=job_id)
 
 
 def _failure_code(error: BaseException) -> str:

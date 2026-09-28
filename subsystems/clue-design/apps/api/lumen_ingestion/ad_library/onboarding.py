@@ -21,6 +21,13 @@ ordered and committed the way they are:
 
 The job's ``evidence`` is the per-step outcome record: what each step did, what it dropped and
 why, and what it could not do. It is the thing an operator reads when a harvest disappoints.
+
+**Phases** (auto ad ingestion, 2026-09-28). A ``full`` job runs every step above. Onboarding
+instead runs it as two jobs so the harvest can start before any brand kit exists: ``harvest``
+runs steps 1 and the per-image enrichment with no kit, and ``card`` runs steps 2–3 from that
+harvest's STORED ads once a kit exists (it never calls the ad library or re-downloads a
+creative). The card job is offered by whichever of the harvest and the kit ingestion finishes
+second — see :mod:`.auto_card`.
 """
 
 from __future__ import annotations
@@ -46,11 +53,13 @@ from .company_identity import (
     check_advertiser_names,
     resolve_company_identity_resolver,
 )
+from .auto_card import card_offer_hook
 from .distill import AdDnaCard, bounded_card, previews_for, resolve_distiller
 from .store import AdAssetsStore
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
     DEFAULT_MAX_PAGES,
+    HarvestedCreative,
     ads_considered,
     creative_provenance,
     custody_creatives,
@@ -58,7 +67,7 @@ from .harvest import (
     select_creatives,
 )
 from .pregenerate import MAX_REFERENCE_IMAGES, pregenerate_for_card
-from .provider import AdLibraryError, resolve_provider
+from .provider import AdLibraryAd, AdLibraryError, resolve_provider
 
 JsonObject = dict[str, Any]
 
@@ -111,7 +120,7 @@ def run_ad_assets_onboarding(
     resolved_storage = storage or storage_from_settings()
     blobs = DesignBlobStore(resolved_storage, workspace_id)
 
-    def work(reporter: StageReporter) -> "tuple[str, int, Optional[str]]":
+    def work(reporter: StageReporter) -> "tuple[Optional[str], Optional[int], Optional[str]]":
         return _onboard(
             store=store,
             repo=repo,
@@ -129,7 +138,13 @@ def run_ad_assets_onboarding(
             now=now or (lambda: datetime.now(UTC)),
         )
 
-    run_ingestion_job(store, job_id, work)
+    def offer_card() -> Any:
+        # A harvest that finishes after the kit offers the card itself (``auto_card``).
+        from ..pipeline import _worker_design_tools
+
+        return card_offer_hook(workspace_id, tools=_worker_design_tools(resolved_storage))()
+
+    run_ingestion_job(store, job_id, work, on_complete=offer_card)
 
 
 def _onboard(
@@ -148,7 +163,7 @@ def _onboard(
     generate: Optional[Callable[..., Any]],
     fetch_creative: Optional[Callable[[str], "tuple[bytes, str]"]],
     now: Callable[[], datetime],
-) -> "tuple[str, int, Optional[str]]":
+) -> "tuple[Optional[str], Optional[int], Optional[str]]":
     if not settings.lumen_brand_ad_assets:
         raise AdAssetsLaneDisabled(
             "LUMEN_BRAND_AD_ASSETS is off, but an ad-assets job was claimed for execution"
@@ -161,10 +176,14 @@ def _onboard(
 
     job = store.require(job_id)
     request = job["request"]
+    phase = request.get("phase") or "full"
     company_domain = request.get("company_domain")
     page_id = request.get("page_id")
-    brand_kit_id = str(request["brand_kit_id"])
-    brand_kit_version = int(request["brand_kit_version"])
+    # A harvest runs before any kit exists; full and card jobs always name one.
+    brand_kit_id = str(request["brand_kit_id"]) if request.get("brand_kit_id") else None
+    brand_kit_version = (
+        int(request["brand_kit_version"]) if request.get("brand_kit_version") is not None else None
+    )
     advertiser_name = request.get("advertiser_name")
     max_pages = int(request.get("max_pages") or DEFAULT_MAX_PAGES)
     max_creatives = int(request.get("max_creatives") or DEFAULT_MAX_CREATIVES)
@@ -173,10 +192,31 @@ def _onboard(
     tools = _worker_design_tools(storage)
     evidence: JsonObject = {
         "schema_version": 1,
+        "phase": phase,
         "steps": {},
-        "brand_kit": {"id": brand_kit_id, "version": brand_kit_version},
+        "brand_kit": (
+            {"id": brand_kit_id, "version": brand_kit_version} if brand_kit_id else None
+        ),
     }
     fetched_at = now().isoformat()
+
+    if phase == "card":
+        assert brand_kit_id is not None and brand_kit_version is not None
+        return _card_phase(
+            store=store,
+            repo=repo,
+            blobs=blobs,
+            core=core,
+            tools=tools,
+            cache_dir=cache_dir,
+            request=request,
+            brand_kit_id=brand_kit_id,
+            brand_kit_version=brand_kit_version,
+            evidence=evidence,
+            distiller=distiller,
+            generate=generate,
+            reporter=reporter,
+        )
 
     # --- step 0: resolve WHO the advertiser is, before asking the ad library anything --------
     #
@@ -301,7 +341,13 @@ def _onboard(
         workspace_id=repo.workspace_id,
         actor="agent",
     ).references
-    evidence["steps"]["record"] = {"status": "ok", "count": recorded["count"]}
+    evidence["steps"]["record"] = {
+        "status": "ok",
+        "count": recorded["count"],
+        # The vendor's order (most recent first). The stored rows do not keep it, and a card
+        # job distilling from this harvest later follows it.
+        "creative_ids": [creative.creative_id for creative in custody.creatives],
+    }
 
     # >>> Everything above is now durable. Nothing below may lose it. <<<
 
@@ -340,6 +386,58 @@ def _onboard(
         "reason": enrichment.get("reason") or f"{enrichment['total'] - enrichment['ready']} analyses unfinished",
     }
 
+    if phase == "harvest":
+        for step in ("distill", "pregenerate"):
+            evidence["steps"][step] = {
+                "status": "deferred",
+                "reason": "the card phase runs as its own job once a brand kit exists",
+            }
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+    assert brand_kit_id is not None and brand_kit_version is not None
+    _card_and_imagery(
+        custody.creatives,
+        harvest_job_id=job_id,
+        brand_kit_id=brand_kit_id,
+        brand_kit_version=brand_kit_version,
+        card_id=request.get("card_id"),
+        brand_name=selection.advertiser_name,
+        repo=repo,
+        core=core,
+        tools=tools,
+        cache_dir=cache_dir,
+        distiller=distiller,
+        generate=generate,
+        evidence=evidence,
+        reporter=reporter,
+    )
+    reporter("Finishing up…", 0.95)
+    return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+
+def _card_and_imagery(
+    creatives: list[Any],
+    *,
+    harvest_job_id: str,
+    brand_kit_id: str,
+    brand_kit_version: int,
+    card_id: Optional[str],
+    brand_name: Optional[str],
+    repo: HybridRepository,
+    core: Any,
+    tools: Any,
+    cache_dir: str,
+    distiller: Any,
+    generate: Optional[Callable[..., Any]],
+    evidence: JsonObject,
+    reporter: StageReporter,
+) -> None:
+    """Steps 2–3: distil and publish the ad-DNA card, then pre-generate imagery from it.
+
+    Shared by a ``full`` job (its own fresh harvest) and a ``card`` job (a finished harvest's
+    stored ads). ``harvest_job_id`` is the job whose creatives these are, so a card re-driven
+    from the same harvest converges instead of minting a twin version.
+    """
     # --- step 2: distil the ad-DNA card ------------------------------------------------------
     reporter("Learning your ad style…", 0.55)
     # W-B1 re-drive guard (Wave-C fix #2), the step-resume half: a re-driven execution of
@@ -351,7 +449,7 @@ def _onboard(
     prior_card = None
     try:
         prior_card = AdAssetsStore(workspace_id=repo.workspace_id).card_for_job(
-            harvest_job_id=job_id
+            harvest_job_id=harvest_job_id
         )
     except Exception:  # noqa: BLE001 - a probe failure is not a job failure
         prior_card = None
@@ -367,22 +465,21 @@ def _onboard(
         if card is None:
             # The stored payload no longer revives as a card (schema drift): the durable
             # version stands, and there is nothing more this execution can safely add.
-            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+            return
     else:
-        card = _distil(custody.creatives, distiller=distiller, evidence=evidence)
+        card = _distil(creatives, distiller=distiller, evidence=evidence)
         if card is None:
-            return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+            return
 
-        card_id = request.get("card_id") or f"adna_{brand_kit_id}"
         published = tools.invoke(
             "design_publish_ad_dna_card",
             {
-                "card_id": card_id,
+                "card_id": card_id or f"adna_{brand_kit_id}",
                 "brand_kit_id": brand_kit_id,
                 "brand_kit_version": brand_kit_version,
                 "card": card.to_json(),
-                "source_creative_ids": [c.creative_id for c in custody.creatives],
-                "harvest_job_id": job_id,
+                "source_creative_ids": [c.creative_id for c in creatives],
+                "harvest_job_id": harvest_job_id,
                 "model": card.model,
             },
             workspace_id=repo.workspace_id,
@@ -400,7 +497,7 @@ def _onboard(
     reporter("Creating brand imagery…", 0.8)
     _pregenerate(
         card,
-        creatives=custody.creatives,
+        creatives=creatives,
         core=core,
         cache_dir=cache_dir,
         tools=tools,
@@ -408,12 +505,137 @@ def _onboard(
         generate=generate,
         card_id=published["card_id"],
         card_version=int(published["version"]),
-        brand_name=selection.advertiser_name,
+        brand_name=brand_name,
         evidence=evidence,
     )
 
+
+def _card_phase(
+    *,
+    store: IngestionJobStore,
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    core: Any,
+    tools: Any,
+    cache_dir: str,
+    request: JsonObject,
+    brand_kit_id: str,
+    brand_kit_version: int,
+    evidence: JsonObject,
+    distiller: Any,
+    generate: Optional[Callable[..., Any]],
+    reporter: StageReporter,
+) -> "tuple[Optional[str], Optional[int], Optional[str]]":
+    """The card job: steps 2–3 from a finished harvest's stored ads. No vendor call."""
+    harvest_job_id = str(request["harvest_job_id"])
+    harvest_evidence = store.require(harvest_job_id).get("evidence") or {}
+    evidence["harvest_job_id"] = harvest_job_id
+    # The harvest's own record, so this job's outcome describes the whole lane.
+    if isinstance(harvest_evidence.get("resolution"), dict):
+        evidence["resolution"] = harvest_evidence["resolution"]
+    harvest_steps = harvest_evidence.get("steps") or {}
+    for step in ("harvest", "custody", "record", "enrich"):
+        if step in harvest_steps:
+            evidence["steps"][step] = harvest_steps[step]
+
+    reporter("Reading your saved ads…", 0.1)
+    creatives, missing = _stored_creatives(
+        repo=repo,
+        blobs=blobs,
+        harvest_job_id=harvest_job_id,
+        order=(harvest_steps.get("record") or {}).get("creative_ids") or [],
+    )
+    evidence["steps"]["reload"] = {
+        "status": "ok" if creatives else "empty",
+        "loaded": len(creatives),
+        "missing": missing,
+    }
+    if not creatives:
+        evidence["steps"]["distill"] = {
+            "status": "failed",
+            "reason": "none of the harvest's stored ads could be read back",
+        }
+        return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+    brand_name = (harvest_steps.get("harvest") or {}).get("advertiser_name") or (
+        creatives[0].ad.advertiser_name
+    )
+    _card_and_imagery(
+        creatives,
+        harvest_job_id=harvest_job_id,
+        brand_kit_id=brand_kit_id,
+        brand_kit_version=brand_kit_version,
+        card_id=request.get("card_id"),
+        brand_name=brand_name,
+        repo=repo,
+        core=core,
+        tools=tools,
+        cache_dir=cache_dir,
+        distiller=distiller,
+        generate=generate,
+        evidence=evidence,
+        reporter=reporter,
+    )
     reporter("Finishing up…", 0.95)
     return _complete(brand_kit_id, brand_kit_version, evidence, reporter=reporter)
+
+
+def _stored_creatives(
+    *,
+    repo: HybridRepository,
+    blobs: DesignBlobStore,
+    harvest_job_id: str,
+    order: list[str],
+) -> "tuple[list[HarvestedCreative], list[str]]":
+    """A harvest's creatives rebuilt from their rows and custodied bytes, in harvest order."""
+    from lumen_api.asset_custody import read_asset_bytes, record_digests
+
+    rows = AdAssetsStore(workspace_id=repo.workspace_id).list_creatives(
+        harvest_job_id=harvest_job_id, limit=1000
+    )
+    rank = {creative_id: index for index, creative_id in enumerate(order)}
+    rows.sort(key=lambda row: rank.get(row["creative_id"], len(rank)))
+
+    creatives: list[HarvestedCreative] = []
+    missing: list[str] = []
+    for row in rows:
+        data: Optional[bytes] = None
+        mime = "image/png"
+        try:
+            record = repo.require_asset_record(row["asset_id"])
+            digests = record_digests(record.get("asset") or record)
+            if digests:
+                digest, mime = digests[0]
+                data = read_asset_bytes(blobs, digest)
+        except Exception:  # noqa: BLE001 - one unreadable ad is a gap, not a failed job
+            data = None
+        if not data:
+            missing.append(row["creative_id"])
+            continue
+        creatives.append(
+            HarvestedCreative(
+                creative_id=row["creative_id"],
+                ad=AdLibraryAd(
+                    ad_id=row["ad_id"],
+                    kind="image",
+                    creative_type=None,
+                    advertiser_name=row.get("advertiser_name"),
+                    advertiser_promoted=False,
+                    image_url=row.get("creative_url"),
+                    image_alt_text=None,
+                    headline_title=row.get("headline"),
+                    headline_description=None,
+                    commentary_text=row.get("commentary"),
+                    view_details_link=row.get("view_details_link"),
+                    has_carousel=False,
+                ),
+                image_url=row.get("creative_url") or "",
+                image_bytes=data,
+                mime_type=mime,
+                asset_id=row["asset_id"],
+            )
+        )
+    return creatives, missing
 
 
 def _resolve_advertiser(
@@ -859,6 +1081,8 @@ def _outcome(evidence: JsonObject) -> JsonObject:
     sentences.append(f"{kept} ad(s) kept, {custodied} custodied.")
     if card_written:
         sentences.append("An ad-DNA card was written.")
+    elif _step("distill").get("status") == "deferred":
+        sentences.append("The ad-DNA card is made in its own job once a brand kit exists.")
     else:
         sentences.append("No ad-DNA card was written.")
     sentences.append(f"{generated} background image(s) were pre-generated.")
@@ -947,12 +1171,12 @@ def _attempts_sentence(resolution: JsonObject) -> str:
 
 
 def _complete(
-    brand_kit_id: str,
-    brand_kit_version: int,
+    brand_kit_id: Optional[str],
+    brand_kit_version: Optional[int],
     evidence: JsonObject,
     *,
     reporter: StageReporter | None = None,
-) -> "tuple[str, int, Optional[str]]":
+) -> "tuple[Optional[str], Optional[int], Optional[str]]":
     """The job's terminal tuple.
 
     The result pointer is the brand kit the lane enriched, unchanged: this job publishes no kit
