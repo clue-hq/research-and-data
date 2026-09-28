@@ -66,15 +66,15 @@ pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 _BASE = f"{FRONTEND_READ_PREFIX}/accounts"
 
-#: The six insights sections, in recipe order. Pinned here so a recipe reordering has to be a
+#: The insights sections, in recipe order. Pinned here so a recipe reordering has to be a
 #: deliberate change to a contract the frontend renders in order, not a silent one.
 _INSIGHTS_SECTION_ORDER = [
     "buying-signals",
     "money-and-momentum",
     "tools-they-already-use",
     "how-they-sell",
-    "contact-insights",
     "context-only",
+    "miscellaneous",
 ]
 
 
@@ -265,7 +265,7 @@ def test_the_workspace_payload_serves_the_insights_page_for_a_populated_account(
                 "money-and-momentum",
                 "tools-they-already-use",
                 "how-they-sell",
-                "contact-insights",
+                "miscellaneous",
             ], "generation is off in this suite, so nothing else can have been written"
             assert [item["id"] for item in sections["buying-signals"]["items"]] == [
                 "buying-signals-1",

@@ -79,13 +79,12 @@ _OVERVIEW_SECTION_ORDER = (
     "watch-outs",
 )
 
-#: The six insights sections in recipe order.
+#: The insights sections in recipe order.
 _INSIGHTS_SECTION_ORDER = (
     "buying-signals",
     "money-and-momentum",
     "tools-they-already-use",
     "how-they-sell",
-    "contact-insights",
     "context-only",
 )
 

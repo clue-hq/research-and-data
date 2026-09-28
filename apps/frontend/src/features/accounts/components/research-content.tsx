@@ -162,12 +162,10 @@ function SentenceContent({
 
     return (
       <Fragment key={`${index}-${segment.text}`}>
-        {index === 0 && sentence.kind && sentence.kind !== "fact" ? <span className={styles.sendLineChannel}>{sentence.kind === "inference" ? "Interpretation" : sentence.kind === "qualified" ? "Needs verification" : sentence.kind === "quote" ? "Source quote" : "Research gap"}: </span> : null}
         {activeLead ? (
           <span className={styles.inlineLeadTitle}>{activeLead}</span>
         ) : null}
         <ContactLinkedText contacts={contacts} text={remainder} />
-        {index === segments.length - 1 && sentence.qualifications?.length ? <span className={styles.popoverMeta}> ({sentence.qualifications.join("; ")})</span> : null}
         <EvidenceRun
           claimIds={segment.claimIds}
           evidenceById={evidenceById}
@@ -445,12 +443,6 @@ function presentationFor(section: ResearchSection, index: number) {
   );
 }
 
-function SectionGaps({ section }: { section: ResearchSection }) {
-  return section.gaps?.length ? <ul aria-label={`${section.h1} research gaps`} className={styles.emptyState}>
-    {section.gaps.map((gap) => <li key={gap}>{gap}</li>)}
-  </ul> : null;
-}
-
 function ReadingSection({
   evidenceById, section, prefix, lastVisit = null, name = "this account",
 }: {
@@ -469,13 +461,12 @@ function ReadingSection({
         </h2>
       </summary>
       <div className={styles.sectionContent}>
-        <SectionGaps section={section} />
         {section.intro?.map((sentence, index) => (
           <p className={styles.sentence} key={index}>
             <SentenceContent contacts={[]} evidenceById={evidenceById} sentence={sentence} />
           </p>
         ))}
-        {!section.items.length && !section.intro?.length && !section.gaps?.length ? <p className={styles.emptyState}>{section.emptyMessage ?? `No ${section.h1.toLowerCase()} information found for ${name}.`}</p> : null}
+        {!section.items.length && !section.intro?.length ? <p className={styles.emptyState}>{section.emptyMessage ?? `No ${section.h1.toLowerCase()} information found for ${name}.`}</p> : null}
         {section.items.map((item) => (
           <Fragment key={item.id}>
             {isNewResearch(item, evidenceById, lastVisit) ? <span className={styles.newLabel}>New since your last visit</span> : null}
@@ -530,7 +521,6 @@ function ResearchTools({
       <section className={`${styles.researchPanel} ${styles.internalNotes}`} hidden={panel !== "notes"} id={`${prefix}-notes`} aria-label="Internal notes">
         <p className={styles.notesLabel}>Do not use in outreach</p>
         {notes.map((section) => <div key={section.key}>
-          <SectionGaps section={section} />
           {section.intro?.map((sentence, index) => <p className={styles.sentence} key={index}><SentenceContent contacts={[]} evidenceById={evidenceById} sentence={sentence} /></p>)}
           {section.items.map((item) => <ResearchItemView reading evidenceById={evidenceById} item={item} key={item.id} />)}
         </div>)}
@@ -650,7 +640,6 @@ export function ResearchOverview({
               </h2>
             </Heading>
             <div className={stacked ? styles.sectionContent : undefined}>
-            <SectionGaps section={section} />
             {section.intro?.length ? (
               <div className={styles.overviewIntro}>
                 {section.intro.map((sentence, sentenceIndex) => (
@@ -815,7 +804,7 @@ export function BuyingCommitteeTable({
                 <td>
                   <span>{member.title}</span>
                 </td>
-                <td>{member.persona}{member.membershipState && member.membershipState !== "supported" ? <p className={styles.committeeRole}>Needs verification</p> : null}</td>
+                <td>{member.persona}</td>
                 <td>
                   <span className={styles.committeeLinks}>
                     {member.email && member.outreachEligible === false ? <span>{member.email}</span> : member.email ? (
@@ -849,7 +838,7 @@ export function BuyingCommitteeTable({
                     ) : null}
                   </span>
                 </td>
-                <td className={styles.committeeWhy}>{member.whyTheyMatter}{member.membershipGaps?.map((gap) => <p key={gap}>{gap}</p>)}</td>
+                <td className={styles.committeeWhy}>{member.whyTheyMatter}</td>
               </tr>
             ))}
           </tbody>

@@ -44,38 +44,3 @@ def test_a_contact_opener_serializes_to_the_served_send_line_shape() -> None:
     served = ResearchItem.model_validate(item)
     assert served.send_line is not None
     assert served.send_line.text.startswith("Saw your referral-leakage report")
-
-
-def test_read_time_annotation_never_adds_fields_to_the_opener() -> None:
-    """Advisory annotation qualifies body sentences; the opener's served shape has no such field."""
-    from clue_api.arv2.quality_presentation import annotate_sentences
-
-    claim_id = str(uuid4())
-    body = {
-        "intro": [],
-        "items": [
-            {
-                "id": "openers-0",
-                "h2": "Referral leakage",
-                "body": [{"text": "They map referral leakage.", "claimIds": [claim_id]}],
-                "sendLine": {
-                    "channel": "email",
-                    "text": "Saw your report.",
-                    "claimIds": [claim_id],
-                },
-                "contactRefs": [],
-                "priority": 2,
-                "newSinceLastVisit": False,
-            }
-        ],
-    }
-    annotate_sentences(body, {claim_id: {"quality": "qualified"}})
-
-    item = body["items"][0]
-    assert item["body"][0]["kind"] == "qualified"  # body sentences are still annotated
-    assert item["sendLine"] == {
-        "channel": "email",
-        "text": "Saw your report.",
-        "claimIds": [claim_id],
-    }
-    ResearchItem.model_validate(item)

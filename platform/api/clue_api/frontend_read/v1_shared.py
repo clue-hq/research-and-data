@@ -954,6 +954,9 @@ _CUSTOM_FIELDS_SQL = """
           AND ((w.pack = 'client' AND :entity_kind = 'account') OR
                (w.client_kb_role = 'research' AND w.field_key LIKE :field_prefix))
           AND w.active
+          -- Fields a research agent registered for its own narrative (committee selection,
+          -- research findings) are research data, never Custom fields (founder, 2026-09-29).
+          AND NOT (w.client_kb_role = 'research' AND w.promoted_by LIKE 'agent:%')
           AND (CAST(:include_retired AS boolean) OR r.field_key IS NULL)
           AND NOT EXISTS (
               SELECT 1 FROM workspace_dynamic_client_kb_erasure e

@@ -461,11 +461,7 @@ async def read_page(
             draft = PageDraft(
                 page=page, expected_dependency_sha256=inputs.sha256, sections=(section,)
             )
-            claims, _ = await _validate_sections(conn, scope, inputs, draft, complete=False)
-            if advisory_research(scope):
-                from clue_api.arv2.quality_presentation import annotate_sentences
-
-                annotate_sentences(body, claims)
+            await _validate_sections(conn, scope, inputs, draft, complete=False)
         except (KeyError, ValueError):
             stale.append(row["section_key"])
             title = section_titles.get(row["section_key"], "Research")
@@ -532,32 +528,47 @@ async def read_page(
         "gaps": list(dict.fromkeys(gaps)),
         "contexts": [],
     }
+    # Founder ruling 2026-09-29: only the designed sections are served, restricted as their
+    # recipes say. A research finding no section cites goes into this page's Miscellaneous.
     finding_ids: tuple[str, ...] = ()
-    if advisory_research(scope):
-        from clue_api.arv2.quality_presentation import finding_section
+    miscellaneous = next((s for s in block["sections"] if s["key"] == "miscellaneous"), None)
+    if miscellaneous is not None:
+        from clue_api.arv2.quality_presentation import uncovered_findings
 
-        for section in block["sections"]:
-            section["restricted"] = False
-            if section["key"] == "watch-outs":
-                section["key"] = "research-notes"
-                section["h1"] = "Research notes"
-        known_keys = {r.section_key for r in recipes}
-        for key, stored in live.items():
-            if key not in known_keys:
-                block["sections"].append(
-                    {
-                        "key": key,
-                        "h1": key.replace("-", " ").title(),
-                        "intro": stored.body_json.get("intro", []),
-                        "items": stored.body_json.get("items", []),
-                        "empty": False,
-                        "restricted": False,
-                        "pending": False,
-                        "gaps": stored.body_json.get("gaps", []),
-                    }
-                )
-        findings, finding_ids = await finding_section(conn, scope, inputs)
-        block["sections"].append(findings)
+        # A finding cited on any of this subject's pages (the overview too) is already shown.
+        cited_elsewhere = (
+            await conn.execute(
+                text("""SELECT DISTINCT unnest(b.cited_claim_ids)::text FROM display_block b
+        WHERE b.workspace_id=:ws AND b.project_id=:project AND b.context_id=:context
+          AND b.generation_id=:generation AND b.subject_id=:subject
+          AND b.superseded_at IS NULL"""),
+                {
+                    "ws": scope.workspace_id,
+                    "project": scope.project_id,
+                    "context": context_id,
+                    "generation": inputs.generation.generation_id,
+                    "subject": scope.person_subject_id or scope.account_id,
+                },
+            )
+        ).scalars()
+        cited = (
+            {str(id) for b in live.values() for id in b.cited_claim_ids}
+            | {str(id) for id in shared_cited}
+            | set(cited_elsewhere)
+        )
+        extra = await uncovered_findings(
+            conn,
+            scope,
+            inputs,
+            subject_id=scope.person_subject_id or scope.account_id,
+            cited=cited,
+        )
+        if extra:
+            miscellaneous["items"] = [*miscellaneous.get("items", []), *extra]
+            miscellaneous["empty"] = False
+            miscellaneous["pending"] = False
+            miscellaneous.pop("emptyMessage", None)
+            finding_ids = tuple(item["body"][0]["claimIds"][0] for item in extra)
     block["researchQuality"] = quality
     return {
         "display_block": block,
