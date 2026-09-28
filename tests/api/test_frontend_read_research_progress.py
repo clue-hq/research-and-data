@@ -74,7 +74,12 @@ def test_null_then_running_then_needs_attention_then_aged_out(tmp_path: Any) -> 
             assert body["progress_pct"] == 13
             assert body["pill"] == "running"
             assert body["agents"] == [
-                {"account_name": FIRST_ACCOUNT, "stage": "synthesis", "subject": "account"}
+                {
+                    "account_name": FIRST_ACCOUNT,
+                    "stage": "synthesis",
+                    "subject": "account",
+                    "subject_name": None,
+                }
             ]
             assert body["attention"] == []
             assert body["last_finished_at"] is None

@@ -1,8 +1,8 @@
 import type { ResearchProgress } from "./research-progress";
 
-/** "7 account research agents running, 3 accounts queued" — the mockup's second line. */
+/** "7 research agents running, 3 accounts queued" — the mockup's second line. */
 export function researchProgressHeadline(card: ResearchProgress): string {
-  const agents = `${card.running} account research ${card.running === 1 ? "agent" : "agents"} running`;
+  const agents = `${card.running} research ${card.running === 1 ? "agent" : "agents"} running`;
   const queued = `${card.queued} ${card.queued === 1 ? "account" : "accounts"} queued`;
   return `${agents}, ${queued}`;
 }
@@ -16,10 +16,22 @@ export function researchProgressLine(card: ResearchProgress, tick: number): stri
     const item = card.attention[tick % card.attention.length];
     return `${item.account_name}: ${item.reason}`;
   }
-  if (card.pill === "completed" || card.agents.length === 0) {
+  if (card.pill === "completed") {
     return `Research complete for ${card.finished} ${card.finished === 1 ? "account" : "accounts"}`;
   }
+  if (card.agents.length === 0) {
+    return card.pill === "needs_attention" ? "Research needs attention" : "Research queued for an available agent";
+  }
   const agent = card.agents[tick % card.agents.length];
+  const subject = agent.subject === "person"
+    ? `${agent.subject_name ?? "Committee member"} at ${agent.account_name}` : agent.account_name;
+  switch (agent.stage) {
+    case "researching": return `${subject}: researching and reviewing evidence`;
+    case "compiling_findings": return `${subject}: compiling research findings`;
+    case "storing_claims": return `${subject}: storing claims`;
+    case "writing_narrative": return `${subject}: writing the research narrative`;
+    case "completed": return `${subject}: completed`;
+  }
   if (agent.subject === "person" || agent.stage === "member_research") {
     return `Diving deeper into each committee member of ${agent.account_name}`;
   }

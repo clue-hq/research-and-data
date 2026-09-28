@@ -128,6 +128,16 @@ async def _persist(
         reference_kind=_KIND,
         reference_id=f"{scope.job_id}:{saved['version']:010d}",
     )
+    # A lightweight index over the same committed snapshot; no job-row lock upgrade.
+    from clue_api.arv2.quality_progress import DOSSIER_PROGRESS_KIND
+
+    await retain_artifact(
+        conn,
+        workspace_id=scope.workspace_id,
+        storage_key=ref.artifact_key,
+        reference_kind=DOSSIER_PROGRESS_KIND,
+        reference_id=f"{scope.job_id}:{saved['version']:010d}:{saved['state']}",
+    )
     log.info(
         "arv2.dossier.snapshot_saved",
         job_id=str(scope.job_id),
