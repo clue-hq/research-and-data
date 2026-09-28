@@ -814,7 +814,7 @@ class Settings(BaseSettings):
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
-    self_serve_provisioning_enabled: bool = False
+    self_serve_provisioning_enabled: bool = True
     # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
     # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
     # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
