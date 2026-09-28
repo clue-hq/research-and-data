@@ -49,3 +49,21 @@
 - Shared review-gate and solo-mode suites passed independently after the rubric edit; whitespace
   check passed. Rubric is read uncached for each turn, so this guidance change needs no service
   restart. Output quality is still pending the native revision, not established by those checks.
+- One concise native follow-up completed as saved version 2. It removes homepage navigation and
+  the oversized footer, puts authentic marks above the hero and reconstructs product switching
+  using native tabs. Native runtime observed default plus one switched state; independent checks
+  of all four states remain pending. No source autoplay or exact surround layout is claimed.
+- Parent inspected saved desktop/mobile captures. Desktop width is now 1440, tablet 768; phone
+  is 379 for a requested 375. Phone inbox panel remains a tall gradient with its interface absent.
+  Some visitor copy retains analyst caveats. This remains an INCOMPLETE quality result, despite
+  successful execution. First-pass and revision receipts are preserved separately in scratch.
+- Local browser session expired at final verification. Normal sign-out button stalled; normal
+  onboarding sign-in reached Google. Automatic account-selection review initially refused an
+  ambiguous account choice. Read-only membership confirmed the existing workspace's sole active
+  owner matched the chosen account; retry was then allowed. Google now requires the user's
+  passkey. Asked through the input tool and left the sign-in tab for handoff; no auth bypass.
+- Bounded font audit found intact source kit faces and held bytes; live browser also rendered
+  source serif correctly. No proven source-font defect or reason to modify source aliases.
+  Offline capture font-readiness evidence is incomplete; cold-load fallback remains a hypothesis.
+  Newly composed bands omit display-family declarations separately. A bounded audit of full-page
+  image downscaling is checking whether the current review receives legible viewport evidence.
