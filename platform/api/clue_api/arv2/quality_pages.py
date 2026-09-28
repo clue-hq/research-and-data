@@ -256,9 +256,12 @@ def _body(
             if id in people
         ]
         if item.send_line:
+            # Exactly the served ``ResearchSendLine`` fields: the read validates strictly, and the
+            # sentence's ``kind``/``qualifications`` (already checked above) are not part of it.
             body["sendLine"] = {
                 "channel": "email",
-                **item.send_line.model_dump(mode="json", by_alias=True),
+                "text": item.send_line.text,
+                "claimIds": [str(claim_id) for claim_id in item.send_line.claim_ids],
             }
         items.append(body)
     return {
