@@ -93,6 +93,7 @@ from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
 from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
 from .web_layout_capture import capture_layout, layout_targets
+from .web_typography_reference import TypographyReferenceError, TypographyReferences
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -1107,6 +1108,7 @@ class LumenWebTools:
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
         self._layout_by_width: dict[int, JsonObject] = {}
+        self._typography_references = TypographyReferences()
         self._preview_iteration: Optional[int] = None
         # Interactive STATE captures from the latest render (dialog-open,
         # accordion-expanded), reset each render; view("state:<n>") indexes here.
@@ -10685,6 +10687,65 @@ class LumenWebTools:
             iteration=self._preview_iteration, target=target, path=path, index=index,
         )
 
+    def _typography_identity(self) -> JsonObject:
+        return {
+            "document_id": self.web_doc.get("id"),
+            "page_id": self.page_id,
+            "local_document_version": self._doc_version,
+            "iteration": self._preview_iteration,
+            "preview_version": self._preview_doc_version,
+        }
+
+    def set_web_typography_reference(self, bindings_json: str) -> str:
+        """Pin selected source text roles and check a draft against them without rendering.
+
+        Use after one native render and before restyling a selected component. For each new
+        authored role, choose the equivalent source role deliberately. Read exact node IDs and
+        rendered paths with view("layout:1440:node:<id>") and the 768/375 equivalents.
+        Pass a JSON list of 1–8 objects with role, reference_node_id, reference_path,
+        target_node_id, target_path. Paths are the exact rendered_node_relative :nth-child
+        chains, NOT stored text-edit paths; an empty path means the measured root text itself.
+        Reference and target may be the same for a selected-element edit. Targets may be authored
+        later, but references must have complete current measurements at all three widths.
+
+        This freezes source family, actual glyph faces, weight, size, line height, tracking,
+        alignment, synthesis, visibility and element tag within THIS TURN (24 role references
+        maximum). It compares subsequent target renders to those frozen values. Repeating the
+        same mapping never rebases it; changing an existing reference is refused. It does not
+        change the page. Fix mismatches using the source CSS or existing exact copy/slot edits,
+        then render and check view("review"). Missing/stale evidence stays incomplete.
+        Finalize cannot report accepted with a declared mismatch or incomplete measurement.
+
+        This checks ONLY the declared text roles. It does not establish full component structure,
+        content fit or page quality, and a wrong chosen reference is not made correct by a match.
+        To retain a selected component's structure, use its real pin with slot/exact text edits;
+        this tool cannot make a raw reconstruction structurally equivalent. References do not
+        persist as a page-wide brand rule across turns.
+        """
+        with self.tool_lock:
+            try:
+                self._typography_references.register(
+                    bindings_json, self._layout_by_width, self._typography_identity(),
+                )
+            except TypographyReferenceError as error:
+                return self._tool_error(error.code, str(error))
+            report = self._typography_references.report(
+                self._layout_by_width, self._typography_identity(),
+            )
+            self._write_json(
+                self.turn_dir / "typography_references.json",
+                {
+                    "schema_version": 1,
+                    "run_id": self.run_id,
+                    "bindings": self._typography_references.bindings,
+                },
+            )
+            self.record(
+                "review", "web_typography_reference_set",
+                output_summary=report["status"], payload=report,
+            )
+            return json.dumps({"status": "registered", "typography_references": report}, indent=2)
+
     def _review_evidence_report(self) -> JsonObject:
         def describe(target: str, path: str | None) -> JsonObject:
             return self._review_observations.image_report(
@@ -10730,6 +10791,11 @@ class LumenWebTools:
                 gaps.append({"code": "review.state_capture_incomplete"})
         else:
             limits = {}
+        typography = self._typography_references.report(
+            self._layout_by_width, self._typography_identity(),
+        )
+        if typography["status"] not in {"matched", "not_declared"}:
+            gaps.append({"code": "review.typography_reference_" + typography["status"]})
         return {
             "schema_version": 1, "scope": "active_page_current_turn",
             "page_id": self.page_id, "document_id": self.web_doc.get("id"),
@@ -10738,6 +10804,7 @@ class LumenWebTools:
             "quality_verdict": "not_computed", "previews": previews, "states": states,
             "preview_media_readiness": copy.deepcopy(self._preview_media_readiness),
             "clone_review": walk, "state_capture_limits": limits, "gaps": gaps,
+            "typography_references": typography,
             "consulted_source_behavior": copy.deepcopy(self._review_observations.sources),
             "note": "Records pixels returned by view, not attention, aesthetic approval or all "
                     "required interactions. Consulted sources may have been discarded; reconcile "
@@ -10982,13 +11049,26 @@ class LumenWebTools:
         carousel, a tabbed panel, a filterable grid you had to approximate or
         omit). When present, it is recorded to final.json AND emitted as a
         dedicated `ladder_gap` trace event so the demand for new components is
-        measurable across runs. Leave it None when the catalogue sufficed."""
+        measurable across runs. Leave it None when the catalogue sufficed.
+        An accepted outcome is downgraded to completed_with_warnings when declared
+        typography references mismatch or lack current measurements. The draft is still
+        saved; this never launches a repair or provider call automatically."""
         valid = {"accepted", "completed_with_warnings", "failed"}
         if outcome not in valid:
             return self._tool_error(
                 "finalize.bad_outcome",
                 f"outcome must be one of {sorted(valid)}; got {outcome!r}.",
             )
+        requested_outcome = outcome
+        review_evidence = self._review_evidence_report()
+        typography_status = review_evidence["typography_references"]["status"]
+        if typography_status not in {"not_declared", "matched"}:
+            if outcome == "accepted":
+                outcome = "completed_with_warnings"
+            summary = (
+                f"{summary.rstrip()} Typography reference checks remain {typography_status}; "
+                "the selected type roles are not verified."
+            ).strip()
         # The turn is ending on every valid outcome — release the kept-alive
         # browser so no Playwright process outlives the run, then retire the
         # render thread (its worker is non-daemon; left alive it would block
@@ -11012,7 +11092,7 @@ class LumenWebTools:
         payload: JsonObject = {
             "outcome": outcome,
             "summary": summary,
-            "review_evidence": self._review_evidence_report(),
+            "review_evidence": review_evidence,
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
             # Informational only — what this site ended up being. NO gate reads
@@ -11022,6 +11102,8 @@ class LumenWebTools:
                 for page in self._page_listing()
             ],
         }
+        if requested_outcome != outcome:
+            payload["requested_outcome"] = requested_outcome
         if gap:
             payload["ladder_gap"] = gap
             payload["ladder_gaps"] = gaps

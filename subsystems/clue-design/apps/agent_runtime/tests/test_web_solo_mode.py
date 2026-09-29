@@ -61,7 +61,10 @@ def test_solo_registers_no_subagents_and_carries_the_full_write_surface(
     assert captured["subagents"] == []
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in captured["tools"]}
     # The director's surface survives...
-    for name in ("render_web_preview", "review_cloned_page", "finalize_web_run"):
+    for name in (
+        "render_web_preview", "review_cloned_page", "finalize_web_run",
+        "set_web_typography_reference",
+    ):
         assert name in tool_names, name
     # ...and the author's write surface joins it.
     for name in (
@@ -130,6 +133,12 @@ def test_flag_off_keeps_the_trio_composition_byte_identical(tmp_path, monkeypatc
     assert "You direct a website-building turn" in captured["system_prompt"]
     tool_names = {getattr(t, "name", getattr(t, "__name__", "")) for t in captured["tools"]}
     assert "author_web_page" not in tool_names
+    assert "set_web_typography_reference" in tool_names
+    author_names = {
+        getattr(t, "name", getattr(t, "__name__", ""))
+        for t in captured["subagents"][0]["tools"]
+    }
+    assert "set_web_typography_reference" in author_names
 
 
 def test_solo_account_blocks_render_only_with_an_account() -> None:

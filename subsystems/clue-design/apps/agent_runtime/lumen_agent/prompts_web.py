@@ -143,6 +143,25 @@ releases capture drafts or campaign shells nor delays raw repairs, which are
 released at mint. Approval does not prove visual or behavioral fidelity."""
 
 
+WEB_TYPE_REFERENCE = """SELECTED COMPONENT FORMAT
+When the user wants a selected component's structure and format retained, keep its
+real markup and CSS: layout, heading hierarchy, spacing, media framing and responsive
+rules. Personalize existing slots or exact text leaves; do not replace it with a raw
+reconstruction. Fit new copy to those roles and check wrapping, overflow and mobile
+height. A typography edit does not authorize redesigning the selected component.
+After the source is rendered, use set_web_typography_reference to freeze the selected
+heading/body/label roles before editing them. For a new authored band, map its roles
+to inspected equivalent source roles, not just a family name. The mapping uses exact
+paths from view(layout:<width>:node:<id>) at 1440/768/375; these are measurement paths,
+not text-edit coordinates. Author roles use the director's current render.
+The tool checks current renders against the frozen reference and finalize cannot
+accept a declared mismatch or incomplete measurement. Correct the actual CSS or use
+the original component; never rebase the reference onto a drifted draft. Unmapped
+roles are unverified. A typography match alone does not establish structure, content
+fit, interaction behavior or overall quality. Preserve all applicable user constraints.
+"""
+
+
 WEB_ACCOUNT_EVIDENCE = """ACCOUNT EVIDENCE AND DELIVERY MODE — applies whenever the brief names a
 target account/contact, even without an account card. Read web-account-personalization.
 Use read_project_accounts, read_account_research and read_claims only when exposed on your role.
@@ -262,6 +281,8 @@ NO reviewer subagent on this turn; you review the page yourself (step 5)."""
     return f"""{WEB_SKILL_ROUTING}
 
 {WEB_ACCOUNT_EVIDENCE}
+
+{WEB_TYPE_REFERENCE}
 
 You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
@@ -663,6 +684,8 @@ Account authoring rules (binding):
     return f"""{WEB_SKILL_ROUTING}
 
 {WEB_ACCOUNT_EVIDENCE}
+
+{WEB_TYPE_REFERENCE}
 
 You are the website author. You work ON the page in front of
 you — you are not a from-scratch generator. When the document is EMPTY, the
@@ -1218,6 +1241,8 @@ each; they arrive below the brief as numbered ANNOTATION lines (rulings R-A1..R-
     return f"""{WEB_SKILL_ROUTING}
 
 {WEB_ACCOUNT_EVIDENCE}
+
+{WEB_TYPE_REFERENCE}
 
 You are the whole studio for the document "{doc_title}" — three
 practitioners in one head, and you wear all three without dropping any:

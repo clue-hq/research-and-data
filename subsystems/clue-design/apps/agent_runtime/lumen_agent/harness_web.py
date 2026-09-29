@@ -388,6 +388,7 @@ def create_web_deepagent(
                 # pinned like any clone. The author's, because it writes library content the
                 # author then places.
                 tools.compose_web_section,
+                tools.set_web_typography_reference,
                 # F4.4 (FOUNDER RULING R-X9): a repair is released ONE AT A TIME, by a human who
                 # was shown it and asked. The brand-kit approval no longer sweeps repairs along
                 # with the harvested sections, so this is the only door — and it is the author's
@@ -480,6 +481,7 @@ def create_web_deepagent(
         tools.list_custom_components,
         tools.inspect_custom_component,
         tools.render_web_preview,
+        tools.set_web_typography_reference,
         # F3.3: the behavioural review gate. The ORCHESTRATOR's, in both flag states — it is the
         # role that renders and the role that decides, and its findings are advice a director
         # weighs rather than markup an author edits. The reviewer subagent, when it exists, reads

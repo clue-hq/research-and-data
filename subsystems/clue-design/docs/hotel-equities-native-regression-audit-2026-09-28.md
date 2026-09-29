@@ -247,3 +247,56 @@ in-navigation correction remains a separate requirement.
 
 No generation, live-page edit, provider call, service restart or push was made for
 this verification. The failed native page remains preserved as regression evidence.
+
+## Follow-up checkpoint: measured typography references
+
+The native web runtime now exposes `set_web_typography_reference` to the solo
+agent, director and author. It freezes explicitly selected source text roles from
+current native layout observations at 1440, 768 and 375px. Each mapping names an
+exact reference node/path and target node/path; equivalent roles are selected
+deliberately rather than inferred from a shared font family. The same node/path
+can be registered before a selected-element edit. Re-registration is idempotent;
+a later draft cannot reset an existing reference to its new styling.
+
+The comparison covers family, actual rendered glyph faces, weight, size,
+line-height, tracking, alignment, font synthesis, visibility and element tag.
+Copy and glyph counts may change. Missing, ambiguous, stale or wrong-page
+measurements remain incomplete. Registration is atomic and bounded (1–8 mappings
+per call, 24 per turn). Frozen references are archived with the run and the current
+comparison is included in `view("review")` and final evidence. This operation does
+not mutate the document, render it, or call a model/provider.
+
+If a declared reference mismatches or lacks current measurements, an attempted
+`accepted` finalization is downgraded to `completed_with_warnings`, preserving draft
+saving and the requested outcome for audit. There is no automatic regeneration or
+repair loop. Shared native prompts explicitly retain selected markup/CSS, layout,
+heading hierarchy, spacing, media framing and responsive rules; they direct copy
+changes through slots or exact text edits and require overflow/mobile-height checks.
+
+Verification:
+
+- A new regression first failed because the native reference tool was absent.
+  All 24 focused tests now pass, including real Chromium measurements showing a
+  typography mismatch followed by a matching local CSS repair at all three widths.
+- All 218 tests in the surrounding native typography, layout capture, solo mode,
+  account prompt, review gate, substrate and text-repair suites passed. The 19
+  solo/account-prompt tests passed again after the final tool-exposure assertions
+  and preservation wording changes. The new module and tests pass scoped Ruff;
+  the new module passes scoped mypy; `git diff --check` passes.
+- A read-only replay against this failed run's saved final layout observations
+  flags both chosen H2 and H3 roles at all three widths. It detects the actual
+  Regular-to-Medium face change, the H2 scale/weight drift, and the H3 switch from
+  the source serif heading face to the authored sans body face. The ignored replay
+  receipt is `approved-native-20260928/typography-reference-replay.json` under
+  `.local-setup/native-account-skills/`. This is retained-data verification, not a
+  new live capture or model run.
+
+Limits: this is a check of explicitly registered roles within one turn. It does
+not make the agent's choice of source correct, cover unregistered text, enforce
+all component structure, or persist a brand policy across turns. An undeclared
+reference does not block acceptance. Italic style and text-transform are not
+separately compared. Exact-copy tooling preserves source markup/CSS, but agent
+selection of that path and final content fit still require qualification. The
+missing canonical no-logo-in-navigation correction and its handoff remain open.
+No native generation, live workspace edit, service restart or push was made; the
+saved page and broader quality goal remain unqualified.
