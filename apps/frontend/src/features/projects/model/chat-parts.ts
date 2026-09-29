@@ -306,57 +306,6 @@ function toTaskPart(wire: z.infer<typeof TaskPartWireSchema>): ChatTaskPart {
   };
 }
 
-/**
- * One pollable research task — `ResearchTaskWire` on the durable
- * `GET …/threads/{id}/research-tasks` read (Slice C C2/C3).
- *
- * The `part` is the exact same shape the stream emits for the run, so a polled
- * snapshot and a streamed one meet as one card, merged on
- * `(runRef.objectId, revision)` — never as two cards that happen to look alike.
- */
-export interface PolledResearchTask {
-  /**
-   * The turn whose durable `turn-action:` receipt launched the run — where a
-   * re-materialized card belongs after a reload. `null` for a launch receipt
-   * that is not a turn action; such a task merges by run but is never placed.
-   */
-  turnId: string | null;
-  part: ChatTaskPart;
-  /**
-   * Fields landed vs. fields honestly given up on across the run's settled
-   * subjects; `null` before any coverage exists. Parsed off the wire; it has
-   * no designed slot on the card yet, so nothing renders it (visual-parity
-   * rule — the backend serves it, the frontend waits for a designed home).
-   */
-  fieldProgress: { completed: number; unresolved: number } | null;
-}
-
-const PolledResearchTaskWireSchema = TaskPartWireSchema.extend({
-  // The poll's whole point is the ledger's high-water mark: a snapshot without
-  // one cannot participate in the highest-revision-wins merge, so unlike the
-  // stream shape there is no default here.
-  revision: z.number().int().min(1),
-  field_progress: z
-    .object({
-      completed: z.number().int().min(0),
-      unresolved: z.number().int().min(0),
-    })
-    .nullable()
-    .optional(),
-  source_turn_id: z.string().nullable().optional(),
-});
-
-/** `{"tasks": [...]}` from the C2 route → the domain shape the poller holds. */
-export const ResearchTaskListResponseSchema = z
-  .object({ tasks: z.array(PolledResearchTaskWireSchema).default([]) })
-  .transform(({ tasks }): PolledResearchTask[] =>
-    tasks.map((wire) => ({
-      turnId: wire.source_turn_id ?? null,
-      part: toTaskPart(wire),
-      fieldProgress: wire.field_progress ?? null,
-    })),
-  );
-
 // --- plan ----------------------------------------------------------------
 
 const PlanStepWireSchema = z.object({

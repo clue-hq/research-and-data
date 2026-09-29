@@ -128,6 +128,37 @@ def test_unverified_finding_reaches_specialist_and_page_without_relationship_or_
             ResearchDisplayBlock.model_validate(page["display_block"])
             # Only the designed sections, restricted as their recipes say (ruling 2026-09-29).
             sections = {s["key"]: s for s in page["display_block"]["sections"]}
+            # Incident 2026-09-29: the agents' read tool served only the legacy display lane and
+            # refused current-lane pages with ``overview_not_written``. It must serve the page the
+            # account screen serves (same context selection), scoped by the caller's project or
+            # by the account's only project.
+            from clue_api.arv2.quality_read import select_quality_context
+            from clue_api.arv2.read_tools import read_account_research
+            from clue_config import Settings
+
+            shown = await select_quality_context(
+                conn, workspace_id=scope.workspace_id, subject_id=scope.account_id
+            )
+            assert shown is not None and shown.scope is not None and shown.context_id is not None
+            screen = await read_page(
+                conn, shown.scope, context_id=shown.context_id, page="overview"
+            )
+            expected = {
+                x["key"]
+                for x in screen["display_block"]["sections"]
+                if x.get("intro") or x.get("items")
+            }
+            assert expected
+            for project in (scope.project_id, None):
+                research = await read_account_research(
+                    conn,
+                    workspace_id=scope.workspace_id,
+                    account_entity_id=str(scope.account_id),
+                    section="overview",
+                    settings=Settings(_env_file=None),
+                    project_id=project,
+                )
+                assert {x.section_key for x in research.overview} == expected
             assert sections["watch-outs"]["restricted"]
             assert not {"research-notes", "research-findings"} & sections.keys()
             assert str(claim_id) in page["cited_claim_ids"]

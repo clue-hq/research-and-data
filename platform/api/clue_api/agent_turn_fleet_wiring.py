@@ -139,6 +139,7 @@ from clue_api.project_root_writer import (
     bridge_bound_artifact_reader,
     bridge_transaction,
 )
+from clue_api.turn_action import derive_turn_action_ref
 from clue_core import ContextAssembly, EntityId, ExecutionId, MemoryType, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import legs as design_leg_dal
@@ -453,7 +454,13 @@ class ProjectConversationTurnRunner:
             # answer while a leg is open, but it cannot see the future — an answer accepted
             # first and QUEUED BEHIND a turn that then opened a leg would otherwise reach the
             # design agent as canonical gate-answer JSON. The answer row is the durable proof.
-            if open_leg is not None and (
+            if open_leg is not None and open_leg.get("opened_by_turn_id") == str(turn_id):
+                # The head-of-abm turn that OPENED this leg is never a leg turn. Only its retry
+                # (a crash or lost lease after the leg was born) can arrive here, and it must
+                # replay as the committed head-of-abm turn it is; routed to the leg it collided
+                # with its own durable rows and failed (incident 2026-09-29).
+                open_leg = None
+            elif open_leg is not None and (
                 await gate_answer_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
                 is not None
             ):
@@ -548,7 +555,9 @@ class ProjectConversationTurnRunner:
         )
         if committed is not None:
             if committed.outcome.status is AgentExecutionStatus.COMPLETED:
-                await self._complete_recipe(execution_id)
+                await self._complete_recipe(
+                    execution_id, turn_id=turn_id, actor_id=submission.submitted_by_user_id
+                )
             log.info(
                 "agent_turn.context_replayed",
                 turn_id=str(turn_id),
@@ -978,7 +987,11 @@ class ProjectConversationTurnRunner:
                 stream=stream,
             )
             if result.outcome.status is AgentExecutionStatus.COMPLETED:
-                await self._complete_recipe(execution_id)
+                await self._complete_recipe(
+                    execution_id,
+                    turn_id=request.turn_id,
+                    actor_id=submission.submitted_by_user_id,
+                )
             return result
         finally:
             lease.release()
@@ -1312,7 +1325,9 @@ class ProjectConversationTurnRunner:
                 ):
                     return
 
-    async def _complete_recipe(self, execution_id: ExecutionId) -> None:
+    async def _complete_recipe(
+        self, execution_id: ExecutionId, *, turn_id: UUID, actor_id: str | None
+    ) -> None:
         """Close this turn's interaction gate so its execution reaches a terminal state.
 
         ``actor='human'`` matches the gate's declared authority in ``recipe0-stage0`` — the human
@@ -1327,11 +1342,22 @@ class ProjectConversationTurnRunner:
             actor="human",
             decision="complete",
         )
-        status = await self._drive(execution_id)
+        # The drive runs under the same authority the turn's own tool calls were journaled with
+        # (``turn-action:<turn_id>``), so a node the drive touches is never a replay under a
+        # different authority.
+        status = await self._drive(
+            execution_id, actor_id=actor_id, action_ref=derive_turn_action_ref(turn_id)
+        )
         if status is not ExecutionStatus.COMPLETED:
             raise RuntimeError("a completed conversation turn did not complete its C5 recipe")
 
-    async def _drive(self, execution_id: ExecutionId) -> ExecutionStatus:
+    async def _drive(
+        self,
+        execution_id: ExecutionId,
+        *,
+        actor_id: str | None = None,
+        action_ref: str | None = None,
+    ) -> ExecutionStatus:
         async with self._conn_factory() as conn:
             lease = await acquire_work_lease(
                 conn,
@@ -1345,6 +1371,8 @@ class ProjectConversationTurnRunner:
                 execution_id,
                 worker_id=_DRIVER_WORKER_ID,
                 lease_generation=lease.generation,
+                actor_id=actor_id,
+                action_ref=action_ref,
             )
             return result.status
         finally:

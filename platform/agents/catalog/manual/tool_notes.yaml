@@ -108,7 +108,7 @@ launch_arv2_discovery:
     target_count companies, and every company it checks joins this project's accounts with its fit
     and its gate verdicts. Each new ask is a new run that skips every company this project's
     earlier discoveries found. Read it back with read_discovery_run before proposing another.
-  skill_section: stage0-interview v40 section 7b, "Discover accounts for this project".
+  skill_section: stage0-interview v41 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
