@@ -829,9 +829,11 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 # `head-of-abm@v55` adds the three document skills — the procedures for the ICP,
                 # the personas and the plan, each written as a file under `project/` — so the
                 # committed surface names those too. `@v58` adds `code-execution`, the procedure
-                # for the sandbox it grants in the same version.
+                # for the sandbox it grants in the same version. `account-research-briefing` is
+                # the procedure for briefing an ARV2 account research run.
                 assert {item["name"] for item in manifest["skills"]} == {
                     "stage0-interview",
+                    "account-research-briefing",
                     "icp-authoring",
                     "persona-authoring",
                     "plan-authoring",
