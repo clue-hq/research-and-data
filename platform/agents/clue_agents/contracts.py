@@ -42,6 +42,7 @@ __all__ = [
     "ArtifactRef",
     "ContextBundleManifest",
     "ContextLayer",
+    "ContinuationRef",
     "ContextLayerManifest",
     "DelegatedFileGrant",
     "DelegationRequest",
@@ -239,6 +240,18 @@ class ResourceKind(StrEnum):
     PROFILE = "profile"
     PROMPT = "prompt"
     SKILL = "skill"
+
+
+class ContinuationRef(FrozenContract):
+    """The completed turn a Head-of-ABM turn continues, and the messages said since it.
+
+    The turn's graph resumes ``execution_id``'s saved state; ``gap_message_ids`` are the thread
+    messages stored after that turn that its state does not hold (spec 2026-09-29 §3.1).
+    """
+
+    turn_id: UUID
+    execution_id: ExecutionId
+    gap_message_ids: tuple[UUID, ...] = ()
 
 
 class ArtifactRef(FrozenContract):
