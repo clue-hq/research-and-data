@@ -68,7 +68,33 @@ def test_the_cost_reader_reads_the_completed_run_and_stays_silent_before_it() ->
     queued = HttpResponse(status=200, body=b'{"id": "agent_run_abc", "status": "queued"}')
     silent = exa_agent_cost_reader(queued)
     assert silent.cost_usd is None and silent.provider_request_id == "agent_run_abc"
+    assert silent.extras["usd_unpriced"] is True
     assert exa_agent_cost_reader(HttpResponse(status=500, body=b"nope")).cost_usd is None
+
+
+def test_a_quote_on_a_running_body_is_kept_but_never_booked_as_money() -> None:
+    """The live shape of 2026-09-29: Exa returns the effort's fixed ``costDollars`` (and a
+    projected ``usage``) on the create response and on every running poll. Booking it on each leg
+    turned a $1.30 onboarding into $39.50 on the ledger. A non-terminal body declares itself
+    unpriced — the quote stays on the row, the USD column stays NULL."""
+    running = HttpResponse(
+        status=200,
+        body=json.dumps(
+            {
+                "id": "agent_run_abc",
+                "status": "running",
+                "costDollars": {"total": 0.1, "agentCompute": 0.04, "search": 0.06},
+                "usage": {"agentComputeUnits": 0.4, "searches": 12},
+            }
+        ).encode(),
+    )
+    reading = exa_agent_cost_reader(running)
+    assert reading.cost_usd is None and reading.credits is None
+    assert reading.extras["usd_unpriced"] is True
+    assert reading.extras["quoted_cost_breakdown"]["total"] == 0.1
+    assert "cost_breakdown" not in reading.extras
+    assert reading.extras["usage"] == {"agentComputeUnits": 0.4, "searches": 12}
+    assert reading.provider_request_id == "agent_run_abc"
 
 
 def test_terminal_statuses_are_the_three_the_api_documents() -> None:
@@ -94,10 +120,13 @@ def _run_json(**overrides: object) -> bytes:
 
 
 def test_agent_run_creates_then_polls_until_terminal_and_settles_on_the_completed_body() -> None:
+    # The create response and the running poll carry Exa's quote of the effort price, exactly as
+    # the live API does; only the terminal body may turn it into a ledger charge.
+    quote = {"total": 0.025, "agentCompute": 0.01, "search": 0.015}
     transport = ScriptedTransport(
         [
-            HttpResponse(status=200, body=_run_json(status="queued")),
-            HttpResponse(status=200, body=_run_json(status="running")),
+            HttpResponse(status=200, body=_run_json(status="queued", costDollars=quote)),
+            HttpResponse(status=200, body=_run_json(status="running", costDollars=quote)),
             HttpResponse(
                 status=200,
                 body=_run_json(
@@ -139,8 +168,12 @@ def test_agent_run_creates_then_polls_until_terminal_and_settles_on_the_complete
     assert client_sleeps == [4.0, 4.0]
     assert len(run.costs) == 3 and run.cost is run.costs[-1]
     assert run.cost.cost_source == "metered"
-    assert run.costs[0].cost_source == "estimate"  # the create reserved the effort price
-    assert run.costs[0].cost_usd == Decimal("0.025")
+    # One run, one charge: the create and the running poll settle unpriced (NULL USD), so the
+    # three legs sum to the run's $0.025 and not to three times it. The create's reservation of
+    # the effort price lives on its pre-wire estimate row, not on its result row.
+    assert [leg.cost_source for leg in run.costs] == ["unpriced", "unpriced", "metered"]
+    assert run.costs[0].cost_usd is None and run.costs[1].cost_usd is None
+    assert sum((leg.cost_usd or Decimal(0)) for leg in run.costs) == Decimal("0.025")
 
     create_request = transport.requests[0]
     assert create_request.method == "POST" and create_request.url.endswith("/agent/runs")
