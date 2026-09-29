@@ -35,7 +35,9 @@ from .harness import _filesystem_permissions, _instrument
 from .materialize import materialize_agent_workspace
 from .models.schemas import VisualCritique
 from .platform_reads import (
+    PROJECT_CONTEXT_DIR,
     make_platform_read_tools,
+    write_project_design_context,
     write_seller_knowledge,
 )
 from .prompts_web import (
@@ -227,6 +229,8 @@ def _scaffold_web_workspace(tools: LumenWebTools, prompt: str) -> str:
     # agent (fs_backend's readonly_subdirs).
     if tools.config.platform_reads is not None:
         write_seller_knowledge(workspace, tools.config.platform_reads, record=tools.record)
+    if tools.config.platform_reads is not None or (workspace / PROJECT_CONTEXT_DIR).exists():
+        write_project_design_context(workspace, tools.config.platform_reads, record=tools.record)
     logger.debug("web_workspace_scaffolded", run_id=tools.run_id, workspace=str(workspace))
     return f"/{tools.workspace_scope_id}/workspace"
 

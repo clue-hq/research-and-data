@@ -164,6 +164,12 @@ fit, interaction behavior or overall quality. Preserve all applicable user const
 
 WEB_ACCOUNT_EVIDENCE = """ACCOUNT EVIDENCE AND DELIVERY MODE — applies whenever the brief names a
 target account/contact, even without an account card. Read web-account-personalization.
+When workspace/project-context/snapshot.json is present, read it before planning:
+it contains the original project instruction/decision files with source identifiers.
+Check status and preserve each statement's attribution; a delegated summary is not
+a verbatim user request. This is the opening-turn snapshot, not live project state.
+Current explicit user instructions govern; never call an old pinned decision a
+new instruction. Missing/unavailable files do not establish that no constraints exist.
 Use read_project_accounts, read_account_research and read_claims only when exposed on your role.
 Resolve the exact target from actual project membership before reading its research;
 an overview_not_written refusal calls for section="claims", not invented research.

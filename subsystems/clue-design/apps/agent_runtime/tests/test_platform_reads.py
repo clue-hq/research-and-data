@@ -273,6 +273,48 @@ def test_scaffold_writes_the_seller_tree_only_when_the_platform_injected_reads(
     assert not (workspace_root(without) / "seller").exists()
 
 
+def test_web_scaffold_preserves_project_sources_and_clears_stale_context(tmp_path):
+    from lumen_agent.fs_backend import AgentWorkspaceBackend
+    from test_web_substrate import _bare_tools
+
+    payload = {
+        "status": "available",
+        "source_turn_id": "opening-turn",
+        "source_pin_sha256": "0" * 64,
+        "is_live_project_view": False,
+        "files": [{"path": "instructions.md", "body_text": "No target logo in navigation."}],
+    }
+    reads = _Reads()
+    reads.project_design_context = lambda: payload
+    tools = _bare_tools(tmp_path)
+    tools.config = replace(tools.config, platform_reads=reads)
+    virtual = harness_web._scaffold_web_workspace(tools, "Make the account page.")
+    file = tools.trace_dir / "workspace/project-context/snapshot.json"
+    assert file.exists(), "The design workspace drops original project instructions"
+    assert json.loads(file.read_text()) == payload
+    backend = AgentWorkspaceBackend(tools.config.trace_dir)
+    result = backend.edit(virtual + "/project-context/snapshot.json", "No target", "Add target")
+    assert "read-only" in result.error
+    assert json.loads(file.read_text()) == payload
+
+    def unavailable():
+        raise _ReadError("read_failed")
+
+    reads.project_design_context = unavailable
+    harness_web._scaffold_web_workspace(tools, "Continue.")
+    failed = json.loads(file.read_text())
+    assert failed["status"] == "unavailable"
+    assert failed["files"] == []
+    assert "No target logo" not in file.read_text()
+
+    reads.project_design_context = lambda: payload
+    harness_web._scaffold_web_workspace(tools, "Continue.")
+    tools.config = replace(tools.config, platform_reads=None)
+    harness_web._scaffold_web_workspace(tools, "Continue without platform reads.")
+    assert json.loads(file.read_text())["status"] == "unavailable"
+    assert "No target logo" not in file.read_text()
+
+
 @pytest.mark.parametrize("web_solo", [False, True], ids=["trio", "solo"])
 @pytest.mark.parametrize("has_reads", [False, True], ids=["direct", "leg"])
 def test_web_account_reads_follow_injected_provider_and_authoring_role(

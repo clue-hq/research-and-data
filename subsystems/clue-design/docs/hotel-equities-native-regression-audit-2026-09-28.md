@@ -300,3 +300,39 @@ selection of that path and final content fit still require qualification. The
 missing canonical no-logo-in-navigation correction and its handoff remain open.
 No native generation, live workspace edit, service restart or push was made; the
 saved page and broader quality goal remain unqualified.
+
+## Follow-up checkpoint: original project sources in Design
+
+The original human turn was already present in the design envelope. The missing
+context was the original project instructions and decision records behind Head's
+expanded delegation. Design previously received the summary and seller knowledge,
+without a way to inspect those project source files.
+
+The platform adapter now exposes only the opening turn's pinned `instructions.md`
+and `decisions.md`. Their exact text, version/status, artifact key/digest, opening
+turn, pin digest and timestamp cross the existing injected adapter seam. Existing
+workspace, project and stored-artifact verification apply. No current-state read,
+research duplication, new model call or synthesized instruction is introduced.
+
+The native web scaffold writes a read-only `workspace/project-context/snapshot.json`.
+Unavailable reads clear the previous snapshot; they do not silently retain stale
+instructions. Prompts tell Design to inspect the source attribution and distinguish
+an opening-turn snapshot from current explicit user instructions. This makes the
+summary auditable; it does not make every recorded statement a human instruction.
+
+The initial regressions failed because the adapter and workspace file were absent.
+All 27 tests in the disposable database suite then passed, including exact bytes,
+scope and damaged/erased artifact refusals. The adapter passes scoped type checking.
+All 312 selected native runtime tests passed: 311 in the sandboxed invocation and
+the one synthetic Chromium measurement test on a retry outside the sandbox after
+macOS refused its process registration. Changed adapter/read modules and tests
+pass scoped Ruff; the harness import-order check passes. Existing unrelated harness
+lint warnings were not broadened into this fix.
+
+The no-account-logo-in-navigation correction is still missing from canonical native
+project context. This implementation neither invents that correction nor mutates
+past turn pins. It also does not prove that the model reads or obeys the source file.
+That correction must be recorded through the normal project context path before the
+next generation. Full selected-component structure and rendered quality remain
+separate acceptance requirements. No live generation, page edit, restart or push
+was performed for this checkpoint.
