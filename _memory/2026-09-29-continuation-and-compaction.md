@@ -92,3 +92,30 @@ old flat 41,472. No `continuation_fallback` in worker logs. Compaction proof (pa
   (`allowed_msgpack_modules`) before a LangGraph upgrade, or continuation silently turns fresh.
 - `.env` restored to `CLUE_AGENT_CONTEXT_WINDOW_TOKENS=` (parity with .env.example); workers
   restarted 22:59. One old worker (PID 962, 50k) was left draining a design-leg turn it had claimed.
+
+## Stop left the design leg `running` (live, 2026-09-29 ~23:08) — fixed `39553a036`
+
+Stopping a design-leg turn cancelled its run and recorded the turn `cancelled/stop_requested`,
+but nothing moved the leg out of `running`: the chat showed "Agent is designing", queued every
+later message, and a second Stop had nothing to cancel. Only crashes (`_contain_crash`) handed a
+leg back; the Stop path (`_finish_stop` → `DesignLegTurnRunner.await_stopped_turn`) never did.
+Fix: `await_stopped_turn` now hands a running leg back with its `leg.awaiting_user` frame. Test
+`test_a_stopped_design_turn_hands_the_leg_back` (RED→GREEN). The live leg `2ecb9600…` was handed
+back by a one-off using the same transition; workers restarted 23:16. Pre-existing, unrelated
+failure found: `test_p36_leg_resilience_db::test_a_worker_killed_after_the_design_work_landed_…`
+(asserts a crashed leg stays `running`, contradicted by the 2026-09-20 crash hand-back).
+
+## LangGraph "Deserializing unregistered type" — research (no change made yet)
+
+Why: CVE-2026-28277 / GHSA-g48c-2wqr-h844 (Check Point, disclosed 2025-11) — msgpack checkpoint
+decoding could rebuild arbitrary Python objects, so anyone able to write checkpoint bytes could
+execute code; chained with a SQLite-checkpointer SQL injection (CVE-2025-67644) it was RCE. Also
+CVE-2025-64439 (the "json" fallback mode). Our stack: langgraph 1.2.6, checkpoint 4.1.1, Postgres
+saver 3.1.0 — patched, running PERMISSIVE (allows all, warns).
+What LangGraph offers instead of a hand list: strict mode `LANGGRAPH_STRICT_MSGPACK=true`, which
+at graph compile time derives the allowlist from the graph's state schema (walks TypedDict /
+Pydantic fields / enums / dataclasses) plus a curated core set. Our `ClueDeepAgentState` types
+`constitution: AgentConstitution`, `context_manifest: ContextBundleManifest`, so every warned
+type is reachable. Escape hatch for types stored under `Any`: `JsonPlusSerializer(
+allowed_msgpack_modules=[(module, name), …])` on the saver's serde. Owed: flip strict on in
+`.env`/`.env.example`, run the suites, and add explicit entries only for anything blocked.
