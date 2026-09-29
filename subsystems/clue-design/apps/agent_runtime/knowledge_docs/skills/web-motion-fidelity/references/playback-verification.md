@@ -9,10 +9,14 @@ Read this before claiming motion or interaction fidelity. Keep the evidence tied
 | Tool | Observes | Does not prove |
 |---|---|---|
 | `render_web_preview()` with `view("preview:1440")`, `view("preview:768")`, `view("preview:375")` | Static responsive output and diagnostics | Animation timing, complete video playback, or real user control wiring |
-| Returned `state_captures`, viewed by `view("state:<n>")` | Bounded dialog/accordion/nav/tab states | Complete interactions: dialogs use `showModal`, accordions/nav are forced open; the tab probe clicks the second tab only at 1440 |
+| Returned `state_captures`, viewed by `view("state:<n>")` | Active-page states; native tabs and eligible captured CSS-radio image groups use actual clicks at 1440/375, selected-panel/visible-image checks and bounded Tab-entry/Left/Right keyboard observations | Original source controllers, source-to-image semantic correctness, full accessibility or normal-motion timing. Dialogs use `showModal`; accordions/nav are still forced open |
 | `review_cloned_page()` | Desktop/phone, five scroll positions, console and dead-height checks, reduced-motion snapshot, source comparison where placeable | A recording, all trigger paths, a full loop, frame advancement, keyboard/touch access, or every carousel/tab state |
 
 Read omitted-state ids, failures, abstentions and source-comparison limits. No findings is not evidence for observations that did not occur. `unchanged: true` reuses prior still images; repeating the call on an unchanged document does not sample a later animation frame.
+
+Switcher observations are bounded to the first two groups and four states per group at each width, in reduced-motion mode. `state_captures_omitted` and `state_capture_failures` identify capped, unsupported or failed observations. Form-owned radios are not operated. Arbitrary custom JavaScript, carousels and other control patterns are not automatically discovered. A group absent from the inventory is not proof that the source had no controls: reconcile source requirements with what was tested.
+
+Switcher images are component-region captures, not full-page images. Inspect their selection/media metadata and `keyboard.status` as well as their pixels; keyboard entry may remain unverified even when clicking works. `normal_motion` and `source_mapping` remain unverified. Loaded images and an observed transition do not establish that the image belongs to the right source feature. Finite transitions must settle within the probe bound; long transitions become an explicit observation failure. An unchanged render reuses these observations and failures rather than spending on another identical probe.
 
 ## Minimum evidence by behavior
 

@@ -139,6 +139,7 @@ from .view import (
 from .web_review_evidence import TILE_HEIGHT as _PREVIEW_TILE_HEIGHT
 from .web_review_evidence import TILE_OVERLAP as _PREVIEW_TILE_OVERLAP
 from .web_review_evidence import ReviewObservations, tile_count
+from .web_interaction_capture import capture_switchers
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -333,10 +334,6 @@ _STATE_WIDTHS = (1440, 375)
 # two extra Playwright pages); any beyond the cap are reported, never dropped
 # silently.
 _MAX_DIALOG_CAPTURES = 3
-
-# At most this many tabs components are captured per render (each costs one extra
-# Playwright page); any beyond the cap are reported, never dropped silently.
-_MAX_TABS_CAPTURES = 2
 
 # How many asset ids a view("asset:…") error string names per source (document
 # registry / kit manifest) before it says "+N more". A harvested brand kit
@@ -666,34 +663,47 @@ def _clears_style_reference_floor(record: JsonObject) -> bool:
     return max(sides) >= _BRAND_REFERENCE_MIN_LONG_SIDE_PX
 
 
-def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
+def _interactive_capture_plan(web_doc: JsonObject, page_id: str | None = None) -> JsonObject:
     """Pure scan of a WebDoc for the interactive components that need a STATE
     capture. Factored out of render so it is unit-testable without Playwright.
 
     Returns ``{"dialogs": [node_id, ...], "has_accordion": bool, "has_nav":
     bool, "tabs": [node_id, ...]}``:
     - ``dialogs`` — every dialog component's node id (opened → screenshot), in
-      page-then-node order across all pages.
+      reachable-node order on the selected page (first page when not specified).
     - ``has_accordion`` — any accordion component exists (details expanded →
       screenshot).
     - ``has_nav`` — any nav_menu component exists (hamburger opened →
       screenshot).
     - ``tabs`` — every tabs component's node id that has at least two children
-      (a single-tab strip has nothing to switch to), same page-then-node order.
+      (a single-tab strip has nothing to switch to), same reachable-node order.
 
     A node's role is its ``component`` value when ``kind == "component"``."""
     dialogs: List[str] = []
     has_accordion = False
     has_nav = False
     tabs: List[str] = []
-    for page in web_doc.get("pages") or []:
+    pages = web_doc.get("pages") or []
+    for page in pages:
         if not isinstance(page, dict):
+            continue
+        if page_id is not None and page.get("id") != page_id:
             continue
         nodes = page.get("nodes") or {}
         if not isinstance(nodes, dict):
             continue
-        for node_id, node in nodes.items():
-            if not isinstance(node, dict) or node.get("kind") != "component":
+        pending = [page.get("root")]
+        seen: set[str] = set()
+        while pending:
+            node_id = pending.pop(0)
+            if not isinstance(node_id, str) or node_id in seen:
+                continue
+            seen.add(node_id)
+            node = nodes.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            pending.extend(node.get("children") or [])
+            if node.get("kind") != "component":
                 continue
             component = node.get("component")
             if component == "dialog":
@@ -705,6 +715,7 @@ def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
             elif component == "tabs":
                 if len(node.get("children") or []) >= 2:
                     tabs.append(node_id)
+        break
     return {
         "dialogs": dialogs,
         "has_accordion": has_accordion,
@@ -1095,6 +1106,7 @@ class LumenWebTools:
         # Interactive STATE captures from the latest render (dialog-open,
         # accordion-expanded), reset each render; view("state:<n>") indexes here.
         self._state_captures: List[JsonObject] = []
+        self._state_capture_failures: List[JsonObject] = []
         # Cached @font-face data-URL CSS (fonts cannot change mid-run). The
         # sentinel distinguishes "not computed" from a resolved None.
         self._font_face_css_cache: Any = _FONT_CSS_UNSET
@@ -2577,6 +2589,8 @@ class LumenWebTools:
         self.page_id = clean_id
         self._preview_by_width = {}
         self._state_captures = []
+        self._state_capture_failures = []
+        self._state_capture_limits = {}
         self.record(
             "author",
             "web_page_added",
@@ -2627,6 +2641,8 @@ class LumenWebTools:
             # The standing previews are pixels of a page that no longer exists.
             self._preview_by_width = {}
             self._state_captures = []
+            self._state_capture_failures = []
+            self._state_capture_limits = {}
         self.record(
             "author",
             "web_page_removed",
@@ -2671,6 +2687,8 @@ class LumenWebTools:
         # between-renders edit budget opens again.
         self._preview_by_width = {}
         self._state_captures = []
+        self._state_capture_failures = []
+        self._state_capture_limits = {}
         self._mutations_since_render = 0
         self._round_budget_event_recorded = False
         self.record(
@@ -9743,6 +9761,8 @@ class LumenWebTools:
                     "status": "ok",
                     "preview_paths": paths,
                     "state_captures": list(self._state_captures),
+                    "state_capture_failures": list(self._state_capture_failures),
+                    "state_captures_omitted": self._state_capture_limits.get("omitted", {}),
                     "diagnostics": [],
                     "unchanged": True,
                     "media_readiness": dict(self._preview_media_readiness),
@@ -9820,6 +9840,7 @@ class LumenWebTools:
             "status": "ok",
             "preview_paths": paths,
             "state_captures": list(self._state_captures),
+            "state_capture_failures": list(self._state_capture_failures),
             "diagnostics": diagnostics,
             "media_readiness": dict(self._preview_media_readiness),
         }
@@ -9840,6 +9861,7 @@ class LumenWebTools:
         self._state_capture_limits = {
             "version": self._doc_version, "page_id": self.page_id,
             "error": state_capture_error, "omitted": omitted_nonempty,
+            "failures": list(self._state_capture_failures),
         }
         if omitted_nonempty:
             result["state_captures_omitted"] = omitted_nonempty
@@ -9942,12 +9964,13 @@ class LumenWebTools:
         the base-preview loop PROPAGATES (so render's dead-browser retry can
         relaunch and rerun the whole pass); a state-capture failure degrades to
         a recorded warning + a `state_capture_error` string and NEVER voids the
-        base previews. `omitted` is ``{"dialogs": [...], "tabs": [...]}``."""
+        base previews. `omitted` is ``{"dialogs": [...], "switchers": [...]}``."""
         browser = self._browser_handle()
         paths: List[str] = []
         # Reset per pass so a dead-browser retry does not accumulate stale
         # captures on top of a half-finished first attempt.
         self._state_captures = []
+        self._state_capture_failures = []
         self._preview_media_ready = False
         self._preview_media_readiness = {}
         for width in _PREVIEW_WIDTHS:
@@ -9998,19 +10021,18 @@ class LumenWebTools:
         accordion exists, per width one FULL-page screenshot is taken with every
         NON-nav `<details>` forced open (a nav hamburger is captured separately).
         If a nav_menu exists, ONE capture at 375px opens just the nav dropdown
-        (a VIEWPORT screenshot — the dropdown is viewport-anchored). Per tabs
-        component (first _MAX_TABS_CAPTURES only), ONE capture at 1440px clicks
-        the SECOND tab and takes a FULL-page screenshot.
+        (a VIEWPORT screenshot — the dropdown is viewport-anchored). Native tabs
+        and eligible source CSS-radio image groups receive bounded actual-click,
+        keyboard and component-region evidence at both state widths. They do not
+        inherit the forced-state semantics of dialog/accordion captures.
 
-        Returns ``{"dialogs": [...], "tabs": [...]}`` — the ids beyond each cap
-        (omitted, never dropped silently)."""
-        plan = _interactive_capture_plan(self.web_doc)
+        Returns ``{"dialogs": [ids], "switchers": [observations]}`` for omitted
+        controls/states; failed observations live in `_state_capture_failures`."""
+        self._state_capture_failures = []
+        plan = _interactive_capture_plan(self.web_doc, self.page_id)
         dialogs = plan["dialogs"]
         captured_dialogs = dialogs[:_MAX_DIALOG_CAPTURES]
         omitted_dialogs = dialogs[_MAX_DIALOG_CAPTURES:]
-        tabs = plan["tabs"]
-        captured_tabs = tabs[:_MAX_TABS_CAPTURES]
-        omitted_tabs = tabs[_MAX_TABS_CAPTURES:]
 
         for node_id in captured_dialogs:
             for width in _STATE_WIDTHS:
@@ -10084,32 +10106,12 @@ class LumenWebTools:
                 }
             )
 
-        for node_id in captured_tabs:
-            # Switch to the SECOND tab (the first is the default panel) at
-            # desktop width and capture the full page.
-            page = browser.new_page(viewport={"width": 1440, "height": 1200})
-            page.set_content(html, wait_until="load")
-            page.wait_for_timeout(250)
-            page.evaluate(
-                "(id) => { const root = document.querySelector("
-                "'[data-node-id=\"' + id + '\"]'); const tabs = root ? "
-                "root.querySelectorAll('[role=\"tab\"]') : []; "
-                "if (tabs[1]) tabs[1].click(); }",
-                node_id,
-            )
-            page.wait_for_timeout(250)
-            dest = iter_dir / f"state_1440_tabs_{node_id}.png"
-            self._preview_media_readiness[f"tabs:{node_id}"] = prepare_capture_media(page)
-            page.screenshot(path=str(dest), full_page=True)
-            page.close()
-            self._state_captures.append(
-                {
-                    "kind": "tab-selected",
-                    "node_id": node_id,
-                    "width": 1440,
-                    "path": str(dest),
-                }
-            )
+        nodes = self._home_page().get("nodes") or {}
+        native_groups = [{"node_id": node_id, "count": len(nodes[node_id].get("children") or [])}
+                         for node_id in plan["tabs"]]
+        switchers = capture_switchers(browser, html, iter_dir, native_groups, _STATE_WIDTHS)
+        self._state_captures.extend(switchers["captures"])
+        self._state_capture_failures.extend(switchers["failures"])
 
         if omitted_dialogs:
             self.record(
@@ -10121,17 +10123,17 @@ class LumenWebTools:
                 ),
                 payload={"omitted_dialog_ids": omitted_dialogs},
             )
-        if omitted_tabs:
+        if switchers["omitted"] or switchers["failures"]:
             self.record(
                 "orchestrator",
-                "web_state_capture_omitted",
+                "web_switcher_capture_incomplete",
                 output_summary=(
-                    f"{len(omitted_tabs)} tabs component(s) beyond the "
-                    f"{_MAX_TABS_CAPTURES}-capture cap were not captured"
+                    f"{len(switchers['omitted'])} omitted and "
+                    f"{len(switchers['failures'])} failed switcher observations"
                 ),
-                payload={"omitted_tabs_ids": omitted_tabs},
+                payload={"omitted": switchers["omitted"], "failures": switchers["failures"]},
             )
-        return {"dialogs": omitted_dialogs, "tabs": omitted_tabs}
+        return {"dialogs": omitted_dialogs, "switchers": switchers["omitted"]}
 
     def _view_node(self, node_id: str) -> list:
         """Read exactly one active-page node from this turn, never durable state."""
@@ -10445,9 +10447,8 @@ class LumenWebTools:
 
         previews = {str(width): describe(f"preview:{width}", self._preview_by_width.get(width))
                     for width in _PREVIEW_WIDTHS}
-        states = {str(index): {**describe(f"state:{index}", capture.get("path")),
-                              "kind": capture.get("kind"), "node_id": capture.get("node_id"),
-                              "width": capture.get("width")}
+        states = {str(index): {**copy.deepcopy(capture),
+                              **describe(f"state:{index}", capture.get("path"))}
                   for index, capture in enumerate(self._state_captures)}
         gaps = [{"code": "review.unseen_pixels", "target": row["target"],
                  "status": row["status"], "next_target": row.get("next_target")}
@@ -10477,7 +10478,7 @@ class LumenWebTools:
             gaps.append({"code": "review.preview_unsettled"})
         limits = self._state_capture_limits
         if limits.get("page_id") == self.page_id and limits.get("version") == self._doc_version:
-            if limits.get("error") or limits.get("omitted"):
+            if limits.get("error") or limits.get("omitted") or limits.get("failures"):
                 gaps.append({"code": "review.state_capture_incomplete"})
         else:
             limits = {}
