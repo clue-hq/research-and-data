@@ -1,0 +1,139 @@
+# Native website cross-run audit — 2026-09-28
+
+Status: historical failure analysis and implementation priorities. The page-quality goal is **not achieved**. No new generation or live-page repair was performed for this audit.
+
+## Scope and method
+
+Read the model-completion/tool-request records, relevant returned tool evidence, saved plans, document snapshots, review receipts and rendered images for **21 turns across five design sessions**. This covers the initial account, HE Labs and named-contact pages, their repairs, the later simple-prompt page and its revision, and the latest failed validation page. It excludes the older baseline and other workspace experiments. Some trace input summaries are truncated and some intermediate tool results are not fully saved; the frozen handoffs, authoring arguments and available evidence manifests fill only the portions they actually contain. This is not a claim to possess every original provider input or tool output.
+
+The two parallel read-only reviews covered the original account session and the HE Labs/contact sessions. The parent reviewed both later sessions, recomputed all counts, spot-checked the raw records behind the incorrect acronym, font and source-CSS findings, and inspected saved latest-run scroll captures. No new model/provider generation, network research, database query/write, ingestion, runtime restart, publication or push was performed. Saved previews establish historical output, not current browser behavior.
+
+There are **8,970 JSONL records, 448 design model-completion/usage receipts, 1,180 requested tool calls, 34 requested preview renders and 11 requested clone reviews** in this bounded set. Recorded design-model cost is **$38.749376**, including three canceled/failed turns. This excludes Head-of-ABM cost, other provider costs and earlier experiments; it is not total project spend. Requested calls are not all proven executions. Canceled requests and successful transport envelopes containing application errors are counted separately from successful mutations when analyzing causality.
+
+| Session / document family | Turns | Model receipts | Requested tools | Recorded design cost | Phone output, initial → last saved |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Original account | 8 | 162 | 380 | $13.813476 | 375×7635 → 375×7986 |
+| HE Labs | 5 | 91 | 246 | $7.776154 | 375×4108 → 375×3591 |
+| Named contact | 5 | 103 | 255 | $8.338828 | 375×3828 after first repair → 375×3824 |
+| Later simple-prompt page and revision | 2 | 58 | 187 | $5.700662 | 375×10799 → **379**×7464 for a requested 375px capture |
+| Latest validation | 1 | 34 | 112 | $3.120256 | 375×19447 → 375×19352 within the run |
+
+Page height alone is not a quality score. Here the saved copy and pictures show repeated arguments, oversized captured sections and a large footer; the measurements corroborate the user's endless-scroll complaint. These images must not be confused with the earlier manual browser measurement of approximately 19.6k pixels.
+
+## Evidence addressing the user's complaints
+
+### 1. The page brief was already over-prescribed before design started
+
+Frozen handoffs appended a simple human request after an expanded strategy brief specifying header/logo treatment, pilot framing, demo destination and page structure. The latest design plan copied those choices into its requirements. The resulting page was partly optimizing an agent-authored prescription rather than choosing the smallest useful account story.
+
+Evidence: frozen conversation histories for sessions H/B below; latest L/log line 524 contains the written plan, including the header, walk and checklist prescriptions. This is not evidence that the model never received the original request: it did.
+
+**Implication:** improving downstream copy instructions alone cannot correct an upstream brief treated as user authority. The provenance checkpoint described below addresses this ambiguity, but its behavioral effect has not been validated in a new run.
+
+### 2. Research was available, but grounding failed in different ways
+
+- **Original account:** overview pages were read, but the first two runs did not read seller/product files. In a revision, “ITR” became “Marriott Instant Travel Response”; the page added rebate, response-time and product configuration/pricing assertions. The imported overview did not establish that acronym expansion, and advisory recommendations were promoted into capability promises. A subsequent turn fetched sources, recovered “Intent to Recommend” and removed the unsupported assertions. Evidence: A/run_bd532…/log lines **146,155**; corrective A/run_d1e5….
+- **Initial contact page:** research pagination stopped before the named-contact/buying-committee slice. The role came primarily from the brief. The composed page exposed internal statements about imported company materials and what the memo was not. Evidence: B/run_4dcaf…/log **67,410**, plus `native-v3` research receipts.
+- **Latest page:** all three overview pages and seller files for agents, inbox, operator and workflows were read. Its weak personalization therefore cannot be explained by a total lack of context. The agent added five request-path steps, retained multiple product bands, and added a six-part pilot checklist. Much of this repeats the same mechanism and could apply to many hotel operators. Evidence: L/log **91,158,197,524,712,730** and the final document.
+
+The last saved HE Labs grounding has no citations; the contact page's single grounding citation is for its font asset. This is a missing persisted argument-to-evidence record, **not proof that no research was read**.
+
+**Implication:** each visitor-facing claim needs its account evidence and seller capability distinguished from a proposed use case. Each section must advance a different reader decision. Contact personalization needs the relevant contact slice and permitted professional insight; inserting a person's name or turning a research disclaimer into copy is insufficient.
+
+### 3. Reuse preserved the wrong things and discarded useful ones
+
+The system is reusing captured HTML/CSS/media and authoring derivatives or typed components. It is **not recovering and importing the original website's React component source and JavaScript controllers**.
+
+Initial HE Labs planned source variants, then abandoned them after inspecting approximately 201k characters of feature CSS and 190k of FAQ CSS. It kept the source FAQ questions, unslotted titles and inert controls to avoid reconstructing the stylesheet. Evidence: H/run_70d…/log **393** and trace **32–33,59–60**.
+
+In the simple-prompt create, plan maintenance explicitly called inert tabs an acceptable first state and avoided a switcher because that resembled a prior page. In its revision a native tab reconstruction was built. The latest independent run reverted to four static blurbs plus one screenshot after inspection reported `controller_not_retained`, four buttons and three hidden frames. Evidence: S/run_b4bd…/log **864,961**; S/run_e1c…/log **317,494**; L/log **532,587,985**.
+
+An earlier account revision also built four CSS-radio image controls (A/run_bd532…/log **164,399**), and the next user correction acknowledged that they worked. That is useful partial success. It would be inaccurate to say no interaction was ever built. The defect is incomplete verification and failure to preserve the behavior in later compositions, alongside the missing original controller and layout fidelity.
+
+**Implication:** these were conscious fallback decisions, not merely an animation failing after otherwise correct generation. The source-preservation rule and repair ladder must preserve appearance without treating static behavior or untouched generic copy as fidelity success. Missing controller evidence should route to the interaction skill and an implemented reconstruction; a fallback must remain explicitly below the requested behavior target.
+
+### 4. Typography and image framing were reconstructed by guesswork
+
+The contact repairs tried a `seasonFont` family and then `var(--font-season-family)` with an Instrument Sans fallback, while reporting a Season heading match. The actual captured font was registered only in the final scoped repair. Even then new type sizes/weights were chosen independently. Evidence: B/run_8f603…/log **67,202,311**; B/run_139cec…/trace **15–19**.
+
+The latest run had real font assets but used new 32px/500 headings alongside captured 48px/400 source headings. It also put already-composited product images inside another aurora background with padding. That produces the visible extra rim. Transparent product UI requires composition; a finished product/background image generally does not require another frame. Evidence: L/log **650,678,685,694,712,730**; saved `compose-*.html`; latest `review_1/walk_scroll_025.png` and `walk_scroll_050.png`.
+
+The “missing text” complaint is not all absent content. The five request-path text blocks are present, but short copy is vertically centered beside much taller fixed image stages. Combined with repeated large source bands this creates unproductive whitespace. Static source reveal/hidden states are a separate problem and must not be diagnosed from this geometry alone.
+
+**Implication:** reuse a measured type scale, loaded font face, crop, asset composition type and responsive geometry. “Use the brand font/background” is too ambiguous to enforce the intended result.
+
+### 5. Several repair loops treated symptoms before locating the constraint
+
+One HE Labs revision rendered five times while changing broad shared classes. The actual fixed-height hero constraint (`md:h-[692px]`) was identified later, after enlarged copy collided with the CTA at tablet width. Evidence: H/run_55d…/log **178,292,560** and H/run_7a358…/log **68,115**.
+
+An account repair meant for the first Inbox product panel instead replaced the charcoal feature panel, requiring a second prompt naming the first panel. A shared multi-page correction was also routed into each single-document session. One canceled account run planned sibling routes but ended before its requested compose call executed; it did not create those routes. The canceled contact turn did record mutations, but current persisted cancellation/resume continuity was not queried and must not be called a confirmed persistence bug.
+
+**Implication:** repair requests must name the actual document/page/node and expected defect. Inspect bounding boxes, winning CSS declarations and current document version before spending on replacement. Parallelism should divide independent artifacts only after routing scope is explicit.
+
+### 6. Review success was broader than the evidence
+
+- Full-page screenshots were often the only images viewed. A phone screenshot thousands of pixels tall is an overview, not legible inspection of every section.
+- The latest run inspected only desktop strips 0/9/11 and phone strip 0 on the first render. After mutation it inspected desktop strip 9 only, with no final phone/tablet strips. The source comparison was unavailable because the reference was 1920px and the comparison render 1440px; the previous clone review was stale after the last edit. Exact replay: `native-skill-repair-validation/review-observation-replay.json`.
+- Initial source tabs had zero state captures. Final HE Labs created state captures without viewing them in that turn. The contact CSS-radio switcher produced no state captures. The later simple revision saw only the default and one selected native-tab state, not all four at desktop and phone.
+- Current `_capture_states` clicks `tabs[1]` at 1440px, silently does nothing if absent, then records `tab-selected` without checking selected state. `_interactive_capture_plan` scans all pages although a render is for one active page. CSS-radio controls are not covered by this typed-component scanner. These are confirmed **current code gaps**, not just historical model mistakes.
+
+Evidence: `tools/web_substrate.py` around **669,9991,10084–10115**; S/run_e1c…/log **368,439**; H/run_7a358…/trace **28–32**; B/run_139cec…/trace **25–29**; L/log **847,877,916,958,971,985**.
+
+An empty `broken_clones` list or media-readiness success does not prove meaningful content is visible. The background-only mobile Inbox panel had one ink node and was reported as fully occupied. Self-written “STRICT checked” statements are not independent acceptance.
+
+## Why the cycle consumed time without converging
+
+1. **Repeated broad retrieval.** The simple create made 14 clone searches. Three differently worded source queries returned the identical first 20 fragment IDs. There were 44 source matches, but the tool caps at 20 and has no offset. Empty queries returned eight authored derivatives in both later creates; `role=features` initially returned authored compositions while important captured bands were classified elsewhere. This increases rediscovery and selection ambiguity. The current result includes lineage, but does not rank by proven output quality.
+2. **Large source/context payloads.** The latest run reached 164,945 input tokens before building the page. Its compaction took 53.4 seconds and initial plan write 70.5 seconds. The simple create spent 92.3 seconds in two compactions. These are logged model-call durations, not additional wall time to add to the run total.
+3. **Narrative state drift.** The original account compaction said no plan had been written after a successful plan write, and forgot relevant failure/assembly state. Reads were repeated. Evidence: A/run_0d643…/log **365,373,478,484,499,590**. Its final accumulated plan is 319 lines/28,051 characters with eight amendments, canceled sibling plans and superseded IDs/assertions. The last small copy/type request still used 24 model calls and 51 tool requests. A compact artifact/version/evidence ledger is more reliable than re-summarizing a large conversation.
+4. **Repair ambiguity.** Broad prompts, wrong-node changes, typography guesses and preserved dead controls caused follow-up paid turns. More concurrent generators would amplify these mistakes.
+5. **Weak stopping evidence.** The system could finish with warnings and an optimistic summary despite visible failures. Rendering and file delivery were repeatedly treated as progress toward quality without showing that the user's actual complaints had been resolved.
+
+The 21-turn cost is historical evidence, not an estimate of future savings. No quantitative savings claim follows from a prompt change alone.
+
+## Implementation order, tied to these failures
+
+These are runtime/tool improvements plus focused updates to the existing skill families. Creating many more prose skills without fixing their tools would repeat the failure.
+
+| Priority | Change in Clue | Existing skills to strengthen | Offline acceptance before a new paid run |
+| --- | --- | --- | --- |
+| 1 | Trustworthy interaction and review receipts: active-page scope, actual activation and state assertion, all required panel states at desktop/phone within explicit bounds, failures/omissions rather than false receipts; distinguish CSS-radio/custom/native implementations | `web-motion-fidelity`, `review-website`, source readiness | Reproduce a dead/missing control, four tabs, wrong-page component and CSS-radio example; assert selected control, correct visible image/panel, keyboard operation and scope; replay stale/missing review coverage |
+| 2 | Reusable source contracts and bounded edits: real font-face origin, source type hierarchy, responsive constraints, asset already-composited vs transparent, targeted card/FAQ/CTA text replacement preserving unaffected bytes; interaction reconstruction capability | `repair-cloned-sections`, `web-product-story`, `web-media-composition`, `custom-components` where actually required | Replay the real tablet fixed-height collision and mobile-hidden product issue; verify at 767/768/769 and phone; compare type and framing against matching source widths; original assets/lineage preserved |
+| 3 | Account argument and CTA contract: attributed requirement vs agent choice; relevant research pages consumed; fact/proposal/capability separated; each section earns its place; one primary action label/destination with clearly different secondary actions only when useful | `web-account-personalization`, `web-contact-personalization`, `web-decision-material`, `conversion-copywriting`, campaign workflow | Saved research cannot become unsupported promises; no internal caveats in visitor copy; account, team and person variants answer distinct decisions; source slots do not leave incompatible CTA labels or generic copy |
+| 4 | Retrieval and continuity: source/origin/lineage filters, bounded pagination, compact selected-section records, current document/version and mutation outcomes across cancellation/compaction | source readiness, planning, scoped editing | More than 20 matching sections remain reachable without repeated identical queries; unchanged evidence reused; canceled/resumed turn starts from the actual persisted version; no sibling-page writes from a single-page assignment |
+| 5 | One native candidate after the no-new-run restriction is lifted; inspect before fan-out | Review and account/contact families together | Full current desktop/tablet/phone readable inspection; all four panel states and keyboard behavior; loaded fonts, bounded crop and no accidental overflow; a useful, nonrepetitive evidence-backed account story and consistent action; user quality judgment |
+
+Priority 1 restores trustworthy measurement; it does not itself make a page attractive. Priority 2 supplies capabilities the author lacked or guessed. Priority 3 turns research into a purposeful page. Priorities 1–3 must converge on one source-faithful component/story example before more page generations. These checks are acceptance evidence for this work, **not new Stage-0/readiness gates that block platform turns**.
+
+For this target the editorial direction should be a concise account-relevant opening, one clear portfolio-operation argument, a working product demonstration supporting that argument, a useful decision section, and one justified next step. This is a revisable outline, not a universal section-count template, forced demo/pilot CTA, or permission to invent buyer-specific pain.
+
+## Already changed locally versus still owed
+
+The historical failures above precede these local checkpoints:
+
+- `b6d55ef2`: bounded source CTA-label/href repair and broader semantic heading/CTA slots. Does not retrofit all older fragments or solve every card/FAQ adaptation.
+- `95c6101d`: version-bound review observation ledger, stale/unseen evidence and comparison limits. It records coverage; it does not judge design or prevent unsupported agent verdicts.
+- `ef7f02ec`: distinguishes agent-authored handoff choices from actual user requirements; aligns planning instructions. Offline probes did not establish a quantitative behavioral improvement.
+
+Those checkpoints have focused offline tests. None has yet demonstrated an improved native Hotel Equities page. All-state interaction verification/reconstruction, exact source typography/media contracts, compact evidence-to-copy planning, retrieval/continuity work and native visual acceptance remain open. No migration or standalone page implementation is needed to continue the next mechanical slice.
+
+## Evidence locations and run index
+
+All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.
+
+- A: `.deepagent-workspace/sessions/dsess_93439b51246755fe98c834640c0900f6/turns/`
+- H: `.deepagent-workspace/sessions/dsess_72552d165df95c238e06af9f4ffa1581/turns/`
+- B: `.deepagent-workspace/sessions/dsess_79eec2f19f535dc1ba8c9a4adb4af1a9/turns/`
+- S: `.deepagent-workspace/sessions/dsess_2c2741c027db5344badce796469dcbd7/turns/`
+- L: `.deepagent-workspace/sessions/dsess_ab7b0037ce5b5601ac94fb13f2f65055/turns/run_193b5f759ebc5b9694e8aeb34529450b/`
+
+| Family | Exact run IDs included |
+| --- | --- |
+| A | `run_0d6436028cac55ae9f474fa8924bba6f`, `run_bd532e62f99458bfabe9a3071d1f32f3`, `run_d1e5ef269d6d56efab5c64c8f0913158`, `run_5011ec358e9255c4ba87622af3d2eecf`, `run_7be33c269c0450e893582ef2cbcf98e5`, `run_a15d163254da5c399728478aeacb09df`, `run_255cf71d5ad45b4db3142961b92b1c48`, `run_2a563f5d6b345f96b34fbcd57473fcce` |
+| H | `run_70d203d974fc5f56a276d502d20cfa23`, `run_55d9b7ab21a1595f861863a05ba9e889`, `run_da36c9421b4c54509db70feeb01d2d85`, `run_f318e3fa252f54f4a41e583eee5b7262`, `run_7a358207c2f9575f88421061135c8853` |
+| B | `run_4dcaf65dac225164aebdb2f40aeca4d3`, `run_418cfaa71c645a1296e02f8bf9944652`, `run_8f60368550e25f55ac72506329663ca3`, `run_ba694cff6a7457b9bbf2d1159f4cfaad`, `run_139cecdbca555e31a853b09da89c3c81` |
+| S | `run_b4bd402ca8475c60addf2a97f0991323`, `run_e1c6758102d95db2a245a70bdafd55dc` |
+
+Repo-root ignored tool-output indexes: `.local-setup/hotel-equities-import/{native-v3,native-account-revision,native-account-final,native-quality-batch,native-scoped-quality-batch,native-simple-prompt,native-skill-repair-validation}/`. Some early manifest status snapshots say running; terminal saved traces/finals establish the historical end state. They are not evidence of a live worker that should be restarted.
+
+The previous detailed latest-run report remains at `docs/hotel-equities-native-run-trace-audit-2026-09-27.md`; this audit does not overwrite its existing working-tree edit. Source logs and snapshots remain local/ignored. No raw trace or customer dossier is added to durable operational memory.
