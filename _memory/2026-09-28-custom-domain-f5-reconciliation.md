@@ -177,3 +177,14 @@ asset-enrichment lane; five Zafran account-research frontend fixture tests
 - Stack verified: all five ports listening, `/healthz` on 8040 = 200, 4 lane workers alive without
   the crash, frontend restarted on the updated env. `up` / `restart-api` hang in their trailing
   `sleep; status` — run under `timeout`; the detached processes survive.
+
+## Addendum 2026-09-29 (later) — third pull of the LOCAL ai-ark branch (`4297b0648`)
+- 7 commits (AI Ark contact-email lookup on by default, Head of ABM v68 dropping three retired-lane
+  tools, legacy research-lane sweep, design-leg retry fix, refused-tool recipe guard). Clean merge:
+  no conflicts, no migrations, nothing in the hosting/settings files; `.env` parity intact.
+- Gates: imports ok; catalog + registry-wiring + custom-domain suites green except one INHERITED
+  setup error (`test_toolbelt_wiring::test_quarantined_profile_contact_never_reaches_legacy_contact_scope`
+  errors identically on their branch tip); mypy 7 (the new one, `arv2/read_tools.py:533`, arrived
+  with this merge); lint-imports 29 kept; one alembic head; npm test 3249 pass / 5 inherited fails;
+  lint 0 errors. Platform API twins + workers restarted on the merged code (design API untouched by
+  this merge); all five lane ports up, 4 workers clean.
