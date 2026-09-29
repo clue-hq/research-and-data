@@ -186,3 +186,31 @@ recorded model spend is $3.545862; this is not a claim about all provider charge
 The native output is a failed quality test and is retained for regression evidence.
 The broader website-quality goal remains incomplete. No additional generation was
 started during the audit.
+
+## Follow-up checkpoint: project decision provenance
+
+The first code repair now preserves statement/input IDs, captured-input actor and
+kind/time, recording actor/time, recorded entity and route/source references, and
+correction lineage in `project/decisions.md`. Recorder identity is deliberately
+separate from input authorship. Missing scope stays null; it does not become an
+all-account instruction. Existing quote verification and erased-evidence exclusion
+still run before rendering. The library digest now includes its format version so
+fresh turns receive the new representation even with unchanged project rows;
+historical pinned generations remain unchanged.
+
+Three regressions failed before implementation: lost source IDs, lost target and
+correction references, and unchanged cache identity after a renderer change. They
+pass with the repair. Eleven pure rendering tests pass. The surrounding DB suite
+returned 56 passes and one unrelated product-confirmation failure:
+`test_a_superseded_icp_proposal_file_marks_itself_stale_instead_of_bricking_the_session`.
+The same missing `Project.updated_at` error was reproduced with all three modified
+production modules loaded from the prior commit. Scoped Ruff/type checks and all
+28 dependency contracts pass. Root `make check` stops at formatting in the pre-existing
+untracked `tests/arv2/display/test_seller_context_db.py`; that file was not changed.
+
+This checkpoint repairs context information loss, not model compliance. It does
+not record the missing live correction, enforce Head-to-Design attribution, alter
+typography, or qualify the saved page. No paid probe, generation, live workspace data write,
+runtime restart, or remote push was performed. Database checks used fresh disposable
+databases removed afterward. The next work remains the canonical correction/handoff,
+measured typography roles, and current-render acceptance checks above.

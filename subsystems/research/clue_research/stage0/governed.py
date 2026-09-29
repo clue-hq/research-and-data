@@ -129,6 +129,13 @@ class VolunteeredStatementRow(BaseModel):
     quote_sha256: str
     correction_of_id: VolunteeredStatementId | None
     created_at: UtcDatetime
+    entity_id: EntityId | None
+    # The capture's actor is distinct from the agent/human that classified it.
+    input_kind: OnboardingInputKind
+    input_actor: str
+    input_created_at: UtcDatetime
+    input_source_ref: str | None
+    recorded_by_actor: str
 
 
 class StatementCounts(BaseModel):
@@ -651,7 +658,9 @@ async def read_statements(
                     SELECT s.id, s.onboarding_input_id, i.artifact_key, s.workspace_id,
                            s.project_id, s.route_kind, s.route_key, s.route_ref,
                            s.quote_start, s.quote_end, s.quote_sha256, s.correction_of_id,
-                           s.created_at
+                           s.created_at, s.entity_id, s.created_by_actor AS recorded_by_actor,
+                           i.kind AS input_kind, i.actor AS input_actor,
+                           i.created_at AS input_created_at, i.source_ref AS input_source_ref
                     FROM volunteered_statement s
                     JOIN onboarding_input i ON i.id = s.onboarding_input_id
                     WHERE s.workspace_id = :workspace_id
