@@ -444,6 +444,26 @@ async def set_web_publish_status(
     return await get_web_publish(conn, workspace_id=workspace_id, slug=slug)
 
 
+async def unpublish_other_slugs(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, keep_slug: str
+) -> list[str]:
+    """Unpublish every OTHER live slug of ``document_id`` and return them, sorted.
+
+    A document lives at one address: republishing it under a new slug is a MOVE, so the address
+    it moved from stops serving (the page origin serves only ``active`` rows, so it 404s). The
+    same status ``unpublish`` assigns; history and the revisions are untouched.
+    """
+    rows = await conn.execute(
+        text(
+            "UPDATE design_web_publish SET status = 'unpublished', updated_at = now()"
+            " WHERE workspace_id = :w AND document_id = :d AND slug <> :keep"
+            " AND status = 'active' RETURNING slug"
+        ),
+        {"w": workspace_id, "d": document_id, "keep": keep_slug},
+    )
+    return sorted(str(row[0]) for row in rows)
+
+
 async def rollback_web_publish(
     conn: AsyncConnection, *, workspace_id: str, slug: str
 ) -> JsonObject | str:

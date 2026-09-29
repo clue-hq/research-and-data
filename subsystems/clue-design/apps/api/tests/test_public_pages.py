@@ -258,3 +258,28 @@ def test_a_refused_publish_leaves_the_label_unlocked(client: TestClient) -> None
         return result.scalar()
 
     assert repo._bridge._run(_locked_at) is None
+
+
+def test_republishing_under_a_new_slug_moves_the_site(client: TestClient) -> None:
+    """A document lives at ONE address (found live 2026-09-30: a renamed page kept serving at
+    its old slug). Republishing under a new slug unpublishes the old one — the page origin serves
+    only `active` rows, so it 404s — and leaves every other document's slug alone."""
+    document = seed_document(client)
+    other = seed_document(client)
+    repo = HybridRepository()
+
+    for doc, slug in ((document, "first-name"), (other, "someone-else")):
+        response = client.post(f"/documents/{doc['id']}/web/publish", json={"slug": slug})
+        assert response.status_code == 200, response.text
+    moved = client.post(f"/documents/{document['id']}/web/publish", json={"slug": "second-name"})
+    assert moved.status_code == 200, moved.text
+
+    assert repo.get_web_publish("first-name")["status"] == "unpublished"
+    assert repo.get_web_publish("second-name")["status"] == "active"
+    assert repo.get_web_publish("someone-else")["status"] == "active"
+
+    # Republishing in place keeps the one live address live.
+    again = client.post(f"/documents/{document['id']}/web/publish", json={"slug": "second-name"})
+    assert again.status_code == 200, again.text
+    assert repo.get_web_publish("second-name")["status"] == "active"
+    assert repo.get_web_publish("first-name")["status"] == "unpublished"

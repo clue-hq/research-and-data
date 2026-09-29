@@ -186,6 +186,11 @@ def publish_web_document(
         package.runtime_version,
         publish_id,
     )
+    # A document lives at ONE address. Republishing it under a new slug is a move (the share
+    # menu's promise: "the site stays up at its current address until the marketer
+    # republishes"), so the address it moved from stops serving — found live 2026-09-30, when a
+    # renamed page kept answering at its old slug beside the new one.
+    repository.unpublish_other_slugs(document["id"], slug)
     return WebPublishRef(
         slug=slug,
         document_id=document["id"],

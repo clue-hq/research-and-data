@@ -1405,6 +1405,14 @@ class HybridRepository:
             )
         )
 
+    def unpublish_other_slugs(self, document_id: str, keep_slug: str) -> list[str]:
+        """Take ``document_id`` off every live slug but ``keep_slug`` (a republish is a move)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.unpublish_other_slugs(
+                conn, workspace_id=self.workspace_id, document_id=document_id, keep_slug=keep_slug
+            )
+        )
+
     def rollback_web_publish(self, slug: str) -> Any:
         return self._bridge._run(
             lambda conn: design_publishes.rollback_web_publish(
