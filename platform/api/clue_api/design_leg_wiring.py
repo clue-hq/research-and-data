@@ -73,6 +73,7 @@ from clue_api.agent_turn_scope_pin import AgentTurnScopePinConflict, AgentTurnSc
 from clue_api.agent_turn_submission import (
     DERIVATION_DESIGN_LEG_FIRST_TURN,
     AgentTurnSubmissionRow,
+    get_submission,
 )
 from clue_api.agent_turn_wiring import (
     DbAgentContextReceiptStore,
@@ -2134,6 +2135,13 @@ class DesignLegTurnRunner:
                 )
 
     async def await_stopped_turn(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """Wait for a stopped turn's runs to reach terminal, then hand the leg back.
+
+        The hand-back is what frees the thread: a stopped turn used to leave its leg
+        ``running`` for good — the chat kept showing the agent designing, queued every later
+        message, and a second Stop had nothing left to cancel (live incident 2026-09-29). It
+        is the same transition a crashed turn gets (``_contain_crash``).
+        """
         async with self._conn_factory() as conn:
             runs = await self._batch_runs(conn, workspace_id=workspace_id, turn_id=turn_id)
         envelopes = [
@@ -2141,15 +2149,28 @@ class DesignLegTurnRunner:
             for run in runs
             if run["status"] not in _TERMINAL_RUN_STATUSES
         ]
-        if not envelopes:
-            return
         # Join the live holders or recover crashed ones. The durable cancel probe prevents a
         # recovered harness from starting another provider call. One envelope keeps the shipped
         # single-run seam; a batch is driven to terminal through the batch seam.
         if len(envelopes) == 1:
             await self._lane.drive(envelope=envelopes[0])
-        else:
+        elif envelopes:
             await self._lane.drive_batch(envelopes=envelopes)
+        await self._hand_back_stopped_leg(workspace_id=workspace_id, turn_id=turn_id)
+
+    async def _hand_back_stopped_leg(self, *, workspace_id: str, turn_id: UUID) -> None:
+        async with self._conn_factory() as conn:
+            submission = await get_submission(conn, workspace_id=workspace_id, turn_id=turn_id)
+            if submission is None:
+                return
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=workspace_id, thread_id=submission.thread_id
+            )
+        if leg is not None:
+            # Only a ``running`` leg moves; an awaiting or closed one is left as it is.
+            await self._leg_back_to_awaiting(
+                workspace_id=workspace_id, leg_id=str(leg["id"]), submission=submission
+            )
 
     # -- dispatch ------------------------------------------------------------------------------
 
