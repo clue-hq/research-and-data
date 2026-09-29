@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     Claim,
+    ClaimFlavor,
     ClaimId,
     EntityId,
     EntityType,
@@ -25,9 +26,12 @@ from clue_core import (
     FieldClass,
     FieldDef,
     IdentityBinding,
+    OperationId,
     PassKind,
     ResearchMode,
     ResearchScope,
+    ResearchSubjectRef,
+    ResearchSupportRef,
     ReuseScope,
     RunId,
     UseClass,
@@ -94,6 +98,15 @@ class WriteReceipt:
     registered_field: bool
 
 
+@dataclass(frozen=True)
+class DerivedClaimInput:
+    """Support lineage consumed by the shared derivation store, not copied into a quotation."""
+
+    target: ResearchSubjectRef
+    supports: tuple[ResearchSupportRef, ...]
+    operation_id: OperationId
+
+
 class LenientClaimWriter:
     """The one write path into the claim store for the ARV2 lane.
 
@@ -102,10 +115,92 @@ class LenientClaimWriter:
     restores the substrate's own refusals so a caller that wants the strict contract still gets it.
     """
 
-    def __init__(self, *, lenient: bool) -> None:
+    def __init__(self, *, lenient: bool, scoped_proposals: bool = False) -> None:
         self._lenient = lenient
+        self._scoped_proposals = scoped_proposals
 
-    async def write(self, conn: AsyncConnection, draft: ClaimDraft) -> WriteReceipt:
+    async def write(
+        self,
+        conn: AsyncConnection,
+        draft: ClaimDraft,
+        *,
+        derivation: DerivedClaimInput | None = None,
+        claim_id: ClaimId | None = None,
+    ) -> WriteReceipt:
+        if draft.entity_type is EntityType.CONTACT:
+            from sqlalchemy import text
+
+            # Same authority lock as the shared privacy controller; a late write must serialize
+            # behind its stop before deciding whether this run still owns the subject.
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                {"key": f"contact-research:{draft.workspace_id}:{draft.entity_id}"},
+            )
+            blocked = (
+                await conn.execute(
+                    text("""
+                SELECT EXISTS(SELECT 1 FROM arv2_research_job WHERE run_id=:run
+                  AND workspace_id=:ws AND subject_entity_id=:contact AND profile_ref IN
+        ('agent-profile:arv2-person:v2','agent-profile:arv2-person:v3')
+                  AND ((input_refs->>'privacy_stopped')::boolean IS TRUE
+                       OR COALESCE(input_refs->'blocked_channels','[]'::jsonb) ? :field))
+            """),
+                    {
+                        "run": draft.run_id,
+                        "ws": draft.workspace_id,
+                        "contact": draft.entity_id,
+                        "field": draft.field_key,
+                    },
+                )
+            ).scalar_one()
+            if blocked:
+                raise ValueError("research authority was withdrawn for this subject")
+        if draft.artifact_key and draft.markers.get("provider_subject_id"):
+            from clue_research.identity.provider import lock_provider_evidence
+
+            await lock_provider_evidence(
+                conn,
+                workspace_id=draft.workspace_id,
+                provider="ai_ark",
+                subject_id=str(draft.markers["provider_subject_id"]),
+                artifact_key=draft.artifact_key,
+            )
+        if draft.markers.get("media"):
+            from sqlalchemy import text
+
+            media = draft.markers["media"]
+            if not isinstance(media, dict):
+                raise ValueError("invalid media provenance")
+            available = (
+                await conn.execute(
+                    text("""
+                SELECT EXISTS(SELECT 1 FROM arv2_media_transcript t
+                  JOIN arv2_media_item i USING(workspace_id,item_id)
+                  JOIN artifact a ON a.storage_key=t.text_key AND a.workspace_id=t.workspace_id
+                  WHERE t.workspace_id=:ws AND t.version_id=CAST(:version AS uuid)
+                    AND t.text_key=:key AND i.erased_at IS NULL AND a.erased_at IS NULL
+                    AND t.expires_at>now() AND i.expires_at>now()
+                    AND (a.expires_at IS NULL OR a.expires_at>now()))
+            """),
+                    {
+                        "ws": draft.workspace_id,
+                        "version": media.get("version_ref"),
+                        "key": draft.artifact_key,
+                    },
+                )
+            ).scalar_one()
+            if not available:
+                raise ValueError("media evidence unavailable")
+            locked = await conn.execute(
+                text(
+                    "SELECT storage_key FROM artifact WHERE workspace_id=:ws AND "
+                    "storage_key=:key AND erased_at IS NULL AND "
+                    "(expires_at IS NULL OR expires_at>now()) FOR UPDATE"
+                ),
+                {"ws": draft.workspace_id, "key": draft.artifact_key},
+            )
+            if locked.scalar_one_or_none() is None:
+                raise ValueError("media evidence became unavailable before claim write")
         markers: dict[str, JsonValue] = dict(draft.markers)
         registered = False
 
@@ -144,7 +239,17 @@ class LenientClaimWriter:
         except UnknownFieldError:
             if not self._lenient:
                 raise
-            await _register_proposed_field(conn, draft)
+            if self._scoped_proposals:
+                from clue_research.claimstore.registry import register_agent_research_field
+
+                await register_agent_research_field(
+                    conn,
+                    workspace_id=draft.workspace_id,
+                    field_key=draft.field_key,
+                    run_id=str(draft.run_id),
+                )
+            else:
+                await _register_proposed_field(conn, draft)
             registered, markers["proposed_field"] = True, True
             await gate()
         except ValueSchemaError:
@@ -157,12 +262,12 @@ class LenientClaimWriter:
             entity_type=draft.entity_type,
             field_key=draft.field_key,
             value_json=draft.value_json,
-            source_url=draft.source_url,
+            source_url=None if derivation else draft.source_url,
             source_key=draft.source_key,
             artifact_key=draft.artifact_key,
             source_tier=TIER_FOR_METHOD[draft.extraction_method],
             extraction_method=draft.extraction_method,
-            evidence_span=draft.evidence_span,
+            evidence_span=None if derivation else draft.evidence_span,
             confidence=draft.confidence,
             observed_at=draft.observed_at,
             run_id=draft.run_id,
@@ -175,8 +280,25 @@ class LenientClaimWriter:
             signal_priority=draft.signal_priority,
             outreach_safe=draft.outreach_safe,
             write_markers=markers or None,
+            claim_flavor=ClaimFlavor.DERIVED if derivation else ClaimFlavor.FIELD_CLAIM,
         )
-        claim_id = await insert_claim(conn, claim, validate_field=False)
+        if claim_id is not None:
+            claim = claim.model_copy(update={"id": claim_id})
+        if derivation:
+            from clue_research.claimstore import DerivationStore, WorkspaceScope
+
+            stored = await DerivationStore().create(
+                conn,
+                claim,
+                derivation.target,
+                derivation.supports,
+                workspace_id=draft.workspace_id,
+                operation_id=derivation.operation_id,
+                scope=WorkspaceScope.for_workspace(draft.workspace_id),
+            )
+            claim_id = stored.derived_claim_id
+        else:
+            claim_id = await insert_claim(conn, claim, validate_field=False)
         return WriteReceipt(
             claim_id=claim_id,
             field_key=draft.field_key,

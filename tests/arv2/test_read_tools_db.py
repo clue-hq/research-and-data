@@ -1839,10 +1839,11 @@ async def _seed_discovery_run(
     asked: int | None = 35,
     found_strict: int | None = 10,
     found_relaxed: int | None = 3,
-    relaxed_requested: bool = False,
+    relaxed_search: bool = False,
     created_at: datetime = _NOW,
 ) -> UUID:
-    """One ``arv2_discovery_run`` (plus the ``project_run`` it hangs off)."""
+    """One ``arv2_discovery_run`` (plus the ``project_run`` it hangs off), and — when
+    ``relaxed_search`` — the relaxed search it made."""
 
     project_run_id = new_project_run_id()
     await ensure_project_run(
@@ -1858,11 +1859,11 @@ async def _seed_discovery_run(
         text(
             "INSERT INTO arv2_discovery_run (run_id, workspace_id, project_id, brand_id, "
             "project_run_id, icp_artifact_key, icp_artifact_sha256, icp_key, icp_version, "
-            "requested_by_user_id, request_sha256, target_count, strict_count, relaxed_enabled, "
-            "relaxed_requested, criteria_gate_keys, status, asked, found_strict, found_relaxed, "
+            "requested_by_user_id, request_sha256, target_count, relaxed_enabled, "
+            "criteria_gate_keys, status, asked, found_strict, found_relaxed, "
             "created_at, started_at, finished_at) "
             "VALUES (:run, :ws, :project, :brand, :project_run, :key, :sha, 'gi-groups', 1, "
-            ":user, :request_sha, 20, 35, true, :relaxed_requested, CAST(:gates AS jsonb), "
+            ":user, :request_sha, 20, true, CAST(:gates AS jsonb), "
             ":status, :asked, :found_strict, :found_relaxed, CAST(:created_at AS timestamptz), "
             "CAST(:created_at AS timestamptz), "
             "CASE WHEN :status = 'completed' THEN CAST(:created_at AS timestamptz) END)"
@@ -1877,7 +1878,6 @@ async def _seed_discovery_run(
             "sha": _SHA,
             "user": USER_ID,
             "request_sha": uuid4().hex + uuid4().hex,
-            "relaxed_requested": relaxed_requested,
             "gates": json.dumps(["geography"]),
             "status": status,
             "asked": asked,
@@ -1886,6 +1886,14 @@ async def _seed_discovery_run(
             "created_at": created_at,
         },
     )
+    if relaxed_search:
+        await conn.execute(
+            text(
+                "INSERT INTO arv2_discovery_search (run_id, ordinal, kind, external_id, asked, "
+                " criteria) VALUES (:run, 3, 'relaxed', :external, 7, CAST('[]' AS jsonb))"
+            ),
+            {"run": run_id, "external": f"arv2-discovery:{run_id}:3"},
+        )
     return run_id
 
 
@@ -1906,7 +1914,7 @@ async def _seed_candidate(
 
     The default is ``True`` because the dispositions a verifier produces (`pass`/`partial`/
     `unclear`) always carry verdicts; the pre-spend ones (`duplicate_of_existing`,
-    `not_chosen_before`) are stamped before any gate is asked, so a test that seeds one passes
+    `found_before`) are stamped before any gate is asked, so a test that seeds one passes
     ``judged=False`` and the tallies must not count it.
     """
 
@@ -1948,7 +1956,7 @@ def test_the_latest_discovery_run_is_read_with_its_three_tallies() -> None:
             )
             await _seed_candidate(conn, project, older, "Old Health", disposition="pass")
             latest = await _seed_discovery_run(
-                conn, project, relaxed_requested=True, found_strict=10, found_relaxed=3
+                conn, project, relaxed_search=True, found_strict=10, found_relaxed=3
             )
             await _seed_candidate(
                 conn,
@@ -2020,7 +2028,7 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 project,
                 run_id,
                 "Zeta Rehab",
-                disposition="not_chosen_before",
+                disposition="found_before",
                 fit=1.0,
                 judged=False,
             )
@@ -2082,7 +2090,7 @@ def test_the_candidates_are_shown_first_then_best_fit_and_the_list_is_bounded() 
                 limit=0,
             )
             assert tallies_only.candidates == ()
-            # Four candidates; three were judged — `not_chosen_before` is a pre-spend stamp.
+            # Four candidates; three were judged — `found_before` is a pre-spend stamp.
             assert (tallies_only.candidate_total, tallies_only.verified) == (4, 3)
 
     run_async(scenario())

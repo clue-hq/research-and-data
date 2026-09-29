@@ -1,0 +1,28 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 11,
+  "resources": {
+    "profiles/quality-account-research/v6/profile.yaml": "1329817ef22f5cc15ce02f6ee182e4320a34d57ec7c6e6a6c881dba01d1f1a72",
+    "profiles/quality-research-claims/v6/profile.yaml": "5ff3b1f2b66ca117f48f58ed23a67735ca95930200419fb3ae6814056f91682d",
+    "profiles/quality-research-narrative/v6/profile.yaml": "b23189e1b9e92c9135f4962830b33ef6af047828e5f8fa53b9dbba9b518eea3c",
+    "prompts/quality-account-research/v6/SYSTEM.md": "3ebbf7f4ec558486675aade5bf62202f8a982616c6671bd1bd44aa4d0ac7d3a2",
+    "prompts/quality-account-research/v9/SYSTEM.md": "e6d6ed8c4bb8587f92fd48cb15b0cadcc346f5ec2612b5343c85b70fafc6b8b6",
+    "prompts/quality-research-claims/v6/SYSTEM.md": "5b0910389e2f62879f825f628a7dbacf6a3ae09d983102d109ce5b798a60fe71",
+    "prompts/quality-research-narrative/v6/SYSTEM.md": "3b1d0f9d51934724a8073674dcfcce17dfb328ac7426a7850f82db7a9b6ace74",
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "recipe-v6.json": "df441c6373f01cca0ddb1e87a3b09facdbd17619acd50434ff8f2cc0fddd7199",
+    "skills/account-dossier/v2/SKILL.md": "4480ac9b0c02e735a196cee5442dd31a8d6b2881b2654c1f1e87b88d58781898",
+    "skills/governed-evidence/v2/SKILL.md": "5d12721970715a5f983ca01475cfea999fc4c6f4d0ace586b641a66387631137",
+    "profiles/quality-account-research/v10/profile.yaml": "045ee5c9f840b0e83f14a34a72b325420125afa120661ef7be5c9e5c4cfbd3b0",
+    "skills/person-research-briefing/v2/SKILL.md": "3c87ba7054d939efd7d5d53fba11e6fa61d771cbf8fc0edec294a6298ece288a",
+    "profiles/quality-person-research/v11-person/profile.yaml": "4c98cb2b81bfa515bcbabc103e0a31761bd5ef1bd7dcc2f2924c2a5168a7fd56",
+    "prompts/quality-person-research/v1/SYSTEM.md": "56597d4086843ca77f8307107fa5ee893d621658b6b38e82911587cb92ce02d9",
+    "skills/person-dossier/v1/SKILL.md": "2f0122124fd67a69b0c21838d11bd981481b54cb450811f998c2715804486c61",
+    "skills/person-depth-charter/v1/SKILL.md": "6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "recipe-v11.json": "fdad8e23ad6a02d72b9eb4136917498a6ca72ac30bb3eff04d6f287965649546"
+  },
+  "review_policy": "advisory"
+}

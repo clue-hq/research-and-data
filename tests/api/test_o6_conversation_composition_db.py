@@ -141,7 +141,21 @@ class _ScriptedModels:
     def build(self, **kwargs: Any) -> ScriptedAgentChatModel:
         del kwargs
         self.build_count += 1
-        return ScriptedAgentChatModel(responses=self.responses)
+        # Tool-call ids are unique per build, as a real model's are: a later turn continues the
+        # thread's saved conversation, which already holds the earlier turns' calls.
+        return ScriptedAgentChatModel(
+            responses=tuple(
+                message.model_copy(
+                    update={
+                        "tool_calls": [
+                            {**call, "id": f"{call['id']}-b{self.build_count}"}
+                            for call in message.tool_calls
+                        ]
+                    }
+                )
+                for message in self.responses
+            )
+        )
 
 
 class _NoMemory:
@@ -829,9 +843,11 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                 # `head-of-abm@v55` adds the three document skills — the procedures for the ICP,
                 # the personas and the plan, each written as a file under `project/` — so the
                 # committed surface names those too. `@v58` adds `code-execution`, the procedure
-                # for the sandbox it grants in the same version.
+                # for the sandbox it grants in the same version. `account-research-briefing` is
+                # the procedure for briefing an ARV2 account research run.
                 assert {item["name"] for item in manifest["skills"]} == {
                     "stage0-interview",
+                    "account-research-briefing",
                     "icp-authoring",
                     "persona-authoring",
                     "plan-authoring",
@@ -1169,7 +1185,9 @@ def test_two_turns_of_one_thread_share_one_persistent_workspace(tmp_path: Path) 
                     worker_id="o6t7-thread-worker",
                 )
                 assert second_result.outcome == AgentExecutionStatus.AWAITING_INPUT.value
-                assert stack.models.build_count == 2
+                # One build per turn, plus one for the second turn's check that the first turn's
+                # saved conversation is settled before continuing it (spec 2026-09-29 §3.1).
+                assert stack.models.build_count == 3
 
                 after = stack.workspaces.reopen()
                 # 1. the notebook crossed the turn boundary untouched…

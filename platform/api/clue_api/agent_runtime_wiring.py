@@ -47,8 +47,10 @@ from clue_agents.contracts import (
     PlanDelegationStep,
     PlanToolStep,
     ReasonCode,
+    StableId,
     normalize_virtual_path,
 )
+from clue_agents.tool_recovery import MAX_TOOL_REPAIR_ROUNDS
 from clue_agents.turns import AgentModelCallReceipt, AgentModelCallStatus, ModelCostSource
 from clue_agents.workspace import AgentWorkspaceLease
 from clue_api.agent_execution_wiring import (
@@ -101,17 +103,12 @@ log = get_logger("clue_api.agent_runtime_wiring")
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
 
-# One turn's budget for *refused* governed invocations, shared by every governed tool the model
-# holds. The hard ceiling is already there — ``DeepAgentTurnRuntime`` caps the graph at
-# ``max_rounds * 2 + 4`` supersteps, so a repair loop cannot run forever — but that ceiling is
-# reached only after ~24 further paid model calls. Three refusals is the point past which the model
-# is no longer misreading an argument contract, so the turn stops paying to find out.
-_MAX_GOVERNED_TOOL_FAILURES = 3
-
 _GOVERNED_TOOL_REPAIR_HELP = (
-    "Nothing was recorded: no durable state changed and this operation did not happen. Correct "
-    "exactly what the reasons name and call the tool again, or tell the human what is blocking "
-    "you. Do not report this as captured."
+    "No successful receipt was returned. Preserve successful sibling results. Correct what "
+    "the reasons name and retry only the failed work. For an executed failed attempt, supply "
+    "its node_key in retry_of (include earlier failed attempts of that same work too). "
+    "Plan rejections have no execution node: omit retry_of for them. Do not claim success "
+    "without a receipt; a late infrastructure error may occur after tool effects."
 )
 
 
@@ -171,7 +168,10 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         run_id: UUID,
         **kwargs: Any,
     ) -> None:
-        del serialized, kwargs
+        del serialized
+        owner = (kwargs.get("metadata") or {}).get("agent_execution_id")
+        if owner is not None and owner != str(self._request.constitution.execution_id):
+            return
         workspace_id = self._request.constitution.workspace_id
         body = json.dumps(
             [[message.model_dump(mode="json") for message in batch] for batch in messages],
@@ -203,7 +203,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         del kwargs
-        pending = self._pending.pop(run_id)
+        pending = self._pending.pop(run_id, None)
+        if pending is None:
+            return  # An inherited parent handler does not own the child's model call.
         generation = response.generations[0][0]
         message = getattr(generation, "message", None)
         usage = getattr(message, "usage_metadata", None) or {}
@@ -268,7 +270,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         del kwargs
-        pending = self._pending.pop(run_id)
+        pending = self._pending.pop(run_id, None)
+        if pending is None:
+            return
         # What the provider did, when it is the provider that did something: a refusal or a
         # fault is named ``provider_refused|failed:<provider>:<reason>`` on the receipt, so the
         # row, the turn's failure code and the incident all read the same sentence. Anything the
@@ -391,12 +395,13 @@ class GovernedToolFailure(BaseModel):
     LangGraph run and the model was never told why (the live Stage-0 defect: a paraphrased claim
     value failed the interview verifier and the turn ended ``runtime_error`` in silence).
 
-    ``recorded`` is pinned ``False``: the durable failure record is unchanged, nothing committed,
-    and the model must not describe this operation as having happened.
+    ``recorded`` means no successful governed receipt was returned, not a guarantee of rollback.
+    Failed attempts remain auditable; late infrastructure errors may follow durable tool effects.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    governed_repair_budgeted: bool = True
     error: Literal["plan_rejected", "operation_failed"]
     address: str
     node_key: str
@@ -480,11 +485,18 @@ class ModelDomainRef(_ModelInput):
 class DelegateSpecialistRequest(_ModelInput):
     """Small typed proposal accepted by the governed specialist delegation tool."""
 
-    role: Literal["research", "content_drafter", "reviewer"]
+    role: Literal[
+        "research", "content_drafter", "reviewer", "research_claims", "research_narrative"
+    ]
     goal: str = Field(min_length=1, max_length=2_048)
     instructions: str = Field(min_length=1, max_length=8_192)
     verbatim_context: tuple[str, ...] = Field(default=(), max_length=16)
-    canonical_paths: tuple[str, ...] = Field(default=(), max_length=32)
+    canonical_paths: tuple[str, ...] = Field(
+        default=(),
+        max_length=32,
+        description="Existing local workspace files to copy. Research specialists already have "
+        "scoped /research and /evidence views; mention those paths in instructions, not here.",
+    )
     domain_refs: tuple[ModelDomainRef, ...] = Field(default=(), max_length=64)
 
     @field_validator("canonical_paths")
@@ -549,6 +561,7 @@ def _with_trusted_runtime(
     model: type[BaseModel],
     *,
     name: str,
+    allow_repair: bool = False,
 ) -> type[BaseModel]:
     """Add LangGraph's injected runtime and hide trusted authority from the model-visible schema.
 
@@ -583,7 +596,24 @@ def _with_trusted_runtime(
             (model,),
             {
                 "__module__": __name__,
-                "__annotations__": {"runtime": ToolRuntime},
+                "__annotations__": {
+                    "runtime": ToolRuntime,
+                    **({"retry_of": tuple[StableId, ...]} if allow_repair else {}),
+                },
+                **(
+                    {
+                        "retry_of": Field(
+                            default=(),
+                            description=(
+                                "Corrected retry only: node_key values of earlier failed attempts "
+                                "for this work and tool. Success resolves those failures; "
+                                "omit for new work and plan_rejected feedback."
+                            ),
+                        )
+                    }
+                    if allow_repair
+                    else {}
+                ),
                 "model_config": cast(ConfigDict, config),
             },
         ),
@@ -825,7 +855,7 @@ class GovernedAgentToolFactory:
         self._stream = stream
         # Per-turn state: the factory is constructed once per turn, next to the turn's execution
         # adapter, so this budget is shared across every governed tool the model may call.
-        self._tool_failures = 0
+        # Repair rounds are checkpointed by ToolRepairRoundsMiddleware, never per-call counters.
 
     async def _check_work(self) -> None:
         if self._before_work is not None:
@@ -866,6 +896,7 @@ class GovernedAgentToolFactory:
 
         async def invoke(runtime: ToolRuntime, **kwargs: Any) -> str:
             await self._check_work()
+            retry_of = tuple(kwargs.pop("retry_of", ()))
             tool_call_id = str(runtime.tool_call_id)
             call_digest = hashlib.sha256(tool_call_id.encode()).hexdigest()[:24]
             node_key = f"agent_{name}_{call_digest}"
@@ -884,6 +915,7 @@ class GovernedAgentToolFactory:
                         tool=pin,
                         arguments=_json_arguments(kwargs),
                         purpose=f"Governed direct invocation of {pin.address}.",
+                        retry_of=retry_of,
                     ),
                 ),
                 proposed_at=self._request.requested_at,
@@ -921,7 +953,7 @@ class GovernedAgentToolFactory:
                         f"{issue.location}: {issue.code}: {issue.message}"
                         for issue in rejected.review.issues
                     ),
-                    raise_when_exhausted=rejected,
+                    runtime=runtime,
                 )
             await self._check_work()
             final_progress = None
@@ -957,7 +989,7 @@ class GovernedAgentToolFactory:
                         f"{failure.error_type}: {failure.message}" for failure in failures
                     )
                     or ("the governed operation did not complete",),
-                    raise_when_exhausted=RuntimeError(f"governed operation {pin.address} failed"),
+                    runtime=runtime,
                     budgeted=not honest_read,
                 )
             recovered = await self._execution.recover(
@@ -1003,6 +1035,7 @@ class GovernedAgentToolFactory:
             args_schema=_with_trusted_runtime(
                 descriptor.input_model,
                 name=f"{descriptor.input_model.__name__}AgentRuntime",
+                allow_repair=True,
             ),
         )
 
@@ -1040,29 +1073,11 @@ class GovernedAgentToolFactory:
         node_key: str,
         error_type: str,
         reasons: tuple[str, ...],
-        raise_when_exhausted: BaseException,
+        runtime: ToolRuntime,
         budgeted: bool = True,
     ) -> str:
-        """Hand one refused governed invocation back to the model, within a per-turn budget.
-
-        The refusal is a tool *result*, not an exception, because an exception raised out of a
-        ``StructuredTool`` coroutine ends the LangGraph run: the operation's durable failure record
-        was written, nothing committed, and the model was told nothing — it could not correct the
-        argument that was refused, and the turn died with no user-facing answer.
-
-        Once the budget is spent the original exception is raised, which is exactly today's
-        behaviour: the turn fails closed with its stable error code and still commits nothing.
-        A repeated refusal is not a misread argument contract, and each further attempt is a paid
-        model call.
-
-        W10: a refusal that is *not* ``budgeted`` is still operator-visible but costs the turn
-        nothing — a precondition refusal from an effect-free read has answered the question it was
-        asked, so it can neither exhaust the budget nor raise.
-        """
-
-        if budgeted:
-            self._tool_failures += 1
-        exhausted = budgeted and self._tool_failures > _MAX_GOVERNED_TOOL_FAILURES
+        """Return every failure; only the next model boundary may exhaust repair rounds."""
+        attempt = runtime.state.get("tool_repair_rounds", 0) + int(budgeted)
         log.warning(
             "agent.tool_repair",
             address=address,
@@ -1070,17 +1085,16 @@ class GovernedAgentToolFactory:
             error=error,
             error_type=error_type,
             reasons=list(reasons),
-            attempt=self._tool_failures,
-            exhausted=exhausted,
+            attempt=attempt,
+            exhausted=budgeted and attempt > MAX_TOOL_REPAIR_ROUNDS,
             budgeted=budgeted,
         )
-        if exhausted:
-            raise raise_when_exhausted
         return GovernedToolFailure(
             error=error,
             address=address,
             node_key=node_key,
             reasons=reasons,
+            governed_repair_budgeted=budgeted,
         ).model_dump_json()
 
     def _delegation_tool(self) -> BaseTool:
@@ -1088,6 +1102,8 @@ class GovernedAgentToolFactory:
             AgentRole.RESEARCH: "outputs/research-strategy.md",
             AgentRole.CONTENT_DRAFTER: "outputs/content-exemplar.md",
             AgentRole.REVIEWER: "outputs/review-verdict.md",
+            AgentRole.RESEARCH_CLAIMS: "outputs/claim-processing.json",
+            AgentRole.RESEARCH_NARRATIVE: "outputs/research-narrative.json",
         }
 
         async def delegate_specialist(runtime: ToolRuntime, **kwargs: Any) -> str:
@@ -1098,6 +1114,26 @@ class GovernedAgentToolFactory:
                 raise ValueError(f"role {role.value!r} is absent from delegated authority")
             workspace_id = self._request.constitution.workspace_id
             canonical_paths = list(model_input.canonical_paths)
+            if role in {AgentRole.RESEARCH_CLAIMS, AgentRole.RESEARCH_NARRATIVE} and any(
+                path.split("/", 1)[0] in {"research", "evidence"} for path in canonical_paths
+            ):
+                # These are live, revocable views, not files in the parent's private directory.
+                # The child's own authority already exposes them. Reject the copy request before
+                # touching the physical workspace, and let the parent correct its arguments.
+                reason = (
+                    "Research specialists already have scoped /research and /evidence views. "
+                    "Pass canonical_paths=[] and refer to those views in instructions. "
+                    "Only existing local workspace files can be copied."
+                )
+                digest = hashlib.sha256(str(runtime.tool_call_id).encode()).hexdigest()[:24]
+                return self._tool_failure(
+                    error="plan_rejected",
+                    address="delegate_specialist",
+                    node_key=f"delegate_{role.value}_{digest}",
+                    error_type="virtual_view_is_not_a_file",
+                    reasons=(reason,),
+                    runtime=runtime,
+                )
             domain_ref_inputs = list(model_input.domain_refs)
             if role is AgentRole.RESEARCH:
                 for artifact in self._request.constitution.project_context_artifacts:
@@ -1161,6 +1197,8 @@ class GovernedAgentToolFactory:
                     AgentRole.RESEARCH,
                     AgentRole.CONTENT_DRAFTER,
                     AgentRole.REVIEWER,
+                    AgentRole.RESEARCH_CLAIMS,
+                    AgentRole.RESEARCH_NARRATIVE,
                 ],
                 role,
             )
@@ -1387,6 +1425,7 @@ class DurableDeepAgentTurnRunner:
         lease: AgentWorkspaceLease,
         tools: Sequence[BaseTool],
         stream: TurnStreamEmitter | None = None,
+        backend: object | None = None,
     ) -> AgentTurnOutcome:
         workspace_id = request.constitution.workspace_id
         await self._turns.mark_running(
@@ -1421,7 +1460,7 @@ class DurableDeepAgentTurnRunner:
         profile_ref = constitution.profile_ref
         try:
             with propagate_trace(
-                trace_name="head-of-abm.turn",
+                trace_name=f"{constitution.role.value.replace('_', '-')}.turn",
                 session_id=str(request.thread_id),
                 user_id=workspace_id,
                 metadata={
@@ -1437,7 +1476,7 @@ class DurableDeepAgentTurnRunner:
                     request=request,
                     resolved_profile=resolved_profile,
                     context=context,
-                    backend=lease.backend,
+                    backend=backend if backend is not None else lease.backend,
                     governed_tools=tools,
                     callbacks=callbacks,
                 )

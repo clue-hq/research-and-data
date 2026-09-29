@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
+from typing import Any
 
 from clue_agents import (
     AgentModelProvider,
@@ -17,7 +19,9 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_agents.ports import SpillSink
+from clue_agents.runtime import ORDINARY_FINALIZE_REPAIRS
 from clue_agents.workspace import AgentWorkspaceLease
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -153,8 +157,9 @@ class HeadOfAbmStage0Runtime:
         tools: ToolRegistry,
         child_runner: FreshWakeChildRunner,
         materializer: AgentResourceMaterializer | None = None,
-        max_runtime_s: float = 300.0,
+        max_runtime_s: float | None = 300.0,
         max_rounds: int = 24,
+        long_turn_alert_s: float | None = None,
         surface: str | None = None,
         crash_hook: AgentExecutionCrashHook = _no_crash,
         conn_factory: ConnFactory = transaction,
@@ -168,9 +173,61 @@ class HeadOfAbmStage0Runtime:
         self._materializer = materializer or AgentResourceMaterializer()
         self._max_runtime_s = max_runtime_s
         self._max_rounds = max_rounds
+        self._long_turn_alert_s = long_turn_alert_s
         self._surface = surface
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
+
+    def _deep_runtime(
+        self,
+        execution: C5AgentExecutionAdapter,
+        continuation_config: Mapping[str, Any] | None,
+    ) -> DeepAgentTurnRuntime:
+        return DeepAgentTurnRuntime(
+            compaction_for=compaction_for,
+            models=self._models,
+            execution=execution,
+            max_runtime_s=self._max_runtime_s,
+            max_rounds=self._max_rounds,
+            # A chat turn that hits its limit asks the human to reply "continue" (ruling
+            # 2026-09-27) rather than reporting itself blocked.
+            wrap_up_status="awaiting_input",
+            long_turn_alert_s=self._long_turn_alert_s,
+            continuation_config=continuation_config,
+            # Continuing a conversation is not research: the ordinary repair allowance holds.
+            max_finalize_repairs=ORDINARY_FINALIZE_REPAIRS,
+        )
+
+    async def continuation_is_settled(
+        self,
+        *,
+        request: AgentTurnRequest,
+        lease: AgentWorkspaceLease,
+        execution: C5AgentExecutionAdapter,
+        continuation_config: Mapping[str, Any],
+    ) -> bool:
+        """Whether the saved conversation ``continuation_config`` names can be continued.
+
+        Builds the turn's own graph and reads the saved state through it; writes nothing, binds
+        nothing and journals nothing, so a ``False`` leaves the turn free to open fresh.
+        """
+        resolved = self._profiles.resolve(AgentRole.HEAD_OF_ABM, surface=self._surface)
+        governed_tools = GovernedAgentToolFactory(
+            request=request,
+            resolved_profile=resolved,
+            registry=self._tools,
+            execution=execution,
+            lease=lease,
+            artifacts=self._artifacts,
+        ).build()
+        return await self._deep_runtime(
+            execution, continuation_config
+        ).saved_conversation_is_settled(
+            request=request,
+            resolved_profile=resolved,
+            backend=lease.backend,
+            governed_tools=governed_tools,
+        )
 
     async def run(
         self,
@@ -182,8 +239,13 @@ class HeadOfAbmStage0Runtime:
         completion_guard: CompletionGuard | None = None,
         stream: TurnStreamEmitter | None = None,
         input_seeds: tuple[WorkspaceSeedFile, ...] = (),
+        continuation_config: Mapping[str, Any] | None = None,
     ) -> AgentTurnOutcome:
         """Run one Stage-0 turn.
+
+        ``continuation_config`` (spec 2026-09-29 §3.1) names the saved conversation this turn
+        continues; ``context`` must then have been assembled in continuation mode. The caller
+        decides it — and checks it with :meth:`continuation_is_settled` — before assembling.
 
         ``completion_guard`` is the surface's veto over a non-failing terminal proposal — the seam
         the Stage-0 routing-receipt honesty check rides. It is optional because the guard needs the
@@ -286,12 +348,7 @@ class HeadOfAbmStage0Runtime:
             completion_guard=completion_guard,
             stream=stream,
         ).build()
-        runtime = DeepAgentTurnRuntime(
-            models=self._models,
-            execution=execution,
-            max_runtime_s=self._max_runtime_s,
-            max_rounds=self._max_rounds,
-        )
+        runtime = self._deep_runtime(execution, continuation_config)
         return await DurableDeepAgentTurnRunner(
             before_work=before_work,
             runtime=runtime,

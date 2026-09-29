@@ -99,6 +99,7 @@ from clue_research.claimstore import (
 )
 from clue_research.compliance.lawful_basis import LawfulBasisRecord, load_lawful_basis
 from clue_research.identity import dsar_private_claims, stamp_reuse
+from clue_research.identity.provider import erase_provider_evidence, provider_selection_ids
 from clue_storage import StorageBackend, erase_if_unreferenced, purge_erased_artifacts
 
 _log = get_logger(__name__)
@@ -281,6 +282,10 @@ async def _mark_contact_external_research_artifacts(
     erased_keys: list[str],
 ) -> None:
     """Sever provider and lossless-result artifact edges for one erased/objected contact."""
+
+    erased_keys.extend(
+        await erase_provider_evidence(conn, workspace_id=workspace_id, contact_id=contact_entity_id)
+    )
 
     rows = (
         (
@@ -756,6 +761,16 @@ async def _tombstone_with_dependents(
 ) -> tuple[list[ClaimId], int]:
     """Tombstone targets and every transitive derived value that copied their material."""
 
+    if scope_desc is None:
+        selection_ids = await provider_selection_ids(
+            conn, workspace_id=workspace_id, contact_id=contact_entity_id
+        )
+        selections = await claims_by_ids(
+            conn,
+            [ClaimId(i) for i in selection_ids],
+            scope=WorkspaceScope.private_for_workspace(workspace_id),
+        )
+        targets = [*targets, *selections.values()]
     dependent_ids = await affected_derivations(conn, [target.id for target in targets])
     dependents = await claims_by_ids(
         conn,
@@ -926,6 +941,17 @@ class DataSubjectRightsImpl:
         erased_keys: list[str] = []
         with traced_step(SPAN_COMPLIANCE_DSAR, **{ATTR_ENTITY_ID: str(contact_entity_id)}) as span:
             async with self._conn_factory() as conn:
+                await conn.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+                    {"key": f"contact-research:{self._workspace_id}:{contact_entity_id}"},
+                )
+                if scope == ERASE_ALL:
+                    # Lock source identities before source artifacts, matching provider writers.
+                    erased_keys.extend(
+                        await erase_provider_evidence(
+                            conn, workspace_id=self._workspace_id, contact_id=contact_entity_id
+                        )
+                    )
                 targets = [
                     c
                     for c in await dsar_private_claims(conn, contact_entity_id, self._workspace_id)

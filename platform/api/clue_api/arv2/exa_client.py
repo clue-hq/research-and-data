@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
@@ -45,6 +46,8 @@ from clue_api.arv2.calls import (
     SpendEstimate,
 )
 from clue_api.arv2.transport import HttpRequest, HttpResponse, json_request
+from clue_obs import get_logger
+from clue_obs.langfuse import observation
 
 #: Exa's API root. A parameter on the client rather than a constant in a body builder, so a
 #: proxy or a regional endpoint is a call-site decision.
@@ -248,8 +251,9 @@ class ExaAgentRun:
     ``status`` is Exa's terminal status — ``completed``, ``failed``, ``cancelled`` — or the
     client's own ``timed_out`` when the run outlived ``timeout_s``. Only ``completed`` carries
     ``structured``/``output_text``/``grounding``. ``costs`` is every leg's :class:`CallCost` in
-    order (create, then each poll); ``cost`` is the settling leg's, which is the metered one on a
-    completed run. Nothing here raises for a provider-side failure: the driver's failure law
+    order (create, then each poll); ``cost`` is the last leg's, which is the one metered leg on a
+    run that reached a terminal status (every earlier leg is ``unpriced`` by design — one run,
+    one charge). Nothing here raises for a provider-side failure: the driver's failure law
     (ARV2-ONBOARDING-PLAN.md §3) records it on the step.
     """
 
@@ -414,6 +418,7 @@ def search_body(
     text_max_chars: int = 1500,
     highlights: Mapping[str, object] | None = None,
     output_schema: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/search`` body. Every optional key is absent unless the caller passed it.
 
@@ -441,6 +446,8 @@ def search_body(
         body["category"] = category
     if highlights is not None:
         body["contents"]["highlights"] = dict(highlights)
+    if extras is not None:
+        body["contents"]["extras"] = dict(extras)
     if output_schema is not None:
         # Copied, never aliased: the same rule ``agent_run_body`` keeps for its schema.
         body["outputSchema"] = dict(output_schema)
@@ -453,6 +460,7 @@ def contents_body(
     text_max_chars: int = 8000,
     livecrawl: LivecrawlMode | None = None,
     highlights: Mapping[str, object] | None = None,
+    extras: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``/contents`` body. No ``livecrawl`` key means Exa serves its indexed copy."""
     body: dict[str, Any] = {"urls": list(urls), "text": {"maxCharacters": text_max_chars}}
@@ -460,6 +468,8 @@ def contents_body(
         body["livecrawl"] = livecrawl
     if highlights is not None:
         body["highlights"] = dict(highlights)
+    if extras is not None:
+        body["extras"] = dict(extras)
     return body
 
 
@@ -499,6 +509,7 @@ def deep_reasoning_body(
     text_max_chars: int = 10000,
     highlights_query: str | None = None,
     highlights_max_chars: int = 2000,
+    contents: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     """Build a ``type="deep-reasoning"`` body.
 
@@ -525,6 +536,8 @@ def deep_reasoning_body(
             "query": highlights_query,
             "maxCharacters": highlights_max_chars,
         }
+    if contents is not None:
+        body["contents"] = deepcopy(dict(contents))
     return body
 
 
@@ -567,8 +580,21 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
     Stateless on purpose: a reader reports what it read by returning it. A body that is not JSON,
     or carries no ``costDollars`` at all, yields an empty reading — "Exa did not tell us" is a
     real answer and the wrapper records it as such, never as zero.
+
+    The exception is a 4xx. Exa refused the request before doing any work — out of credits, a key
+    it does not accept, a body it could not validate — so nothing was sold, and the reading says
+    so with an explicit zero. Left empty, the wrapper would fall back to the estimate and record a
+    charge that never happened (seven refused Answer calls at a cent each on run ``ee79d837``).
+    A 5xx keeps the empty reading: whether a failed call did billable work is not something this
+    module can know.
     """
     body = _body_json(response)
+    if 400 <= response.status < 500:
+        request_id = body.get("requestId")
+        return CostReading(
+            cost_usd=Decimal(0),
+            provider_request_id=request_id if isinstance(request_id, str) else None,
+        )
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     request_id = body.get("requestId")
@@ -580,21 +606,45 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
 
 
 def exa_agent_cost_reader(response: HttpResponse) -> CostReading:
-    """Read an Agent run body: ``costDollars.total`` and ``usage`` appear only on the completed
-    run, so a queued/running poll yields a reading with the run id and no cost — "Exa has not
-    told us yet", recorded as such, never as zero."""
+    """Read an Agent run body. Only a **terminal** body settles money.
+
+    Exa quotes ``costDollars`` (the effort's fixed price, with a projected ``usage``) on the
+    create response and on every queued/running poll, long before the run has done anything —
+    the live ledger of 2026-09-29 proved it: 208 poll rows each re-booked the same $0.10 / $0.50
+    and a $1.30 onboarding read as $39.50. One run is one charge, so this reader settles it once,
+    on the body whose ``status`` is terminal (``completed`` / ``failed`` / ``cancelled``): that is
+    Exa's final word, and the only one that is right for ``auto`` effort or a run that stopped
+    early. Every non-terminal body yields a reading that declares itself ``usd_unpriced`` — the
+    row keeps the run id and the quote (as ``quoted_cost_breakdown``) but carries NULL USD, so
+    the projection neither sums it nor mistakes it for a measured zero. The create leg's
+    reservation still lives on its pre-wire *estimate* row (law 2), which is where the ceiling
+    check reads it.
+
+    Residual: a run the client gives up on (``timed_out``) never sees a terminal body, so its
+    charge is not on the ledger — the step's ``failure_code`` says ``timeout`` and the quote is on
+    every leg's row for a hand reconciliation.
+    """
     body = _body_json(response)
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     usage = body.get("usage")
     run_id = body.get("id")
     extras: dict[str, object] = {}
-    if costs:
-        extras["cost_breakdown"] = costs
     if isinstance(usage, dict):
         extras["usage"] = usage
+    if _agent_status(body) in AGENT_TERMINAL_STATUSES:
+        if costs:
+            extras["cost_breakdown"] = costs
+        return CostReading(
+            cost_usd=_decimal(costs.get("total")),
+            provider_request_id=run_id if isinstance(run_id, str) else None,
+            extras=extras,
+        )
+    extras["usd_unpriced"] = True
+    extras["settles_on"] = "terminal_poll"
+    if costs:
+        extras["quoted_cost_breakdown"] = costs
     return CostReading(
-        cost_usd=_decimal(costs.get("total")),
         provider_request_id=run_id if isinstance(run_id, str) else None,
         extras=extras,
     )
@@ -790,6 +840,22 @@ def _read_report(parsed: object | None) -> str | None:
     return None
 
 
+def read_deep_report(body: Mapping[str, Any], *, text_output: bool = False) -> str | None:
+    """Read retained deep output without mistaking a JSON envelope for a text report."""
+    output_text, parsed, _ = _read_output(body)
+    report = _read_report(parsed)
+    if report is not None:
+        return report
+    if text_output and parsed is None:
+        # Missing/malformed output must not become a report containing the envelope JSON.
+        output = body.get("output")
+        if isinstance(output, str) or (
+            isinstance(output, dict) and isinstance(output.get("content"), str)
+        ):
+            return output_text
+    return None
+
+
 def is_thin_deep_response(
     *, n_results: int, cost_usd: Decimal | None, report_chars: int | None
 ) -> bool:
@@ -893,6 +959,7 @@ class ExaClient:
         text_max_chars: int = 1500,
         highlights: Mapping[str, object] | None = None,
         output_schema: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-search",
         timeout_s: float = 180.0,
     ) -> ExaSearchResult:
@@ -914,6 +981,7 @@ class ExaClient:
                 text_max_chars=text_max_chars,
                 highlights=highlights,
                 output_schema=output_schema,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=SEARCH_ESTIMATE_USD),
             timeout_s=timeout_s,
@@ -936,6 +1004,7 @@ class ExaClient:
         text_max_chars: int = 8000,
         livecrawl: LivecrawlMode | None = None,
         highlights: Mapping[str, object] | None = None,
+        extras: Mapping[str, object] | None = None,
         label: str = "exa-contents",
         timeout_s: float = 240.0,
     ) -> ExaContentsResult:
@@ -950,6 +1019,7 @@ class ExaClient:
                 text_max_chars=text_max_chars,
                 livecrawl=livecrawl,
                 highlights=highlights,
+                extras=extras,
             ),
             estimate=SpendEstimate(usd=CONTENTS_ESTIMATE_USD_PER_URL * len(urls)),
             timeout_s=timeout_s,
@@ -1020,6 +1090,7 @@ class ExaClient:
         text_max_chars: int = 10000,
         highlights_query: str | None = None,
         highlights_max_chars: int = 2000,
+        contents: Mapping[str, object] | None = None,
         label: str = "exa-deep",
         timeout_s: float = 1200.0,
     ) -> ExaDeepResult:
@@ -1040,8 +1111,11 @@ class ExaClient:
             text_max_chars=text_max_chars,
             highlights_query=highlights_query,
             highlights_max_chars=highlights_max_chars,
+            contents=contents,
         )
-        wants_report = "report" in _schema_properties(output_schema)
+        wants_report = (
+            "report" in _schema_properties(output_schema) or output_schema.get("type") == "text"
+        )
         first = self._deep_call(body, label=label, timeout_s=timeout_s)
         report_chars = len(first.report_text or "") if wants_report else None
         if not is_thin_deep_response(
@@ -1049,7 +1123,20 @@ class ExaClient:
         ):
             return first
 
-        retry = self._deep_call(body, label=f"{label}-retry", timeout_s=timeout_s)
+        metadata = {
+            "provider": PROVIDER,
+            "operation": "deep-reasoning",
+            "label": label,
+            "next_label": f"{label}-retry",
+            "reason": "thin_response",
+            "first_ledger_row_id": first.ledger_row_id,
+            "result_count": first.n_results,
+            "report_chars": report_chars,
+            "cost_usd": str(first.cost_usd),
+        }
+        with observation("exa.thin_response_retry", as_type="span", metadata=metadata):
+            get_logger(__name__).info("provider.retry.scheduled", **metadata)
+            retry = self._deep_call(body, label=f"{label}-retry", timeout_s=timeout_s)
         kept = retry if _is_richer(retry, first) else first
         return replace(kept, retried=True)
 
@@ -1068,8 +1155,10 @@ class ExaClient:
 
         Blocking by design (R2 composition constraint): the driver calls this through
         ``asyncio.to_thread``. Each leg is one wrapped call with its own raw record and ledger
-        row; the create leg reserves the effort's fixed price, the polls reserve nothing, and the
-        completed body's ``costDollars`` settles the last row as metered.
+        row; the create leg reserves the effort's fixed price on its pre-wire estimate row, and
+        the run's one charge is settled as metered on the terminal body alone — the create and
+        every running poll settle ``usd_unpriced`` (see :func:`exa_agent_cost_reader`), so the
+        legs of one run never sum to more than the run.
         """
         body = agent_run_body(
             query=query, output_schema=output_schema, effort=effort, system_prompt=system_prompt
@@ -1180,7 +1269,9 @@ class ExaClient:
         return ExaDeepResult(
             output_text=output_text,
             output_object=output_object,
-            report_text=_read_report(output_object),
+            report_text=read_deep_report(
+                parsed_body, text_output=body.get("outputSchema", {}).get("type") == "text"
+            ),
             grounding=grounding,
             results=_hits(parsed_body.get("results")),
             status=result.response.status,

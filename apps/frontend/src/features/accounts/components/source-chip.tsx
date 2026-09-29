@@ -137,7 +137,7 @@ export function SourceChip({
             <span>{activeLabel || "Private record"}</span>
           </span>
           <span className={styles.popoverTitle}>
-            {activeEvidence.title ?? "Verified private record"}
+            {activeEvidence.title ?? (activeEvidence.sourceKind === "inference" ? "Research interpretation" : "Source record")}
           </span>
           {activeEvidence.quote ? (
             <span className={styles.popoverQuote}>

@@ -38,6 +38,7 @@ from typing import ClassVar, Final
 
 from pydantic import Field
 
+from clue_agents.manual import tool_manual_link
 from clue_api.sandbox.docker_runner import SandboxLimits, SandboxRun, docker_available, run_script
 from clue_api.sandbox.policy_sweep import SweepResult, snapshot, sweep
 from clue_api.sandbox.workspaces import RunBudgetExhausted, SandboxMounts, SandboxWorkspaces
@@ -181,8 +182,7 @@ class RunPythonTool(Tool):
         "There is no network, so do not try to download anything, and nothing outside those "
         "folders exists. Output longer than 16 KB is written to a file and the result tells you "
         "its path. You get a few runs per turn, and the result says how many are left, so plan "
-        "the script before you call. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#run_python"
+        "the script before you call. " + tool_manual_link("run_python")
     )
     input_model: ClassVar[type[ToolInput]] = RunPythonInput
     output_model: ClassVar[type[ToolOutput]] = RunPythonOutput

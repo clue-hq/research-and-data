@@ -167,33 +167,55 @@ def request_id(request: Request) -> str:
     return generated
 
 
-def error_envelope(request: Request, *, status_code: int, code: str, message: str) -> JSONResponse:
-    """Build the FI-1 envelope response, with the request id in both the body and the header."""
+def error_envelope(
+    request: Request,
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    retryable: bool | None = None,
+) -> JSONResponse:
+    """Build the FI-1 envelope response, with the request id in both the body and the header.
+
+    ``retryable`` is the one optional extra key an endpoint may add to the ``error`` object (the
+    Settings → Pages disconnect uses it to say the provider call may be retried); it is omitted
+    entirely when absent so every other envelope keeps its exact three-key shape.
+    """
 
     resolved = request_id(request)
+    error: dict[str, Any] = {"code": code, "message": message, "requestId": resolved}
+    if retryable is not None:
+        error["retryable"] = retryable
     return JSONResponse(
         status_code=status_code,
-        content={"error": {"code": code, "message": message, "requestId": resolved}},
+        content={"error": error},
         headers={REQUEST_ID_HEADER: resolved},
     )
 
 
-def _envelope_parts(exc: StarletteHTTPException) -> tuple[str, str]:
-    """Derive ``(code, message)`` from an ``HTTPException``.
+def _envelope_parts(exc: StarletteHTTPException) -> tuple[str, str, bool | None]:
+    """Derive ``(code, message, retryable)`` from an ``HTTPException``.
 
     A ``detail`` dict carrying an explicit ``code`` wins — that is how a slice-1 endpoint emits a
     domain code such as ``ACCOUNT_NOT_FOUND`` without every route re-implementing the envelope.
-    Anything else falls back to the status vocabulary with the detail as the message.
+    Anything else falls back to the status vocabulary with the detail as the message. A boolean
+    ``retryable`` in that dict rides through to the ``error`` object; anything non-boolean (or
+    absent) yields ``None`` and no key at all.
     """
 
     detail: Any = exc.detail
     if isinstance(detail, dict) and isinstance(detail.get("code"), str):
         message = detail.get("message")
-        return detail["code"], message if isinstance(message, str) and message else str(exc.detail)
+        retryable = detail.get("retryable")
+        return (
+            detail["code"],
+            message if isinstance(message, str) and message else str(exc.detail),
+            retryable if isinstance(retryable, bool) else None,
+        )
     default_code = _status_code_name(exc.status_code)
     if isinstance(detail, str) and detail:
-        return default_code, detail
-    return default_code, _status_phrase(exc.status_code)
+        return default_code, detail, None
+    return default_code, _status_phrase(exc.status_code), None
 
 
 def _validation_message(exc: RequestValidationError) -> str:
@@ -269,6 +291,7 @@ def build_frontend_read_router(
     from clue_api.frontend_read.project_memory import register_project_memory_routes
     from clue_api.frontend_read.research_progress import register_research_progress_route
     from clue_api.frontend_read.settings import register_settings_routes
+    from clue_api.frontend_read.settings_pages import register_settings_pages_routes
     from clue_api.frontend_read.uploads import register_upload_routes
 
     allow_local_mutations = (
@@ -352,6 +375,15 @@ def build_frontend_read_router(
     )
     # The cross-project artifacts library and the caller's marks (spec 2026-09-15).
     register_artifact_routes(router, conn_factory=conn_factory)
+    # Settings → Pages: page defaults, the Clue address label, the custom hostname (spec §7).
+    register_settings_pages_routes(
+        router,
+        conn_factory=conn_factory,
+        settings=settings,
+        secrets=secrets,
+        storage=evidence_storage,
+        allow_local_mutations=allow_local_mutations,
+    )
     register_contact_routes(
         router,
         conn_factory=conn_factory,
@@ -459,8 +491,14 @@ def install_frontend_read_surface(
         http_exc = cast(StarletteHTTPException, exc)
         if not _in_scope(request):
             return await default_http_exception_handler(request, http_exc)
-        code, message = _envelope_parts(http_exc)
-        return error_envelope(request, status_code=http_exc.status_code, code=code, message=message)
+        code, message, retryable = _envelope_parts(http_exc)
+        return error_envelope(
+            request,
+            status_code=http_exc.status_code,
+            code=code,
+            message=message,
+            retryable=retryable,
+        )
 
     async def _validation_exception_handler(request: Request, exc: Exception) -> Response:
         validation_exc = cast(RequestValidationError, exc)

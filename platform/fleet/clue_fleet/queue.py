@@ -212,7 +212,9 @@ _ENQUEUE_REOPEN_SQL = text(
     """
 )
 
-# Atomic claim-next. The inner SELECT picks the single best runnable row — ``queued``, or
+# Atomic claim-next. A MATERIALIZED candidate prevents planner rescans of the locking SELECT
+# from selecting more rows as SKIP LOCKED changes under concurrent updates.
+# The inner SELECT picks the single best runnable row — ``queued``, or
 # ``claimed`` past the staleness window — in ``(priority, enqueue_seq)`` order, locking it with
 # SKIP LOCKED so concurrent claimants (in-process drainers or a second worker process) fall
 # through to the next row instead of blocking or double-claiming. ``enqueue_seq`` (not
@@ -230,13 +232,7 @@ _ENQUEUE_REOPEN_SQL = text(
 # it stays ``queued``, with its position intact, for a worker that can run it.
 _CLAIM_NEXT_SQL = text(
     f"""
-    UPDATE fleet_task
-    SET status = 'claimed',
-        claimed_by = :worker_id,
-        claimed_at = now(),
-        attempts = attempts + 1,
-        updated_at = now()
-    FROM (
+    WITH candidate AS MATERIALIZED (
         SELECT task_id
         FROM fleet_task
         WHERE kind = CAST(:kind AS fleet_task_kind)
@@ -258,7 +254,14 @@ _CLAIM_NEXT_SQL = text(
         ORDER BY priority, enqueue_seq
         LIMIT 1
         FOR UPDATE SKIP LOCKED
-    ) AS candidate
+    )
+    UPDATE fleet_task
+    SET status = 'claimed',
+        claimed_by = :worker_id,
+        claimed_at = now(),
+        attempts = attempts + 1,
+        updated_at = now()
+    FROM candidate
     WHERE fleet_task.task_id = candidate.task_id
     RETURNING {_QUALIFIED_COLUMNS}
     """

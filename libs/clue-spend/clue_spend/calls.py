@@ -31,6 +31,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from clue_core.provider_failures import classify_http
+from clue_obs import get_logger
 from clue_obs.langfuse import ObservationLike, ObservationType, guardrail, observation
 
 from .errors import (
@@ -125,6 +126,7 @@ class CostReading:
     provider_request_id: str | None = None
     media_seconds: int | None = None
     extras: Mapping[str, object] = field(default_factory=dict)
+    inferred: bool = False
 
 
 #: Where the numbers on a settled ledger row came from. Written into every result row's
@@ -138,8 +140,10 @@ class CostReading:
 #:   enclosure ``GET``/``HEAD``, the Files API upload legs) are all this, and labelling them
 #:   ``estimate`` would quietly imply an unread bill that does not exist.
 #: * ``estimate`` — a reader existed and reported nothing, so the pre-spend estimate stands in for
-#:   the cost. This is the only value that means "we do not actually know".
-CostSource = Literal["metered", "estimate", "free"]
+#:   the cost.
+#: * ``unpriced`` — the adapter explicitly declares ``usd_unpriced`` and no USD metering
+#:   answered. Usage remains recorded, but USD stays NULL rather than becoming a measured zero.
+CostSource = Literal["metered", "estimate", "free", "unpriced"]
 
 
 @dataclass(frozen=True)
@@ -194,6 +198,7 @@ class CallSpec:
     estimate: SpendEstimate = field(default_factory=SpendEstimate)
     max_attempts: int = DEFAULT_MAX_ATTEMPTS
     retry_statuses: frozenset[int] = DEFAULT_RETRY_STATUSES
+    empty_statuses: frozenset[int] = frozenset()
     halt_rule: HaltRule | None = None
     cost_reader: CostReader | None = None
     raw_scrubber: RawScrubber | None = None
@@ -242,7 +247,10 @@ def _observation_type(operation: str) -> ObservationType:
     """What kind of work a provider operation is, for the tree: a model completion, an embedding,
     or a fetch/tool hop (the default — an ATS board, a watch page, a media upload leg)."""
     lowered = operation.lower()
-    if lowered.endswith("chat/completions") or lowered == "agent_completion":
+    if lowered.endswith(("chat/completions", ":generatecontent")) or lowered in {
+        "agent_completion",
+        "listen/pre-recorded",
+    }:
         return "generation"
     if "embed" in lowered:
         return "embedding"
@@ -416,11 +424,13 @@ class ProviderCaller:
                 is_last = index == spec.max_attempts - 1
                 started = self._monotonic()
                 try:
-                    response = self._transport.send(spec.request)
+                    response = self._send_attempt(spec, call_id=call_id, attempt=attempts)
                 except TransportFailure as exc:
                     latency_ms = self._elapsed_ms(started)
                     if not is_last:
-                        self._sleep(2.0 * (index + 1))
+                        self._retry_wait(
+                            spec, call_id, attempts, "transport_error", 2.0 * (index + 1)
+                        )
                         continue
                     self._record(
                         spec,
@@ -471,7 +481,13 @@ class ProviderCaller:
                     raise RawScrubFailed(spec.provider, raw_refs[-1], str(exc)) from exc
                 raw_refs.append(self._save_raw(spec, call_id, index, latency_ms, response))
                 if response.status in spec.retry_statuses and not is_last:
-                    self._sleep(self._retry_delay(response, index))
+                    self._retry_wait(
+                        spec,
+                        call_id,
+                        attempts,
+                        f"http_{response.status}",
+                        self._retry_delay(response, index),
+                    )
                     continue
                 break
 
@@ -516,7 +532,9 @@ class ProviderCaller:
             settled, actual_over_ceiling = self._settle(
                 spec,
                 call_id=call_id,
-                outcome=self._outcome(response.status, spec.retry_statuses),
+                outcome="ok"
+                if response.status in spec.empty_statuses
+                else self._outcome(response.status, spec.retry_statuses),
                 attempts=attempts,
                 latency_ms=latency_ms,
                 status=response.status,
@@ -539,6 +557,74 @@ class ProviderCaller:
             )
 
     # -- internals ---------------------------------------------------------------------------
+
+    def _send_attempt(self, spec: CallSpec, *, call_id: str, attempt: int) -> HttpResponse:
+        """Observe the wire wait independently of parsing, persistence and retry backoff."""
+        metadata = {
+            "call_id": call_id,
+            "provider": spec.provider,
+            "operation": spec.operation,
+            "label": spec.label,
+            "attempt": attempt,
+            "max_attempts": spec.max_attempts,
+            "timeout_s": spec.request.timeout_s,
+        }
+        log = get_logger(__name__)
+        with observation("provider.http_attempt", as_type="span", metadata=metadata) as span:
+            fields = {**metadata, **_langfuse_extras(span)}
+            log.info("provider.attempt.started", **fields)
+            started = self._monotonic()
+            try:
+                response = self._transport.send(spec.request)
+            except BaseException as exc:
+                # Exception messages may contain URLs/credentials. Record only the class.
+                outcome = {
+                    "elapsed_ms": self._elapsed_ms(started),
+                    "outcome": "transport_error"
+                    if isinstance(exc, TransportFailure)
+                    else "interrupted"
+                    if not isinstance(exc, Exception)
+                    else "error",
+                    "error_type": type(exc).__name__,
+                    "cause_type": type(exc.__cause__).__name__ if exc.__cause__ else None,
+                }
+                log.info("provider.attempt.finished", **fields, **outcome)
+                span.update(output=outcome, level="ERROR", status_message=outcome["outcome"])
+                raise
+            outcome = {
+                "elapsed_ms": self._elapsed_ms(started),
+                "outcome": "response",
+                "http_status": response.status,
+            }
+            log.info("provider.attempt.finished", **fields, **outcome)
+            span.update(output=outcome)
+            return response
+
+    def _retry_wait(
+        self,
+        spec: CallSpec,
+        call_id: str,
+        attempt: int,
+        reason: str,
+        delay_s: float,
+    ) -> None:
+        metadata = {
+            "call_id": call_id,
+            "provider": spec.provider,
+            "operation": spec.operation,
+            "label": spec.label,
+            "attempt": attempt,
+            "next_attempt": attempt + 1,
+            "reason": reason,
+            "delay_s": delay_s,
+        }
+        with observation("provider.retry_wait", as_type="span", metadata=metadata) as span:
+            get_logger(__name__).info(
+                "provider.retry.scheduled",
+                **metadata,
+                **_langfuse_extras(span),
+            )
+            self._sleep(delay_s)
 
     def _elapsed_ms(self, started: float) -> int:
         return max(0, int((self._monotonic() - started) * 1000))
@@ -746,14 +832,27 @@ class ProviderCaller:
         told_us_nothing = (
             cost.cost_usd is None and cost.credits is None and cost.media_seconds is None
         )
-        source = self._cost_source(spec, told_us_nothing=told_us_nothing)
-        usd = spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0))
+        unpriced = cost.cost_usd is None and (
+            cost.extras.get("usd_unpriced") is True or spec.extras.get("usd_unpriced") is True
+        )
+        source: CostSource = (
+            "unpriced"
+            if unpriced
+            else "estimate"
+            if cost.inferred
+            else self._cost_source(spec, told_us_nothing=told_us_nothing)
+        )
+        usd = (
+            None
+            if unpriced
+            else (spec.estimate.usd if told_us_nothing else (cost.cost_usd or Decimal(0)))
+        )
         credits = spec.estimate.credits if told_us_nothing else (cost.credits or Decimal(0))
         media_seconds = (
             spec.estimate.media_seconds if told_us_nothing else (cost.media_seconds or 0)
         )
         over_ceiling = self._exceeds_ceilings(
-            SpendEstimate(usd=usd, credits=credits, media_seconds=media_seconds)
+            SpendEstimate(usd=usd or Decimal(0), credits=credits, media_seconds=media_seconds)
         )
         if over_ceiling:
             guardrail(
@@ -763,7 +862,7 @@ class ProviderCaller:
             )
         with self._totals_lock:
             self._totals = SpendTotals(
-                usd=self._totals.usd + usd,
+                usd=self._totals.usd + (usd or Decimal(0)),
                 credits=self._totals.credits + credits,
                 media_seconds=self._totals.media_seconds + media_seconds,
             )
@@ -784,7 +883,11 @@ class ProviderCaller:
             raw_ref=raw_ref,
             extras={
                 **cost.extras,
-                **_failure_extras(spec.provider, status, response_body),
+                **(
+                    {}
+                    if status in spec.empty_statuses
+                    else _failure_extras(spec.provider, status, response_body)
+                ),
                 "cost_source": source,
                 **_langfuse_extras(current),
             },
@@ -800,7 +903,7 @@ class ProviderCaller:
                     "provider_request_id": cost.provider_request_id,
                     "raw_ref": raw_ref,
                 },
-                cost_details={"total": float(usd)},
+                cost_details={"total": float(usd)} if usd is not None else None,
                 usage_details=_usage_details(cost, credits=credits, media_seconds=media_seconds)
                 or None,
                 metadata={
@@ -812,11 +915,14 @@ class ProviderCaller:
                     # ``tool`` fetch, an ``agent`` leg). The money is therefore repeated in
                     # metadata, which every observation type keeps, so a free or non-token call
                     # still shows what it settled at.
-                    "cost_usd": str(usd),
+                    "cost_usd": str(usd) if usd is not None else None,
                     "credits": str(credits),
                     "media_seconds": media_seconds,
+                    # An unpriced call must not acquire a vendor price-table estimate in
+                    # Langfuse. Keep its model as metadata until authoritative pricing exists.
+                    "model": model,
                 },
-                **({"model": model} if isinstance(model, str) and model else {}),
+                **({"model": model} if isinstance(model, str) and model and not unpriced else {}),
                 **(
                     {"level": "ERROR", "status_message": error_code or outcome}
                     if outcome != "ok"

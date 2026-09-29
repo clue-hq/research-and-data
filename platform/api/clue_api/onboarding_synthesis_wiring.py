@@ -71,6 +71,7 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
     CheckpointerFactory,
@@ -1199,6 +1200,7 @@ class OnboardingSynthesisLauncher:
         ).build()
         return await DurableDeepAgentTurnRunner(
             runtime=DeepAgentTurnRuntime(
+                compaction_for=compaction_for,
                 models=self._components.models,
                 execution=execution,
                 max_runtime_s=resolved.profile.turn_timeout_s,
@@ -1385,17 +1387,37 @@ class OnboardingSynthesisLauncher:
                 )
                 version = int(lineage["next_version"])
                 supersedes = lineage["supersedes_document_id"]
+                source_icp_sha256 = None
+                if kind == "audience-persona" and icp is not None:
+                    source_icp_sha256 = (
+                        await conn.execute(
+                            text(
+                                "SELECT artifact_sha256 FROM brand_knowledge_document "
+                                "WHERE document_id=:doc AND workspace_id=:ws AND brand_id=:brand "
+                                "AND kind='icp-definition' "
+                                "AND project_id IS NOT DISTINCT FROM :project"
+                            ),
+                            {
+                                "doc": icp.document_id,
+                                "ws": workspace_id,
+                                "brand": brand_id,
+                                "project": project_id,
+                            },
+                        )
+                    ).scalar_one()
+                    if source_icp_sha256 is None:
+                        raise ValueError("persona source ICP has no artifact digest")
                 await conn.execute(
                     text(
                         "INSERT INTO brand_knowledge_document ("
                         "  document_id, workspace_id, brand_id, project_id, folder, path, kind, "
                         "  version, status, artifact_key, artifact_sha256, produced_by_turn_id, "
-                        "  supersedes_document_id"
+                        "  supersedes_document_id, source_icp_document_id, source_icp_sha256"
                         ") VALUES ("
                         "  :document_id, :workspace_id, :brand_id, :project_id, 'audience', "
                         "  :path, :kind, "
                         "  :version, :status, :artifact_key, :artifact_sha256, :turn_id, "
-                        "  :supersedes"
+                        "  :supersedes, :source_icp_document_id, :source_icp_sha256"
                         ") ON CONFLICT (document_id) DO NOTHING"
                     ),
                     {
@@ -1410,6 +1432,10 @@ class OnboardingSynthesisLauncher:
                         "artifact_key": ref.artifact_key,
                         "artifact_sha256": ref.sha256,
                         "turn_id": turn_id,
+                        "source_icp_document_id": icp.document_id
+                        if source_icp_sha256 is not None and icp is not None
+                        else None,
+                        "source_icp_sha256": source_icp_sha256,
                         # A replayed launch re-reads a chain it already wrote, so the row it would
                         # name is its own; the ON CONFLICT above makes that a no-op either way.
                         "supersedes": None if supersedes == document_id else supersedes,

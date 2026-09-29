@@ -61,6 +61,11 @@ class SubjectRef:
     account_domain: str | None
     persona: str | None = None
     title: str | None = None
+    membership_state: Literal["candidate", "supported", "needs_verification", "excluded"] | None = (
+        None
+    )
+    membership_gaps: tuple[str, ...] = ()
+    outreach_eligible: bool = False
 
     def to_prompt(self) -> dict[str, str]:
         """The ``subject`` object of the page header — names only, never an id or a domain."""

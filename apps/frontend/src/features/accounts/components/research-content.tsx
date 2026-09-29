@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "./research-link";
 import { Popover } from "@base-ui/react/popover";
 import { DesignIcon } from "@/components/ui/design-icon";
 import {
@@ -131,7 +131,7 @@ function EvidenceRun({
 
   return evidence.map((record) => (
     <span className={styles.evidenceRun} key={record.claimId}>
-      <SourceChip evidence={record} />
+      <SourceChip evidence={record} relatedEvidence={[record, ...(record.supportingClaimIds ?? []).map((id) => evidenceById.get(id)).filter((entry): entry is ResearchEvidence => Boolean(entry))]} />
     </span>
   ));
 }
@@ -507,7 +507,7 @@ function ResearchTools({
           <ul>
             {sources.map((record) => (
               <li key={record.sourceUrl ?? record.claimId}>
-                {record.researchFieldKey ? <SourceChip evidence={record} /> : <a href={record.sourceUrl!} target="_blank" rel="noreferrer">
+                {record.researchFieldKey ? <SourceChip evidence={record} relatedEvidence={[record, ...(record.supportingClaimIds ?? []).map((id) => evidenceById.get(id)).filter((entry): entry is ResearchEvidence => Boolean(entry))]} /> : <a href={record.sourceUrl!} target="_blank" rel="noreferrer">
                   <SourceIcon evidence={record} />
                   <span className={styles.inventoryTitle}>{record.title ?? record.sourceDomain}</span>
                   <span className={styles.inventoryDomain}>{sourceLabel(record.sourceDomain)}</span>
@@ -807,7 +807,7 @@ export function BuyingCommitteeTable({
                 <td>{member.persona}</td>
                 <td>
                   <span className={styles.committeeLinks}>
-                    {member.email ? (
+                    {member.email && member.outreachEligible === false ? <span>{member.email}</span> : member.email ? (
                       <a
                         className={styles.committeeLink}
                         href={`mailto:${member.email}`}

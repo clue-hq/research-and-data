@@ -1873,3 +1873,51 @@ def test_custom_research_values_and_evidence_survive_retirement(entity: str) -> 
                 ).status_code == 404
 
     run_async(scenario())
+
+
+def test_agent_registered_research_fields_never_become_custom_fields() -> None:
+    """Founder ruling 2026-09-29: committee selection and research findings are research data a
+    research agent registered for its own narrative — never a row in the Custom rail."""
+
+    async def scenario() -> None:
+        from clue_api.frontend_read.v1_shared import custom_fields_for
+        from clue_research.claimstore.registry import register_agent_research_field
+
+        async with rollback_conn() as conn:
+            fixture = await _build_v1(conn)
+            human = await register_workspace_research_field(
+                conn,
+                workspace_id=_WS,
+                entity="accounts",
+                label="Public talk",
+                description="Find an attributed talk.",
+                created_by="human:test",
+            )
+            agent = await register_agent_research_field(
+                conn, workspace_id=_WS, field_key="account.research_finding", run_id="run-test"
+            )
+            writer = LenientClaimWriter(lenient=True)
+            for key in (human.field_def.field_key, agent.field_def.field_key):
+                await writer.write(
+                    conn,
+                    ClaimDraft(
+                        entity_id=fixture.zafran,
+                        entity_type=EntityType.ACCOUNT,
+                        field_key=key,
+                        value_json="Security talk",
+                        workspace_id=_WS,
+                        run_id=new_run_id(),
+                        research_mode=ResearchMode.ACCOUNT_PROFILING,
+                        extraction_method=ExtractionMethod.API,
+                        source_url="https://example.test/talk",
+                        evidence_span="Speaker discussed security.",
+                        artifact_key=_TITLE_ARTIFACT_KEY,
+                        use_class=UseClass.PROFESSIONAL_PUBLIC,
+                    ),
+                )
+            fields = await custom_fields_for(conn, workspace_id=_WS, account_ids=[fixture.zafran])
+            keys = {f.id for f in fields.get(fixture.zafran, [])}
+            assert human.field_def.field_key in keys
+            assert "account.research_finding" not in keys
+
+    run_async(scenario())

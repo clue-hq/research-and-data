@@ -11,6 +11,8 @@ import pytest
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
     ARV2_PERSON_PROFILE_REF,
+    CONTACT_ENRICHMENT_POLICY,
+    RESEARCH_PROVIDER_POLICY,
     AccountContext,
     PersonContext,
     arv2_account_catalog_root,
@@ -141,6 +143,9 @@ def test_system_prompt_stacks_profile_prompt_skills_and_the_context_block() -> N
         },
     )
     prompt = build_system_prompt(bundle, context)
+    assert prompt.endswith(CONTACT_ENRICHMENT_POLICY)
+    assert RESEARCH_PROVIDER_POLICY in prompt
+    assert prompt.index(RESEARCH_PROVIDER_POLICY) > prompt.index("</skill>")
     for marker in (
         '<profile ref="agent-profile:arv2-account:v1"',
         bundle.prompt.body[:40],
@@ -230,6 +235,9 @@ def test_person_system_prompt_stacks_profile_prompt_skills_and_the_context_block
         },
     )
     prompt = build_person_system_prompt(bundle, context)
+    assert prompt.endswith(CONTACT_ENRICHMENT_POLICY)
+    assert RESEARCH_PROVIDER_POLICY in prompt
+    assert prompt.index(RESEARCH_PROVIDER_POLICY) > prompt.index("</skill>")
     for marker in (
         '<profile ref="agent-profile:arv2-person:v1"',
         bundle.prompt.body[:40],

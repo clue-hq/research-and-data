@@ -2,8 +2,8 @@
 
 Loads every job of the project's runs that are not all terminal, plus runs whose last job finished
 within the linger window, and folds them with ``arv2.research_progress.fold_progress``. ARV2 tables
-only (ruling 2026-09-09): the run and job rows are the whole truth, and every number and string on
-the wire comes out of the pure fold — this module invents no display text of its own.
+and persisted dossier/page milestones are projected together. Execution status is preserved;
+the pure fold determines the product-facing progress and completion state.
 
 The wire models live here rather than in ``contract_v1``: that module's ``V1Model`` base is
 camelCase-on-the-wire (``alias_generator=to_camel``) while this document is snake_case by spec, so
@@ -13,6 +13,7 @@ it carries the same frozen/extra-forbid discipline without the aliasing — exac
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Literal, cast
 
@@ -21,6 +22,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 
 from clue_api.arv2.account_research_store import JobStage, JobSubject
+from clue_api.arv2.quality_progress import delivery_progress
 from clue_api.arv2.research_progress import (
     ATTENTION_LINGER_S,
     LINGER_S,
@@ -51,6 +53,7 @@ class ResearchProgressAgentV1(BaseModel):
     account_name: str
     stage: str
     subject: Literal["account", "person"]
+    subject_name: str | None = None
 
 
 class ResearchProgressAttentionV1(BaseModel):
@@ -185,6 +188,9 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
                 .mappings()
                 .all()
             )
+            deliveries = await delivery_progress(
+                conn, workspace_id=workspace_id, job_ids=[row["job_id"] for row in rows]
+            )
         jobs = [
             ProgressJob(
                 run_id=row["run_id"],
@@ -203,6 +209,18 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
             )
             for row in rows
         ]
+        jobs = [
+            replace(
+                j,
+                delivery_stage=d.stage,
+                deliverables_ready=d.ready,
+                delivered_at=d.ready_at,
+                subject_name=d.subject_name,
+            )
+            if (d := deliveries.get(j.job_id)) is not None
+            else j
+            for j in jobs
+        ]
         run_statuses = {row["run_id"]: str(row["run_status"]) for row in rows}
         card = fold_progress(
             jobs, run_statuses=run_statuses, now=datetime.now(UTC), linger_s=LINGER_S
@@ -215,7 +233,7 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
         provider: str | None = None
         for job in jobs:
             parsed = parse_failure_code(job.failure_code)
-            if parsed is None or job.finished_at is None:
+            if parsed is None or job.finished_at is None or job.deliverables_ready:
                 continue
             if newest is None or job.finished_at > newest:
                 newest, provider = job.finished_at, parsed[0]
@@ -254,6 +272,7 @@ def register_research_progress_route(router: APIRouter, *, conn_factory: ConnFac
                         account_name=agent.account_name,
                         stage=agent.stage,
                         subject=agent.subject,
+                        subject_name=agent.subject_name,
                     )
                     for agent in card.agents
                 ],

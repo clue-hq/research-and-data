@@ -132,7 +132,7 @@ _LIVE_SQL = text(
       AND subject_kind = :subject_kind
       AND subject_id = :subject_id
       AND page = :page
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 
@@ -144,7 +144,7 @@ _SUPERSEDE_ONE_SQL = text(
       AND subject_id = :subject_id
       AND page = :page
       AND section_key = :section_key
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 
@@ -156,7 +156,7 @@ _SUPERSEDE_MANY_SQL = text(
       AND subject_id = :subject_id
       AND page = :page
       AND section_key = ANY(CAST(:section_keys AS text[]))
-      AND superseded_at IS NULL
+      AND superseded_at IS NULL AND context_id IS NULL
     """
 )
 

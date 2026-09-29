@@ -21,6 +21,7 @@ from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_websets_client import (
     CREDITS_PER_MATCH,
+    RECALL_CREDITS,
     WEBSETS_BASE_PATH,
     ExaWebsetsClient,
     websets_halt_rule,
@@ -143,28 +144,67 @@ def test_create_posts_company_entity_criteria_and_recall() -> None:
     assert transport.requests[0].url.endswith(WEBSETS_BASE_PATH)
 
 
-def test_create_reserves_ten_credits_per_requested_result_and_records_no_cost_of_its_own() -> None:
-    """Law 2's reservation is the whole webset; the bill itself is read on the items page.
-
-    Recording the estimate as spend here as well would double-count every match — once when the
-    search was asked for and once when its results were read.
-    """
+def _ledgered_client(responses: list[HttpResponse]) -> tuple[ExaWebsetsClient, BufferedLedger]:
     ledger = BufferedLedger()
-    transport = ScriptedTransport([_response({"id": "webset_1", "status": "running"})])
     caller = ProviderCaller(
-        transport=transport,
+        transport=ScriptedTransport(list(responses)),
         raw_sink=BufferedRawSink(),
         ledger=ledger,
         now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
     )
-    client = ExaWebsetsClient(caller, SecretStr("k"), usd_per_credit=USD_PER_CREDIT)
+    return ExaWebsetsClient(caller, SecretStr("k"), usd_per_credit=USD_PER_CREDIT), ledger
+
+
+def test_create_reserves_the_whole_webset_and_records_only_the_recall_estimate_as_its_cost() -> (
+    None
+):
+    """Law 2's reservation is the whole webset; the bill for its results is read on the items page.
+
+    Recording the reservation as spend here as well would double-count every match — once when the
+    search was asked for and once when its results were read. The recall estimate is different:
+    Exa charges five credits for it when the search is created, and no later read shows it.
+    """
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "running"})])
 
     client.create(query="ICP", count=25, criteria=["US"], external_id="run-1", title="t")
 
     rows = ledger.drain()
     assert [row.phase for row in rows] == ["estimate", "result"]
+    assert rows[0].estimate_usd == Decimal(25 * CREDITS_PER_MATCH + RECALL_CREDITS) * USD_PER_CREDIT
+    assert rows[1].cost_usd == Decimal(RECALL_CREDITS) * USD_PER_CREDIT
+    assert rows[1].credits == Decimal(RECALL_CREDITS)
+
+
+def test_create_without_a_recall_estimate_records_no_cost_of_its_own() -> None:
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "running"})])
+
+    client.create(
+        query="ICP", count=25, criteria=["US"], external_id="run-1", title="t", recall=False
+    )
+
+    rows = ledger.drain()
     assert rows[0].estimate_usd == Decimal(25 * CREDITS_PER_MATCH) * USD_PER_CREDIT
     assert rows[1].cost_usd == Decimal(0)
+
+
+def test_cancel_posts_without_a_body_costs_nothing_and_reads_the_idle_webset() -> None:
+    client, ledger = _ledgered_client([_response({"id": "webset_1", "status": "idle"})])
+
+    view = client.cancel("webset_1")
+
+    rows = ledger.drain()
+    assert rows[1].cost_usd == Decimal(0)
+    assert view.webset_id == "webset_1" and view.status == "idle"
+
+
+def test_cancel_goes_to_the_webset_cancel_path() -> None:
+    client, transport = _client([_response({"id": "webset_1", "status": "idle"})])
+
+    client.cancel("webset_1")
+
+    request = transport.requests[0]
+    assert request.method == "POST" and request.body is None
+    assert request.url.endswith(f"{WEBSETS_BASE_PATH}/webset_1/cancel")
 
 
 def test_recall_is_absent_from_the_wire_when_it_was_not_asked_for() -> None:
@@ -212,8 +252,8 @@ def test_get_sends_no_body_and_reads_the_search_progress() -> None:
     assert search.criteria_success_rates == (("US", 83.39), ("Series A", 8.31))
 
 
-def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
-    """The estimate is newer than any shape we recorded, so it is read defensively."""
+def test_the_recall_estimate_is_the_expected_total_exa_reports() -> None:
+    """The shape recorded from the live API on run ``f1549f76`` (2026-09-16)."""
     client, _ = _client(
         [
             _response(
@@ -221,13 +261,20 @@ def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
                     "id": "webset_1",
                     "status": "idle",
                     "searches": [
-                        {"id": "ws_1", "status": "completed", "count": 35, "recall": 1200},
                         {
-                            "id": "ws_2",
+                            "id": "ws_1",
                             "status": "completed",
                             "count": 35,
-                            "recall": {"estimate": 480, "confidence": "medium"},
+                            "recall": {
+                                "expected": {
+                                    "total": 300,
+                                    "confidence": "medium",
+                                    "bounds": {"min": 160, "max": 650},
+                                },
+                                "reasoning": "We estimated the number of U.S. GI practices...",
+                            },
                         },
+                        {"id": "ws_2", "status": "running", "count": 35},
                     ],
                 }
             )
@@ -236,7 +283,8 @@ def test_a_recall_estimate_is_read_wherever_exa_reports_it() -> None:
 
     view = client.get("webset_1")
 
-    assert [search.recall_estimate for search in view.searches] == [1200, 480]
+    # A search that did not ask for the estimate, or whose estimate is not computed yet, has none.
+    assert [search.recall_estimate for search in view.searches] == [300, None]
 
 
 # -- the items page -----------------------------------------------------------------------------
@@ -377,37 +425,79 @@ def test_the_items_cost_is_ten_credits_for_each_row_that_satisfied_every_criteri
 # -- adding a search to a live webset -----------------------------------------------------------
 
 
-def test_add_search_excludes_the_searches_that_already_ran() -> None:
-    """A second pass must not be charged again for the companies the first pass already found."""
+def test_a_top_up_webset_excludes_the_websets_before_it_by_whole_webset() -> None:
+    """``exclude`` accepts ``webset`` or ``import`` — never a single search (a live 400,
+    2026-09-12 and again 2026-09-28) — so a top-up is a new webset that skips the earlier ones."""
+    client, transport = _client([_response({"id": "webset_2", "status": "running"}, status=201)])
+
+    client.create(
+        query="ICP",
+        count=2,
+        criteria=["US"],
+        external_id="run-1:2",
+        title="t",
+        exclude_webset_ids=["webset_1", "webset_0"],
+        recall=False,
+    )
+
+    sent = json.loads(transport.requests[0].body)["search"]
+    assert sent["exclude"] == [
+        {"source": "webset", "id": "webset_1"},
+        {"source": "webset", "id": "webset_0"},
+    ]
+    assert "recall" not in sent
+
+
+def test_a_webset_with_nothing_to_skip_sends_no_exclude() -> None:
+    client, transport = _client([_response({"id": "webset_1", "status": "running"}, status=201)])
+
+    client.create(query="ICP", count=2, criteria=["US"], external_id="run-1:1", title="t")
+
+    assert "exclude" not in json.loads(transport.requests[0].body)["search"]
+
+
+def test_find_reads_a_webset_by_external_id_and_answers_none_when_exa_has_none() -> None:
     client, transport = _client(
         [
-            _response(
-                {
-                    "id": "wsearch_2",
-                    "object": "webset_search",
-                    "websetId": "webset_1",
-                    "status": "running",
-                    "count": 20,
-                },
-                status=201,
-            )
+            _response({"id": "webset_1", "externalId": "arv2-discovery:r:1", "status": "idle"}),
+            _response({"message": "Webset arv2-discovery:r:2 not found"}, status=404),
         ]
     )
 
-    view = client.add_search(
-        "webset_1", query="ICP again", count=20, criteria=["US"], exclude_search_ids=["ws_1"]
-    )
+    found = client.find("arv2-discovery:r:1")
+    missing = client.find("arv2-discovery:r:2")
 
-    sent = json.loads(transport.requests[0].body)
-    assert sent == {
-        "query": "ICP again",
-        "count": 20,
-        "entity": {"type": "company"},
-        "criteria": [{"description": "US"}],
-        "exclude": [{"source": "search", "id": "ws_1"}],
+    assert found is not None and found.webset_id == "webset_1" and found.error is None
+    assert missing is None
+    # The external id is one path segment, its colons escaped.
+    assert transport.requests[0].url.endswith(f"{WEBSETS_BASE_PATH}/arv2-discovery%3Ar%3A1")
+    assert transport.requests[0].body is None
+
+
+def test_a_refused_call_is_reported_on_the_view_not_read_as_an_empty_webset() -> None:
+    """The old widening search was refused with a 400 on every run and read as a search that
+    found nobody. The view now says it was refused, in Exa's own words."""
+    body = {"statusCode": 400, "message": "exclude.0.source: Invalid option", "error": "Bad"}
+    client, _ = _client([_response(body, status=400)])
+
+    view = client.create(query="ICP", count=2, criteria=["US"], external_id="r:1", title="t")
+
+    assert view.error is not None
+    assert "400" in view.error and "Invalid option" in view.error
+
+
+def test_a_refused_items_page_ends_the_walk_and_says_so() -> None:
+    page1 = {
+        "data": [_item("witem_1", "https://probook.com", "Probook", yes=True)],
+        "hasMore": True,
+        "nextCursor": "c2",
     }
-    assert transport.requests[0].url.endswith(f"{WEBSETS_BASE_PATH}/webset_1/searches")
-    assert view.webset_id == "webset_1" and view.searches[0].search_id == "wsearch_2"
+    client, _ = _client([_response(page1), _response({"message": "boom"}, status=400)])
+
+    result = client.items("webset_1")
+
+    assert [item.name for item in result.items] == ["Probook"]
+    assert result.error is not None and "boom" in result.error
 
 
 # -- money truth --------------------------------------------------------------------------------

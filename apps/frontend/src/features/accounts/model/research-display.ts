@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ResearchQualitySchema } from "./research-context";
 
 export const HttpUrlSchema = z
   .string()
@@ -13,6 +14,11 @@ export const HttpUrlSchema = z
 
 export const ResearchEvidenceSchema = z.object({
   claimId: z.string().min(1),
+  sourceKind: z.enum(["primary_quote", "source_excerpt", "provider_record", "inference"]).nullish(),
+  sourceExcerpt: z.string().nullish(),
+  qualifications: z.array(z.string()).optional(),
+  supportingClaimIds: z.array(z.string()).optional(),
+  sellerPassages: z.array(z.object({ documentId: z.string(), sha256: z.string(), quote: z.string(), start: z.number(), end: z.number() })).optional(),
   researchFieldKey: z.string().nullish(),
   sourceUrl: HttpUrlSchema.nullable(),
   sourceDomain: z.string().min(1).nullable(),
@@ -37,6 +43,8 @@ export const ResearchSentenceSchema = z.object({
   text: z.string(),
   claimIds: z.array(z.string().min(1)).default([]),
   segments: z.array(ResearchInlineSegmentSchema).optional(),
+  kind: z.enum(["fact", "inference", "quote", "qualified", "gap"]).nullish(),
+  qualifications: z.array(z.string()).optional(),
 });
 
 export const ResearchContactReferenceSchema = z.object({
@@ -86,11 +94,13 @@ export const ResearchSectionSchema = z.object({
   // section on the page is pending and renders `emptyMessage` verbatim meanwhile.
   pending: z.boolean().default(false),
   emptyMessage: z.string().optional(),
+  gaps: z.array(z.string()).optional(),
 });
 
 export const ResearchDisplayBlockSchema = z.object({
   page: z.enum(["insights", "overview", "contact"]),
   sections: z.array(ResearchSectionSchema),
+  researchQuality: ResearchQualitySchema.nullish(),
 });
 
 export const BuyingCommitteeMemberSchema = z.object({
@@ -104,6 +114,9 @@ export const BuyingCommitteeMemberSchema = z.object({
   // the dummy renders the link only when present.
   linkedinUrl: HttpUrlSchema.nullable(),
   whyTheyMatter: z.string().min(1),
+  membershipState: z.enum(["candidate", "supported", "needs_verification", "excluded"]).nullish(),
+  outreachEligible: z.boolean().optional(),
+  membershipGaps: z.array(z.string()).optional(),
 });
 
 export type BuyingCommitteeMember = z.infer<

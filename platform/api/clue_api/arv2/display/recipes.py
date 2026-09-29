@@ -18,6 +18,8 @@ Page = Literal["overview", "insights", "contact"]
 PAGES: tuple[Page, ...] = ("overview", "insights", "contact")
 RECIPE_VERSION = 1
 RESTRICTED_SECTION_KEYS = frozenset({"context-only", "watch-outs", "do-not-mention"})
+# Additive sections must not invalidate a saved/in-flight narrative from before their rollout.
+OPTIONAL_SECTION_KEYS = frozenset({"miscellaneous"})
 
 #: Which subject kind each page is about. A contact page about an account is a caller bug.
 #: It lives here rather than beside the page machinery because it is pure data about the page
@@ -106,28 +108,19 @@ SYSTEM_RECIPES: tuple[SectionRecipe, ...] = (
     ),
     SectionRecipe(
         "insights",
-        "contact-insights",
-        "Contact insights",
-        4,
-        (
-            "contact.persona",
-            "contact.current_title",
-            "contact.facet.recent_post",
-            "contact.facet.publications",
-            "contact.facet.voice_quote",
-            "contact.facet.certifications",
-            "contact.facet.career_history",
-        ),
-        shared_from=("contact", "why-this-person"),
-    ),
-    SectionRecipe(
-        "insights",
         "context-only",
         "Context only",
-        5,
+        4,
         _UNSAFE_CONTEXT,
         restricted=True,
         shared_from=("overview", "watch-outs"),
+    ),
+    SectionRecipe(
+        "insights",
+        "miscellaneous",
+        "Miscellaneous",
+        5,
+        ("account.product_packaging", "core.founded_year", "account.strategic_moves"),
     ),
     # ---- overview -----------------------------------------------------------------------------
     SectionRecipe(
@@ -301,6 +294,13 @@ SYSTEM_RECIPES: tuple[SectionRecipe, ...] = (
         _UNSAFE_CONTEXT,
         restricted=True,
         default_open=True,
+    ),
+    SectionRecipe(
+        "contact",
+        "miscellaneous",
+        "Miscellaneous",
+        5,
+        ("contact.facet.career_history", "contact.facet.publications", "contact.facet.hobby"),
     ),
 )
 

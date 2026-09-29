@@ -74,10 +74,13 @@ export function isJobActive(job: IngestionJob | null): boolean {
   return job !== null && (job.status === "queued" || job.status === "running");
 }
 
+/** Ingestion kinds that never touch the kit: onboarding's ad harvest (and its card job). */
+const NON_KIT_KINDS: ReadonlySet<string> = new Set(["ad_assets"]);
+
 /** Any job still capable of changing the kit store. The API orders newest first, so the first
  * match is the most recent active one, but a later terminal job must not hide an older runner. */
 export function activeJob(jobs: readonly IngestionJob[]): IngestionJob | null {
-  return jobs.find(isJobActive) ?? null;
+  return jobs.find((job) => !NON_KIT_KINDS.has(job.kind) && isJobActive(job)) ?? null;
 }
 
 /**

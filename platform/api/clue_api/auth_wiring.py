@@ -6,7 +6,7 @@ provider claim.
 """
 
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Annotated, Literal
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
@@ -14,7 +14,10 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.logo_resolution import brandfetch_logo_url
 from clue_auth import (
     AuthenticatedSessionView,
     AuthenticationRequest,
@@ -52,6 +55,7 @@ from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
+from clue_spine import DEFAULT_PAGES_SYSTEM_SUFFIX
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
@@ -78,6 +82,10 @@ class SessionMembershipResponse(BaseModel):
     workspace_name: str
     role_key: str
     permissions: frozenset[str]
+    #: The company's logo for the workspace switcher: Brandfetch's embed-only Logo API mark for
+    #: the website given at onboarding. ``None`` when there is no website or no client id — the
+    #: switcher then keeps the workspace's initials.
+    workspace_logo_url: str | None = None
 
 
 class SessionResponse(BaseModel):
@@ -325,12 +333,57 @@ def build_principal_service(
     return service, closer
 
 
+def _website_domain(website: str | None) -> str | None:
+    """``https://www.Example.com/about`` → ``example.com``: the domain Brandfetch keys a logo on."""
+    if not website or not website.strip():
+        return None
+    value = website.strip()
+    host = urlsplit(value if "://" in value else f"https://{value}").hostname
+    if not host:
+        return None
+    host = host.lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+async def workspace_logo_urls(
+    conn: AsyncConnection, *, workspace_ids: Sequence[str], brandfetch_client_id: str
+) -> dict[str, str | None]:
+    """Each workspace's logo, from the website given at onboarding (founder, 2026-09-30).
+
+    The sign-up website (``self_serve_provisioning``) first; a workspace set up another way falls
+    back to its latest brand onboarding's domain. Brandfetch is never fetched here — the URL is
+    a pure function of the domain, embedded by the browser.
+    """
+    rows = await conn.execute(
+        text(
+            "SELECT w.workspace_id, COALESCE(p.company_website, o.company_domain) AS website"
+            " FROM unnest(CAST(:ids AS text[])) AS w(workspace_id)"
+            " LEFT JOIN self_serve_provisioning p ON p.workspace_id = w.workspace_id"
+            " LEFT JOIN LATERAL ("
+            "   SELECT r.company_domain FROM onboarding_run r"
+            "   WHERE r.workspace_id = w.workspace_id"
+            "   ORDER BY r.requested_at DESC LIMIT 1"
+            " ) o ON true"
+        ),
+        {"ids": list(workspace_ids)},
+    )
+    logos: dict[str, str | None] = {}
+    for workspace_id, website in rows.all():
+        domain = _website_domain(website)
+        logos[str(workspace_id)] = (
+            brandfetch_logo_url(domain, client_id=brandfetch_client_id) if domain else None
+        )
+    return logos
+
+
 def build_auth_router(
     *,
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
     clerk_api: ClerkApi | None = None,
     provision_enabled: bool = True,
+    brandfetch_client_id: str = "",
 ) -> APIRouter:
     router = APIRouter(prefix=AUTH_PREFIX, tags=["authentication"])
     session_dependency = SessionDependency(service)
@@ -355,6 +408,14 @@ def build_auth_router(
                         if email:
                             async with conn_factory() as conn:
                                 await update_platform_user_email(conn, session.user_id, email)
+        logos: dict[str, str | None] = {}
+        if conn_factory is not None and brandfetch_client_id and session.memberships:
+            async with conn_factory() as conn:
+                logos = await workspace_logo_urls(
+                    conn,
+                    workspace_ids=[item.workspace_id for item in session.memberships],
+                    brandfetch_client_id=brandfetch_client_id,
+                )
         return SessionResponse(
             user_id=session.user_id,
             memberships=tuple(
@@ -366,6 +427,7 @@ def build_auth_router(
                     workspace_name=item.workspace_name or item.workspace_id,
                     role_key=item.role_key,
                     permissions=permissions_for_role(item.role_key),
+                    workspace_logo_url=logos.get(item.workspace_id),
                 )
                 for item in session.memberships
             ),
@@ -424,6 +486,7 @@ def build_auth_router(
                         last_name=body.last_name,
                         job_role=body.job_role,
                         company_website=body.company_website,
+                        pages_system_suffix=pages_system_suffix,
                     )
                     if email:
                         await update_platform_user_email(conn, provisioned.user.user_id, email)
@@ -573,13 +636,18 @@ def install_auth_wiring(
     *,
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
     clerk_api: ClerkApi | None = None,
     provision_enabled: bool = True,
+    brandfetch_client_id: str = "",
 ) -> None:
     """Install the provider-free session routes and stable auth error envelope.
 
     ``conn_factory`` additionally enables ``POST /auth/v1/provision`` (FI-4 D-2 self-serve
-    onboarding); without it the router serves only the session/principal reads."""
+    onboarding); without it the router serves only the session/principal reads.
+    ``pages_system_suffix`` is the suffix a provisioned workspace's system hostname is allocated
+    under (custom-domain publishing §4.1) — the composition root passes
+    ``settings.pages_system_suffix``."""
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
@@ -624,8 +692,10 @@ def install_auth_wiring(
         build_auth_router(
             service=service,
             conn_factory=conn_factory,
+            pages_system_suffix=pages_system_suffix,
             clerk_api=clerk_api,
             provision_enabled=provision_enabled,
+            brandfetch_client_id=brandfetch_client_id,
         )
     )
 

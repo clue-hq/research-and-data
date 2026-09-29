@@ -350,7 +350,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # reads a readiness decision the new lane never makes.
     assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == ()
-    assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == (AgentRole.HEAD_OF_ABM,)
+    # head-of-abm v68 (2026-09-29) dropped the retired directive lane: granted to nobody.
+    assert C6_AGENT_TOOL_AUTHORITY["draft_account_research_directive"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["confirm_account_research_directive"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["approve_contact_research_selection"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_account_deep"] == ()

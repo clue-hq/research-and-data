@@ -8,6 +8,7 @@ day. The Part IV ruling of 2026-08-17 ("tenant subdomain only, custom domains no
 superseded by this spec; its five-piece decomposition is kept and built here.
 **Research record:** `_memory/2026-09-17-custom-domain-publishing-research.md` (what the tree serves
 today, how Notion / Mutiny / Ploy do it, provider comparison, Railway's per-service domain cap).
+**Implementation:** S1 landed on `research-streaming-v3` (commits 2835e8175..4ffd7d3da, 2026-09-17); S0 runbook: `docs/specs/pages-hosting-runbook.md`; session record: `_memory/2026-09-17-custom-domain-publishing-s1.md`. S2 landed on `website/custom-domain` (the same branch, renamed; commits ab3a3bf7b..6e40162af, 2026-09-17/18) — the live Cloudflare acceptance walk of §10 is OWED (founder-triggered); session record: `_memory/2026-09-17-custom-domain-publishing-s2.md`; contract: `apps/frontend/docs/api-contracts/settings.md`. **Reconciled 2026-09-28 with the F5 multi-page lane** (founder ruling: this design for storage and serving; F5's multi-page routes and lock-at-first-publish adopted; `design_workspace_handle` and the design API's Host app removed, handles backfilled into labels): merge `22a581ea4` of `codex/ai-ark-committee-discovery-spec-v1`, then `1aae24fcd` (Alembic join `c16e1ae684b3` + handle backfill `770bf20802e1`), `b84dc742f` + `9bad6e892` (design API on the registry), `e705840e7` (page-origin routes `/{slug}/{route}`), `de80c454d` (share-menu custom URLs, Settings → Pages on the settings slice's shell); plan: `docs/superpowers/plans/2026-09-28-custom-domain-f5-reconciliation.md`; session record: `_memory/2026-09-28-custom-domain-f5-reconciliation.md`.
 
 ---
 
@@ -223,7 +224,7 @@ not a data error).
 
 **Label change** (assumption A1, §12): an admin may pick a new label. The change deletes the old
 system row and inserts the new one in one transaction. The old label is immediately free, there is
-no redirect, and the UI warns that existing links stop working.
+no redirect, and the UI warns that existing links stop working. **Superseded 2026-09-28:** the label locks at the workspace's first publish (`workspace_hostname.locked_at`); after that the change is refused with `label_locked` — see A1 in §12.
 
 ### 4.2 `workspace_pages_settings`
 
@@ -645,6 +646,9 @@ Each slice is one implementation plan. S1 and the dashboard half of S0 can proce
   redirect, UI warning. Baked `og:image` URLs on already-published pages then point at the old
   system hostname until republish; accepted, since the pages are `noindex` and the image is the
   only absolute URL.
+  **Superseded 2026-09-28** by F5's lock-at-first-publish rule (adopted in the F5 reconciliation): the
+  label can change only until the workspace's first publish, after which `replace_system_label`
+  refuses with `label_locked`.
 - **A2** Railway Postgres (same project) rather than an outside provider; R2 for storage.
 - **A3** Status checks are on demand plus 5-second screen polling; no scheduled sweep in v1.
 - **A4** The root path of a hostname redirects to the fallback URL or shows the 404 page; there is

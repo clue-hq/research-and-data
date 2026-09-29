@@ -40,9 +40,9 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_media_seconds_ceiling": 9000,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
-    "arv2_account_max_model_rounds": 100,
+    "arv2_account_max_model_rounds": 350,
     "arv2_account_max_tool_calls_per_round": 50,
-    "arv2_account_max_runtime_s": 1800,
+    "arv2_account_max_runtime_s": 0,
     "arv2_account_max_parallel_jobs": 4,
     "arv2_account_provider_concurrency": 4,
     "arv2_account_media_max_enclosure_mb": 200,
@@ -189,7 +189,6 @@ def test_require_secret_treats_a_blank_key_as_a_skip() -> None:
 #: ``str(default)`` rendering.
 ARV2_DISCOVERY_SETTINGS = (
     "arv2_discovery_enabled",
-    "arv2_discovery_strict_count",
     "arv2_discovery_relaxed_auto",
     "arv2_discovery_criteria_gate_keys",
     "arv2_discovery_answer_model",
@@ -208,7 +207,6 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
         monkeypatch.delenv(_env_name(field_name), raising=False)
     settings = Settings(_env_file=None)
     assert settings.arv2_discovery_enabled is False
-    assert settings.arv2_discovery_strict_count == 35
     assert settings.arv2_discovery_relaxed_auto is True
     # Empty on purpose: no deployment-wide gate set; the pinned ICP decides (ruling 2026-09-11).
     assert settings.arv2_discovery_criteria_gate_keys == ""
@@ -222,21 +220,25 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
     # Empty on purpose: no Brandfetch fallback until a Logo API client id is configured.
     assert settings.brandfetch_client_id == ""
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_ENABLED", "true")
-    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_STRICT_COUNT", "12")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS", "geography")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY", "2")
     loaded = Settings(_env_file=None)
     assert loaded.arv2_discovery_enabled is True
-    assert loaded.arv2_discovery_strict_count == 12
     assert loaded.arv2_discovery_criteria_gate_keys == "geography"
     assert loaded.arv2_discovery_verify_concurrency == 2
+
+
+def test_the_fixed_provider_ask_setting_is_gone() -> None:
+    """Founder ruling 2026-09-28: the first search asks Exa for exactly the number the human wants,
+    so a fixed provider ask (the old 35) would be a second, conflicting answer to that question."""
+    assert "arv2_discovery_strict_count" not in Settings.model_fields
+    assert "CLUE_ARV2_DISCOVERY_STRICT_COUNT" not in ENV_EXAMPLE.read_text(encoding="utf-8")
 
 
 def test_every_discovery_setting_is_in_env_example() -> None:
     example = ENV_EXAMPLE.read_text(encoding="utf-8")
     for key in (
         "CLUE_ARV2_DISCOVERY_ENABLED=false",
-        "CLUE_ARV2_DISCOVERY_STRICT_COUNT=35",
         "CLUE_ARV2_DISCOVERY_RELAXED_AUTO=true",
         "CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS=\n",
         "CLUE_ARV2_DISCOVERY_ANSWER_MODEL=exa",

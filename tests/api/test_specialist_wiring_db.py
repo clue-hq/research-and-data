@@ -40,7 +40,7 @@ from clue_agents import (
 from clue_agents.ports import ExecutionProgress
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
-from clue_api.specialist_wiring import FreshWakeSpecialistRunner
+from clue_api.specialist_wiring import FreshWakeSpecialistRunner, SpecialistRuntimeBindings
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import ExecutionId, new_execution_id
 from clue_storage.protocol import ArtifactNotFound
@@ -255,11 +255,27 @@ class _ChildExecution(AgentExecutionAdapter):
         return self.recovered
 
 
+@pytest.mark.parametrize("authorized_rounds", [None, 200])
 def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
     tmp_path: Path,
     require_c66_db: None,
+    monkeypatch: pytest.MonkeyPatch,
+    authorized_rounds: int | None,
 ) -> None:
     del require_c66_db
+    from clue_api import specialist_wiring
+
+    real_runtime = specialist_wiring.DeepAgentTurnRuntime
+    observed_rounds: list[int] = []
+
+    def capture_runtime(**kwargs: Any):
+        observed_rounds.append(kwargs["max_rounds"])
+        return real_runtime(**kwargs)
+
+    monkeypatch.setattr(specialist_wiring, "DeepAgentTurnRuntime", capture_runtime)
+
+    async def bindings(*args: Any) -> SpecialistRuntimeBindings:
+        return SpecialistRuntimeBindings(max_model_rounds=authorized_rounds)
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -405,6 +421,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                 workspaces=workspaces,
                 execution_factory=build_child_execution,
                 spend=_Spend(),
+                bindings=bindings,
                 conn_factory=conn_factory,
             )
 
@@ -415,6 +432,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
             )
 
             assert contexts.histories == [()]
+            assert observed_rounds == [authorized_rounds or reviewer.profile.max_model_rounds]
             assert result.status == "completed"
             assert len(child_executions) == 1
             assert result.spend_millicents == 125

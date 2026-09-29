@@ -10,15 +10,19 @@ Its counters (``asked`` / ``found_strict`` / ``found_relaxed`` / ``analyzed`` /
 ``recall_estimate``) are the §4 "a short list is information, never padded" record: a run that
 exhausts the pool says so with numbers instead of quietly returning fewer companies.
 
+``arv2_discovery_search`` is one webset the run bought — up to three, in order (founder rulings
+2026-09-28): the strict search for exactly the target, a strict top-up for what our checks
+removed, a relaxed search for what is still missing. Each row is written **before** its webset is
+created, under the ``externalId`` it sends, so a crashed attempt finds its webset again instead of
+buying another (:func:`create_search`).
+
 ``arv2_discovery_candidate`` is one company, keyed by its verified domain inside its run, with the
 per-gate verdicts and the fit derived from them.
 
 **Unapproved is not rejected** (ruling 1′, rev 5). Nothing here can mark a candidate rejected;
 :func:`mark_candidates_approved` is the only decision write, and it only ever writes ``approved``.
-A candidate the human left alone keeps no label — :func:`unapproved_domains` is how a *later* run
-in the same project remembers not to re-surface it, and the ``not_chosen_before`` disposition is
-what that later run stamps. The absence of a rejection vocabulary is the product's, not an
-oversight.
+A later run of the same project skips every company an earlier one found
+(:func:`project_found_domains`, stamped ``found_before``) — whatever the human did with it.
 
 Nothing here calls a provider or an agent.
 """
@@ -46,33 +50,42 @@ __all__ = [
     "DiscoveryRunRow",
     "DiscoveryStatus",
     "Pass",
+    "SearchKind",
+    "SearchRow",
     "begin_discovery_run",
     "create_discovery_run",
+    "create_search",
     "find_discovery_run",
     "finish_discovery_run",
+    "finish_search",
     "list_candidates",
+    "list_searches",
     "mark_candidates_approved",
+    "project_found_domains",
+    "project_webset_ids",
     "read_discovery_run",
     "record_discovery_progress",
-    "record_relaxed_search",
+    "record_search_webset",
     "record_verdicts",
-    "record_webset",
-    "request_relaxed",
     "suspend_discovery_run",
-    "unapproved_domains",
     "upsert_candidate",
 ]
 
 #: The seam-1 states, verbatim — the same vocabulary the R2 runs and jobs carry.
 DiscoveryStatus = Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
 
-#: Which §4 pass a candidate came from: the full criteria, or the relaxed re-search.
+#: Which §4 pass a candidate came from: the full criteria (the strict search and its top-up), or
+#: the relaxed search.
 Pass = Literal["strict", "relaxed"]
 
-#: What a verified candidate *is*, never what it was refused for. ``not_chosen_before`` is how a
-#: later run records a candidate an earlier run surfaced and the human did not tick.
+#: The three searches a run may make, in the order it makes them.
+SearchKind = Literal["strict", "strict_topup", "relaxed"]
+
+#: What a verified candidate *is*, never what it was refused for. ``duplicate_of_existing`` is a
+#: company already among this project's accounts; ``found_before`` is one an earlier discovery run
+#: of this project already found. Both are stamped before any gate is asked.
 Disposition = Literal[
-    "pending", "pass", "partial", "unclear", "duplicate_of_existing", "not_chosen_before"
+    "pending", "pass", "partial", "unclear", "duplicate_of_existing", "found_before"
 ]
 
 #: The dispositions that mean the human was shown this company — §4's *shown*, and equally the
@@ -90,7 +103,7 @@ PENDING_DISPOSITION = "pending"
 #: What "verified" MEANS, in one place: the verifier actually judged this company.
 #:
 #: It used to be the complement of ``pending``, and that was wrong in a way nobody could see from
-#: the number. ``_pre_spend_disposition`` stamps ``duplicate_of_existing`` and ``not_chosen_before``
+#: the number. ``_pre_spend_disposition`` stamps ``duplicate_of_existing`` and ``found_before``
 #: **before any gate is asked** — those candidates cost the one website answer that identified them
 #: and were never checked against the ICP — so "not pending" counted them as verified and the agent
 #: told the founder the platform had checked companies it had skipped. A verdict row is the only
@@ -101,16 +114,16 @@ PENDING_DISPOSITION = "pending"
 #: table ``c`` so one definition serves all three and the three numbers cannot drift apart.
 VERIFIED_PREDICATE = "jsonb_array_length(c.verdicts_json) > 0"
 
-#: The same set as a literal SQL tuple, derived so the two can never drift apart.
-_LIVE_DISPOSITIONS = "(" + ", ".join(f"'{value}'" for value in SHOWN_DISPOSITIONS) + ")"
-
 _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, requested_by_user_id, request_sha256, "
-    "target_count, strict_count, relaxed_enabled, relaxed_requested, criteria_gate_keys, "
-    "status, webset_id, strict_search_id, relaxed_search_id, asked, found_strict, "
-    "found_relaxed, analyzed, recall_estimate, "
-    "receipt_json, created_at, started_at, finished_at"
+    "target_count, relaxed_enabled, criteria_gate_keys, status, asked, found_strict, "
+    "found_relaxed, analyzed, recall_estimate, receipt_json, created_at, started_at, finished_at"
+)
+
+_SEARCH_COLUMNS = (
+    "run_id, ordinal, kind, external_id, webset_id, asked, criteria, exclude_webset_ids, found, "
+    "analyzed, recall_estimate, finished_at"
 )
 
 _CANDIDATE_COLUMNS = (
@@ -142,18 +155,10 @@ class DiscoveryRunRow:
     requested_by_user_id: str
     request_sha256: str
     target_count: int
-    strict_count: int
     relaxed_enabled: bool
     criteria_gate_keys: tuple[str, ...]
     status: DiscoveryStatus = "not_started"
-    relaxed_requested: bool = False
-    webset_id: str | None = None
-    #: The two searches inside that webset, recorded so a resumed attempt never guesses which one
-    #: is the strict pass (an array position is not a provider contract) and never buys the
-    #: widening search a second time. ``relaxed_search_id`` set means "the relaxed pass has been
-    #: bought" — the driver polls and reads it rather than calling ``add_search`` again.
-    strict_search_id: str | None = None
-    relaxed_search_id: str | None = None
+    #: How many companies the run's searches asked Exa for, all searches together.
     asked: int | None = None
     found_strict: int | None = None
     found_relaxed: int | None = None
@@ -162,6 +167,30 @@ class DiscoveryRunRow:
     receipt: Mapping[str, Any] | None = None
     created_at: datetime | None = None
     started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class SearchRow:
+    """One webset a run bought, in the order it bought them (``ordinal`` 1–3).
+
+    ``webset_id`` is ``None`` between writing the row and Exa answering the create: a resumed
+    attempt then looks the webset up by ``external_id`` before creating anything. ``finished_at``
+    set means the webset went idle and every company it found was verified — a resumed attempt
+    skips it. ``criteria`` and ``exclude_webset_ids`` are exactly what the search sent.
+    """
+
+    run_id: UUID
+    ordinal: int
+    kind: SearchKind
+    external_id: str
+    asked: int
+    criteria: tuple[str, ...]
+    exclude_webset_ids: tuple[str, ...] = ()
+    webset_id: str | None = None
+    found: int | None = None
+    analyzed: int | None = None
+    recall_estimate: int | None = None
     finished_at: datetime | None = None
 
 
@@ -205,9 +234,8 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             f"INSERT INTO arv2_discovery_run ({_RUN_COLUMNS}) VALUES ("
             " :run_id, :workspace_id, :project_id, :brand_id, :project_run_id, :icp_artifact_key, "
             " :icp_artifact_sha256, :icp_key, :icp_version, :requested_by_user_id, "
-            " :request_sha256, :target_count, :strict_count, :relaxed_enabled, "
-            " :relaxed_requested, CAST(:criteria_gate_keys AS jsonb), :status, :webset_id, "
-            " :strict_search_id, :relaxed_search_id, "
+            " :request_sha256, :target_count, :relaxed_enabled, "
+            " CAST(:criteria_gate_keys AS jsonb), :status, "
             " :asked, :found_strict, :found_relaxed, :analyzed, :recall_estimate, "
             " CAST(:receipt AS jsonb), COALESCE(:created_at, now()), :started_at, :finished_at) "
             "ON CONFLICT (run_id) DO NOTHING"
@@ -225,14 +253,9 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             "requested_by_user_id": row.requested_by_user_id,
             "request_sha256": row.request_sha256,
             "target_count": row.target_count,
-            "strict_count": row.strict_count,
             "relaxed_enabled": row.relaxed_enabled,
-            "relaxed_requested": row.relaxed_requested,
             "criteria_gate_keys": json.dumps(list(row.criteria_gate_keys)),
             "status": row.status,
-            "webset_id": row.webset_id,
-            "strict_search_id": row.strict_search_id,
-            "relaxed_search_id": row.relaxed_search_id,
             "asked": row.asked,
             "found_strict": row.found_strict,
             "found_relaxed": row.found_relaxed,
@@ -305,24 +328,6 @@ async def begin_discovery_run(conn: AsyncConnection, *, run_id: UUID) -> Discove
     return _run(row) if row is not None else None
 
 
-async def request_relaxed(conn: AsyncConnection, *, run_id: UUID) -> bool:
-    """Reopen a finished run for the §4 relaxed pass on the human's request. Returns whether it was.
-
-    Guarded on the two finished statuses so this cannot disturb a run that is still driving; the
-    run goes back to ``not_started`` so the ordinary claim path picks it up, and
-    ``relaxed_requested`` tells the driver it is resuming for the relaxed pass rather than
-    re-running the strict one.
-    """
-    result = await conn.execute(
-        text(
-            "UPDATE arv2_discovery_run SET status = 'not_started', relaxed_requested = true "
-            "WHERE run_id = :run_id AND status IN ('completed', 'needs_review')"
-        ),
-        {"run_id": run_id},
-    )
-    return result.rowcount == 1
-
-
 async def suspend_discovery_run(conn: AsyncConnection, *, run_id: UUID) -> None:
     """Park a run for requeue (a lost lease, a stop request).
 
@@ -338,56 +343,156 @@ async def suspend_discovery_run(conn: AsyncConnection, *, run_id: UUID) -> None:
     )
 
 
-async def record_webset(
+async def create_search(conn: AsyncConnection, row: SearchRow) -> SearchRow:
+    """Record a search the run is about to buy, BEFORE its webset is created; return the row held.
+
+    ``(run_id, ordinal)`` is the key, so an attempt that died after writing the row gets the row it
+    already wrote back — with its ``external_id``, its criteria and its exclusions — rather than a
+    second search. The run's ``asked`` is kept as the sum of its searches' asks in the same
+    statement pair, so it never counts one search twice.
+    """
+    await conn.execute(
+        text(
+            "INSERT INTO arv2_discovery_search (run_id, ordinal, kind, external_id, asked, "
+            " criteria, exclude_webset_ids) VALUES (:run_id, :ordinal, :kind, :external_id, "
+            " :asked, CAST(:criteria AS jsonb), CAST(:exclude AS jsonb)) "
+            "ON CONFLICT (run_id, ordinal) DO NOTHING"
+        ),
+        {
+            "run_id": row.run_id,
+            "ordinal": row.ordinal,
+            "kind": row.kind,
+            "external_id": row.external_id,
+            "asked": int(row.asked),
+            "criteria": json.dumps(list(row.criteria)),
+            "exclude": json.dumps(list(row.exclude_webset_ids)),
+        },
+    )
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run SET asked = (SELECT sum(asked) FROM arv2_discovery_search "
+            " WHERE run_id = :run_id) WHERE run_id = :run_id"
+        ),
+        {"run_id": row.run_id},
+    )
+    held = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_SEARCH_COLUMNS} FROM arv2_discovery_search "
+                    "WHERE run_id = :run_id AND ordinal = :ordinal"
+                ),
+                {"run_id": row.run_id, "ordinal": row.ordinal},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    return _search(held)
+
+
+async def record_search_webset(
     conn: AsyncConnection,
     *,
     run_id: UUID,
+    ordinal: int,
     webset_id: str,
-    asked: int,
     recall_estimate: int | None,
-    strict_search_id: str | None,
 ) -> None:
-    """Record the long list this run is reading from, before any of it is verified.
+    """Record the webset Exa created for a search, before any of it is read.
 
-    Written as its own transition rather than folded into the finish, so a run that dies mid-verify
-    resumes against the webset it already paid to create instead of making a second one. The strict
-    search's id rides along for the same reason one level down: a webset holds searches, and a
-    resumed attempt that cannot name the strict one has to guess it by array position — which the
-    provider never promised — and then excludes the wrong search when it widens.
+    The first search's recall estimate is also the run's: it is the one search that asks for it,
+    and it is what tells "Exa ran out" apart from "our checks removed some".
     """
     await conn.execute(
         text(
-            "UPDATE arv2_discovery_run SET webset_id = :webset_id, asked = :asked, "
-            " recall_estimate = :recall_estimate, strict_search_id = :strict_search_id "
-            "WHERE run_id = :run_id"
+            "UPDATE arv2_discovery_search SET webset_id = :webset_id, "
+            " recall_estimate = COALESCE(:recall_estimate, recall_estimate) "
+            "WHERE run_id = :run_id AND ordinal = :ordinal"
         ),
         {
             "webset_id": webset_id,
-            "asked": int(asked),
             "recall_estimate": None if recall_estimate is None else int(recall_estimate),
-            "strict_search_id": strict_search_id,
             "run_id": run_id,
+            "ordinal": ordinal,
         },
     )
+    if ordinal == 1 and recall_estimate is not None:
+        await conn.execute(
+            text("UPDATE arv2_discovery_run SET recall_estimate = :recall WHERE run_id = :run_id"),
+            {"recall": int(recall_estimate), "run_id": run_id},
+        )
 
 
-async def record_relaxed_search(
-    conn: AsyncConnection, *, run_id: UUID, relaxed_search_id: str
+async def finish_search(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    ordinal: int,
+    found: int,
+    analyzed: int | None,
+    recall_estimate: int | None,
 ) -> None:
-    """Record the widening search the §4 relaxed pass bought — the "never buy it twice" fact.
-
-    Written the moment ``add_search`` returns, before any of its results are read, so an attempt
-    that dies between the two resumes by *reading* the search it already paid for. Without it a
-    redelivered relaxed request calls ``add_search`` again, excluding only the strict search, and
-    Exa re-finds and re-charges for everything the first widening already returned.
-    """
+    """Close a search: its webset is idle and every company it found has been verified."""
     await conn.execute(
         text(
-            "UPDATE arv2_discovery_run SET relaxed_search_id = :relaxed_search_id "
-            "WHERE run_id = :run_id"
+            "UPDATE arv2_discovery_search SET found = :found, analyzed = :analyzed, "
+            " recall_estimate = COALESCE(:recall_estimate, recall_estimate), finished_at = now() "
+            "WHERE run_id = :run_id AND ordinal = :ordinal"
         ),
-        {"relaxed_search_id": relaxed_search_id, "run_id": run_id},
+        {
+            "found": int(found),
+            "analyzed": None if analyzed is None else int(analyzed),
+            "recall_estimate": None if recall_estimate is None else int(recall_estimate),
+            "run_id": run_id,
+            "ordinal": ordinal,
+        },
     )
+    if ordinal == 1 and recall_estimate is not None:
+        await conn.execute(
+            text("UPDATE arv2_discovery_run SET recall_estimate = :recall WHERE run_id = :run_id"),
+            {"recall": int(recall_estimate), "run_id": run_id},
+        )
+
+
+async def list_searches(conn: AsyncConnection, *, run_id: UUID) -> tuple[SearchRow, ...]:
+    """Every search of a run, in the order it made them."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_SEARCH_COLUMNS} FROM arv2_discovery_search "
+                    "WHERE run_id = :run_id ORDER BY ordinal"
+                ),
+                {"run_id": run_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return tuple(_search(row) for row in rows)
+
+
+async def project_webset_ids(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, before_run_id: UUID
+) -> tuple[str, ...]:
+    """Every webset an earlier discovery run of this project bought — what a new run tells Exa to
+    skip, so "find more" never finds (or pays for) the same companies again (ruling 2026-09-28)."""
+    rows = await conn.execute(
+        text(
+            "SELECT s.webset_id "
+            "FROM arv2_discovery_search s JOIN arv2_discovery_run r ON r.run_id = s.run_id "
+            "WHERE r.workspace_id = :workspace_id AND r.project_id = :project_id "
+            " AND r.run_id <> :before_run_id AND s.webset_id IS NOT NULL "
+            "GROUP BY s.webset_id ORDER BY min(s.created_at), s.webset_id"
+        ),
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "before_run_id": before_run_id,
+        },
+    )
+    return tuple(str(row[0]) for row in rows)
 
 
 async def record_discovery_progress(
@@ -545,21 +650,20 @@ async def list_candidates(conn: AsyncConnection, *, run_id: UUID) -> tuple[Candi
     return tuple(_candidate(row) for row in rows)
 
 
-async def unapproved_domains(
+async def project_found_domains(
     conn: AsyncConnection, *, workspace_id: str, project_id: str, before_run_id: UUID
 ) -> frozenset[str]:
-    """Domains an earlier run of this project surfaced and the human did not approve.
+    """Every company an earlier discovery run of this project found, whatever became of it.
 
-    Not a rejection list (ruling 1′): these are companies already shown once, so a later run does
-    not spend on them again and does not re-ask the same human the same question. The current run
-    is excluded so a run never hides its own candidates from itself.
+    A later run skips these (``found_before``) without asking a gate: they were found once, and a
+    company the human has since removed from the project must not come back through discovery.
+    The current run is excluded so a run never hides its own candidates from itself.
     """
     rows = await conn.execute(
         text(
             "SELECT DISTINCT domain FROM arv2_discovery_candidate "
             "WHERE workspace_id = :workspace_id AND project_id = :project_id "
-            "AND run_id <> :before_run_id AND decision IS NULL "
-            f"AND disposition IN {_LIVE_DISPOSITIONS}"
+            "AND run_id <> :before_run_id AND disposition <> 'pending'"
         ),
         {
             "workspace_id": workspace_id,
@@ -623,14 +727,9 @@ def _run(row: RowMapping) -> DiscoveryRunRow:
         requested_by_user_id=row["requested_by_user_id"],
         request_sha256=row["request_sha256"],
         target_count=row["target_count"],
-        strict_count=row["strict_count"],
         relaxed_enabled=row["relaxed_enabled"],
         criteria_gate_keys=tuple(str(key) for key in gate_keys),
         status=row["status"],
-        relaxed_requested=row["relaxed_requested"],
-        webset_id=row["webset_id"],
-        strict_search_id=row["strict_search_id"],
-        relaxed_search_id=row["relaxed_search_id"],
         asked=row["asked"],
         found_strict=row["found_strict"],
         found_relaxed=row["found_relaxed"],
@@ -639,6 +738,25 @@ def _run(row: RowMapping) -> DiscoveryRunRow:
         receipt=decode_jsonb(row["receipt_json"]),
         created_at=row["created_at"],
         started_at=row["started_at"],
+        finished_at=row["finished_at"],
+    )
+
+
+def _search(row: RowMapping) -> SearchRow:
+    return SearchRow(
+        run_id=row["run_id"],
+        ordinal=int(row["ordinal"]),
+        kind=row["kind"],
+        external_id=row["external_id"],
+        asked=int(row["asked"]),
+        criteria=tuple(str(value) for value in decode_jsonb(row["criteria"]) or []),
+        exclude_webset_ids=tuple(
+            str(value) for value in decode_jsonb(row["exclude_webset_ids"]) or []
+        ),
+        webset_id=row["webset_id"],
+        found=row["found"],
+        analyzed=row["analyzed"],
+        recall_estimate=row["recall_estimate"],
         finished_at=row["finished_at"],
     )
 

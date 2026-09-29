@@ -247,6 +247,22 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         freshness_profile="daily",
         version=2,
     ),
+    _entry(
+        "ai_ark_people",
+        modality=Modality.STRUCTURED,
+        # The Contacts-table email lookup (founder ruling 2026-09-29): AI Ark's
+        # ``/v1/people/export/single`` for one exact LinkedIn-identified person, the same export
+        # the ARV2 research agents use. It answers the address with its own mailbox verdict.
+        entity_scope=EntityScope.CONTACT,
+        tier=1,
+        yields=("core.work_email",),
+        provider="ai_ark",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.STRONG,
+        auth_ref="CLUE_AI_ARK_API_KEY",
+        rate_limit={"requests_per_second": 0.1},
+        freshness_profile="daily",
+    ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are
     # added when that vertical pack loads. NPI/CIK/EDGAR are public (no auth_ref).

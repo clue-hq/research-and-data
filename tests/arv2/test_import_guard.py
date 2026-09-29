@@ -37,8 +37,17 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_auth",
     "clue_projections",
     "clue_research.claimstore",
+    # Quality design Q6: shared narrative field/support storage and use-policy helpers only.
+    # This does not admit the legacy positioner, assembler, graph, or research orchestration.
+    "clue_research.narrative.fields",
+    "clue_research.narrative.support",
+    "clue_research.compliance",
     # D1: the entity, membership and project-run writers the master plan keeps (not quarantined).
     "clue_research.identity",
+    # Media v3 reuses these pure public-URL/DNS safety primitives. This does not admit the
+    # official-site acquisition engine, agents, resolvers, scoring or source waterfall.
+    "clue_research.official_site.safety",
+    "clue_research.official_site.url_policy",
     "clue_research.membership",
     "clue_research.durable.project_run",
     # D1: the pack-loader list (composition root data, not a lane)
@@ -47,6 +56,9 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     "clue_api.arv2_wiring",
     # PI-2: platform incident recorder the lane reports into; no lane logic
     "clue_api.provider_incidents",
+    # Shared observability callback and document-change notification seams (no research owner).
+    "clue_api.langfuse_callbacks",
+    "clue_api.project_library_refresh",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.
@@ -116,6 +128,7 @@ def test_the_guard_reports_a_quarantined_import_when_there_is_one() -> None:
     source = (
         "from clue_api.sumble_claim_materialization import materialize\n"
         "from clue_research.sources.waterfall import run\n"
+        "from clue_research.narrative.positioner import position\n"
         "from clue_research.claimstore import insert_claim\n"
         "import httpx\n"
         "from clue_core.primitives import CostCents\n"
@@ -124,6 +137,7 @@ def test_the_guard_reports_a_quarantined_import_when_there_is_one() -> None:
     assert offending_imports(source, package=ARV2_PACKAGE) == [
         "clue_api.sumble_claim_materialization",
         "clue_research.sources.waterfall",
+        "clue_research.narrative.positioner",
     ]
 
 

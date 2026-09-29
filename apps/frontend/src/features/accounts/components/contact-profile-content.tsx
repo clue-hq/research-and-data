@@ -1,5 +1,5 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "./research-link";
 import {
   AtSign,
   BookOpen,
@@ -128,15 +128,19 @@ export function ContactDetailsList({
           {contact.title ?? "—"}
         </ProfileRow>
         <ProfileRow icon={Gauge} label="Influence">
-          <span
-            className={`${readability.pillMedium} ${components.badge} ${
-              contact.influence === "High"
-                ? components.badgePositive
-                : components.badgeNeutral
-            }`}
-          >
-            {contact.influence}
-          </span>
+          {contact.influence ? (
+            <span
+              className={`${readability.pillMedium} ${components.badge} ${
+                contact.influence === "High"
+                  ? components.badgePositive
+                  : components.badgeNeutral
+              }`}
+            >
+              {contact.influence}
+            </span>
+          ) : (
+            "—"
+          )}
         </ProfileRow>
         <ProfileRow icon={RadioTower} label={contact.contactDisplay ? "Research" : "Recent signals"}>
           <span className={`${readability.pillMedium} ${components.badge} ${components.badgeNeutral}`}>
@@ -148,7 +152,8 @@ export function ContactDetailsList({
             <span className="flex flex-wrap items-center gap-1.5">
               <a
                 className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
-                href={`mailto:${contact.emailLabel}`}
+                href={contact.outreachEligible === false ? undefined : `mailto:${contact.emailLabel}`}
+                aria-disabled={contact.outreachEligible === false || undefined}
               >
                 {contact.emailLabel}
               </a>

@@ -14,6 +14,9 @@
       "linkedinFollowers",
       "locationClaimId",
       "locationLabel",
+      "membershipGaps",
+      "membershipState",
+      "outreachEligible",
       "overviewParagraphs",
       "profileAction",
       "reports",
@@ -45,6 +48,9 @@
     "optional": [
       "avatarUrl",
       "emailLabel",
+      "membershipGaps",
+      "membershipState",
+      "outreachEligible",
       "profileAction"
     ],
     "required": [

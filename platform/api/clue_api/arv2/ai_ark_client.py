@@ -26,11 +26,16 @@ file.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from decimal import Decimal
+from functools import cache
+from pathlib import Path
 from typing import Any, Final, Literal
 
 from pydantic import SecretStr
@@ -66,6 +71,39 @@ COMPANY_CREDITS_PER_RESULT: Final = Decimal("0.1")
 PERSON_CREDITS_PER_RESULT: Final = Decimal("0.5")
 EXPORT_PROFILE_CREDITS: Final = Decimal("0.5")
 EXPORT_EMAIL_CREDITS: Final = Decimal("0.5")
+PHONE_CREDITS: Final = Decimal("5")
+MAX_ROLE_PAGE_SIZE: Final = 100
+SENIORITY_VALUES: Final = frozenset(
+    {
+        "owner",
+        "founder",
+        "c_suite",
+        "partner",
+        "vp",
+        "head",
+        "director",
+        "manager",
+        "senior",
+        "entry",
+        "intern",
+        "mid-level",
+    }
+)
+
+
+@cache
+def function_values() -> frozenset[str]:
+    """Provider vocabulary, pinned from its public CSV (2026-09-22). No request-time fetch."""
+    return frozenset(Path(__file__).with_name("ai_ark_functions.txt").read_text().splitlines())
+
+
+class AiArkResponseError(ValueError):
+    """An HTTP failure or malformed provider result, distinct from a documented empty result."""
+
+    def __init__(self, status: int, code: str = "ai_ark_response_failed") -> None:
+        self.status = status
+        super().__init__(f"{code}: HTTP {status}")
+
 
 #: The largest page :meth:`AiArkClient.people_by_name` will ask for. This is a *spend law*, not
 #: the provider's limit (it allows 100 per page): the method exists to resolve one named person
@@ -105,6 +143,7 @@ class AiArkCompany:
     location: Mapping[str, Any] | None
     raw: Mapping[str, Any]
     cost: CallCost | None = None
+    ark_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,11 +160,12 @@ class AiArkPerson:
     department: Mapping[str, Any] | None
     ark_id: str | None
     raw: Mapping[str, Any]
+    current_company_id: str | None = None
 
 
 @dataclass(frozen=True)
 class AiArkPeople:
-    """The people one name-scoped search returned, and what that search cost.
+    """One company-scoped people result page and what that search cost.
 
     A people search bills 0.5 credit **per record returned**, so the cost belongs to the page,
     not to any one person in it: attaching it to each :class:`AiArkPerson` would make a caller
@@ -137,6 +177,12 @@ class AiArkPeople:
 
     people: tuple[AiArkPerson, ...]
     cost: CallCost
+    page: int = 0
+    size: int = MAX_PEOPLE_PAGE_SIZE
+    total_elements: int | None = None
+    total_pages: int | None = None
+    has_more: bool | None = None
+    track_id: str | None = None
 
     def __iter__(self) -> Iterator[AiArkPerson]:
         return iter(self.people)
@@ -179,6 +225,86 @@ class AiArkEmailExport:
     certifications: tuple[Mapping[str, Any], ...]
     raw_email_block: Mapping[str, Any]
     cost: CallCost | None = None
+    ark_id: str | None = None
+    linkedin_url: str | None = None
+
+
+@dataclass(frozen=True)
+class AiArkPhone:
+    numbers: tuple[str, ...]
+    ark_id: str | None
+    linkedin_url: str | None
+    cost: CallCost | None = None
+
+
+def phone_from_record(record: Mapping[str, Any]) -> AiArkPhone:
+    """Preserve provider ordering; accept E.164 only, without inventing a country code."""
+    numbers: list[str] = []
+
+    def collect(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+        elif (
+            isinstance(value, str)
+            and re.fullmatch(r"\+[1-9]\d{6,14}", value)
+            and value not in numbers
+        ):
+            numbers.append(value)
+
+    collect(record.get("data"))
+    return AiArkPhone(tuple(numbers), _text(record.get("id")), _text(record.get("linkedin")))
+
+
+def role_search_body(
+    titles: Sequence[str],
+    *,
+    company_id: str | None = None,
+    domain: str | None = None,
+    seniority: Sequence[str] = (),
+    functions: Sequence[str] = (),
+    page: int = 0,
+    size: int = 10,
+) -> dict[str, Any]:
+    """SMART is for the title; the employer is an exact, required scope."""
+    if bool(company_id) == bool(domain):
+        raise ValueError("provide exactly one company_id or domain")
+    if type(page) is not int or type(size) is not int or page < 0 or not 1 <= size <= 100:
+        raise ValueError("page must be >= 0 and size between 1 and 100")
+    if page * size >= 10_000:
+        raise ValueError("people search pagination cannot exceed 10000 records")
+    terms = sorted({_require_text(title, "title").casefold() for title in titles})
+    if not terms or len(terms) > 300:
+        raise ValueError("titles must contain between 1 and 300 non-blank values")
+    if set(seniority) - SENIORITY_VALUES:
+        raise ValueError("unsupported seniority value")
+    if set(functions) - function_values():
+        raise ValueError("unsupported department/function value")
+    contact: dict[str, Any] = {
+        "experience": {
+            "latest": {
+                "title": {
+                    "any": {
+                        "include": {
+                            "mode": "SMART",
+                            "content": terms,
+                        }
+                    }
+                }
+            }
+        },
+    }
+    body: dict[str, Any] = {"contact": contact, "page": page, "size": size}
+    if company_id:
+        contact["company"] = {
+            "latest": {"any": {"include": [_require_text(company_id, "company_id")]}}
+        }
+    else:
+        body["account"] = {"domain": {"any": {"include": [_require_text(domain or "", "domain")]}}}
+    for name, values in (("seniority", seniority), ("departmentAndFunction", functions)):
+        if values:
+            contact[name] = {"any": {"include": sorted(set(values))}}
+    return body
 
 
 # -- pure rules --------------------------------------------------------------------------------
@@ -278,29 +404,93 @@ def company_cost_reader(response: HttpResponse) -> CostReading:
     Returned as an explicit ``Decimal(0)`` rather than ``None`` when nothing came back, so the
     wrapper records a real zero instead of substituting the pre-spend estimate.
     """
-    return CostReading(credits=COMPANY_CREDITS_PER_RESULT * len(_content(_json_body(response))))
+    return _result_count_cost(response, COMPANY_CREDITS_PER_RESULT)
 
 
 def people_cost_reader(response: HttpResponse) -> CostReading:
     """0.5 credit per person record actually returned (contract notes §2)."""
-    return CostReading(credits=PERSON_CREDITS_PER_RESULT * len(_content(_json_body(response))))
+    return _result_count_cost(response, PERSON_CREDITS_PER_RESULT)
+
+
+def _result_count_cost(response: HttpResponse, price: Decimal) -> CostReading:
+    reported = _reported_credit(response)
+    if reported is not None:
+        return reported
+    body = _json_body(response)
+    if response.status != 404 and (body is None or not isinstance(body.get("content"), list)):
+        return CostReading(extras={"credit_basis": "unknown"})
+    count = len(_content(body))
+    return _channel_cost(response, price * count, bool(count))
 
 
 def export_cost_reader(response: HttpResponse) -> CostReading:
-    """0.5 for the profile, plus 0.5 only when an address was actually found.
+    """Single export: one credit if found, zero if empty (current provider contract)."""
+    reported = _reported_credit(response)
+    if reported is not None:
+        return reported
+    if response.status != 404 and not isinstance(
+        (_json_body(response) or {}).get("email"), Mapping
+    ):
+        return CostReading(extras={"credit_basis": "unknown"})
+    return _channel_cost(
+        response,
+        EXPORT_PROFILE_CREDITS + EXPORT_EMAIL_CREDITS,
+        bool(_first_email_output(_json_body(response)).get("found")),
+    )
 
-    A refused export returns no profile, so it bills nothing — charging the profile half for a
-    4xx would put money in the ledger the provider never took.
-    """
+
+def phone_cost_reader(response: HttpResponse) -> CostReading:
+    reported = _reported_credit(response)
+    if reported is not None:
+        return reported
+    body = _json_body(response) or {}
+    found = bool(phone_from_record(body).numbers)
+    if response.status != 404 and (
+        not isinstance(body.get("data"), list) or (_has_phone_data(body.get("data")) and not found)
+    ):
+        return CostReading(extras={"credit_basis": "unknown"})
+    return _channel_cost(response, PHONE_CREDITS, found)
+
+
+def _has_phone_data(value: Any) -> bool:
+    return any(_has_phone_data(item) for item in value) if isinstance(value, list) else bool(value)
+
+
+def _reported_credit(response: HttpResponse) -> CostReading | None:
+    reported = next((v for k, v in response.headers.items() if k.lower() == "x-credit"), None)
+    if reported is not None:
+        try:
+            charge = abs(Decimal(reported))
+            if charge.is_finite():
+                return CostReading(credits=charge, extras={"credit_basis": "provider_header"})
+        except ArithmeticError:
+            pass
+    return None
+
+
+def _channel_cost(response: HttpResponse, price: Decimal, found: bool) -> CostReading:
+    if response.status == 404 or 200 <= response.status < 300:
+        if response.status != 404 and _json_body(response) is None:
+            return CostReading(extras={"credit_basis": "unknown"})
+        return CostReading(
+            credits=price if found else Decimal(0),
+            extras={"credit_basis": "documented_result_arithmetic"},
+            inferred=True,
+        )
+    return CostReading(extras={"credit_basis": "unknown"})
+
+
+def response_record(result: CallResult, *, empty_404: bool = False) -> Mapping[str, Any]:
+    """Only caller-selected endpoints may turn a 404 into an honest empty."""
+    response = result.response
+    if response.status == 404 and empty_404:
+        return {}
     if not 200 <= response.status < 300:
-        return CostReading(credits=Decimal(0))
+        raise AiArkResponseError(response.status)
     body = _json_body(response)
     if body is None:
-        return CostReading(credits=Decimal(0))
-    credits = EXPORT_PROFILE_CREDITS
-    if _first_email_output(body).get("found") is True:
-        credits += EXPORT_EMAIL_CREDITS
-    return CostReading(credits=credits)
+        raise AiArkResponseError(response.status, "ai_ark_malformed_body")
+    return body
 
 
 # -- record mapping ----------------------------------------------------------------------------
@@ -423,6 +613,7 @@ def company_from_record(record: Mapping[str, Any]) -> AiArkCompany:
         technologies=names,
         location=_mapping(_dig(record, "location", "headquarter")),
         raw=record,
+        ark_id=_text(record.get("id")),
     )
 
 
@@ -436,6 +627,7 @@ def person_from_record(record: Mapping[str, Any]) -> AiArkPerson:
         linkedin_url=_text(_dig(record, "link", "linkedin")),
         location=_mapping(record.get("location")),
         current_company=current_company,
+        current_company_id=_text(_dig(_current_position(record), "company", "id")),
         current_company_domain=_current_company_domain(record, current_company),
         department=_mapping(record.get("department")),
         ark_id=_text(record.get("id")),
@@ -474,6 +666,8 @@ def email_export_from_record(record: Mapping[str, Any]) -> AiArkEmailExport:
         current_company=_text(_dig(_current_position(record), "company", "name")),
         certifications=certified,
         raw_email_block=email_block,
+        ark_id=_text(record.get("id")),
+        linkedin_url=_text(_dig(record, "link", "linkedin")),
     )
 
 
@@ -486,6 +680,11 @@ def _require_text(value: str, name: str) -> str:
 
 
 # -- the client --------------------------------------------------------------------------------
+
+
+_TOKEN_MUTEXES: dict[str, threading.Lock] = {}
+_TOKEN_LAST: dict[str, float] = {}
+_TOKEN_MUTEX_GUARD = threading.Lock()
 
 
 class AiArkClient:
@@ -515,6 +714,11 @@ class AiArkClient:
         self._monotonic = monotonic
         self._last_sent_at: float | None = None
         self._last_call: CallResult | None = None
+        self._token_scope = hashlib.sha256(api_key.get_secret_value().encode()).hexdigest()
+        # Injected clocks own their test timeline; live clients share a token clock.
+        self._shared_clock = monotonic is time.monotonic and sleep is time.sleep
+        with _TOKEN_MUTEX_GUARD:
+            self._token_mutex = _TOKEN_MUTEXES.setdefault(self._token_scope, threading.Lock())
 
     @property
     def last_call(self) -> CallResult | None:
@@ -550,16 +754,32 @@ class AiArkClient:
             return None
         return replace(company_from_record(first), cost=result.call_cost)
 
+    def companies_exact(self, domain: str) -> tuple[AiArkCompany, ...]:
+        target = _require_text(domain, "domain")
+        result = self._send(
+            operation="v1/companies",
+            label="committee-company-lock",
+            path="/v1/companies",
+            json_body={"account": {"domain": {"any": {"include": [target]}}}, "page": 0, "size": 2},
+            estimate=SpendEstimate(credits=COMPANY_CREDITS_PER_RESULT * 2),
+            cost_reader=company_cost_reader,
+        )
+        record = response_record(result)
+        if not isinstance(record.get("content"), list):
+            raise AiArkResponseError(result.response.status, "ai_ark_missing_content")
+        return tuple(company_from_record(p) for p in record["content"] if isinstance(p, Mapping))
+
     def people_by_name(
         self,
         name_variants: Sequence[str],
         domain: str,
         *,
         size: int = MAX_PEOPLE_PAGE_SIZE,
+        strict_response: bool = False,
     ) -> AiArkPeople:
         """People matching any of ``name_variants`` **at** ``domain`` — never a roster.
 
-        There is no domain-only people method in this client by construction. A name-scoped,
+        This named-lookup method never asks for a company roster. A name-scoped,
         domain-locked query is what makes the result target-locked (the canary's same-name check:
         464 unscoped "Mark Hoffman"s collapse to exactly one when the domain is added), and it is
         what keeps the spend bounded — a roster is 0.5 credits per person returned, so an
@@ -588,42 +808,152 @@ class AiArkClient:
         }
         result = self._send(
             operation="v1/people",
-            label=f"people-{variants[0]}-{target}",
+            label="bound-person-lookup" if strict_response else f"people-{variants[0]}-{target}",
+            empty_404=strict_response,
             path="/v1/people",
             json_body=body,
             estimate=SpendEstimate(credits=PERSON_CREDITS_PER_RESULT * size),
             cost_reader=people_cost_reader,
         )
+        response_body = (
+            response_record(result, empty_404=True)
+            if strict_response
+            else _json_body(result.response)
+        )
+        if (
+            strict_response
+            and result.response.status != 404
+            and not isinstance((response_body or {}).get("content"), list)
+        ):
+            raise AiArkResponseError(result.response.status, "ai_ark_missing_content")
         return AiArkPeople(
             people=tuple(
                 person_from_record(record)
-                for record in _content(_json_body(result.response))
+                for record in _content(response_body)
                 if isinstance(record, Mapping)
             ),
             cost=result.call_cost,
         )
 
-    def export_email(self, linkedin_url: str) -> AiArkEmailExport:
-        """Export one person by LinkedIn URL, with the verified email block.
+    def people_by_roles(
+        self,
+        titles: Sequence[str],
+        *,
+        company_id: str | None = None,
+        domain: str | None = None,
+        seniority: Sequence[str] = (),
+        functions: Sequence[str] = (),
+        page: int = 0,
+        size: int = 10,
+    ) -> AiArkPeople:
+        body = role_search_body(
+            titles,
+            company_id=company_id,
+            domain=domain,
+            seniority=seniority,
+            functions=functions,
+            page=page,
+            size=size,
+        )
+        result = self._send(
+            operation="v1/people",
+            label="committee-role-search",
+            path="/v1/people",
+            json_body=body,
+            estimate=SpendEstimate(credits=PERSON_CREDITS_PER_RESULT * size),
+            empty_404=True,
+            cost_reader=people_cost_reader,
+        )
+        record = response_record(result, empty_404=True)
+        if result.response.status != 404 and not isinstance(record.get("content"), list):
+            raise AiArkResponseError(result.response.status, "ai_ark_missing_content")
+        last = record.get("last")
+        total_pages = _integer(record.get("totalPages"))
+        return AiArkPeople(
+            people=tuple(person_from_record(p) for p in _content(record) if isinstance(p, Mapping)),
+            cost=result.call_cost,
+            page=page,
+            size=size,
+            total_elements=0
+            if result.response.status == 404
+            else _integer(record.get("totalElements")),
+            total_pages=total_pages,
+            has_more=(
+                False
+                if result.response.status == 404
+                else not last
+                if isinstance(last, bool)
+                else page + 1 < total_pages
+                if total_pages is not None
+                else None
+            ),
+            track_id=_text(record.get("trackId")),
+        )
 
-        Estimated at the full 1.0 credit (profile + email); the ledger records 0.5 when no address
-        was found, because AI Ark bills the email half only on a hit.
+    def find_phone(
+        self,
+        *,
+        domain: str | None = None,
+        name: str | None = None,
+        linkedin_url: str | None = None,
+    ) -> AiArkPhone:
+        if linkedin_url is not None:
+            if domain is not None or name is not None:
+                raise ValueError("phone lookup accepts linkedin_url OR domain and name")
+            body = {"linkedin": _require_text(linkedin_url, "linkedin_url")}
+        else:
+            body = {
+                "domain": _require_text(domain or "", "domain"),
+                "name": _require_text(name or "", "name"),
+            }
+        result = self._send(
+            operation="v1/people/mobile-phone-finder",
+            label="selected-person-phone",
+            path="/v1/people/mobile-phone-finder",
+            json_body=body,
+            estimate=SpendEstimate(credits=PHONE_CREDITS),
+            empty_404=True,
+            cost_reader=phone_cost_reader,
+        )
+        record = response_record(result, empty_404=True)
+        if result.response.status != 404 and not isinstance(record.get("data"), list):
+            raise AiArkResponseError(result.response.status, "ai_ark_missing_phone_data")
+        phone = phone_from_record(record)
+        if _has_phone_data(record.get("data")) and not phone.numbers:
+            raise AiArkResponseError(result.response.status, "ai_ark_unusable_phone_data")
+        return replace(phone, cost=result.call_cost)
+
+    def export_email(
+        self,
+        linkedin_url: str | None = None,
+        *,
+        person_id: str | None = None,
+    ) -> AiArkEmailExport:
+        """Export one selected person by provider ID or LinkedIn URL, with the email verdict.
+
+        One credit when found, zero for the documented no-email result. A selected search ID
+        avoids another paid named-person search; export itself remains a billable operation.
         """
-        url = _require_text(linkedin_url, "linkedin_url")
+        if person_id is not None and linkedin_url is not None:
+            raise ValueError("provide exactly one person_id or linkedin_url")
+        body = (
+            {"id": _require_text(person_id, "person_id")}
+            if person_id is not None
+            else {"url": _require_text(linkedin_url or "", "linkedin_url")}
+        )
         result = self._send(
             operation="v1/people/export/single",
-            label=f"export-{url.rstrip('/').rsplit('/', 1)[-1]}",
+            label="selected-person-email",
             path="/v1/people/export/single",
-            json_body={"url": url},
+            json_body=body,
             estimate=SpendEstimate(credits=EXPORT_PROFILE_CREDITS + EXPORT_EMAIL_CREDITS),
+            empty_404=True,
             cost_reader=export_cost_reader,
         )
-        return replace(
-            email_export_from_record(_json_body(result.response) or {}),
-            cost=result.call_cost,
-        )
-
-    # -- internals -----------------------------------------------------------------------------
+        record = response_record(result, empty_404=True)
+        if result.response.status != 404 and not isinstance(record.get("email"), Mapping):
+            raise AiArkResponseError(result.response.status, "ai_ark_missing_email_data")
+        return replace(email_export_from_record(record), cost=result.call_cost)
 
     def _send(
         self,
@@ -634,6 +964,7 @@ class AiArkClient:
         json_body: Mapping[str, Any],
         estimate: SpendEstimate,
         cost_reader: Callable[[HttpResponse], CostReading],
+        empty_404: bool = False,
     ) -> CallResult:
         """Pace, then hand one fully-built :class:`CallSpec` to the wrapper."""
         spec = CallSpec(
@@ -651,12 +982,18 @@ class AiArkClient:
             halt_rule=ai_ark_halt_rule,
             cost_reader=cost_reader,
             raw_scrubber=scrub_birth_dates,
+            empty_statuses=frozenset({404}) if empty_404 else frozenset(),
         )
-        self._pace()
-        try:
-            result = self._caller.call(spec)
-        finally:
-            self._last_sent_at = self._monotonic()
+        with self._token_mutex:
+            if self._shared_clock:
+                self._last_sent_at = _TOKEN_LAST.get(self._token_scope)
+            self._pace()
+            try:
+                result = self._caller.call(spec)
+            finally:
+                self._last_sent_at = self._monotonic()
+                if self._shared_clock:
+                    _TOKEN_LAST[self._token_scope] = self._last_sent_at
         self._last_call = result
         return result
 

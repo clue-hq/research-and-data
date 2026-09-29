@@ -5,9 +5,9 @@
     uv run python scripts/launch_arv2_discovery.py \
         --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
 
-    # the human read the counts, the strict pass came up short, and they want the relaxed one
-    uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
-        --relaxed-pass 3f1c…-uuid
+    # replay (or re-offer) the run a key already made, instead of starting a new one
+    uv run python scripts/launch_arv2_discovery.py \
+        --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 --request-key k1
 
     # what did it find?
     uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
@@ -23,9 +23,11 @@ fallback to somebody else's audience.
 three, and each must be a key the document defines); leaving it alone uses
 ``CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS``. Every gate is verified afterwards either way.
 
-``--relaxed-pass`` reopens a **finished** run for the §4 relaxed pass. A short list is information,
-never padded behind the human's back: the run lands with its counters, and asking for the wider
-search is a decision somebody makes after reading them.
+Every launch is a new run (founder ruling 2026-09-28: asking for more is a new discovery, which
+skips every company this project's earlier discoveries found). ``--request-key`` names the ask:
+repeating a key replays that run and re-offers its task if the offer went missing; leaving it out
+makes a fresh key, so the command starts a new run. The relaxed search runs inside a run when the
+strict searches fall short, unless ``--no-relaxed`` is given.
 
 The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url`` overrides it, and the
 blob store is this deployment's configured storage unless ``--storage-root`` overrides it.
@@ -39,7 +41,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from clue_api.arv2.answer_key_loader import ANSWER_KEY_USER_ID
 from clue_api.arv2.discovery_launch import (
@@ -47,9 +49,13 @@ from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRequest,
     enqueue_discovery_run,
     launch_arv2_discovery,
-    request_relaxed_pass,
 )
-from clue_api.arv2.discovery_store import CandidateRow, list_candidates, read_discovery_run
+from clue_api.arv2.discovery_store import (
+    CandidateRow,
+    list_candidates,
+    list_searches,
+    read_discovery_run,
+)
 from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.storage_wiring import build_storage_backend
 from clue_config import Settings
@@ -77,15 +83,17 @@ def _args() -> argparse.Namespace:
         "--target", type=int, default=20, help="How many verified companies were asked for."
     )
     parser.add_argument(
-        "--strict-count",
-        type=int,
+        "--request-key",
         default=None,
-        help="How many the provider is asked for. Defaults to CLUE_ARV2_DISCOVERY_STRICT_COUNT.",
+        help=(
+            "Names this ask. Repeat a key to replay its run; leave it out to start a new run "
+            "(a fresh key is made)."
+        ),
     )
     parser.add_argument(
         "--no-relaxed",
         action="store_true",
-        help="Do not run the relaxed pass automatically when the strict pass falls short.",
+        help="Do not run the relaxed search when the strict searches fall short.",
     )
     parser.add_argument(
         "--criteria-gates",
@@ -94,12 +102,6 @@ def _args() -> argparse.Namespace:
             "Comma-separated ICP hard-gate keys to use as provider criteria (at most three). "
             "Defaults to CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS. Every gate is verified either way."
         ),
-    )
-    parser.add_argument(
-        "--relaxed-pass",
-        default=None,
-        metavar="RUN_ID",
-        help="Reopen a finished run for the relaxed pass instead of launching a new one.",
     )
     parser.add_argument(
         "--report",
@@ -171,6 +173,7 @@ async def _report(args: argparse.Namespace) -> dict[str, Any]:
         if run is None or run.workspace_id != args.workspace:
             raise Refused(f"no ARV2 discovery run {run_id} in workspace {args.workspace!r}")
         candidates = await list_candidates(conn, run_id=run_id)
+        searches = await list_searches(conn, run_id=run_id)
     _print_candidates(candidates)
     return {
         "run_id": str(run.run_id),
@@ -179,10 +182,19 @@ async def _report(args: argparse.Namespace) -> dict[str, Any]:
         "icp": f"{run.icp_key}@{run.icp_version}",
         "criteria_gate_keys": list(run.criteria_gate_keys),
         "target_count": run.target_count,
-        "strict_count": run.strict_count,
         "relaxed_enabled": run.relaxed_enabled,
-        "relaxed_requested": run.relaxed_requested,
-        "webset_id": run.webset_id,
+        "searches": [
+            {
+                "ordinal": search.ordinal,
+                "kind": search.kind,
+                "asked": search.asked,
+                "found": search.found,
+                "webset_id": search.webset_id,
+                "excluded_websets": len(search.exclude_webset_ids),
+                "finished": search.finished_at is not None,
+            }
+            for search in searches
+        ],
         "asked": run.asked,
         "found_strict": run.found_strict,
         "found_relaxed": run.found_relaxed,
@@ -190,29 +202,6 @@ async def _report(args: argparse.Namespace) -> dict[str, Any]:
         "recall_estimate": run.recall_estimate,
         "candidates": len(candidates),
         "receipt": run.receipt,
-    }
-
-
-async def _relaxed(args: argparse.Namespace) -> dict[str, Any]:
-    """Reopen a finished run for the relaxed pass, then offer its task once the row is committed."""
-    run_id = UUID(str(args.relaxed_pass))
-    async with db_lifespan(args.database_url) as engine:
-        conn = await engine.connect()
-        trans = await conn.begin()
-        try:
-            receipt = await request_relaxed_pass(conn, workspace_id=args.workspace, run_id=run_id)
-            await trans.commit()
-        except BaseException:
-            await trans.rollback()
-            raise
-        finally:
-            await conn.close()
-        enqueued = await enqueue_discovery_run(DbWorkQueue(), receipt)
-    return {
-        "run_id": str(receipt.run_id),
-        "project_run_id": str(receipt.project_run_id),
-        "relaxed_pass": True,
-        "enqueued": enqueued,
     }
 
 
@@ -225,6 +214,7 @@ async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any
         else build_storage_backend(settings)
     )
     gates = tuple(key.strip() for key in str(args.criteria_gates or "").split(",") if key.strip())
+    request_key = args.request_key or f"cli:{uuid4()}"
 
     async with db_lifespan(args.database_url) as engine:
         conn = await engine.connect()
@@ -241,8 +231,8 @@ async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any
                     workspace_id=args.workspace,
                     project_id=args.project,
                     requested_by_user_id=args.requested_by,
+                    request_key=request_key,
                     target_count=args.target,
-                    strict_count=args.strict_count,
                     relaxed_enabled=False if args.no_relaxed else None,
                     criteria_gate_keys=gates,
                 ),
@@ -259,13 +249,15 @@ async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any
         # The row is committed, so the task now offered finds its run. Offering inside the
         # transaction is the race that silently drops a run: the queue commits its own row first, a
         # worker claims it, finds no run, and finishes the task as done. Re-running this command
-        # replays the same run and re-offers the task if it went missing.
+        # with the same --request-key replays the same run and re-offers the task if it went
+        # missing.
         enqueued = await enqueue_discovery_run(DbWorkQueue(), receipt)
 
     return {
         "run_id": str(receipt.run_id),
         "project_run_id": str(receipt.project_run_id),
         "replayed": receipt.replayed,
+        "request_key": request_key,
         "enqueued": enqueued,
         "target_count": args.target,
         "criteria_gate_keys": list(gates),
@@ -281,14 +273,12 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         return await _report(args)
     if not settings.arv2_discovery_enabled:
         raise Refused("CLUE_ARV2_DISCOVERY_ENABLED is false in this environment")
-    if args.relaxed_pass is not None:
-        return await _relaxed(args)
     return await _launch(args, settings)
 
 
 def main() -> None:
     # The launch's own refusals are prerequisites the operator has to fix — a project with no
-    # pinned ICP, a criteria gate the document does not define, a run that has not finished — so
+    # pinned ICP, a criteria gate the document does not define — so
     # they print as the same one-line refusal this script's own checks do, not as a traceback.
     try:
         receipt = asyncio.run(_run(_args()))

@@ -9,6 +9,7 @@ a DSN; :func:`capture` is then a one-liner the worker loops call beside their ``
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 import sentry_sdk
@@ -17,7 +18,7 @@ from sentry_sdk.types import Event, Hint
 from clue_obs.otel.install import bound_run_context
 from clue_obs.redact import redact_value
 
-__all__ = ["capture", "install_sentry", "sentry_is_installed"]
+__all__ = ["capture", "install_sentry", "sentry_is_installed", "warn"]
 
 _installed = False
 
@@ -76,3 +77,26 @@ def capture(exc: BaseException) -> None:
     """Report one caught exception; a no-op when Sentry is not installed."""
     if _installed:
         sentry_sdk.capture_exception(exc)
+
+
+def warn(
+    message: str,
+    *,
+    fingerprint: Sequence[str],
+    tags: Mapping[str, str],
+    extra: Mapping[str, object] | None = None,
+) -> str | None:
+    """Send one warning-level message (not an exception); a no-op when Sentry is not installed.
+
+    ``fingerprint`` decides which Sentry issue the event groups under, so a caller that wants an
+    alert per occurrence gives each occurrence its own fingerprint.
+    """
+    if not _installed:
+        return None
+    with sentry_sdk.new_scope() as scope:
+        for key, tag in tags.items():
+            scope.set_tag(key, tag)
+        for key, detail in (extra or {}).items():
+            scope.set_extra(key, detail)
+        scope.fingerprint = list(fingerprint)
+        return sentry_sdk.capture_message(message, level="warning")

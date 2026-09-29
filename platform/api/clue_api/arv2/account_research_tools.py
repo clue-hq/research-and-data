@@ -42,7 +42,15 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
+from sqlalchemy import text
 
+from clue_api.arv2 import research_operations as operations
+from clue_api.arv2.account_exa_brief import (
+    account_exa_arguments,
+    uses_account_discovery,
+    uses_account_exa_brief,
+)
+from clue_api.arv2.account_research_catalog import has_capability
 from clue_api.arv2.account_research_claims import (
     COMMITTEE_FIELD,
     PUBLIC_APPEARANCES_FIELD,
@@ -76,6 +84,7 @@ from clue_api.arv2.account_research_store import (
     set_job_stage,
 )
 from clue_api.arv2.ai_ark_client import AiArkClient
+from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.ats_client import (
     BoardFetchFailed,
     BoardNotFound,
@@ -85,8 +94,14 @@ from clue_api.arv2.ats_client import (
 )
 from clue_api.arv2.calls import CallCost, ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter, WriteReceipt
+from clue_api.arv2.deepgram_media_client import DeepgramMediaClient
 from clue_api.arv2.errors import ProviderHalted, RawParseError
-from clue_api.arv2.exa_client import ExaClient, is_thin_deep_response, report_output_schema
+from clue_api.arv2.exa_client import (
+    ExaClient,
+    deep_reasoning_body,
+    is_thin_deep_response,
+    report_output_schema,
+)
 from clue_api.arv2.gemini_media_client import (
     GeminiMediaClient,
     MediaBudget,
@@ -107,7 +122,13 @@ from clue_api.arv2.media_feeds_client import (
     youtube_metadata,
     youtube_words,
 )
+from clue_api.arv2.media_types import TranscriptSource
 from clue_api.arv2.person_compliance import apply_person_floor
+from clue_api.arv2.person_exa_brief import (
+    person_exa_arguments,
+    person_search_contents,
+    uses_person_exa_brief,
+)
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
@@ -132,6 +153,7 @@ from clue_core import Claim, RunId
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_research.claimstore import WorkspaceScope, claims_for_runs
+from clue_storage import StorageBackend
 
 log = get_logger("clue_api.arv2.account_research_tools")
 
@@ -300,6 +322,8 @@ class ProviderClients(Protocol):
 
     def ai_ark(self, caller: ProviderCaller) -> AiArkClient: ...
 
+    def transcription(self, caller: ProviderCaller) -> DeepgramMediaClient: ...
+
     def media(self, caller: ProviderCaller, ledger: LedgerSink) -> GeminiMediaClient: ...
 
     def structuring(self, caller: ProviderCaller) -> StructuringClient: ...
@@ -343,13 +367,22 @@ class ToolRuntime:
         media_budget: MediaBudget,
         transport_factory: Callable[[], Transport] = HttpxTransport,
         now: Callable[[], datetime] = _utcnow,
+        storage: StorageBackend | None = None,
+        pacing_conn_factory: ConnFactory | None = None,
     ) -> None:
+        self.storage = storage
         self.scope = scope
+        self.person_seed: dict[str, Any] | None = None
+        self.channel_states: dict[str, str] = {}
         self.settings = settings
         self.clients = clients
         self.catalog = catalog
         self.media_budget = media_budget
         self._conn_factory = conn_factory
+        # Pacing holds its transaction across the hop and cooldown. It must not hold the
+        # driver's serialized data-connection lock: the hop checks authority and drains
+        # receipts through that same data connection before it can finish.
+        self._pacing_conn_factory = pacing_conn_factory or conn_factory
         self._artifacts = artifacts
         self._writer = writer
         self._transport_factory = transport_factory
@@ -396,7 +429,13 @@ class ToolRuntime:
 
     # -- the one path to a provider ---------------------------------------------------------------
 
-    async def call_provider[T](self, provider: str, fn: Callable[[ProviderCaller], T]) -> T:
+    async def call_provider[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        *,
+        operation: operations.Operation | None = None,
+    ) -> T:
         """Run one synchronous provider hop off the loop, then land its money trail.
 
         The hop is shielded from the awaiting tool's cancellation on purpose: the runtime cap can
@@ -407,7 +446,7 @@ class ToolRuntime:
         latched = self.halted.get(provider)
         if latched is not None:
             raise RefusalError(f"provider_halted:{provider}", latched)
-        hop: asyncio.Task[T] = asyncio.create_task(self._hop(provider, fn))
+        hop: asyncio.Task[T] = asyncio.create_task(self._hop(provider, fn, operation))
         self._inflight.add(hop)
         hop.add_done_callback(self._forget_hop)
         return await asyncio.shield(hop)
@@ -419,19 +458,80 @@ class ToolRuntime:
             # never reported as an unretrieved task exception.
             hop.exception()
 
-    async def _hop[T](self, provider: str, fn: Callable[[ProviderCaller], T]) -> T:
+    async def _hop[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None = None,
+    ) -> T:
+        token = getattr(self.clients, "ai_ark_token_scope", None)
+        if provider != "ai_ark" or not token:
+            return await self._perform_hop(provider, fn, operation)
+        started = asyncio.get_running_loop().time()
+        while True:
+            async with self._pacing_conn_factory() as pacing_conn:
+                won = (
+                    await pacing_conn.execute(
+                        text("SELECT pg_try_advisory_xact_lock(hashtextextended(:token,0))"),
+                        {"token": f"ai-ark:{token}"},
+                    )
+                ).scalar_one()
+                if won:
+                    log.info(
+                        "arv2.provider_pacing_acquired",
+                        job_id=str(self.scope.job_id),
+                        provider=provider,
+                        wait_ms=round((asyncio.get_running_loop().time() - started) * 1000),
+                        cooldown_s=self.settings.arv2_ai_ark_min_gap_s,
+                    )
+                    try:
+                        return await self._perform_hop(provider, fn, operation)
+                    finally:
+                        await asyncio.sleep(self.settings.arv2_ai_ark_min_gap_s)
+            await asyncio.sleep(0.1)
+
+    async def _perform_hop[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None = None,
+    ) -> T:
         async with self._semaphore(provider):
             raw, ledger = BufferedRawSink(), BufferedLedger()
+            transport = self._transport_factory()
+            if provider == "media_public" and isinstance(transport, HttpxTransport):
+                from clue_api.arv2.media_resolution import PublicMediaTransport
+
+                transport = PublicMediaTransport()
+            if provider == "media_youtube" and isinstance(transport, HttpxTransport):
+                from clue_api.arv2.media_recording import YouTubeAudioTransport
+
+                transport = YouTubeAudioTransport()
             caller = ProviderCaller(
-                transport=self._transport_factory(),
+                transport=transport,
                 raw_sink=raw,
                 ledger=ledger,
                 now=self._now,
             )
             self._ledgers[id(caller)] = ledger
+            result = None
+            error_code = None
             try:
-                return await asyncio.to_thread(fn, caller)
+                if has_capability(self.scope.catalog_version, "committee_discovery"):
+                    async with self._conn_factory() as conn:
+                        available = await operations.job_available(
+                            conn, self.operation_scope, operation.kind if operation else None
+                        )
+                    if not available:
+                        error_code = "privacy_stopped"
+                        raise RefusalError("tool_error", "research authority was withdrawn")
+                if provider in self.halted:
+                    error_code = "provider_halted_pre_dispatch"
+                    raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+                result = await asyncio.to_thread(fn, caller)
+                return result
             except ProviderHalted as halted:
+                error_code = "provider_halted"
                 detail = str(halted)
                 self.halted[provider] = detail
                 # Latch the *wire* provider as well as the tool's label for it. One media hop can
@@ -440,9 +540,28 @@ class ToolRuntime:
                 # own label. Money truth blocks whoever meets it first.
                 self.halted.setdefault(halted.provider, detail)
                 raise RefusalError(f"provider_halted:{provider}", detail) from halted
+            except BaseException as error:
+                error_code = error_code or type(error).__name__
+                raise
             finally:
                 self._ledgers.pop(id(caller), None)
-                await self._drain(raw, ledger)
+                cost = getattr(result, "cost", None)
+                await self._drain(
+                    raw,
+                    ledger,
+                    operation=operation,
+                    error=error_code,
+                    preferred_row=getattr(cost, "ledger_row_id", None),
+                    semantic_empty=(
+                        provider == "ai_ark"
+                        and result is not None
+                        and (
+                            (hasattr(result, "people") and not result.people)
+                            or (hasattr(result, "numbers") and not result.numbers)
+                            or (hasattr(result, "found") and not result.found)
+                        )
+                    ),
+                )
 
     def _semaphore(self, provider: str) -> asyncio.Semaphore:
         if provider not in self._semaphores:
@@ -473,9 +592,18 @@ class ToolRuntime:
         if pending:
             await asyncio.wait(pending, timeout=timeout_s)
 
-    async def _drain(self, raw: BufferedRawSink, ledger: BufferedLedger) -> None:
+    async def _drain(
+        self,
+        raw: BufferedRawSink,
+        ledger: BufferedLedger,
+        *,
+        operation: operations.Operation | None = None,
+        error: str | None = None,
+        preferred_row: str | None = None,
+        semantic_empty: bool = False,
+    ) -> None:
         async with self._conn_factory() as conn:
-            await drain_provider_calls(
+            report = await drain_provider_calls(
                 conn,
                 raw=raw,
                 ledger=ledger,
@@ -486,6 +614,116 @@ class ToolRuntime:
                     project_run_id=str(self.scope.project_run_id),
                     job_id=self.scope.job_id,
                 ),
+            )
+
+            if (
+                has_capability(self.scope.catalog_version, "committee_discovery")
+                and self.storage is not None
+            ):
+                # Register every attempt, including unselected people and unsuccessful responses.
+                from clue_api.arv2.committee_discovery import index_provider_artifacts
+
+                await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
+            if has_capability(
+                self.scope.catalog_version, "committee_discovery"
+            ) and not await operations.job_available(
+                conn, self.operation_scope, operation.kind if operation else None
+            ):
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET "
+                        "privacy_erased=true,erasure_reason='privacy',"
+                        "erased_at=now(),source_url=NULL WHERE "
+                        "workspace_id=:ws AND storage_key=ANY(:keys)"
+                    ),
+                    {
+                        "ws": self.scope.workspace_id,
+                        "keys": list(report.raw_artifact_keys.values()),
+                    },
+                )
+            if has_capability(self.scope.catalog_version, "media_research"):
+                from clue_api.arv2.media_operations import attach_receipts
+                from clue_api.arv2.provider_ledger import ledger_id_for
+
+                if operation is not None and operation.kind == "media_discovery":
+                    from clue_api.arv2.media_store import subjects
+
+                    for key in report.raw_artifact_keys.values():
+                        await subjects(self, conn, key, [])
+                await attach_receipts(
+                    self,
+                    conn,
+                    list(report.raw_artifact_keys.values()),
+                    [ledger_id_for(r.row_id) for r in report.result_rows],
+                    error,
+                )
+            if operation is not None:
+                await operations.finish(
+                    conn,
+                    self.operation_scope,
+                    operation,
+                    report.result_rows,
+                    error=error,
+                    preferred_row=preferred_row,
+                    semantic_empty=semantic_empty,
+                )
+        # A failed evidence normalization must never roll back the paid provider ledger.
+        # The separate transaction still completes before a source handle reaches an agent.
+        if has_capability(self.scope.catalog_version, "research_quality"):
+            async with self._conn_factory() as conn:
+                from clue_api.arv2.quality_acquisition import index_acquisition
+
+                if self.storage is None:
+                    raise RuntimeError("quality research requires durable source storage")
+                if not await operations.job_available(conn, self.operation_scope):
+                    return
+                await index_acquisition(
+                    conn,
+                    self.storage,
+                    self.operation_scope,
+                    report,
+                    operation_id=operation.operation_id if operation else None,
+                )
+
+    @property
+    def operation_scope(self) -> operations.OperationScope:
+        return operations.OperationScope(
+            self.scope.workspace_id,
+            self.scope.run_id,
+            self.scope.job_id,
+            UUID(str(self.scope.account_id)),
+        )
+
+    async def operate(
+        self,
+        provider: str,
+        kind: str,
+        request: Mapping[str, Any],
+        fn: Callable[[ProviderCaller], Any],
+    ) -> tuple[operations.Operation, dict[str, Any]]:
+        if self.storage is None:
+            raise RuntimeError("v2 research requires verified artifact storage")
+        async with self._conn_factory() as conn:
+            operation, won = await operations.begin(conn, self.operation_scope, kind, request)
+        if won:
+            if provider in self.halted:
+                async with self._conn_factory() as conn:
+                    await operations.finish(
+                        conn,
+                        self.operation_scope,
+                        operation,
+                        (),
+                        error="provider_halted_pre_dispatch",
+                    )
+                raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+            await self.call_provider(provider, fn, operation=operation)
+        async with self._conn_factory() as conn:
+            if has_capability(self.scope.catalog_version, "research_quality"):
+                from clue_api.arv2.quality_acquisition import recover_acquisitions
+
+                await recover_acquisitions(conn, self.storage, self.operation_scope)
+            return await operations.body(
+                conn, self.storage, self.operation_scope, operation.operation_id
             )
 
     # -- the one path to a claim ------------------------------------------------------------------
@@ -515,6 +753,10 @@ class ToolRuntime:
         # or the transaction rolled back.
         self.entities_touched.update(str(draft.entity_id) for draft in drafts)
         async with self._conn_factory() as conn:
+            if has_capability(self.scope.catalog_version, "media_research"):
+                from clue_api.arv2.media_claims import guard_draft
+
+                drafts = [await guard_draft(self, conn, draft) for draft in drafts]
             return [await self._writer.write(conn, draft) for draft in drafts]
 
     async def write_each(
@@ -545,6 +787,10 @@ class ToolRuntime:
             self.entities_touched.add(str(draft.entity_id))
             try:
                 async with self._conn_factory() as conn:
+                    if has_capability(self.scope.catalog_version, "media_research"):
+                        from clue_api.arv2.media_claims import guard_draft
+
+                        draft = await guard_draft(self, conn, draft)
                     results.append((draft, await self._writer.write(conn, draft)))
             except Exception as error:  # noqa: BLE001 — one draft's failure is a row, never a stop
                 log.warning("arv2.claim_write_failed", field_key=draft.field_key, error=str(error))
@@ -736,14 +982,14 @@ class _Args(BaseModel):
 
 
 class ReadAccountStateArgs(_Args):
-    section: Literal["all", "claims", "open_fields", "icp", "persona", "already_established"] = (
-        "all"
-    )
+    section: Literal[
+        "all", "claims", "open_fields", "icp", "persona", "already_established", "media"
+    ] = "all"
 
 
 class ReadPersonStateArgs(_Args):
     section: Literal[
-        "all", "claims", "open_fields", "icp", "persona", "already_established", "lock"
+        "all", "claims", "open_fields", "icp", "persona", "already_established", "lock", "media"
     ] = "all"
 
 
@@ -824,6 +1070,38 @@ class ResearchDeepArgs(_Args):
     num_results: int = Field(20, ge=10, le=25)
 
 
+class AccountResearchDeepArgs(_Args):
+    charter: str = Field(
+        min_length=200,
+        description="Self-contained Exa assignment, including account-specific probes once.",
+    )
+    same_name_exclusions: list[str] = Field(default_factory=list)
+    additional_queries: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Complementary searches from this account's brief and known leads; usually 3–5."
+        " Use names only when known. These guide the same Exa call, not separate deep calls.",
+    )
+    num_results: int = Field(40, ge=10, le=40)
+
+
+class PersonResearchDeepArgs(_Args):
+    charter: str = Field(
+        min_length=200,
+        description="Self-contained person assignment with explicit charter subquestions and "
+        "acquired leads, or concrete questions for a substantial follow-up investigation.",
+    )
+    additional_queries: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="Complementary person-specific searches, including earlier career and "
+        "personal interests where useful. These complement actual preliminary search calls.",
+    )
+    highlights_query: str = Field(default="", description="Optional targeted excerpt emphasis.")
+    same_name_exclusions: list[str] = Field(default_factory=list)
+    num_results: int = Field(20, ge=1, le=40)
+
+
 class SourceInput(_Args):
     """One retrieved thing, with the URL it came from.
 
@@ -837,7 +1115,7 @@ class SourceInput(_Args):
     title: str | None = None
 
 
-class StructureMaterialArgs(_Args):
+class _StructureMaterialFields(_Args):
     """One structuring call's arguments.
 
     The free ``material`` string this used to take is **gone**, deliberately and breakingly: one
@@ -850,14 +1128,29 @@ class StructureMaterialArgs(_Args):
     subject_name: str = Field(min_length=2)
     subject_domain_or_company: str = Field(min_length=2)
     linkedin_url: str | None = None
-    sources: list[SourceInput] = Field(min_length=1, max_length=12)
     notes: str | None = None
     mode: Literal["broad", "intent_sweep"] = "broad"
     already_known: str | None = None
 
 
+class StructureMaterialArgs(_StructureMaterialFields):
+    sources: list[SourceInput] = Field(min_length=1, max_length=12)
+
+
 class WriteClaimsArgs(_Args):
     claims: list[ClaimInput] = Field(min_length=1, max_length=50)
+
+
+class MediaStructureMaterialArgs(_StructureMaterialFields):
+    sources: list[SourceInput | TranscriptSource] = Field(min_length=1, max_length=12)
+
+
+class MediaClaimInput(ClaimInput):
+    transcript_source: TranscriptSource | None = None
+
+
+class MediaWriteClaimsArgs(_Args):
+    claims: list[MediaClaimInput] = Field(min_length=1, max_length=50)
 
 
 class VerifyLinksArgs(_Args):
@@ -889,6 +1182,10 @@ class CommitteeCandidate(_Args):
     evidence_span: str | None = None
     rationale: str | None = None
     influence: Literal["High", "Medium", "Low"] | None = None
+    evidence_kind: Literal["provider_candidate", "web_candidate", "unfilled_role"] = "web_candidate"
+    candidate_ref: str | None = None
+    role_key: str | None = None
+    gap_reason: str | None = None
 
 
 class FinalizeResearchArgs(_Args):
@@ -964,6 +1261,11 @@ async def _read_account_state(runtime: ToolRuntime, args: ReadAccountStateArgs) 
         "persona": scope.persona_markdown,
         "already_established": scope.already_established,
     }
+    if has_capability(scope.catalog_version, "media_research"):
+        from clue_api.arv2.media_store import state as media_state
+
+        async with runtime._conn_factory() as conn:
+            state["media"] = await media_state(runtime, conn)
     if args.section == "all":
         return state
     return {args.section: state[args.section]}
@@ -999,6 +1301,16 @@ async def _read_person_state(runtime: ToolRuntime, args: ReadPersonStateArgs) ->
             "employment_history": list(scope.employment_history),
         },
     }
+    if has_capability(scope.catalog_version, "committee_discovery"):
+        async with runtime._conn_factory() as conn:
+            state["channels"] = await operations.operation_states(conn, runtime.operation_scope)
+        state["channels"].update(runtime.channel_states)
+        state["profile_seed"] = runtime.person_seed
+    if has_capability(scope.catalog_version, "media_research"):
+        from clue_api.arv2.media_store import state as media_state
+
+        async with runtime._conn_factory() as conn:
+            state["media"] = await media_state(runtime, conn)
     if args.section == "all":
         return state
     return {args.section: state[args.section]}
@@ -1021,7 +1333,26 @@ async def _read_ats_board(runtime: ToolRuntime, args: ReadAtsBoardArgs) -> dict[
     except BoardFetchFailed as failed:
         raise RefusalError("board_fetch_failed", str(failed)) from failed
 
-    receipts = await runtime.write(ats_posting_claims(postings, runtime.scope))
+    drafts = ats_posting_claims(postings, runtime.scope)
+    if has_capability(runtime.scope.catalog_version, "research_quality"):
+        from clue_api.arv2.provider_ledger import ledger_id_for
+
+        drafts = [
+            replace(
+                d,
+                markers={
+                    **d.markers,
+                    "quality_ledger_id": str(ledger_id_for(postings.ledger_row_id)),
+                    "quality_board": {
+                        "kind": postings.board.kind,
+                        "slug": postings.board.slug,
+                        "source_url": postings.board.source_url,
+                    },
+                },
+            )
+            for d in drafts
+        ]
+    receipts = await runtime.write(drafts)
     return {
         "board": {
             "kind": postings.board.kind,
@@ -1049,6 +1380,24 @@ async def _read_ats_board(runtime: ToolRuntime, args: ReadAtsBoardArgs) -> dict[
 async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, Any]:
     url = str(args.url)
 
+    if uses_person_exa_brief(runtime.scope) or uses_account_discovery(runtime.scope):
+        from clue_api.arv2.exa_client import contents_body
+
+        kwargs: dict[str, Any] = {"text_max_chars": args.max_chars}
+        if uses_person_exa_brief(runtime.scope):
+            kwargs["extras"] = person_search_contents()["extras"]
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_page" if uses_person_exa_brief(runtime.scope) else "account_page",
+            contents_body([url], **kwargs),
+            lambda caller: runtime.clients.exa(caller).contents([url], **kwargs),
+        )
+        return {
+            "result_ref": str(operation.operation_id),
+            "results": raw.get("results", []),
+            "statuses": raw.get("statuses", []),
+        }
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).contents([url], text_max_chars=args.max_chars)
 
@@ -1066,6 +1415,33 @@ async def _fetch_page(runtime: ToolRuntime, args: FetchPageArgs) -> dict[str, An
 
 
 async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, Any]:
+    if uses_person_exa_brief(runtime.scope) or uses_account_discovery(runtime.scope):
+        from clue_api.arv2.exa_client import search_body
+
+        kwargs: dict[str, Any] = {
+            "num_results": args.num_results,
+            "include_domains": args.include_domains,
+            "start_published_date": args.start_published_date,
+        }
+        if uses_person_exa_brief(runtime.scope):
+            contents = person_search_contents()
+            kwargs.update(
+                text_max_chars=contents["text"]["maxCharacters"], extras=contents["extras"]
+            )
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_search" if uses_person_exa_brief(runtime.scope) else "account_search",
+            search_body(args.query, **kwargs),
+            lambda caller: runtime.clients.exa(caller).search(
+                args.query,
+                **kwargs,
+                label="exa-search"
+                if uses_person_exa_brief(runtime.scope)
+                else f"search-{runtime.scope.account_domain}",
+            ),
+        )
+        return {"result_ref": str(operation.operation_id), "n_results": len(raw.get("results", []))}
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).search(
             args.query,
@@ -1091,6 +1467,11 @@ async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, An
 
 
 async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict[str, Any]:
+    if has_capability(runtime.scope.catalog_version, "committee_discovery"):
+        from clue_api.arv2.committee_discovery import company_lock
+
+        return await company_lock(runtime)
+
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.ai_ark(caller).company_by_domain(args.domain)
 
@@ -1120,7 +1501,7 @@ async def _lookup_company(runtime: ToolRuntime, args: LookupCompanyArgs) -> dict
         # investors, round dates, round count — has no registered home, so the whole block is still
         # returned as context and the agent quotes it into a claim with the evidence it finds
         # elsewhere.
-        "funding": funding if isinstance(funding, Mapping) else None,
+        "funding": enrichment_only(funding) if isinstance(funding, Mapping) else None,
         "claim_ids": [str(receipt.claim_id) for receipt in receipts],
         "cost": _cost_json(company.cost),
     }
@@ -1141,7 +1522,6 @@ async def _lookup_people(runtime: ToolRuntime, args: LookupPeopleArgs) -> dict[s
             {
                 "full_name": person.full_name,
                 "title": person.title,
-                "headline": person.headline,
                 "linkedin_url": person.linkedin_url,
                 "current_company": person.current_company,
                 "current_company_domain": person.current_company_domain,
@@ -1219,6 +1599,10 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
     and career history to it would send the model back to re-buy the name search for facts this
     call already had.
     """
+    if has_capability(runtime.scope.catalog_version, "committee_discovery"):
+        from clue_api.arv2.committee_discovery import lookup_bound_person
+
+        return await lookup_bound_person(runtime, args)
     scope = runtime.scope
     wanted = fold_identity(args.linkedin_url)
     locked = fold_identity(scope.person_linkedin_url or "")
@@ -1292,7 +1676,6 @@ async def _lookup_person(runtime: ToolRuntime, args: LookupPersonArgs) -> dict[s
         "person": {
             "full_name": record.full_name,
             "title": record.title,
-            "headline": record.headline,
             "linkedin_url": record.linkedin_url,
             "current_company": record.current_company,
             "current_company_domain": record.current_company_domain,
@@ -1609,28 +1992,96 @@ def _deep_lock(scope: JobScope, exclusions: str) -> str:
     )
 
 
-async def _research_deep(runtime: ToolRuntime, args: ResearchDeepArgs) -> dict[str, Any]:
+async def _research_deep(
+    runtime: ToolRuntime, args: ResearchDeepArgs | AccountResearchDeepArgs | PersonResearchDeepArgs
+) -> dict[str, Any]:
     scope = runtime.scope
+    if uses_person_exa_brief(scope):
+        assert isinstance(args, PersonResearchDeepArgs)
+        person_args = person_exa_arguments(**args.model_dump())
+        operation, raw = await runtime.operate(
+            "exa",
+            "person_deep",
+            deep_reasoning_body(**person_args),
+            lambda caller: runtime.clients.exa(caller).deep_reasoning(
+                **person_args, label=f"person-deep-{scope.account_domain}"
+            ),
+        )
+        from clue_api.arv2.exa_client import read_deep_report
+
+        report = read_deep_report(raw, text_output=True) or ""
+        return {
+            "report": report,
+            "result_ref": str(operation.operation_id),
+            "n_results": len(raw.get("results", [])),
+            "source_artifact_key": operation.artifact_key,
+            "source_from_saved_response": True,
+            "gaps": [] if report.strip() else ["deep_report_empty_review_returned_sources"],
+        }
     exclusions = ", ".join(args.same_name_exclusions) or "none named"
     system_prompt = _deep_lock(scope, exclusions) + "\n\n" + EVIDENCE_RULES
     query_parts = [args.charter]
-    if args.probes:
+    if isinstance(args, ResearchDeepArgs) and args.probes:
         query_parts.append("SPECIAL PROBES\n" + "\n".join(f"- {probe}" for probe in args.probes))
     query_parts.append(
         "ALREADY ESTABLISHED (do not re-derive; find what is NOT here)\n"
         + _clip_lines(scope.already_established or "(nothing yet)", _DEEP_ESTABLISHED_MAX_CHARS)
     )
     query = "\n\n".join(query_parts)
+    provider_args: dict[str, Any] = {
+        "system_prompt": system_prompt,
+        "query": query,
+        "output_schema": report_output_schema(),
+        "num_results": args.num_results,
+    }
+    operation_input: dict[str, Any] = {
+        "system": system_prompt,
+        "query": query,
+        "num_results": args.num_results,
+    }
+    if uses_account_exa_brief(scope):
+        assert isinstance(args, AccountResearchDeepArgs)
+        provider_args = account_exa_arguments(
+            charter=args.charter,
+            additional_queries=args.additional_queries,
+            num_results=args.num_results,
+            same_name_exclusions=args.same_name_exclusions,
+        )
+        # The entire wire request identifies this operation and is retained in the provider ledger.
+        # Different additional queries/content settings must never reuse an old purchase receipt.
+        operation_input = deep_reasoning_body(**provider_args)
 
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).deep_reasoning(
-            system_prompt=system_prompt,
-            query=query,
-            output_schema=report_output_schema(),
-            num_results=args.num_results,
+            **provider_args,
             label=f"deep-{scope.account_domain}",
         )
 
+    if (
+        has_capability(scope.catalog_version, "committee_discovery")
+        and scope.subject_kind == "account"
+    ):
+        from clue_api.arv2.committee_discovery import deep_result
+
+        operation, raw = await runtime.operate(
+            "exa",
+            "account_deep",
+            operation_input,
+            hop,
+        )
+        try:
+            return deep_result(operation, raw, text_output=uses_account_exa_brief(scope))
+        except RefusalError:
+            async with runtime._conn_factory() as conn:
+                await conn.execute(
+                    text(
+                        "UPDATE arv2_research_operation SET "
+                        "state='empty',error_code='deep_thin_response' WHERE operation_id=:id "
+                        "AND workspace_id=:ws"
+                    ),
+                    {"id": operation.operation_id, "ws": scope.workspace_id},
+                )
+            raise
     result = await runtime.call_provider("exa", hop)
     report = result.report_text or ""
     if not report.strip():
@@ -1663,7 +2114,9 @@ def _source_blocks(sources: Sequence[SourceInput]) -> tuple[SourceBlock, ...]:
     )
 
 
-async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs) -> dict[str, Any]:
+async def _structure_material(
+    runtime: ToolRuntime, args: StructureMaterialArgs | MediaStructureMaterialArgs
+) -> dict[str, Any]:
     """One structuring call, on whichever subject this job is about.
 
     The **job** decides which subject kind is admitted, not the call: an account job that asked for
@@ -1685,7 +2138,18 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
             f"so an account subject would file {runtime.scope.account_name}'s facts on "
             f"{runtime.scope.person_name}. Call it with subject_kind='person'.",
         )
-    blocks = _source_blocks(args.sources)
+    media_sources: list[tuple[TranscriptSource, dict[str, Any]]] = []
+    source_blocks: list[SourceBlock] = []
+    for source in args.sources:
+        if isinstance(source, TranscriptSource):
+            from clue_api.arv2.media_claims import resolve_source
+
+            block, saved = await resolve_source(runtime, source)
+            source_blocks.append(block)
+            media_sources.append((source, saved))
+        else:
+            source_blocks.extend(_source_blocks([source]))
+    blocks = tuple(source_blocks)
 
     def person_hop(caller: ProviderCaller) -> Any:
         subject = PersonSubject(
@@ -1723,6 +2187,10 @@ async def _structure_material(runtime: ToolRuntime, args: StructureMaterialArgs)
     drafts = structured_claims(
         output, scope=runtime.scope, subject_url_hint=None, catalog=runtime.catalog
     )
+    if has_capability(runtime.scope.catalog_version, "media_research"):
+        from clue_api.arv2.media_claims import annotate_drafts
+
+        drafts = await annotate_drafts(runtime, drafts, media_sources)
     negatives = negative_claims(output.negatives, runtime.scope)
     # One transaction per draft: a value the store will not take costs its own claim and nothing
     # else. The claims and the negatives are written as two batches so the two counts stay their
@@ -1845,7 +2313,9 @@ async def _unique_insight(runtime: ToolRuntime, args: UniqueInsightArgs) -> dict
     }
 
 
-async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str, Any]:
+async def _write_claims(
+    runtime: ToolRuntime, args: WriteClaimsArgs | MediaWriteClaimsArgs
+) -> dict[str, Any]:
     unconfirmed = [
         item.field_key
         for item in args.claims
@@ -1861,6 +2331,14 @@ async def _write_claims(runtime: ToolRuntime, args: WriteClaimsArgs) -> dict[str
             f"({len(unconfirmed)} claim(s) in this call have none)",
         )
     drafts = agent_claims(args.claims, runtime.scope, catalog=runtime.catalog)
+    if has_capability(runtime.scope.catalog_version, "media_research"):
+        from clue_api.arv2.media_claims import attach, resolve_source
+
+        for index, item in enumerate(args.claims):
+            source = getattr(item, "transcript_source", None)
+            if source is not None:
+                _, saved = await resolve_source(runtime, source)
+                drafts[index] = attach(drafts[index], source, saved, runtime)
     # One transaction per draft. This is the largest model-produced batch in the toolbelt (cap
     # fifty), so a single value the store will not take must cost its own claim and nothing else —
     # never forty-nine good claims, and never a whole-batch ``tool_error`` the model retries
@@ -1904,7 +2382,9 @@ async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str
     counts = {"EXACT": 0, "PARTIAL": 0}
     costs: list[dict[str, Any] | None] = []
 
-    def record(claim: Claim, url: str, verdict: str, reason: str) -> None:
+    def record(
+        claim: Claim, url: str, verdict: str, reason: str, extra: dict[str, Any] | None = None
+    ) -> None:
         markers = claim.write_markers or {}
         block = markers.get("source_kind_block")
         rows.append(
@@ -1915,6 +2395,7 @@ async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str
                     "reason": reason,
                     "url": url,
                     "origin": claim.source_key,
+                    **(extra or {}),
                     "structuring_mode": block if isinstance(block, str) else None,
                 },
             )
@@ -1931,6 +2412,12 @@ async def _verify_links(runtime: ToolRuntime, args: VerifyLinksArgs) -> dict[str
     for claim in claims:
         url = claim.source_url or ""
         markers = claim.write_markers or {}
+        if markers.get("media") or markers.get("source_kind_block") == "transcript":
+            from clue_api.arv2.media_claims import audit
+
+            verdict, reason, extra = await audit(runtime, claim)
+            record(claim, url, verdict, reason, extra)
+            continue
         if markers.get("quoted_context") is True:
             # Task 3 saw this quote sitting in the agent's own notes rather than in any source
             # block. No page can contain it, so buying a fetch to discover that spends a contents
@@ -2087,6 +2574,10 @@ async def _finalize_research(runtime: ToolRuntime, args: FinalizeResearchArgs) -
     )
     verdicts = keyed.verdicts
     candidates = [candidate.model_dump() for candidate in args.committee_candidates]
+    if has_capability(runtime.scope.catalog_version, "committee_discovery"):
+        from clue_api.arv2.committee_discovery import finalize_committee
+
+        return await finalize_committee(runtime, args, verdicts, keyed, candidates)
     drafts = [
         *fit_verdict_claims(verdicts, runtime.scope, filled_by_tool=keyed.filled),
         *committee_candidate_claims(candidates, runtime.scope),
@@ -2230,7 +2721,30 @@ def _governed(
         runtime.tool_calls += 1
         try:
             try:
-                return json.dumps(await body(runtime, model(**args)), default=str)
+                result = await body(runtime, model(**args))
+                if (
+                    has_capability(runtime.scope.catalog_version, "media_research")
+                    and name == "finalize_research"
+                ):
+                    from clue_api.arv2.media_store import state as media_state
+
+                    async with runtime._conn_factory() as conn:
+                        media = await media_state(runtime, conn)
+                    # Durable receipt carries counts and refs, never another personal text copy.
+                    coverage = {
+                        "attempts": media["attempts"],
+                        "coverage": media["coverage"],
+                        "exhaustive": False,
+                        "item_refs": [str(r["item_id"]) for r in media["recordings"]],
+                    }
+                    if runtime.finalization is not None:
+                        runtime.finalization["media"] = coverage
+                    result = {**result, "media": coverage}
+                if has_capability(runtime.scope.catalog_version, "media_research"):
+                    from clue_api.arv2.media_telemetry import tool_result
+
+                    tool_result(runtime, name, result)
+                return json.dumps(result, default=str)
             except RefusalError as refused:
                 envelope = _refusal_envelope(refused, codes)
             except ValidationError as invalid:
@@ -2270,7 +2784,7 @@ def _tool(
 
 def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     """The twelve tools for one account job, bound to that job's runtime."""
-    return [
+    tools = [
         _tool(
             runtime,
             name="read_account_state",
@@ -2308,7 +2822,8 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             runtime,
             name="search_web",
             description=(
-                "A bounded gap search (at most ten results) for a named fact or a named person. "
+                "Search for facts or people by name, role or team (at most ten results). "
+                "People discovery may use web search or AI Ark SMART as appropriate. "
                 "Returns URLs and short heads; read a promising hit with fetch_page."
             ),
             model=SearchWebArgs,
@@ -2320,8 +2835,10 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             description=(
                 "Deterministic firmographics for one exact domain from the company database: "
                 "legal name, founding year, industry, headcount and band, revenue band, HQ, "
-                "LinkedIn, socials, languages, technologies and funding. Every registered field "
-                "the record carries is written as a claim in code, with the record path recorded."
+                "LinkedIn, socials, languages, technologies and funding. Basic typed facts are "
+                "mapped with their record paths. AI Ark descriptions are not mapped; "
+                "use Exa and company pages for substantive company findings, "
+                "using typed facts as context."
             ),
             model=LookupCompanyArgs,
             body=_lookup_company,
@@ -2355,11 +2872,19 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             runtime,
             name="research_deep",
             description=(
-                "The one paid dossier call: your charter and special probes go in the query, the "
+                "Read the account-dossier skill. Send a self-contained charter and complementary "
+                "additional_queries from the brief and known leads. Integrate probes into the "
+                "charter once. One deep call; default 40 results, source highlights "
+                "and page links. Exa investigates; you retain seller-fit judgment."
+                if uses_account_exa_brief(runtime.scope)
+                else "The one paid dossier call: your charter and special probes go in the query, "
+                "the "
                 "target lock and the evidence law in the system prompt, and what is already "
                 "established is named so the provider finds what is NOT there. Use it once."
             ),
-            model=ResearchDeepArgs,
+            model=AccountResearchDeepArgs
+            if uses_account_exa_brief(runtime.scope)
+            else ResearchDeepArgs,
             body=_research_deep,
         ),
         _tool(
@@ -2410,6 +2935,15 @@ def build_account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         ),
     ]
 
+    if has_capability(runtime.scope.catalog_version, "committee_discovery"):
+        from clue_api.arv2.committee_discovery import account_tools
+
+        tools = [tool for tool in tools if tool.name != "lookup_people"]
+        tools.extend(account_tools(runtime))
+    if has_capability(runtime.scope.catalog_version, "media_research"):
+        tools = _with_media_tools(runtime, tools)
+    return tools
+
 
 def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     """The eleven tools for one person job, bound to that job's runtime.
@@ -2441,7 +2975,7 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             codes=PERSON_REFUSAL_CODES,
         )
 
-    return [
+    tools = [
         person_tool(
             name="read_person_state",
             description=(
@@ -2467,7 +3001,13 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         person_tool(
             name="search_web",
             description=(
-                "One unrestricted sweep search (at most ten results) for this named person. Leave "
+                "An ordinary search for this selected person. Choose complementary angles, "
+                "including earlier roles, writing, media, background and interests. Read the "
+                "returned source overview and complete evidence, not just titles. Domain filters "
+                "are optional; use them only for a specific useful source, not every search."
+                if uses_person_exa_brief(runtime.scope)
+                else "One unrestricted sweep search (at most ten results) for this named person. "
+                "Leave "
                 "include_domains empty: restricting the domain forces the engine to return "
                 "something from that domain, and that something is a same-name stranger."
             ),
@@ -2479,10 +3019,11 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             description=(
                 "Confirm this person's identity and pull their deterministic fields plus their "
                 "professional email, by their LinkedIn URL. The name and the account are the "
-                "job's, so this is never a roster pull. The record is accepted only if its "
-                "LinkedIn URL matches and its current employer is exactly this account; every "
-                "registered field it carries is written as a claim in code, and no email is ever "
-                "synthesised."
+                "job's, so this is never a roster pull. Reuses an acquired candidate profile "
+                "when available; a new lookup checks the supplied LinkedIn identity and "
+                "employer. Permitted typed enrichment is mapped to claims in code. "
+                "Biographies, headlines and promotional prose are excluded from research "
+                "inputs. Work email is provider-reported, never synthesized; no paid phones."
             ),
             model=LookupPersonArgs,
             body=_lookup_person,
@@ -2502,12 +3043,21 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         person_tool(
             name="research_deep",
             description=(
-                "The one paid dossier call: your charter and special probes go in the query, the "
+                "Write a self-contained person assignment after complementary preliminary "
+                "searches. Carry the full person-depth charter and useful acquired sources into "
+                "the initial query; add additional_queries and optional highlights_query. "
+                "Read both dossier and returned sources. Use focused follow-up deep research "
+                "only for a substantial unresolved investigation; reuse completed work."
+                if uses_person_exa_brief(runtime.scope)
+                else "The one paid dossier call: your charter and special probes go in the query, "
+                "the "
                 "person lock (name, title, company, LinkedIn, employment history) and the evidence "
                 "law in the system prompt, and what is already established is named so the "
                 "provider finds what is NOT there. Use it once."
             ),
-            model=ResearchDeepArgs,
+            model=PersonResearchDeepArgs
+            if uses_person_exa_brief(runtime.scope)
+            else ResearchDeepArgs,
             body=_research_deep,
         ),
         person_tool(
@@ -2567,3 +3117,83 @@ def build_person_tools(runtime: ToolRuntime) -> list[StructuredTool]:
             body=_finalize_person_research,
         ),
     ]
+
+    if has_capability(runtime.scope.catalog_version, "committee_discovery"):
+        from clue_api.arv2.committee_discovery import person_tools
+
+        tools.extend(person_tools(runtime))
+    if has_capability(runtime.scope.catalog_version, "media_research"):
+        tools = _with_media_tools(runtime, tools)
+    return tools
+
+
+def _with_media_tools(runtime: ToolRuntime, tools: list[StructuredTool]) -> list[StructuredTool]:
+    from clue_api.arv2 import media_tools as media
+
+    tools = [
+        t for t in tools if t.name not in {"read_media_feeds", "structure_material", "write_claims"}
+    ]
+    for name, model, body, description in (
+        (
+            "discover_media",
+            media.DiscoverMediaArgs,
+            media.discover_media,
+            (
+                "Discover recording candidates for a research question. Results are "
+                "untrusted identity candidates. Page saved results with "
+                "discovery_ref/offset. Read known URLs directly."
+            ),
+        ),
+        (
+            "read_media",
+            media.ReadMediaArgs,
+            media.read_media,
+            (
+                "Resolve a public recording, acquire/reuse an immutable transcript and "
+                "index it. Supply purpose and an exact episode hint when needed; "
+                "alternates fill gaps. Unknown dispatch never repurchases."
+            ),
+        ),
+        (
+            "search_transcripts",
+            media.SearchTranscriptsArgs,
+            media.search_transcripts,
+            (
+                "Search authorized current transcripts using lexical and semantic "
+                "retrieval. Returns exact passage references, quality, attribution and "
+                "qualified timing. Search gaps are explicit."
+            ),
+        ),
+        (
+            "open_transcript",
+            media.OpenTranscriptArgs,
+            media.open_transcript,
+            (
+                "Read exact canonical transcript passages and adjacent context. Follow "
+                "next_offset with version_ref for full lossless reading. Null timing is"
+                " valid; model speaker labels are not verified people."
+            ),
+        ),
+        (
+            "structure_material",
+            MediaStructureMaterialArgs,
+            _structure_material,
+            (
+                "Structure retrieved sources into claims. For media use transcript_ref "
+                "sources with version_ref/start/end; the server supplies the original "
+                "evidence. A pasted transcript cannot assert verified provenance."
+            ),
+        ),
+        (
+            "write_claims",
+            MediaWriteClaimsArgs,
+            _write_claims,
+            (
+                "Write sourced claims; use transcript_source for media. Keep exact "
+                "evidence_span; uncertain speaker attribution remains unsafe for "
+                "personal outreach. Invalid quotes are stored with verdicts."
+            ),
+        ),
+    ):
+        tools.append(_tool(runtime, name=name, model=model, body=body, description=description))
+    return tools

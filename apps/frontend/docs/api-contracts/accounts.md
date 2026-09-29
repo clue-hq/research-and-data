@@ -233,11 +233,11 @@ The frontend never re-derives any of these (master plan §6).
 | `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 made `overallFit` nullable) |
 | `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
 | `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is and never computes tenure from the browser clock; `employmentStartedAt` exists for sorting and date display |
-| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. `[]` in v1 (ruling S9) |
+| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. Served since 2026-09-30 (S9's later slice): the account's design documents from every project |
 | `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
 | `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
 | `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
-| `influence` | served; falls back to the persona-derived default table when the committee claim does not carry it (ruling S8) |
+| `influence` | legacy persona-derived default (S8); contextual unverified/excluded membership returns null |
 | `previewTitle` | `= name` in v1 (ruling S4) |
 | display gating | E2–E5 select claims through `arv2_display_allowed` (ruling S10): use-class rules and the sensitive fail-close stay, but a `WEAK` identity binding no longer hides an `outreachSafe = true` claim |
 
@@ -405,7 +405,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `insightSummary` | string[] | optional (default `[]`) | computed: `"{n} insights"`, `"{m} people"` |
 | `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `insightsDisplay` |
 | `insightsDisplay` | DisplayBlock (`page: "insights"`) | optional | omitted when the insights page has not been generated |
-| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; `[]` in v1 (S9) |
+| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; served since 2026-09-30: the design documents made for this account (through `design_account.account_entity_id`) from **every** project, newest first, `projectName` = the project's name, archived ones omitted; `thumbnailPath` = the gallery's `/api/clue/design/documents/{id}/thumbnail?v={current_version}` (render `unoptimized`: session-authenticated route); `type` `ad` or `web` |
 | `activity` | AccountActivity[] | required | see Shared shapes |
 
 **FI-2 fields kept until D4.** None — this endpoint is new in v1.
@@ -420,8 +420,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | the contact's resolved name |
 | `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
 | `persona` | string | required | served display text, e.g. `Economic buyer` — never the backend vocabulary value |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
-| `influence` | `High` \| `Medium` \| `Low` | required | persona-derived default when the claim lacks it (S8) |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | null for contextual unverified/excluded membership; otherwise persona-derived default (S8) |
 | `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
 | `emailStatus` | `available` \| `lookup` | required | whether a work-email claim exists |
 | `emailLabel` | email | optional | present only when `emailStatus = available` |
@@ -442,8 +445,11 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `name` | string | required | as E4 |
 | `title` | string \| null | required (nullable) | as E4 (S7) |
 | `persona` | string | required | as E4 — served display text, e.g. `Economic buyer` |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
 | `personaTone` | enum (7) | required | as E4 |
-| `influence` | `High` \| `Medium` \| `Low` | required | as E4 |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | as E4 |
 | `avatarUrl` | url or path (`/…`) | optional | as E4 |
 | `emailStatus` | `available` \| `lookup` | required | as E4 |
 | `emailLabel` | email | optional | as E4 |
@@ -1868,3 +1874,54 @@ open thread opens the surface once (`chat-shell/model/discovery-launch-signal.ts
 the driver now lists the webset on every poll tick and verifies new items in a bounded pool
 (`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
 a row still appears only after every gate is verified.
+
+## Research quality generations — approved 2026-09-22, implemented locally; live acceptance pending
+
+The research-quality design §10.2 and its implementation authorization govern this additive
+contract. Existing account/contact layouts remain. New quality-profile reads carry `projectId`,
+`contextId`, `generationId` and `qualityState` separately from job execution status. Account,
+Insights and Contact reads accept `projectId` and `contextId`; an omitted context is resolved only
+when unambiguous and returned explicitly. Ambiguity yields `context_required` with project choices,
+never another project's narrative. Legacy unscoped output is labelled `legacy`.
+
+`researchQuality` includes those identities, `qualityState` (researching/provisional/reconciled/
+partial/needs_review/suspended/privacy_stopped/context_required/legacy), `refreshPending`, ordinary
+non-sensitive `gaps`, and `contexts` choices. `DisplayBlock` carries the same metadata. Missing or
+invalidated content remains visibly pending/qualified; privacy restrictions remain separate.
+Committee members carry `membershipState` (candidate/supported/needs_verification/excluded),
+`outreachEligible` and `membershipGaps`. Only supported current employment plus supported remit may
+be presented as an established buying role. Counts use the same assessed membership reader.
+For a contextual candidate, unverified or excluded member, `influence` is null and renders as
+Unverified; the legacy persona default must not imply a verified influence level.
+`membershipGaps` contains user-facing explanations, not internal assessment reason codes.
+
+Cited sentences additionally carry `kind` (fact/inference/quote/qualified/gap) and qualifications.
+An attributed provider report excerpt is not a primary quote. A value argument cites a narrative
+claim backed by both account claims and exact pinned seller-document passages. Invalid historical
+observations remain auditable but are unavailable to ordinary factual summaries. Stale writes are
+refused atomically; rejected claims and revoked memberships are suppressed before asynchronous
+refresh. Read requests do not invoke the old Luna writer for a quality generation.
+
+## Miscellaneous research sections — approved and integrated locally 2026-09-27
+
+Account Insights and Contact display blocks now include an owned `miscellaneous` section,
+headed **Miscellaneous**, after the existing sections. Overview is unchanged. This uses the
+existing `ResearchSection` shape; no new transport or component-specific field is needed.
+
+The section contains additional source-linked findings not represented in the main narrative.
+It is ordinary research (`restricted: false`), initially collapsed (`defaultOpen: false`),
+with the same item text, attribution, qualifications and claim/source controls as other sections.
+It is not the Internal notes surface. The narrative skills govern selection; the frontend neither
+reclassifies claims nor invents residual content. Findings already explained elsewhere need not
+be repeated, and distinctive personal interests can still receive prominence in the main narrative.
+
+Backend recipe seeding offers the section to the account and person writers through
+`read_narrative_inputs`; `write_research_narrative` stores it using the existing scoped claim-ID
+resolution and page writer. Old/in-flight narratives may omit this additive section. A quality
+page with no saved Miscellaneous block shows “No additional research findings have been published
+yet.” and does not enter a refresh loop merely because this section was introduced. Existing
+blocks still become stale when their underlying research changes. No historical content is
+automatically moved or regenerated by this change.
+
+Fixture account/contact pages expose the same empty section. The generic `ResearchDocument`
+and `ResearchStack` render it as an independent native disclosure with source controls.

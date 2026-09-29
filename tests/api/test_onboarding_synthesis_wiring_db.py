@@ -317,7 +317,7 @@ async def _document_rows(conn: AsyncConnection) -> list[dict[str, Any]]:
             await conn.execute(
                 text(
                     "SELECT path, kind, version, status, document_id, supersedes_document_id, "
-                    "  produced_by_turn_id "
+                    "  produced_by_turn_id, source_icp_document_id, source_icp_sha256 "
                     "FROM brand_knowledge_document "
                     "WHERE workspace_id = :ws AND folder = 'audience' "
                     "ORDER BY path, version"
@@ -448,6 +448,8 @@ def test_the_split_run_writes_an_icp_then_its_persona_and_a_re_run_refines_it(
                 ("audience/icp-gi-groups.md", "icp-definition", "proposed"),
                 ("audience/persona-gi-groups.md", "audience-persona", "ready"),
             ]
+            assert rows[1]["source_icp_document_id"] == registered[0].document_id
+            assert len(rows[1]["source_icp_sha256"]) == 64
 
             persona_card = next(
                 card

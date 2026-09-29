@@ -45,3 +45,10 @@ export function slugifyArtifactTitle(title: string) {
 
   return slug || "untitled-artifact";
 }
+
+/** The host segment the share menu shows before the slug: the origin without its scheme
+ * (`acme.pages.cluehq.ai`, or `acme.pages.localhost:8040` on the dev stack). */
+export function publicLinkHost(origin: string | null): string {
+  if (!origin) return "";
+  return origin.replace(/^https?:\/\//, "").replace(/\/+$/, "");
+}

@@ -6,6 +6,7 @@ import {
 } from "./accounts-read-result";
 import type { AccountsQuery } from "./accounts.repository";
 import { getAccountContact } from "./account-contacts.repository";
+import { ResearchContextQuerySchema, type ResearchContextQuery } from "../model/research-context";
 import type { AccountContactDetail } from "../model/account-contact";
 
 /**
@@ -38,6 +39,7 @@ export async function loadAccountsPage(
 export async function loadAccountContact(
   accountId: string,
   contactId: string,
+  context?: ResearchContextQuery,
 ): Promise<AccountContactDetail | null> {
-  return getAccountContact(accountId, contactId);
+  return getAccountContact(accountId, contactId, undefined, ResearchContextQuerySchema.parse(context ?? {}));
 }

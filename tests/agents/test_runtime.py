@@ -448,7 +448,16 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
     )
     framework_tools = [
         {"name": name}
-        for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
+        for name in (
+            "compact_conversation",
+            "edit_file",
+            "glob",
+            "grep",
+            "ls",
+            "read_file",
+            "write_file",
+            "write_todos",
+        )
     ]
     governed_tools = factory.build()
     effective_names = {tool.name for tool in governed_tools}
@@ -530,7 +539,8 @@ def test_governed_surface_uses_tool_specific_model_guidance_without_moving_schem
     # M8D R10: the retired account-deep launch is exact-replay-only — no active role builds it —
     # while its registry descriptor (and therefore its historical schema pin) must not move.
     assert "launch_account_deep" not in built
-    assert "non-spending immutable" in built["draft_account_research_directive"].description
+    # head-of-abm v68 dropped the retired directive lane; no active role builds its draft tool.
+    assert "draft_account_research_directive" not in built
     assert toolbelt.descriptor("launch_account_deep").input_schema_sha256 == (
         "ccb1246db77aeac6810baab769838993cc132fec9217eaecf07da9cc207d650f"
     )
@@ -944,6 +954,64 @@ def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake
     )
     assert task.domain_refs[0].workspace_id == request.constitution.workspace_id
     assert task.required_output_path == "outputs/review-verdict.md"
+
+
+def test_research_delegation_virtual_views_are_recoverable_without_file_access() -> None:
+    import json
+    from dataclasses import replace
+
+    request, resolved = _request()
+    resolved = cast(Any, resolved)
+    resolved = replace(
+        resolved,
+        profile=resolved.profile.model_copy(
+            update={
+                "delegation_roles": (AgentRole.RESEARCH_CLAIMS,),
+            }
+        ),
+    )
+    execution = _DelegationExecution()
+    artifacts = _DelegationArtifacts()
+
+    class NoFiles:
+        async def stat_entry(self, path):
+            raise AssertionError("Virtual views must not reach the physical workspace")
+
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=NoFiles())),
+        artifacts=cast(Any, artifacts),
+    )
+
+    async def case():
+        tool = factory._delegation_tool()
+        args = {
+            "role": "research_claims",
+            "goal": "Process evidence",
+            "instructions": "Read originals",
+        }
+        refused = json.loads(
+            await tool.coroutine(
+                runtime=SimpleNamespace(tool_call_id="wrong-copy", state={}),
+                canonical_paths=["research/context.json", "evidence/index/0.json"],
+                **args,
+            )
+        )
+        assert refused["error"] == "plan_rejected"
+        assert "canonical_paths=[]" in refused["reasons"][0]
+        assert not execution.validated_plans
+        assert not artifacts.data
+        await tool.coroutine(
+            runtime=SimpleNamespace(tool_call_id="corrected-copy"), canonical_paths=[], **args
+        )
+        assert len(execution.validated_plans) == 1
+        step = execution.validated_plans[0].steps[0]
+        assert step.granted_paths == ()
+
+    run_async(case())
 
 
 def test_o3_research_delegation_carries_frozen_steering_and_directive_files_and_refs() -> None:

@@ -435,8 +435,11 @@ class Stage0StepPinProvider:
         # ungranted from `head-of-abm@v55` and out of the slot at recipe0-stage0@27, but they stay
         # named here: an execution pinned to an earlier revision still plans them, and it still
         # needs this pin resolved to replay.
+        # ``configure_project_targeting@1`` (head-of-abm@v61+) replaced the product-set and ICP
+        # gates and carries the same trusted ``source_turn_ref`` only, so it resolves the same way.
         if step.tool_name in {
             "author_icp_document",
+            "configure_project_targeting",
             "open_design_leg",
             "open_product_set_selection_gate",
             "request_persona_synthesis",

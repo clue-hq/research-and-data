@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "./research-link";
 import { ArrowRight } from "lucide-react";
 import type { AccountDetail } from "../model/account-detail";
 import readability from "./account-readability.module.css";

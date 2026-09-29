@@ -557,6 +557,16 @@ function buildInsights(options: BuildSpecOptions): ResearchDisplayBlock {
         options,
         true,
       ),
+      {
+        key: "miscellaneous",
+        h1: "Miscellaneous",
+        empty: true,
+        restricted: false,
+        defaultOpen: false,
+        pending: false,
+        emptyMessage: "No additional research findings have been published yet.",
+        items: [],
+      },
     ],
   };
 }
@@ -639,6 +649,16 @@ function buildContact(options: BuildSpecOptions): ResearchDisplayBlock {
         options,
         true,
       ),
+      {
+        key: "miscellaneous",
+        h1: "Miscellaneous",
+        empty: true,
+        restricted: false,
+        defaultOpen: false,
+        pending: false,
+        emptyMessage: "No additional research findings have been published yet.",
+        items: [],
+      },
     ],
   };
 }

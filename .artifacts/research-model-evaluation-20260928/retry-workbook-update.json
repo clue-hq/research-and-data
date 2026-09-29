@@ -1,0 +1,1516 @@
+{
+  "rows": {
+    "Runs": [
+      [
+        "Z7",
+        "Clue \u2192 Zafran",
+        "muse-spark-1.3",
+        "xhigh",
+        0.011235683518518518,
+        0.013019161990740742,
+        null,
+        3.1,
+        31,
+        "Vari Kaur: 25 + page\nNick Fisher: 53 + page",
+        "All 3 jobs completed; reconciliation recovered. Strong Nick voice; narrower account coverage and Vari wrong-employer attribution.",
+        "Open report"
+      ],
+      [
+        "Z8",
+        "Clue \u2192 Zafran",
+        "glm-5.3",
+        "medium",
+        0.02665430107638889,
+        0.027741879837962967,
+        null,
+        5.6,
+        49,
+        "Tom Anthony: 33 + page\nSanaz Yashar: 55 + page",
+        "All dossiers/pages saved; account and reconciliation need review. Wrong people: Tom/Sanaz instead of Nick/Vari. Semantic quality not fully audited.",
+        "Open report"
+      ]
+    ],
+    "Costs": [
+      [
+        "Z7",
+        5.920997,
+        0.281,
+        0.0,
+        0.0,
+        0.338008,
+        0,
+        0,
+        0.00052925,
+        0,
+        null,
+        3.1,
+        "Recorded usage; common reconciliation separate; not invoice reconciled"
+      ],
+      [
+        "Z8",
+        6.402588,
+        0.21,
+        0.184165,
+        0.002283,
+        0.382459,
+        0,
+        0,
+        0.00034239,
+        0,
+        null,
+        5.6,
+        "Recorded usage; common reconciliation separate; not invoice reconciled"
+      ]
+    ],
+    "Jobs": [
+      [
+        "Z7",
+        "Zafran Security",
+        "completed",
+        0.0049308391435185185,
+        0.002574656215277778,
+        0.0011624419675925926,
+        0.000586124675925926,
+        31,
+        31,
+        "Saved",
+        51,
+        1.69375,
+        "2026-09-28 11:39:41.401033+00:00",
+        "2026-09-28 11:46:47.425535+00:00",
+        "59d4870e-2207-56ca-a50b-e76ab86f6a53"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "completed",
+        0.006230505347222222,
+        0.0034335118981481476,
+        0.0012797492013888888,
+        0.0013288225231481482,
+        25,
+        25,
+        "Saved",
+        60,
+        1.844799,
+        "2026-09-28 11:45:13.905159+00:00",
+        "2026-09-28 11:54:12.220821+00:00",
+        "d9a7b71f-fa01-5b6b-8599-3119e6461527"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "completed",
+        0.007391702523148148,
+        0.004000149548611111,
+        0.002492175347222222,
+        0.0005386652546296296,
+        53,
+        53,
+        "Saved",
+        75,
+        2.382448,
+        "2026-09-28 11:45:13.520991+00:00",
+        "2026-09-28 11:55:52.164089+00:00",
+        "1a912ee3-806b-50ca-a0b5-d927cab2f677"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "needs_review",
+        0.00783620886574074,
+        0.0034936127083333335,
+        0.0010293632060185186,
+        0.0024442326157407407,
+        49,
+        49,
+        "Saved",
+        86,
+        2.295134,
+        "2026-09-28 11:39:41.402486+00:00",
+        "2026-09-28 11:50:58.450932+00:00",
+        "59d4870e-2207-56ca-a50b-e76ab86f6a53"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "completed",
+        0.006397073148148149,
+        0.00300347443287037,
+        0.0015125450810185186,
+        0.0007983950231481481,
+        33,
+        33,
+        "Saved",
+        61,
+        1.693585,
+        "2026-09-28 11:48:33.554675+00:00",
+        "2026-09-28 11:57:46.261795+00:00",
+        "23a89a4c-2a62-5501-9c22-24797bd232d0"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "completed",
+        0.020490879907407406,
+        0.008288524236111112,
+        0.010730826597222222,
+        0.0010439758564814814,
+        55,
+        55,
+        "Saved",
+        99,
+        2.413869,
+        "2026-09-28 11:48:33.922075+00:00",
+        "2026-09-28 12:18:04.334099+00:00",
+        "2242afe2-3187-5d99-94aa-2cdced22669d"
+      ]
+    ],
+    "Quality": [
+      [
+        "Z7",
+        "Vari\u2019s own ABM-building and Sales-partnership words",
+        "preserved",
+        "Like Grok A41/V22\u201323: preserves Vari\u2019s own end-to-end ABM and Sales-partnership words. Strong useful signal.",
+        "account F026, vari F016",
+        17,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Lean ABM team, HubSpot build and measurable outcomes",
+        "preserved bundled",
+        "Hands-on HubSpot work, account tiers, buying groups and outcome measures survive. Grok A30\u201332 separates the units better. Muse interpretation \u201cproduction-constrained\u201d is stronger than a lean-role requirement proves.",
+        "account F011, account F012, account F013, vari F021, vari F022",
+        15,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Nick\u2019s Monday report with five-tool workflow",
+        "account omission recovered person",
+        "The full workflow was in account media-discovery results but omitted from the account JSON. Nick later preserves all five tools and the self-built Claude workflow. Grok retained it at account stage.",
+        "nick F047",
+        3,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "AI-first GTM hiring: shipping real workflows",
+        "preserved bundled",
+        "Distinctive \u201cshipping real workflows\u201d survives in both stages. Account F024 unnecessarily combines the 2026 hiring post with a separate April 2024 joining/Gong article.",
+        "account F024, nick F061",
+        4,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "AI overwriting pipeline / prospect-blast warning",
+        "account omission recovered person",
+        "Account acquired the warning but omitted it. Nick quotes both concrete harms, improving on the earlier Muse max run. Grok also recovered both in person research, with clearer attribution of the relayed Lemkin practices.",
+        "nick F046",
+        5,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Idea to working demo in hours",
+        "account omission recovered person",
+        "Exact idea-to-demo-in-hours passage was in account-deep returned sources but absent from account findings. Nick restores it. Grok retained it at both stages.",
+        "nick F048",
+        3,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Nick\u2019s record-store and comic-store marketing methods",
+        "partial account recovered person",
+        "Account retained the 2024 record-store campaign but omitted acquired 2026 comic-store details. Nick preserves both distinct tactics and reported results, broadly comparable to Grok person depth.",
+        "account F023, nick F043, nick F044, nick F070",
+        9,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Exposure Gateway and Zero Day Agent details",
+        "selection and discovery gaps",
+        "Zero Day Agent and the September Asset Ownership Agent announcement were returned but have no substantive findings. Exposure Gateway was not found in the targeted saved-result scan. Grok A21/A22 retained dated author, mechanism, integrations and response workflow.",
+        "account F001",
+        2,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Funding versus revenue/ARR and adverse reporting",
+        "partial with omission",
+        "Series C and Cisco survive. A direct February Amex announcement was retrieved but omitted. Grok also captured later journalist ARR/acquisition context; that adverse reporting was not located in Muse returned-result scans. Funding is not marketing budget.",
+        "account F006, account F007",
+        5,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Snir departure versus stale CPO listing",
+        "discovery gap",
+        "No departure passage located in Muse returned results. Grok A91 retained a qualified secondary report. Muse founder/leadership lists do not replace this dated contrary evidence; neither run proves the external report is true.",
+        "account F027",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Sanaz\u2019s ambiguous \u201c5X in new $$$$$\u201d public wording",
+        "selection omission",
+        "The same account-deep results include Sanaz\u2019s \u201c5X in new $$$$$\u201d and almost-80% MTTR statement. Neither appears in Muse authored findings. Grok also omitted the 5X signal: the baseline is not complete.",
+        "",
+        2,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Career tools versus employer deployment",
+        "mixed scope and contradiction",
+        "Career tools and employer installations are usually distinguished well. But account F019 says Gong was not named in any Zafran source while F024 already cites Nick\u2019s first-week Gong-call research. That contradiction survives the final account narrative.",
+        "account F019, account F024, nick F041, nick F065, vari F020",
+        27,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Cocktail Chemistry, book and audience feedback",
+        "rich shortform preservation",
+        "Strong book/hobby/audience-feedback wording, visible on the contact page. Grok also had an additional first-person kitchen/hobby passage not located in Muse acquisition. One very large Muse book finding bundles several independently usable details.",
+        "nick F030, nick F031, nick F032",
+        2,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "CocktailGPT project follow-through",
+        "lead only",
+        "Project name, profile description and date retained; no project-site fetch. Similar limitation to Grok, behind the earlier Muse max run which inspected the site. Do not claim all available side-project depth was exhausted.",
+        "nick F033",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Nick\u2019s authored PMM principles and credibility deck",
+        "lead only",
+        "Publication titles survive, not the actual old article/deck arguments. Both this retry and Grok miss substance found by the earlier Muse max run; a reason to retain a cross-run evidence union.",
+        "nick F034",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Nick\u2019s ISMG interview: actual speech versus listing",
+        "listing only no transcription",
+        "Muse keeps ISMG/Okta metadata, performs no recording-resolution or transcription call, and stops after discovering listings. Grok obtained actual ISMG speech with speaker/history qualifications. No failed transcription attempt establishes provider unavailability here.",
+        "nick F080, nick F081, nick F082, nick F083, nick F084",
+        1,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Vari\u2019s employer-specific Salesforce\u2013HubSpot work",
+        "source review failure",
+        "Axiom integration is present but downgraded to synthesis-only insufficient context, despite the directly returned profile containing the full Salesforce\u2013HubSpot quote. Grok V10 uses that passage correctly. Both preserve the truncated 25% metric without inventing an endpoint.",
+        "vari F009, vari F010",
+        3,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Vari\u2019s credentials and thin personal footprint",
+        "thinner profile discovery",
+        "Education and thin outside-work footprint are qualified. Explicit 6sense/Demandbase certification findings are absent; exact credential passages not located in acquired-result scan. Grok retains credentials; neither should invent hobbies.",
+        "vari F014, vari F024, vari F025",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Wrong entity, research bookkeeping and bundling",
+        "material attribution and claim hygiene defects",
+        "Vari F004 assigns Secureworks and Ivanti experience to current Zafran. Research gaps and analyst characterizations are stored as supported observations. Independent posts/events/people remain bundled. Grok also has bookkeeping, duplication and bundling defects; it is a comparative baseline, not gold truth.",
+        "account F015, account F024, account F030, account F031, nick F084, nick F091, nick F100, vari F004, vari F006, vari F023, vari F024",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Initial narrative usefulness and fidelity",
+        "published useful but inaccurate in places",
+        "All initial pages are saved. Nick\u2019s page preserves strong quotations and seller-relevance caveats. Vari\u2019s page repeats the wrong-employer remit; account tooling contradicts its own Gong evidence. Final account page includes common Muse reconciliation, assessed separately from initial authoring.",
+        "account F019, account F024, nick F046, nick F047, vari F004",
+        0,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Wrong-employer attribution",
+        "Confirmed source contradiction",
+        "Secureworks and Ivanti bullets became current Zafran remit; error reaches Vari page. Full returned profile clearly separates employers.",
+        "Vari F004 vs F006 and profile headings",
+        null,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Narrative citation support",
+        "Specifics absent from cited claim",
+        "Initial Amex February event cites only Cisco F007; hackathon hours cite F024 hiring/joining. Facts have raw support, but cited claims do not contain those specifics.",
+        "Initial money-and-momentum / why-now",
+        null,
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Import text fidelity",
+        "109 of 109 preserved",
+        "Programmatic comparison found no finding-text differences between 109 authored entries and imported records. This does not validate factual accuracy or prove all research was selected.",
+        "31 account / 53 Nick / 25 Vari",
+        null,
+        "Open evidence"
+      ],
+      [
+        "Z8",
+        "Comparable person research",
+        "Not the requested subjects",
+        "GLM selected Tom/Sanaz rather than fixed Nick/Vari. Final outputs are available; no new full semantic grading of these different people in this update.",
+        "49 account / 33 Tom / 55 Sanaz",
+        null,
+        "Open status"
+      ]
+    ],
+    "Failures": [
+      [
+        "Z7",
+        "Common reconciliation",
+        "Response-shape contract",
+        "Revision175 failed: Each update needs page and section only. Revision176 completed. All research jobs and pages survived.",
+        "Confirmed logs; common Muse model, separate from researcher",
+        "Open evidence"
+      ],
+      [
+        "Z7",
+        "Vari narrative",
+        "Recovered tool arguments",
+        "Narrative shape/quotation errors required revised calls; final contact page stored and job completed.",
+        "Observed recovery; semantic attribution error remains separately",
+        "Open evidence"
+      ],
+      [
+        "Z8",
+        "Committee selection",
+        "Assignment deviation",
+        "Account nominated Tom Anthony and Sanaz Yashar instead of the fixed Nick Fisher and Vari Kaur. Both nominated people completed.",
+        "Confirmed subjects; not a controlled person comparison",
+        "Open evidence"
+      ],
+      [
+        "Z8",
+        "Account finalization",
+        "Invalid references / unresolved tool failures",
+        "Rejected invalid unprocessed-source IDs, then nine unresolved failed nodes. Account ended needs_review despite saved49 findings and two pages.",
+        "Confirmed; do not equate failure with lost research",
+        "Open evidence"
+      ],
+      [
+        "Z8",
+        "Tom finalization",
+        "Recovered completion schema",
+        "Unsupported subject_id in CompletionNotes rejected; corrected and completed.",
+        "Confirmed recovery",
+        "Open evidence"
+      ],
+      [
+        "Z8",
+        "Common reconciliation",
+        "Response-shape contract",
+        "Revisions203 and204 failed: Each update needs page and section only. Generation settled needs_review with existing pages intact.",
+        "Confirmed; common Muse reconciliation, not GLM researcher",
+        "Open evidence"
+      ]
+    ],
+    "Outputs": [
+      [
+        "Z7",
+        "Zafran Security",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json"
+      ],
+      [
+        "Z7",
+        "Zafran Security",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md"
+      ],
+      [
+        "Z7",
+        "Zafran Security",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/imported-claims.json"
+      ],
+      [
+        "Z7",
+        "Zafran Security",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Account may include common reconciliation; see initial version separately.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/account/page.md"
+      ],
+      [
+        "Z7",
+        "Zafran Security",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/3c4b89a3e01af9b71a8756e0b20def38"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/dossier.json"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/dossier.md"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/imported-claims.json"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Researcher-authored contact page.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/person-b0b87722-4292-444b-bfc5-4eaa371b7ca8/page.md"
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/64418da8b191c25e19e2cc56d074e444"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/dossier.json"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/dossier.md"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/imported-claims.json"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Researcher-authored contact page.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/person-a503cf2b-0ce4-4867-8e80-d47764e89d01/page.md"
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/21aa93f9a4145e91b6b6e06adaa4554a"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Review report",
+        "Open Review report",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Source acquisition manifest",
+        "Open Source acquisition manifest",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/all-raw/manifest.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Action summary",
+        "Open Action summary",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/activity-latest.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Timing",
+        "Open Timing",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/timing.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Model call metadata",
+        "Open Model call metadata",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/agent_model_call.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Provider cost ledger",
+        "Open Provider cost ledger",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/provider_call_ledger.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Trace verification",
+        "Open Trace verification",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/trace-verification.json"
+      ],
+      [
+        "Z7",
+        "Run",
+        "Initial account narrative",
+        "Open Initial account narrative",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/account-initial/page.md"
+      ],
+      [
+        "Z7",
+        "Common Muse reconciler",
+        "Langfuse reconciliation",
+        "Open Langfuse reconciliation",
+        "",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/8821347724217b0a4a1a133916149b39"
+      ],
+      [
+        "Z7",
+        "Common Muse reconciler",
+        "Langfuse reconciliation",
+        "Open Langfuse reconciliation",
+        "",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bf446b64ca93d74f6a6af58bee2b13c8"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/imported-claims.json"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Account may include common reconciliation; see initial version separately.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/account/page.md"
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/8478a8cd513437570318159ecfedecee"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/dossier.json"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/dossier.md"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/imported-claims.json"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Researcher-authored contact page.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/person-62653922-ea6f-43ec-8a7d-0cfe8b5fd8d5/page.md"
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cb063dcc8b1bc8b30905c09ba7d1dc46"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "Claim JSON",
+        "Open Claim JSON",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/dossier.json"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "Readable dossier",
+        "Open Readable dossier",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/dossier.md"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "Imported claims",
+        "Open Imported claims",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/imported-claims.json"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "Saved narrative",
+        "Open Saved narrative",
+        "Researcher-authored contact page.",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/person-913a23df-a0a3-4f67-9fc0-b62d3b611077/page.md"
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        "Langfuse execution",
+        "Open Langfuse execution",
+        "Observable execution; private deliberations not reproduced.",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/0061b14dad5cbbcd9166a8cc3c4e20ad"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Review report",
+        "Open Review report",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Source acquisition manifest",
+        "Open Source acquisition manifest",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/all-raw/manifest.json"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Action summary",
+        "Open Action summary",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/activity-latest.json"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Timing",
+        "Open Timing",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/timing.json"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Model call metadata",
+        "Open Model call metadata",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/agent_model_call.json"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Provider cost ledger",
+        "Open Provider cost ledger",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/provider_call_ledger.json"
+      ],
+      [
+        "Z8",
+        "Run",
+        "Trace verification",
+        "Open Trace verification",
+        "",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/trace-verification.json"
+      ],
+      [
+        "Z8",
+        "Common Muse reconciler",
+        "Langfuse reconciliation",
+        "Open Langfuse reconciliation",
+        "",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/38a4925c1acc5930af3bfb1ef3bdfce3"
+      ],
+      [
+        "Z8",
+        "Common Muse reconciler",
+        "Langfuse reconciliation",
+        "Open Langfuse reconciliation",
+        "",
+        "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/57a55c51c8095929225144a1f26cff95"
+      ]
+    ],
+    "Trace metrics": [
+      [
+        "Z7",
+        "Zafran Security",
+        51,
+        5134226,
+        4456865,
+        42005,
+        0.0037269259134228815,
+        52,
+        0,
+        null,
+        null
+      ],
+      [
+        "Z7",
+        "Vari Kaur",
+        60,
+        6275473,
+        5591691,
+        35604,
+        0.004600416875007256,
+        56,
+        0,
+        null,
+        null
+      ],
+      [
+        "Z7",
+        "Nick Fisher",
+        75,
+        7301820,
+        6315818,
+        47665,
+        0.00561840365011314,
+        106,
+        9,
+        null,
+        null
+      ],
+      [
+        "Z8",
+        "Zafran Security",
+        86,
+        7170188,
+        6759424,
+        56886,
+        0.006401342648101423,
+        81,
+        7,
+        null,
+        null
+      ],
+      [
+        "Z8",
+        "Tom Anthony",
+        61,
+        4760075,
+        4345024,
+        40689,
+        0.005046711105743371,
+        62,
+        4,
+        null,
+        null
+      ],
+      [
+        "Z8",
+        "Sanaz Yashar",
+        99,
+        8656079,
+        7966720,
+        51556,
+        0.01885840894488663,
+        74,
+        2,
+        null,
+        null
+      ]
+    ],
+    "Method": [
+      [
+        "Latest retry audit",
+        "Z7 is Muse xhigh on the same Zafran/Nick/Vari workload: all109 authored findings reviewed, 20 comparative probes plus attribution/citation/import checks. Z8 adds GLM final lifecycle and artifacts only; Tom/Sanaz differ from the fixed comparison."
+      ],
+      [
+        "No complete truth set",
+        "At least five source-specific account omissions established for Z7; not a denominator for percentage recall. Grok also omitted useful evidence. Successful import/completion is not semantic validation."
+      ]
+    ]
+  },
+  "links": [
+    {
+      "sheet": "Runs",
+      "added_row": 0,
+      "column": "L",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 0,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 1,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 2,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 3,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/account/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 4,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/3c4b89a3e01af9b71a8756e0b20def38"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 5,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 6,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 7,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/d9a7b71f-fa01-5b6b-8599-3119e6461527/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 8,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/person-b0b87722-4292-444b-bfc5-4eaa371b7ca8/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 9,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/64418da8b191c25e19e2cc56d074e444"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 10,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 11,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 12,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/1a912ee3-806b-50ca-a0b5-d927cab2f677/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 13,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/person-a503cf2b-0ce4-4867-8e80-d47764e89d01/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 14,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/21aa93f9a4145e91b6b6e06adaa4554a"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 15,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 16,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/all-raw/manifest.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 17,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/activity-latest.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 18,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/timing.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 19,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/agent_model_call.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 20,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/review/provider_call_ledger.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 21,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/trace-verification.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 22,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/muse-xhigh/account-initial/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 23,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/8821347724217b0a4a1a133916149b39"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 24,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bf446b64ca93d74f6a6af58bee2b13c8"
+    },
+    {
+      "sheet": "Runs",
+      "added_row": 1,
+      "column": "L",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 25,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 26,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 27,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 28,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/account/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 29,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/8478a8cd513437570318159ecfedecee"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 30,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 31,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 32,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/23a89a4c-2a62-5501-9c22-24797bd232d0/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 33,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/person-62653922-ea6f-43ec-8a7d-0cfe8b5fd8d5/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 34,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cb063dcc8b1bc8b30905c09ba7d1dc46"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 35,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/dossier.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 36,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/dossier.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 37,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/2242afe2-3187-5d99-94aa-2cdced22669d/imported-claims.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 38,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/person-913a23df-a0a3-4f67-9fc0-b62d3b611077/page.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 39,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/0061b14dad5cbbcd9166a8cc3c4e20ad"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 40,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 41,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/all-raw/manifest.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 42,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/activity-latest.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 43,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/timing.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 44,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/agent_model_call.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 45,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/review/provider_call_ledger.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 46,
+      "column": "D",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/trace-verification.json"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 47,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/38a4925c1acc5930af3bfb1ef3bdfce3"
+    },
+    {
+      "sheet": "Outputs",
+      "added_row": 48,
+      "column": "D",
+      "target": "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/57a55c51c8095929225144a1f26cff95"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 0,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 1,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 2,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 3,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 4,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 5,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 6,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 7,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 8,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 9,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 10,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 11,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 12,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 13,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 14,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 15,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 16,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 17,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 18,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 19,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 20,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 21,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 22,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Quality",
+      "added_row": 23,
+      "column": "G",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 0,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 1,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 2,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 3,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 4,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    },
+    {
+      "sheet": "Failures",
+      "added_row": 5,
+      "column": "F",
+      "target": "file:///Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md"
+    }
+  ],
+  "runs": [
+    {
+      "id": "Z7",
+      "folder": "muse-xhigh",
+      "start": "2026-09-28 11:39:41.401033+00:00",
+      "research_end": "2026-09-28 11:55:52.164089+00:00",
+      "settled_at": "2026-09-28 11:58:26.256629+00:00",
+      "research_wall_seconds": 970.763056,
+      "settled_seconds": 1124.855596,
+      "parts": [
+        5.920997,
+        0.281,
+        0.0,
+        0.0,
+        0.338008,
+        0,
+        0,
+        0.00052925,
+        0
+      ],
+      "total": 6.540534249999999,
+      "credits": 3.1,
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/MUSE-XHIGH-QUALITY.md",
+      "counts": {
+        "59d4870e-2207-56ca-a50b-e76ab86f6a53": 31,
+        "d9a7b71f-fa01-5b6b-8599-3119e6461527": 25,
+        "1a912ee3-806b-50ca-a0b5-d927cab2f677": 53
+      },
+      "model_calls": 186,
+      "resource_pin": "19d896284ac0c8fa8427808c73117c7b680fde8b7d5f767ae79663ac78b6c790"
+    },
+    {
+      "id": "Z8",
+      "folder": "glm53-medium",
+      "start": "2026-09-28 11:39:41.402486+00:00",
+      "research_end": "2026-09-28 12:18:04.334099+00:00",
+      "settled_at": "2026-09-28 12:19:38.300904+00:00",
+      "research_wall_seconds": 2302.931613,
+      "settled_seconds": 2396.898418,
+      "parts": [
+        6.402588,
+        0.21,
+        0.184165,
+        0.002283,
+        0.382459,
+        0,
+        0,
+        0.00034239,
+        0
+      ],
+      "total": 7.18183739,
+      "credits": 5.6,
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-muse-xhigh-glm-retry-20260928/glm53-medium/FINAL-STATUS.md",
+      "counts": {
+        "59d4870e-2207-56ca-a50b-e76ab86f6a53": 49,
+        "23a89a4c-2a62-5501-9c22-24797bd232d0": 33,
+        "2242afe2-3187-5d99-94aa-2cdced22669d": 55
+      },
+      "model_calls": 246,
+      "resource_pin": "19d896284ac0c8fa8427808c73117c7b680fde8b7d5f767ae79663ac78b6c790"
+    }
+  ],
+  "import_checks": [
+    {
+      "run": "Z7",
+      "subject": "Zafran Security",
+      "authored": 31,
+      "stored": 31,
+      "finding_text_differences": []
+    },
+    {
+      "run": "Z7",
+      "subject": "Vari Kaur",
+      "authored": 25,
+      "stored": 25,
+      "finding_text_differences": []
+    },
+    {
+      "run": "Z7",
+      "subject": "Nick Fisher",
+      "authored": 53,
+      "stored": 53,
+      "finding_text_differences": []
+    },
+    {
+      "run": "Z8",
+      "subject": "Zafran Security",
+      "authored": 49,
+      "stored": 49,
+      "finding_text_differences": []
+    },
+    {
+      "run": "Z8",
+      "subject": "Tom Anthony",
+      "authored": 33,
+      "stored": 33,
+      "finding_text_differences": []
+    },
+    {
+      "run": "Z8",
+      "subject": "Sanaz Yashar",
+      "authored": 55,
+      "stored": 55,
+      "finding_text_differences": []
+    }
+  ]
+}

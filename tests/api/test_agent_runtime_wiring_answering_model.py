@@ -112,6 +112,39 @@ def test_the_receipt_falls_back_to_model_name_without_a_stamp() -> None:
     assert _record({}, None) == "x-ai/grok-4.6"
 
 
+def test_inherited_parent_callback_does_not_charge_a_child_call():
+    async def drive():
+        parent, child = _request(), _request()
+        journals = [_Turns(), _Turns()]
+        handlers = [
+            DurableAgentModelCallHandler(
+                request=request,
+                requested_model="fixture/model",
+                initial_sequence=1,
+                artifacts=_Artifacts(),
+                turns=journal,
+            )
+            for request, journal in zip((parent, child), journals, strict=True)
+        ]
+        run_id = uuid4()
+        for handler in handlers:
+            await handler.on_chat_model_start(
+                {},
+                [[HumanMessage(content="source reference")]],
+                run_id=run_id,
+                metadata={"agent_execution_id": str(child.constitution.execution_id)},
+            )
+        result = LLMResult(generations=[[ChatGeneration(message=AIMessage(content="done"))]])
+        for handler in handlers:
+            await handler.on_llm_end(result, run_id=run_id)
+            await handler.on_llm_end(result, run_id=run_id)  # duplicate end is also harmless
+        assert journals[0].receipts == []
+        assert len(journals[1].receipts) == 1
+        assert journals[1].receipts[0].execution_id == child.constitution.execution_id
+
+    asyncio.run(drive())
+
+
 class _Denied(Exception):
     """What the OpenAI-compatible SDK raises when OpenRouter refuses on a weekly key cap."""
 

@@ -30,6 +30,32 @@ export interface ArtifactPublishOutcome {
 }
 
 /**
+ * The addresses the share menu shows for a published site: the workspace's
+ * custom hostname when it has an active one, else the Clue address.
+ *
+ * Both come from the server — the menu only picks between them. The custom
+ * page map is used only when it carries entries, so a server (or workspace)
+ * with no custom hostname keeps listing the Clue pages.
+ */
+export function shareAddresses({
+  customPageUrls,
+  customUrl,
+  pageUrls,
+  url,
+}: {
+  customPageUrls: Record<string, string>;
+  customUrl: string | null;
+  pageUrls: Record<string, string>;
+  url: string | null;
+}): { url: string; pageUrls: Record<string, string> } {
+  return {
+    pageUrls:
+      Object.keys(customPageUrls).length > 0 ? customPageUrls : pageUrls,
+    url: customUrl ?? url ?? "",
+  };
+}
+
+/**
  * Publish through the seam and say what happened — the whole publish decision,
  * with no React in it, so it is tested directly.
  *
@@ -45,9 +71,8 @@ export async function publishWithRepository(
     const result = await repository.publish(documentId, input);
     return {
       message: "Published",
-      pageUrls: result.pageUrls,
       status: "published",
-      url: result.url,
+      ...shareAddresses(result),
     };
   } catch (error) {
     return {
@@ -239,8 +264,9 @@ export function useArtifactSharingController({
             setSlug(state.slug);
             setSlugDraft(state.slug);
           }
-          setShareUrl(state.url ?? "");
-          setPageUrls(state.pageUrls);
+          const addresses = shareAddresses(state);
+          setShareUrl(addresses.url);
+          setPageUrls(addresses.pageUrls);
           setSlugDirty(false);
         } else {
           setPublishStatus("draft");

@@ -142,6 +142,8 @@ class DesignPlatformReads:
                 body,
                 ToolContext(
                     workspace_id=self._envelope.workspace_id,
+                    # The leg's project scopes project-scoped reads (the account overview).
+                    project_id=self._envelope.project_id,
                     actor="agent",
                     conn_factory=self._conn_factory,
                     # A read is not idempotent work: every call is its own operation, so the A9

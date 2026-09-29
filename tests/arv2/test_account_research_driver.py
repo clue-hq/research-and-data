@@ -91,6 +91,17 @@ PERSONA_BODY = (
 )
 
 
+@pytest.fixture(autouse=True)
+def measured_failure_spend(monkeypatch):
+    """The driver double has no SQL; the real ledger join is covered by quality_driver_db."""
+    from clue_api.arv2 import quality_meter
+
+    async def usage(conn, *, workspace_id, job_id):
+        return quality_meter.QualityUsage(Decimal("2.50"), Decimal("3"), 120, 1, 0, 2, 3, 100)
+
+    monkeypatch.setattr(quality_meter, "usage", usage)
+
+
 def _run_row(*, profile_sha256: str | None = None) -> RunRow:
     return RunRow(
         run_id=uuid4(),
@@ -536,6 +547,9 @@ def test_handle_contains_a_composition_failure_as_needs_review(
 
     assert result.outcome == "needs_review"
     landed = store.named("finish_job")[0]
+    assert landed["cost_usd"] == Decimal("2.50")
+    assert landed["finalization"]["spend"]["unpriced_provider_calls"] == 1
+    assert not landed["finalization"]["spend"]["cost_complete"]
     assert landed["status"] == "needs_review"
     assert landed["failure_code"] == "ArtifactIntegrityError"
     assert "digest" in landed["failure_message"]
@@ -831,15 +845,24 @@ def test_the_enqueue_constants_are_the_ones_the_launcher_will_use() -> None:
     assert UUID(str(arv2_account_work_id(job_id))) == job_id
 
 
+@pytest.mark.parametrize(
+    ("account_name", "account_domain"),
+    [("Probook", "probook.ai"), ("Zafran Security", "zafran.io")],
+)
 def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     monkeypatch: pytest.MonkeyPatch,
+    account_name: str,
+    account_domain: str,
 ) -> None:
-    run = _run_row()
+    run = replace(
+        _run_row(),
+        directive_text="Research {{account_name}} at {{account_domain}}; focus on hiring signals",
+    )
     job = _job_row(run)
     store = FakeStore(run, job)
     _patch_reads(
         monkeypatch,
-        account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai"),
+        account=SimpleNamespace(canonical_name=account_name, primary_domain=account_domain),
         icp_body=GATED_ICP_BODY,
     )
     seen: dict[str, Any] = {}
@@ -853,6 +876,9 @@ def test_the_system_prompt_carries_the_pinned_resources_and_the_job_context(
     asyncio.run(handler.handle(_context(job)))
 
     prompt = "\n".join(str(message.content) for message in seen["messages"])
+    assert f"Research {account_name} at {account_domain}; focus on hiring signals" in prompt
+    assert "{{account_name}}" not in prompt and "{{account_domain}}" not in prompt
+    assert "{{account_name}}" in run.directive_text, "the shared launch brief stays unchanged"
     assert "agent-profile:arv2-account:v1" in prompt
     assert "Series A SaaS." in prompt, "the ICP body reaches the model"
     assert "VP Marketing." in prompt, "the persona document reaches the model"
@@ -1771,3 +1797,16 @@ def test_a_reporting_line_the_code_refused_reaches_the_durable_person_receipt(
     assert receipt["reports_to_written"] is False
     assert "quote" in receipt["reports_to_skipped"]
     assert [draft for draft in writer.drafts if draft.field_key == "contact.reports_to"] == []
+
+
+def test_account_brief_binding_preserves_plain_text_and_does_not_expand_values() -> None:
+    unchanged = 'Research the account; retain {"evidence": true} and {{unknown}}.'
+    assert driver._account_directive(unchanged, name="Acme", domain="acme.test") == unchanged
+    assert (
+        driver._account_directive(
+            "{{account_name}} / {{account_domain}} / {{account_name}}",
+            name="Acme {{account_domain}}",
+            domain="acme.test",
+        )
+        == "Acme {{account_domain}} / acme.test / Acme {{account_domain}}"
+    )

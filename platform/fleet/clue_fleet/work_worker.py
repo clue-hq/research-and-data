@@ -168,6 +168,7 @@ class LeasedWorkWorker:
         self._task_stale_after = task_stale_after
         self._concurrency = concurrency
         self._stop = asyncio.Event()
+        self._active_work: set[WorkId] = set()
 
     def stop(self) -> None:
         self._stop.set()
@@ -324,6 +325,22 @@ class LeasedWorkWorker:
             return await handler.handle(context)
 
     async def _run_task(
+        self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
+    ) -> None:
+        # Slots share a worker identity. The DB lease permits same-holder reacquisition, so
+        # another slot must not replace the fence of a still-running task for this work ID.
+        # Across processes the existing durable lease remains the authority.
+        if task.work_id in self._active_work:
+            await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
+            await self._sleep(self._poll_interval)
+            return
+        self._active_work.add(task.work_id)
+        try:
+            await self._run_leased_task(task, handler, slot=slot)
+        finally:
+            self._active_work.remove(task.work_id)
+
+    async def _run_leased_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
     ) -> None:
         t_acquire = asyncio.get_running_loop().time()

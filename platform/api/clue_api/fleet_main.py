@@ -778,17 +778,36 @@ def _build_arv2_account_research_handler(
             ),
         )
         return None
+    from clue_api.quality_research_wiring import build_quality_job_runner
+
     return build_arv2_account_research_handler(
         settings,
         secrets,
         storage=storage,
         artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         model_provider=model_provider,
+        quality_runner=build_quality_job_runner(
+            settings=settings, storage=storage, connections=transaction, models=model_provider
+        ),
         # R3: an account job that resolves a committee creates one person job per member and offers
         # it here, on this process's own queue — the same one the launch service uses, so a fanned
         # out person job is queued through exactly the machinery that drains it.
         queue=queue,
     )
+
+
+async def _quality_reconcile_loop(
+    handler: Arv2AccountResearchWorkHandler, settings: Settings
+) -> None:
+    while True:
+        try:
+            offered = await handler.sweep_quality()
+            if offered:
+                log.info("arv2.quality.continuations_offered", count=offered)
+        except Exception as error:
+            log.warning("arv2.quality.continuation_sweep_failed", exc_info=True)
+            capture(error)
+        await asyncio.sleep(settings.arv2_quality_reconcile_interval_s)
 
 
 def _build_arv2_discovery_handler(
@@ -1399,6 +1418,11 @@ async def _serve() -> None:
             storage=storage,
         )
         external_research_wake = _start_external_research_wake(settings)
+        quality_reconcile = (
+            asyncio.create_task(_quality_reconcile_loop(arv2_account_research_handler, settings))
+            if arv2_account_research_handler is not None
+            else None
+        )
         try:
             await run_worker(worker)
         finally:
@@ -1412,6 +1436,7 @@ async def _serve() -> None:
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,
+                quality_reconcile,
             ):
                 if background is None:
                     continue

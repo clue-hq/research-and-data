@@ -10,7 +10,10 @@ export function researchSources(sections: ResearchSection[], evidence: ResearchE
     ...(section.intro ?? []).flatMap((sentence) => sentence.claimIds),
     ...section.items.flatMap((item) => [...item.body.flatMap((sentence) => sentence.claimIds), ...(item.sendLine?.claimIds ?? [])]),
   ]));
-  const records = evidence.filter((record) => record.researchFieldKey || (record.sourceUrl && claimIds.has(record.claimId)));
+  for (const record of evidence) {
+    if (claimIds.has(record.claimId)) for (const id of record.supportingClaimIds ?? []) claimIds.add(id);
+  }
+  const records = evidence.filter((record) => record.researchFieldKey || ((record.sourceUrl || record.sourceKind) && claimIds.has(record.claimId)));
   return [...new Map(records.map((record) => [record.sourceUrl ?? record.claimId, record])).values()];
 }
 

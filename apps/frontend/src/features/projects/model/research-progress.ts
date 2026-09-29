@@ -12,7 +12,8 @@ export const ResearchProgressSchema = z.object({
   agents: z.array(
     z.object({
       account_name: z.string(),
-      stage: z.enum(["deep_research", "synthesis", "committee", "member_research"]).catch("deep_research"),
+      subject_name: z.string().nullish(),
+      stage: z.enum(["deep_research", "synthesis", "committee", "member_research", "researching", "compiling_findings", "storing_claims", "writing_narrative", "completed"]).catch("deep_research"),
       subject: z.enum(["account", "person"]).catch("account"),
     }),
   ),

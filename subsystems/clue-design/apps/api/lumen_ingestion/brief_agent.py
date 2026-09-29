@@ -159,6 +159,7 @@ class OpenRouterBriefAgent:
     def __init__(self) -> None:
         self.enabled = settings.lumen_ingestion_brief
         self.model = settings.lumen_ingestion_brief_model
+        self.reasoning = settings.lumen_ingestion_brief_reasoning
         self.base_url = settings.openrouter_base_url
         self.api_key = settings.openrouter_api_key
 
@@ -178,6 +179,7 @@ class OpenRouterBriefAgent:
             self.model,
             base_url=self.base_url,
             api_key=self.api_key,
+            reasoning=self.reasoning,
             role="ingestion-brief",
         )
         # Lane 3 slice 5: this stage's model calls are real money and had no row behind them.

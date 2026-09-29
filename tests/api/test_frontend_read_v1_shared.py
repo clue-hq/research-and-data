@@ -1541,8 +1541,8 @@ def test_another_workspaces_job_is_never_served() -> None:
 
 
 @pytest_db
-def test_the_whole_page_costs_exactly_one_statement() -> None:
-    """N accounts, one read. A per-row lookup here would be an N+1 over a 200-row page, which is
+def test_the_whole_page_costs_two_batched_statements() -> None:
+    """N accounts: one job read and one delivery read, never a lookup per account, which is
     the defect the endpoints' own statement-count guards exist to catch."""
 
     async def scenario() -> None:
@@ -1563,7 +1563,7 @@ def test_the_whole_page_costs_exactly_one_statement() -> None:
                 event.remove(conn.sync_connection, "before_cursor_execute", count)
 
             assert len(served) == 5, "the six accounts really were read"
-            assert statements == 1
+            assert statements == 2
 
     run_async(scenario())
 

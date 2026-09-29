@@ -18,6 +18,7 @@ import pytest
 from pydantic import SecretStr
 
 from clue_api.arv2.calls import CallCost, ProviderCaller
+from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import (
     ANSWER_ESTIMATE_USD,
     THIN_MAX_COST_USD,
@@ -104,6 +105,17 @@ def _deep(output_text: str, n_results: int) -> ExaDeepResult:
 
 
 # -- request shaping ---------------------------------------------------------------------------
+
+
+def test_optional_link_and_image_extras_reach_search_and_contents_without_changing_defaults():
+    extras = {"links": 10, "imageLinks": 3}
+    search = search_body("public interviews", extras=extras)
+    contents = contents_body(["https://example.test/interview"], extras=extras)
+    assert search["contents"]["extras"] == contents["extras"] == extras
+    extras["links"] = 99
+    assert search["contents"]["extras"]["links"] == contents["extras"]["links"] == 10
+    assert "extras" not in search_body("public interviews")["contents"]
+    assert "extras" not in contents_body(["https://example.test/interview"])
 
 
 def test_a_search_body_carries_only_the_options_the_caller_passed() -> None:
@@ -503,3 +515,77 @@ def test_the_answer_call_reserves_its_estimate_and_is_ledgered_as_metered() -> N
     assert rows[1].cost_usd == Decimal("0.005")
     assert result.cost.cost_source == "metered"
     assert result.ledger_row_id == rows[1].row_id
+
+
+def test_an_answer_exa_refused_is_ledgered_at_zero_not_at_its_estimate() -> None:
+    """Run ``ee79d837``: seven Answer calls refused with 402 were recorded at the one-cent
+    estimate each. Exa sold nothing, so the result row says zero."""
+    ledger = BufferedLedger()
+    caller = ProviderCaller(
+        transport=ScriptedTransport(
+            [HttpResponse(status=402, body=b'{"error": "You have exceeded your credits limit"}')]
+        ),
+        raw_sink=BufferedRawSink(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+    )
+
+    with pytest.raises(ProviderHalted):
+        ExaClient(caller, SecretStr("k")).answer(
+            "Q?", system_prompt="S", output_schema={"type": "object"}
+        )
+
+    rows = ledger.drain()
+    assert rows[0].estimate_usd == ANSWER_ESTIMATE_USD
+    assert rows[1].outcome == "halted" and rows[1].cost_usd == Decimal(0)
+
+
+def test_a_5xx_answer_keeps_the_estimate_because_exa_did_not_say_what_it_did() -> None:
+    ledger = BufferedLedger()
+    caller = ProviderCaller(
+        transport=ScriptedTransport([HttpResponse(status=500, body=b"{}")] * 4),
+        raw_sink=BufferedRawSink(),
+        ledger=ledger,
+        now=lambda: datetime(2026, 9, 10, tzinfo=UTC),
+        sleep=lambda seconds: None,
+    )
+
+    ExaClient(caller, SecretStr("k")).answer(
+        "Q?", system_prompt="S", output_schema={"type": "object"}
+    )
+
+    result_row = ledger.drain()[-1]
+    assert result_row.cost_usd == ANSWER_ESTIMATE_USD
+
+
+def test_thin_response_retry_is_logged_separately_from_http_attempts():
+    from structlog.testing import capture_logs
+
+    responses = [
+        HttpResponse(
+            200,
+            {},
+            json.dumps(
+                {
+                    "output": {"content": text},
+                    "results": [],
+                    "costDollars": {"total": 0.05},
+                }
+            ).encode(),
+        )
+        for text in ["short", "full report " * 400]
+    ]
+    caller, transport = _caller(responses)
+    client = ExaClient(api_key=SecretStr("test-secret"), caller=caller)
+    with capture_logs() as logs:
+        result = client.deep_reasoning(
+            system_prompt="private system",
+            query="private query",
+            output_schema={"type": "text"},
+            label="person-depth",
+        )
+    assert result.retried and len(transport.requests) == 2
+    retry = next(r for r in logs if r.get("reason") == "thin_response")
+    assert retry["label"] == "person-depth" and retry["next_label"] == "person-depth-retry"
+    assert retry["report_chars"] == 5 and retry["first_ledger_row_id"]
+    assert "private query" not in str(logs) and "test-secret" not in str(logs)

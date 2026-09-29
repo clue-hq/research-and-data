@@ -1,5 +1,31 @@
 # ARV2 MASTER PLAN — the complete roadmap for account research, contact research, and their display
 
+> **Factual visibility, 2026-09-22 — founder-adopted policy; implementation and activation pending.**
+> For the next research-quality profile, retain authorized, policy-permitted invalid observations
+> for audit while excluding them from ordinary factual summaries. Unresolved findings remain visible
+> as uncertainty; valid partial research can still render. This narrowly revises §2's annotation-only
+> presentation rule when that profile is implemented and activated. It does not require dropping
+> observations, relax privacy/use restrictions, introduce monetary vetoes, or alter current/historical
+> profile behavior today. The founder approved this policy, not application implementation or every
+> remaining frontend/schema choice. See the [quality spec §1.2](../superpowers/specs/2026-09-22-arv3-research-quality-design.md#12-policy-decisions-and-proposed-contract-changes)
+> and [implementation plan](../superpowers/plans/2026-09-22-arv3-research-quality.md).
+
+> **Committee discovery, 2026-09-22 — implemented; v2 default by founder instruction.** The v2 account
+> agent researches the company, reasons about buying responsibilities from its ICP and pinned
+> persona, then discovers unknown people through company-scoped AI Ark SMART title search.
+> This supersedes §3's name-scoped-only rule and R2/R3's web-first committee sequence **for v2**.
+> Selected profiles seed the existing person jobs; work-email and phone enrichment run alongside
+> person depth without another named search. Exhausted account Exa failure leaves a gap and
+> permits discovery. Web research fills gaps and corroborates profiles. Provider facts cite
+> saved artifacts/JSON paths; committee responsibility is the agent's separate assessment.
+> v1 resources remain intact for historical jobs. `CLUE_ARV2_RESEARCH_CATALOG_VERSION=v2` is now
+> the default for new launches. The Probook/Zafran live canary remains outstanding; no live
+> acceptance or deployment is implied by this default change. R4 account discovery, media,
+> model settings and general-purpose `web_search@1` are unchanged. See the
+> [design](../superpowers/specs/2026-09-22-arv2-ai-ark-committee-discovery-design.md),
+> [implementation plan](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-discovery.md) and
+> [acceptance record](../superpowers/plans/2026-09-22-arv2-ai-ark-committee-acceptance.md).
+
 > **Scoped-field follow-up, 2026-09-16 (planning only).** The founder requested a detailed plan to
 > make agent-proposed research definitions workspace-local. The current lenient writer still
 > registers unknown definitions globally while keeping their claims private. The
@@ -622,3 +648,40 @@ Proof-of-concept runs and their reports (chicago worktree `.context/`): `arv2-cl
 `frontend-page-content` (the three Zafran pages as they must render), `ai-ark-canary`. The dummy
 frontend: `clue-frontend/port-of-spain` (accounts, insights, contact screens). Contract docs:
 `apps/frontend/docs/api-contracts/accounts.md`.
+
+## Media v3 amendment — approved 2026-09-22, activation pending
+
+The approved [media design](../superpowers/specs/2026-09-22-arv2-media-research-design.md)
+and [implementation plan](../superpowers/plans/2026-09-22-arv2-media-research.md) extend
+AI Ark v2 through an explicit `media_research` catalog capability. Only jobs pinned to v3
+use these changes. The launch default stays v2 until founder-triggered live acceptance.
+
+For v3, contextual media discovery replaces the fixed six-search sweep and blanket domain
+prohibitions. Public YouTube uses the narrow native-Gemini video route; public recordings,
+explicit publisher transcripts and captions become immutable, workspace-scoped evidence.
+Transcript search/open replaces excerpt-only access, and quote audits resolve saved spans.
+Supplied timing remains qualified; untimed speech remains valid. Metadata or ASR labels alone
+never establish a person's voice. Empty resolution does not consume a substantive item slot.
+
+AI Ark SMART role discovery within the exact company, seed reuse, independent work email and
+phone enrichment, and continuation after recorded Exa failure remain unchanged. Existing
+runtime/media allowances remain enforced, with durable seconds/source ownership. No new
+monetary/call-count/zero-yield stopping rule is introduced. Old v1/v2 catalog files and job pins
+remain immutable. This amendment records implementation authority, not live-provider or
+research-quality acceptance.
+
+The v3 public fetch adapter imports only the shared `official_site.safety` and
+`official_site.url_policy` primitives for URL admission, DNS validation and pinned redirects.
+These two modules are a narrow addition to the ARV2 import guard; the official-site acquisition
+engine and the quarantined research pipeline remain forbidden.
+
+
+## Research quality shared seams — implementation amendment, 2026-09-23
+
+The approved [quality design](../superpowers/specs/2026-09-22-arv3-research-quality-design.md)
+reuses only `clue_research.narrative.fields` and `.support` for the existing narrative field
+and two-sided support table, and `clue_research.compliance` for shared workspace/use policy.
+The import guard admits these substrate helpers explicitly; it still rejects the legacy
+narrative positioner, assembler, research graph and waterfall. Platform Langfuse callbacks and
+project-library change notifications are shared platform seams, not alternate research owners.
+This amendment does not promote a launch default or authorize historical data repair.

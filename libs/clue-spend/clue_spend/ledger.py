@@ -185,6 +185,7 @@ class DrainReport:
     credits: Decimal
     media_seconds: int
     result_rows: tuple[LedgerRow, ...] = field(default_factory=tuple)
+    raw_artifact_keys: Mapping[str, str] = field(default_factory=dict)
 
 
 def ledger_id_for(row_id: str) -> UUID:
@@ -281,6 +282,7 @@ async def drain_provider_calls(
         credits=sum((row.credits or Decimal(0) for row in results), Decimal(0)),
         media_seconds=sum(row.media_seconds or 0 for row in results),
         result_rows=tuple(results),
+        raw_artifact_keys=keys,
     )
 
 

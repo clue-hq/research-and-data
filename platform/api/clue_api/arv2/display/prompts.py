@@ -98,6 +98,19 @@ _RESTRICTED = (
 #: the marketer pastes goes.
 SECTION_INSTRUCTIONS: dict[tuple[str, str], str] = {
     # ---- insights -----------------------------------------------------------------------------
+    ("insights", "miscellaneous"): (
+        "Additional source-linked company findings not already explained in the main sections. "
+        "Preserve meaningful details, attribution, dates and qualifications. Group related "
+        "background without repeating the fit argument. "
+        "Do not invent findings to fill this section."
+    ),
+    ("contact", "miscellaneous"): (
+        "Additional source-linked person findings not already explained in the main sections: "
+        "career context, publications, interests or other public contributions. "
+        "Preserve attribution, "
+        "dates and uncertainty; do not repeat the main narrative or manufacture a personal hook. "
+        "Leave sendLine null; this is additional research, not an outreach draft."
+    ),
     ("insights", "buying-signals"): (
         "3–4 items, strongest first, from what they are hiring for, the open requisitions, how "
         "mature their ABM program is, the strategic moves they have made and how they buy. h2 = "
@@ -123,14 +136,6 @@ SECTION_INSTRUCTIONS: dict[tuple[str, str], str] = {
         "target and the frustrations they voice in public. Copy every number and proof-point "
         "figure verbatim from the claims — never round it, never recompute it. Body 2–4 "
         "sentences, then " + _WHAT_IT_MEANS + ". contactRefs for anyone a claim names."
-    ),
-    ("insights", "contact-insights"): (
-        "One item per committee member the claims cover, built only from that person's own "
-        "claims — never mix two people into one item. Set `subject` to that person on every item "
-        "and put the same person in contactRefs. h2 = the single most useful thing that person "
-        "said or did. Body 2–4 sentences in their own words where the claims give them, then "
-        + _WHAT_IT_MEANS
-        + ". No sendLine on this page."
     ),
     ("insights", "context-only"): _RESTRICTED,
     # ---- overview -----------------------------------------------------------------------------
