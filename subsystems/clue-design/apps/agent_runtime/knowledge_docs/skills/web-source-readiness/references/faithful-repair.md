@@ -42,6 +42,18 @@ composing lanes in edit-website:
   releasing it is the user's decision, in chat (the release-honesty
   section below).
 
+  Typed **tabs** now retain their approved platform controller and base styles
+  when saved as a reusable repair. Each pin has independent tab/panel identities.
+  This preserves native behavior; it does not recover the source site's JavaScript
+  or prove that its image mapping, timing or visual treatment match the source.
+  `behavior_evidence.controller_status="declared_native_runtime"` is a dependency
+  declaration, not a test pass. Render the actual pin and inspect its desktop,
+  phone and keyboard state receipts. Other native component dependencies currently
+  refuse library minting explicitly while retaining the typed section on the page.
+  Do not switch to raw HTML/CSS to bypass that refusal: raw repairs of a native
+  artifact cannot preserve its declared dependencies. Exact text/link edits retain
+  them; the ordinary release rules still apply.
+
 The lane changes WHO releases and WHAT the replacement is written in —
 never what quality means. Everything else in this file binds identically
 in both lanes: the behavior inventory, ugly-is-not-wrong, the repair-scope

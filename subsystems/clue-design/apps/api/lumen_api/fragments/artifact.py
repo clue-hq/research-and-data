@@ -31,12 +31,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cssscope import PRELUDE_REFERENCE_REFUSE, scope_fragment_css
+from .native import validate_native_dependencies
 from .refs import FragmentRefused, fragment_wrapper_class
 from .sanitize import sanitize_fragment_html
 from .slots import SlotSpec, annotate_fragment_slots
 
-#: Bumped when the payload's SHAPE changes. It is part of the identity bytes, so a shape change
-#: re-mints every fragment rather than silently reinterpreting stored ones.
+#: Ordinary captures retain v1 identity bytes. Declared native dependencies opt
+#: into v2 below; readers accept both and never infer a controller from markup.
 FRAGMENT_PAYLOAD_SCHEMA_VERSION = 1
 
 FRAGMENT_PAYLOAD_MEDIA_TYPE = "application/json; charset=utf-8"
@@ -79,6 +80,7 @@ def build_fragment_artifact(
     preview_digest: str | None = None,
     prelude_reference: str = PRELUDE_REFERENCE_REFUSE,
     source_fragment_id: str | None = None,
+    native_dependencies: dict[str, Any] | None = None,
 ) -> FragmentArtifact:
     """Sanitize, annotate, scope and address one section, in that order.
 
@@ -98,6 +100,11 @@ def build_fragment_artifact(
     """
     sanitized = sanitize_fragment_html(html, rehosted=rehosted)
     annotated = annotate_fragment_slots(sanitized.html, slots)
+    dependencies = (
+        validate_native_dependencies(annotated.html, native_dependencies)
+        if native_dependencies is not None else None
+    )
+    version = 2 if dependencies is not None else FRAGMENT_PAYLOAD_SCHEMA_VERSION
 
     # The CSS is scoped against the FINAL id, but its references must be resolved before the id
     # exists (they are part of the identity). Scoping under a throwaway id resolves and records
@@ -109,7 +116,7 @@ def build_fragment_artifact(
 
     digests = tuple(sorted(set(sanitized.asset_digests) | set(probe.asset_digests)))
     identity = {
-        "schema_version": FRAGMENT_PAYLOAD_SCHEMA_VERSION,
+        "schema_version": version,
         "html": annotated.html,
         "source_css": css,
         "asset_digests": list(digests),
@@ -121,6 +128,8 @@ def build_fragment_artifact(
         # is being replaced. Address the normalized output, not that caller-local namespace.
         identity["source_css"] = probe.css
         identity["source_css_normalized"] = True
+    if dependencies is not None:
+        identity["native_dependencies"] = dependencies
     fragment_id = "frag_" + hashlib.sha256(canonical_bytes(identity)).hexdigest()[:16]
 
     scoped = scope_fragment_css(
@@ -128,7 +137,7 @@ def build_fragment_artifact(
         source_fragment_id=source_fragment_id,
     )
     payload = {
-        "schema_version": FRAGMENT_PAYLOAD_SCHEMA_VERSION,
+        "schema_version": version,
         "fragment_id": fragment_id,
         "html": annotated.html,
         "css": scoped.css,
@@ -136,6 +145,8 @@ def build_fragment_artifact(
         "slot_manifest": annotated.slot_manifest,
         "preview_digest": preview_digest,
     }
+    if dependencies is not None:
+        payload["native_dependencies"] = dependencies
     payload_bytes = canonical_bytes(payload)
     return FragmentArtifact(
         fragment_id=fragment_id,
@@ -171,12 +182,16 @@ def parse_fragment_payload(data: bytes) -> dict[str, Any]:
             "fragment.payload_unreadable",
             f"fragment payload is missing {', '.join(missing)}",
         )
-    if payload["schema_version"] != FRAGMENT_PAYLOAD_SCHEMA_VERSION:
+    if payload["schema_version"] not in (1, 2):
         raise FragmentRefused(
             "fragment.payload_schema_unknown",
             f"fragment payload schema {payload['schema_version']!r} is not "
-            f"{FRAGMENT_PAYLOAD_SCHEMA_VERSION}",
+            "one of 1, 2",
         )
+    if payload["schema_version"] == 2:
+        validate_native_dependencies(payload["html"], payload.get("native_dependencies"))
+    elif "native_dependencies" in payload:
+        raise FragmentRefused("fragment.payload_schema_unknown", "native dependencies require schema 2")
     return payload
 
 

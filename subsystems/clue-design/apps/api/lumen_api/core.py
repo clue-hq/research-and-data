@@ -485,7 +485,10 @@ class CoreClient:
         # The engine resolves neither — an id absent from the map renders the placeholder.
         response = self._run(
             {
-                "action": "web_render",
+                # Older helpers must refuse rather than silently ignore a new dependency.
+                "action": "web_render_native_fragments" if any(
+                    "native_dependencies" in content for content in (fragments or {}).values()
+                ) else "web_render",
                 "doc": doc,
                 "page_id": page_id,
                 "mode": mode,

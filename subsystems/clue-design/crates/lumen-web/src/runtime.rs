@@ -5,3 +5,4 @@
 pub const PLATFORM_RUNTIME_VERSION: u32 = 2;
 pub const PLATFORM_RUNTIME_JS: &str = include_str!("runtime/lumen-runtime.v2.js");
 pub const PLATFORM_CSS: &str = include_str!("runtime/lumen-platform.v2.css");
+pub const TABS_CSS: &str = include_str!("runtime/lumen-tabs.v2.css");

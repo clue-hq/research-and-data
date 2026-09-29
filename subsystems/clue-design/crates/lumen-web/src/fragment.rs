@@ -46,6 +46,142 @@ use std::collections::{BTreeMap, BTreeSet};
 /// always ours).
 const SLOT_ATTR: &[u8] = b"data-lumen-slot";
 
+/// Restore only declared platform tab roots and scope their owned references
+/// to this pin. Run after slots/overrides; never change stored artifact bytes.
+/// Legacy captures do not enter this pass. The API validates DOM ownership at
+/// mint/read; this walk additionally refuses lost/duplicated targets at render.
+pub fn instantiate_native_fragment(
+    html: &str,
+    dependencies: &crate::render::NativeFragmentDependencies,
+    node_id: &NodeId,
+) -> Result<String, String> {
+    if dependencies.version != 1
+        || dependencies.platform_runtime != 2
+        || dependencies.tabs.is_empty()
+        || dependencies.tabs.len() > 32
+    {
+        return Err("unsupported native fragment dependency version/shape".to_owned());
+    }
+    let mut ids = BTreeMap::new();
+    let mut roots = BTreeSet::new();
+    let mut controls = BTreeMap::new();
+    let hex = |text: &str| text.bytes().map(|b| format!("{b:02x}")).collect::<String>();
+    let prefix = format!("lumen-pin-{}-", hex(node_id.as_str()));
+    for group in &dependencies.tabs {
+        if group.items.is_empty() || group.items.len() > 64 {
+            return Err("unsupported native tab item count".to_owned());
+        }
+        roots.insert(group.root_id.clone());
+        let mut group_ids = vec![&group.root_id];
+        for item in &group.items {
+            group_ids.extend([&item.tab_id, &item.panel_id]);
+            controls.insert(
+                item.tab_id.clone(),
+                ("tab", "aria-controls", item.panel_id.clone()),
+            );
+            controls.insert(
+                item.panel_id.clone(),
+                ("tabpanel", "aria-labelledby", item.tab_id.clone()),
+            );
+        }
+        for id in group_ids {
+            if id.is_empty()
+                || id.len() > 256
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                || ids
+                    .insert(id.clone(), format!("{prefix}{}", hex(id)))
+                    .is_some()
+            {
+                return Err("native fragment target IDs must be safe and unique".to_owned());
+            }
+        }
+    }
+    let mut reader = Reader::from_str(html);
+    reader.config_mut().check_end_names = false; // sanitized HTML contains void elements
+    let mut out = String::with_capacity(html.len());
+    let mut seen = BTreeSet::new();
+    loop {
+        let before = reader.buffer_position() as usize;
+        let event = reader
+            .read_event()
+            .map_err(|_| "native fragment markup is unreadable")?;
+        let after = reader.buffer_position() as usize;
+        match event {
+            Event::Start(ref start) | Event::Empty(ref start) => {
+                let mut replacements: Vec<(String, String)> = Vec::new();
+                if let Some(id) = attr_value(start, b"id") {
+                    if let Some(scoped) = ids.get(&id) {
+                        if !seen.insert(id.clone()) {
+                            return Err(format!("native fragment target `{id}` is duplicated"));
+                        }
+                        if let Some((role, reference, target)) = controls.get(&id) {
+                            if attr_value(start, b"role").as_deref() != Some(role)
+                                || attr_value(start, reference.as_bytes()).as_deref()
+                                    != Some(target)
+                            {
+                                return Err(format!(
+                                    "native fragment target `{id}` lost its relationship"
+                                ));
+                            }
+                        }
+                        replacements.push(("id".into(), scoped.clone()));
+                        if roots.contains(&id) {
+                            replacements.push(("data-lumen-tabs".into(), "true".into()));
+                        }
+                    }
+                }
+                // Exact token references only: never rewrite text, asset URLs or CSS.
+                for attr in [
+                    "aria-controls",
+                    "aria-labelledby",
+                    "aria-describedby",
+                    "for",
+                ] {
+                    if let Some(value) = attr_value(start, attr.as_bytes()) {
+                        if value.split_whitespace().any(|v| ids.contains_key(v)) {
+                            let rewritten = value
+                                .split_whitespace()
+                                .map(|v| ids.get(v).map_or(v, String::as_str))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            replacements.push((attr.into(), rewritten));
+                        }
+                    }
+                }
+                if let Some(value) = attr_value(start, b"href") {
+                    if let Some(scoped) = value.strip_prefix('#').and_then(|id| ids.get(id)) {
+                        replacements.push(("href".into(), format!("#{scoped}")));
+                    }
+                }
+                if replacements.is_empty() {
+                    out.push_str(&html[before..after]);
+                } else {
+                    let refs = replacements
+                        .iter()
+                        .map(|(k, v)| (k.as_str(), v.as_str()))
+                        .collect::<Vec<_>>();
+                    out.push_str(&rewrite_tag(
+                        start,
+                        &tag_name(start),
+                        matches!(event, Event::Empty(_)),
+                        &refs,
+                        &[],
+                        &[],
+                    ));
+                }
+            }
+            Event::Eof => break,
+            _ => out.push_str(&html[before..after]),
+        }
+    }
+    if seen.len() != ids.len() {
+        return Err("native fragment lost one or more declared targets after edits".to_owned());
+    }
+    Ok(out)
+}
+
 /// Wrapper element name, so the walk sees one well-formed root. Chosen to be a
 /// name no real markup carries.
 const WALK_ROOT: &str = "lumen-fragment-walk";

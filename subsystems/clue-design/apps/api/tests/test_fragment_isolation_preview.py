@@ -66,6 +66,7 @@ def test_isolation_preview_loads_pinned_kit_font_bytes_without_network() -> None
     css = f'@font-face{{font-family:"brandAlias";font-weight:500;src:url("{font_url}")}}'
     loaded = SimpleNamespace(
         fragment_id="frag_" + "ab" * 8,
+        payload={},  # ordinary capture: no declared platform dependencies
         html='<section><h2 style="font-family:brandAlias">Brand heading</h2></section>',
         css=".section{padding:24px}",
         slot_manifest={},
@@ -101,6 +102,7 @@ def test_missing_kit_font_cannot_escape_workspace_custody() -> None:
     digest = "7e" * 32
     loaded = SimpleNamespace(
         fragment_id="frag_" + "ab" * 8,
+        payload={},  # ordinary capture: no declared platform dependencies
         html="<section>Heading</section>",
         css="",
         slot_manifest={},

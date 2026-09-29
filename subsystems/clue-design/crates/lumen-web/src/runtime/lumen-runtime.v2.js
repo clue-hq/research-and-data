@@ -11,10 +11,10 @@
   if (!nativeInvokers) {
     document.addEventListener("click", function (event) {
       var origin = event.target instanceof Element ? event.target : null;
-      var button = origin ? origin.closest("button[commandfor][command]") : null;
+      var button = origin ? origin.closest("button[data-lumen-command][commandfor][command]") : null;
       if (!button || event.defaultPrevented) return;
       var target = document.getElementById(button.getAttribute("commandfor"));
-      if (!target || target.tagName !== "DIALOG") return;
+      if (!target || target.tagName !== "DIALOG" || !target.hasAttribute('data-lumen-dialog')) return;
       var command = button.getAttribute("command");
       if (command === "show-modal" && !target.open) target.showModal();
       else if (command === "close" && target.open) target.close();
@@ -24,7 +24,7 @@
   if (!nativeClosedBy) {
     document.addEventListener("click", function (event) {
       var dialog = event.target;
-      if (!(dialog instanceof HTMLDialogElement) || !dialog.open) return;
+      if (!(dialog instanceof HTMLDialogElement) || !dialog.open || !dialog.hasAttribute('data-lumen-dialog')) return;
       var rect = dialog.getBoundingClientRect();
       var inside =
         event.clientX >= rect.left && event.clientX <= rect.right &&
@@ -70,13 +70,20 @@
 
   // Tabs: selection toggles aria-selected + panel hidden; arrow keys move.
   function initTabs(root) {
-    var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]'));
+    var tabs = Array.prototype.slice.call(root.querySelectorAll('[role="tab"]')).filter(function (tab) {
+      return tab.closest('[data-lumen-tabs]') === root;
+    });
+    var panels = Array.prototype.slice.call(root.children).filter(function (panel) {
+      return panel.getAttribute('role') === 'tabpanel';
+    });
     function select(tab) {
       tabs.forEach(function (other) {
         var selected = other === tab;
         other.setAttribute("aria-selected", selected ? "true" : "false");
         other.tabIndex = selected ? 0 : -1;
-        var panel = document.getElementById(other.getAttribute("aria-controls") || "");
+        var panel = panels.find(function (candidate) {
+          return candidate.id === other.getAttribute("aria-controls");
+        });
         if (panel) panel.hidden = !selected;
       });
       tab.focus({ preventScroll: true });
@@ -95,8 +102,8 @@
   }
 
   function initAll() {
-    document.querySelectorAll(".lumen-carousel").forEach(initCarousel);
-    document.querySelectorAll(".lumen-tabs").forEach(initTabs);
+    document.querySelectorAll("[data-lumen-carousel]").forEach(initCarousel);
+    document.querySelectorAll("[data-lumen-tabs]").forEach(initTabs);
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initAll);

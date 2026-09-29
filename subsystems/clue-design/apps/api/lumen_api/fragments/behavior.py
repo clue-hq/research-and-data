@@ -12,6 +12,7 @@ from typing import Any
 
 import tinycss2
 from selectolax.lexbor import LexborHTMLParser
+from .native import validate_native_dependencies
 
 _MAX_ITEMS = 12
 _MAX_ASSETS = 24
@@ -44,12 +45,17 @@ def _hidden_markers(attrs: dict) -> list[str]:
     return sorted(set(markers))
 
 
-def inspect_fragment_behavior(html: str) -> dict[str, Any]:
+def inspect_fragment_behavior(html: str, native_dependencies: Any = None) -> dict[str, Any]:
     """Read already-sanitized HTML. Marker counts are not computed visibility or linkage."""
     dom = LexborHTMLParser(html)
+    native_ids = set()
+    if native_dependencies is not None:
+        declared = validate_native_dependencies(html, native_dependencies)
+        native_ids = {item["tab_id"] for group in declared["tabs"] for item in group["items"]}
     controls: list[dict] = []
     hidden_states: list[dict] = []
     control_count = hidden_count = 0
+    declared_count = 0
     assets: set[str] = set()
     primary_assets: dict[str, None] = {}
     for node in dom.css("*"):
@@ -66,6 +72,7 @@ def inspect_fragment_behavior(html: str) -> dict[str, Any]:
             state or "aria-controls" in attrs or role == "tab"
         ):
             control_count += 1
+            declared_count += attrs.get("id") in native_ids
             if len(controls) < _MAX_ITEMS:
                 heading = node.css_first("h1,h2,h3,h4,h5,h6")
                 controls.append({
@@ -97,10 +104,15 @@ def inspect_fragment_behavior(html: str) -> dict[str, Any]:
                     primary_assets.update(dict.fromkeys(found))
     return {
         "basis": "sanitized_html_snapshot",
-        "controller_status": "controller_not_retained" if control_count else "not_assessed",
+        "controller_status": (
+            "mixed_native_and_unretained" if declared_count and control_count > declared_count
+            else "declared_native_runtime" if declared_count
+            else "controller_not_retained" if control_count else "not_assessed"
+        ),
         "behavior_test": "not_performed",
         "relationships": "not_inferred",
         "stateful_control_count": control_count,
+        "declared_native_control_count": declared_count,
         "hidden_state_candidate_count": hidden_count,
         "controls": controls,
         "hidden_states": hidden_states,
@@ -108,6 +120,10 @@ def inspect_fragment_behavior(html: str) -> dict[str, Any]:
         "truncated": control_count > _MAX_ITEMS or hidden_count > _MAX_ITEMS
         or len(assets) > _MAX_ASSETS,
         "note": (
+            "This artifact declares approved platform tab dependencies. That declaration is not "
+            "a behavior test: render the pin and inspect click, keyboard, media and responsive "
+            "states. Any controls outside the declaration still have no retained controller."
+            if declared_count else
             "This snapshot retains stateful controls but no source JavaScript controller. "
             "Hidden markers are candidates, not computed visibility; media/control relationships "
             "and actual behavior were not tested. Reconstruct and test the linked states with a "

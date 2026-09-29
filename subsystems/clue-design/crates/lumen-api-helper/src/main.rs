@@ -403,6 +403,7 @@ enum CoreRequest {
         doc: Value,
         operations: Vec<Value>,
     },
+    #[serde(alias = "web_render_native_fragments")]
     WebRender {
         doc: Value,
         page_id: String,

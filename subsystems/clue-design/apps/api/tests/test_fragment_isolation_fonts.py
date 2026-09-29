@@ -98,6 +98,7 @@ def test_native_repair_preview_resolves_its_frozen_font_pin(monkeypatch, tmp_pat
     loaded = SimpleNamespace(
         fragment_id="frag_" + "ab" * 8,
         row={"source_kit_id": "kit_pinned", "source_kit_version": 2},
+        payload={},  # ordinary capture: no declared platform dependencies
         html='<section><h2 style="font-family:brandAlias">Heading</h2></section>',
         css="",
         slot_manifest={},
@@ -142,6 +143,7 @@ def test_preview_route_resolves_its_frozen_font_pin(monkeypatch, tmp_path: Path)
     loaded = SimpleNamespace(
         fragment_id="frag_" + "ab" * 8,
         row={"source_kit_id": "kit_pinned", "source_kit_version": 2},
+        payload={},  # ordinary capture: no declared platform dependencies
         html='<section><h2 style="font-family:brandAlias">Heading</h2></section>',
         css="",
         slot_manifest={},

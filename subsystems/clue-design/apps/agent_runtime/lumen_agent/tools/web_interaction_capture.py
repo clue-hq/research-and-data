@@ -43,6 +43,13 @@ _RADIOS = r"""() => {
   return groups;
 }"""
 
+_NATIVE_FRAGMENTS = r"""() => [...document.querySelectorAll(
+  '[data-lumen-fragment][data-node-id] [data-lumen-tabs][id]'
+)].map(root => ({kind: 'native', root_id: root.id,
+  node_id: root.closest('[data-lumen-fragment]').dataset.nodeId,
+  count: root.querySelectorAll(':scope > [role=tablist] > [role=tab]').length
+}))"""
+
 _OBSERVE = r"""(root, {kind, name, index}) => {
   const visible = el => {
     if (!el || !el.getClientRects().length) return false;
@@ -159,6 +166,7 @@ def capture_switchers(
             page.set_default_timeout(_ACTION_TIMEOUT_MS)
             page.set_content(html, wait_until="load", timeout=10000)
             groups = [{"kind": "native", **group} for group in native_groups]
+            groups += page.evaluate(_NATIVE_FRAGMENTS)
             groups += page.evaluate(_RADIOS)
             attempted_groups = 0
             for group_index, group in enumerate(groups):
@@ -169,6 +177,8 @@ def capture_switchers(
                 }
                 if group.get("name"):
                     identity["group_name"] = group["name"]
+                if group.get("root_id"):
+                    identity["root_id"] = group["root_id"]
                 if group.get("skip"):
                     omitted.append({**identity, "reason": group["skip"]})
                     continue
@@ -177,7 +187,9 @@ def capture_switchers(
                     continue
                 attempted_groups += 1
                 selector = _attr("data-node-id", group["node_id"])
-                if group["kind"] == "radio":
+                if group.get("root_id"):
+                    selector += " " + _attr("id", group["root_id"]) + "[data-lumen-tabs]"
+                elif group["kind"] == "radio":
                     selector += "[data-fragment-id]"
                 else:
                     selector += ".lumen-tabs"

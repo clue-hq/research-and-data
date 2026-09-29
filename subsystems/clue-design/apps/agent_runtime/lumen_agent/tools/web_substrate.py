@@ -74,6 +74,7 @@ from lumen_api.fragments.campaign_shell import (
     discover_legal_links,
 )
 from lumen_api.fragments.degraded import REPAIR_RUNGS
+from lumen_api.fragments.native import native_dependencies_for_subtree, native_render_fields
 from lumen_api.fragments.refs import (
     ASSET_URL_PREFIX,
     FragmentRefused,
@@ -7304,6 +7305,17 @@ class LumenWebTools:
                 "there is nothing to mint. The page still carries your replacement.",
             )
 
+        try:
+            native_dependencies = native_dependencies_for_subtree(
+                self.web_doc, self.page_id, roots[0]
+            )
+        except FragmentRefused as refusal:
+            return self._tool_error(
+                refusal.code,
+                f"{refusal.message}. The typed replacement remains on the page; "
+                "no reusable library artifact was minted.",
+            )
+
         # 3) Its styling, compiled by the SAME toolchain that compiles a published page, so the
         #    minted artifact carries its own sealed stylesheet and looks identical wherever it is
         #    pinned. A fragment's CSS is deliberately outside the page's utility scan, so an
@@ -7340,6 +7352,7 @@ class LumenWebTools:
                 css=css,
                 rung=int(rung),
                 note=cleaned_note,
+                **({"native_dependencies": native_dependencies} if native_dependencies else {}),
             )
         except FragmentRefused as refusal:
             self.record(
@@ -8807,6 +8820,7 @@ class LumenWebTools:
             fragments = {}
             package["fragments"] = fragments
         fragments[fragment_id] = {
+            **native_render_fields(render),
             "html": str(render.get("html") or ""),
             "css": str(render.get("css") or ""),
             "slot_kinds": dict(render.get("slot_kinds") or {}),
@@ -8815,6 +8829,8 @@ class LumenWebTools:
             # exactly as it does at publish (ruling R-I1).
             "derived": bool(render.get("derived")),
         }
+        if render.get("native_dependencies"):
+            package["schema_version"] = 2
         missing = package.get("missing")
         if isinstance(missing, list) and fragment_id in missing:
             # It resolved. A stale "missing" entry beside a live artifact would make the

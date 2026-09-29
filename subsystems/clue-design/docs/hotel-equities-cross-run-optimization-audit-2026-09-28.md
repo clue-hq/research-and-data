@@ -448,6 +448,88 @@ It does not establish a fixed component, recovered source JavaScript, improved
 visitor copy, or an accepted Hotel Equities page. The next generation remains
 on hold under the user's restriction.
 
+## Native tab reuse repair checkpoint
+
+Implemented inside the existing Clue author/repair/artifact/render path after the
+offline reproduction above. This is a **tabs-only capability repair**, not a
+new standalone page, another generated candidate, or a claim of visual quality.
+The historical latest run's deliberate static choice remains a separate issue.
+
+- The vocabulary repair derives an internal dependency record from the subtree
+  already accepted by the engine. Sanitization and artifact reads validate the
+  exact tab roots, controls, panels and ARIA relationships. Captured scripts and
+  reserved renderer markers are still stripped; source class names cannot grant
+  platform behavior. The model receives no dependency-descriptor argument.
+- Ordinary capture payloads keep v1 content identity. A native repair is v2 and
+  hashes its declared dependencies into its immutable identity. Registry reads,
+  pin admission, isolation previews and export render packages preserve them.
+  The explicit helper action refuses on an older helper instead of silently
+  losing the newly declared behavior. No database migration is introduced.
+- The renderer supplies the approved tab runtime and tab base CSS, then scopes
+  declared control IDs and references to each pin. The runtime resolves panels
+  inside their owning group. Two copies and nested tabs remain independent;
+  stored artifacts and source originals are unchanged. Other captured controls
+  do not acquire the tab controller or marquee styling merely by coexistence.
+- Other built-in dependencies, external command targets and unsupported
+  duplicated-container cases refuse reusable mint/render rather than claiming
+  preservation. The checked typed replacement remains available on the page
+  when minting is refused. Raw HTML/CSS replacement of a native artifact must
+  use the checked reconstruction route; exact text/link variants retain the
+  validated dependency record.
+- The existing interaction capture now discovers declared native groups inside
+  pinned fragments. Its existing caps and omitted-state reporting still apply.
+  Inspection reports `declared_native_runtime` separately from an actual
+  behavior test; a declaration alone continues to say `not_performed`.
+
+Regression evidence uses production authoring, sanitizer, CSS compilation,
+artifact and helper paths with a synthetic in-memory registry, plus a separate
+real registry/read/approval/package/isolation round trip in a disposable test
+database. Four states are exercised in desktop/phone capture (eight receipts),
+with keyboard assertions; repeated-pin delivery also works under reduced-motion
+preference. Additional cases cover nested ownership, custom spacing overrides,
+captured lookalikes, unknown versions, malformed relationships and unsupported
+dependencies. Browser regression requests are blocked. No provider/model call
+or live workspace write was used for these checks.
+
+The first red browser replay failed on missing flex/tab styles; a second red
+case accepted an unsupported carousel as a preserved repair. Both now pass.
+Independent review also found canonical command-field, CSS-specificity and
+unowned-dialog-polyfill issues; those were corrected before the final tests.
+
+Verification at this checkpoint: the Rust workspace suite, release helper build,
+wasm build and handshake pass. The full agent suite returned 2,821 passed,
+one skipped and five failures. Four were caused by a relative helper path in
+the test invocation; their corrected absolute-path rerun passes all 31 tests in
+the selected files. The remaining exact-wording assertion in
+`test_web_recreate_and_repair.py::test_the_tool_docstrings_carry_the_amendment_too`
+also fails at HEAD: the relevant search docstring is unchanged by this patch.
+It remains explicit rather than weakening that test to declare a green suite.
+The final expanded four-panel browser regression passes all five cases.
+
+The API gate returned 2,904 passed, six skipped and six failures. Four isolation
+fixtures lacked the `LoadedFragment.payload` field newly consumed by this path;
+their fixtures now represent ordinary captures with no native dependencies,
+without changing their font/asset assertions. The two isolation files plus new
+dependency/custody tests pass **39/39** after that correction. The other two
+failures are `test_agent_preview_uses_media_readiness_at_each_width`: their fake
+agent lacks `web_doc`. Replaying those tests with the exact committed
+`_capture_pass` method reproduces the same failure. The production method is
+unchanged. These two baseline failures and the one agent wording failure remain
+open; neither entire Python suite is claimed green. Targeted fatal-error lint
+and whitespace checks pass. Tests used a session-created disposable database,
+which was removed after verification; the live database was not migrated.
+
+Local gate logs: `/tmp/clue-native-reuse-{cargo-tests,helper-build,wasm-build,`
+`handshake,runtime,runtime-retry,four-panels,api,api-final,api-baseline}.log`.
+Logs are disposable local evidence; committed tests provide the reproducible
+checks. No live service restart or publication was performed.
+
+Still owed: faithful two-left/two-right layout and actual source control/media
+mapping; source motion/timing; the account argument, CTA choice, typography and
+image framing on a real page; readable final phone/tablet review; and human
+quality acceptance. These checks establish retained native behavior, not those
+qualities. The user's no-new-generation restriction remains in force.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.

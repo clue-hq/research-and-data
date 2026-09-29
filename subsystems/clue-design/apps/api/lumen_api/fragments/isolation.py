@@ -30,6 +30,8 @@ the artifact.
 
 from __future__ import annotations
 
+from .native import native_render_fields
+
 import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -184,6 +186,7 @@ def build_isolation_page(
         **({"font_face_css": fonts.css} if fonts is not None else {}),
         fragments={
             fragment_id: {
+                **native_render_fields(loaded.payload),
                 "html": rebase_artifact_assets(loaded.html, asset_base),
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
             }

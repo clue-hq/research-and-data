@@ -120,6 +120,7 @@ def create_web_fragment(
     derived_from: str | None = None,
     derived_reason: str | None = None,
     source_fragment_id: str | None = None,
+    native_dependencies: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], FragmentArtifact]:
     """Mint one fragment and give it durable custody. Returns ``(row, artifact)``.
 
@@ -166,6 +167,7 @@ def create_web_fragment(
         preview_digest=preview_digest,
         prelude_reference=prelude_reference,
         source_fragment_id=source_fragment_id,
+        native_dependencies=native_dependencies,
     )
 
     return _persist_fragment_artifact(

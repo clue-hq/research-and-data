@@ -81,6 +81,7 @@ from .fragments import (
     set_web_fragment_status,
 )
 from .fragments.behavior import inspect_fragment_behavior
+from .fragments.native import native_render_fields
 from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
 from .fragments.isolation import IsolationFonts
 from .fragments.render import slot_kinds
@@ -764,7 +765,9 @@ class DurableAgentClonedSectionRegistry:
             "degraded_reason": row.get("degraded_reason"),
             "composed": provenance.get("composed"),
             "capture_evidence": capture_evidence,
-            "behavior_evidence": inspect_fragment_behavior(str(payload.get("html") or "")),
+            "behavior_evidence": inspect_fragment_behavior(
+                str(payload.get("html") or ""), payload.get("native_dependencies")
+            ),
             "slots": _slot_summary(loaded.slot_manifest),
             "html": str(payload.get("html") or ""),
             "css": str(payload.get("css") or ""),
@@ -855,6 +858,7 @@ class DurableAgentClonedSectionRegistry:
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.
             "render": {
+                **native_render_fields(loaded.payload),
                 "html": loaded.html,
                 "css": loaded.css,
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
@@ -1145,6 +1149,7 @@ class DurableAgentClonedSectionRegistry:
         rung: int,
         note: str,
         release: bool = False,
+        native_dependencies: dict[str, Any] | None = None,
     ) -> JsonObject:
         """Mint the replacement for a broken clone as a NEW, lineage-carrying fragment.
 
@@ -1213,6 +1218,13 @@ class DurableAgentClonedSectionRegistry:
         except (NotFoundError, FragmentRefused):
             existing = None
 
+        if existing is not None and existing.payload.get("native_dependencies") and native_dependencies is None:
+            raise FragmentRefused(
+                "fragment.native_dependency_unsupported",
+                "raw HTML/CSS repair of a native fragment cannot preserve its declared behavior; "
+                "use exact text/link edits or a checked vocabulary replacement",
+            )
+
         probe = build_fragment_artifact(
             html=sanitized.html,
             css=css,
@@ -1221,6 +1233,7 @@ class DurableAgentClonedSectionRegistry:
             preview_digest=None,
             prelude_reference=PRELUDE_REFERENCE_STRIP,
             source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         already = repository.find_web_fragment(probe.fragment_id)
         original_css = None
@@ -1233,6 +1246,7 @@ class DurableAgentClonedSectionRegistry:
             existing is not None and probe.payload["html"] == existing.html
             and probe.payload["css"] == original_css
             and probe.payload["slot_manifest"] == existing.slot_manifest
+            and probe.payload.get("native_dependencies") == existing.payload.get("native_dependencies")
         ):
             # A "repair" that reproduces the broken band is not one. Without this it would mint
             # as a NEW fragment holding the same markup — and NOT degraded, because the marker is
@@ -1281,6 +1295,7 @@ class DurableAgentClonedSectionRegistry:
             derived_from=replaces,
             derived_reason=reason,
             source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         converged = already is not None
         status = str(row.get("status") or "")
