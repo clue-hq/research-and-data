@@ -1,11 +1,13 @@
 """Bounded geometry/style observations from the same page as a saved preview.
 
 This is a measurement aid, not a source-fidelity or aesthetic judge. It never
-rewrites the page, executes source scripts, fetches assets, or certifies fonts.
+rewrites the page, executes source scripts, fetches assets, or certifies fidelity.
 """
 
 from collections import deque
 from typing import Any
+
+from .web_font_capture import capture_glyph_fonts
 
 MAX_LAYOUT_NODES = 48
 
@@ -97,6 +99,7 @@ _LAYOUT_SCRIPT = r"""
       computed:computed(el,kind),css_visible:cssVisible,
       ...(cssVisible===null?{visibility_note:'no_element_box_direct_text_unmeasured'}:{})};
   };
+  const textOwnerIds=new Map();
   const nodes=targets.map(target=>{
     const matches=document.querySelectorAll('[data-node-id="'+CSS.escape(target.node_id)+'"]');
     if(matches.length!==1) return {...target,status:matches.length?'ambiguous':'missing'};
@@ -114,10 +117,12 @@ _LAYOUT_SCRIPT = r"""
       Array.from(el.childNodes).some(n=>n.nodeType===3 && n.textContent.trim()));
     const imgs=scanned.filter(el=>el.tagName==='IMG');
     const texts=textNodes.slice(0,cap).map(el=>{
+      if(!textOwnerIds.has(el)) textOwnerIds.set(el,'t'+textOwnerIds.size);
       const direct=Array.from(el.childNodes).filter(n=>n.nodeType===3)
         .map(n=>n.textContent).join('').replace(/\s+/g,' ').trim();
       const role=el.closest('h1,h2,h3,h4,h5,h6,p,button,a,summary,label');
-      return {...describe(el,root,'text'),text:direct.slice(0,240),text_complete:direct.length<=240,
+      return {...describe(el,root,'text'),text_owner_id:textOwnerIds.get(el),
+        text:direct.slice(0,240),text_complete:direct.length<=240,
         role:role && root.contains(role)?role.tagName.toLowerCase():el.tagName.toLowerCase(),
         parent_container_id:el===root?null:containerId(el.parentElement)};
     });
@@ -142,7 +147,7 @@ _LAYOUT_SCRIPT = r"""
     document_width:document.documentElement.scrollWidth,
     root_font_size:getComputedStyle(document.documentElement).fontSize,
     scope:'default_preview_state',coordinate_space:'document_css_pixels',
-    path_space:'rendered_node_relative',
+    path_space:'rendered_node_relative',text_owner_id_scope:'this_capture_only',
     visibility_basis:'css_box_and_ancestor_clipping_not_occlusion',
     actual_glyph_font:'not_measured',quality_verdict:'not_computed',fonts_status:document.fonts.status,
     declared_font_faces:faces.slice(0,32).map(f=>({
@@ -150,7 +155,8 @@ _LAYOUT_SCRIPT = r"""
     font_faces_omitted:Math.max(0,faces.length-32),nodes,
     note:'Measured just after the default screenshot on the same browser page, '
       +'not a synchronized animation frame. Computed family is a CSS stack, '
-      +'not proof of the face used for glyphs. Image pixels/alpha and baked framing '
+      +'not proof of the face used for glyphs; see bounded per-text font_usage. '
+      +'Image pixels/alpha and baked framing '
       +'are not classified. Rendered paths are not stored edit paths. Measurements '
       +'do not establish source parity, all states or aesthetic quality.'};
 }
@@ -165,6 +171,8 @@ def capture_layout(page: Any, targets: list[dict]) -> dict:
             raise ValueError("invalid layout observation")
         result["status"] = "observed"
         result["omitted_node_ids"] = [r["node_id"] for r in targets[MAX_LAYOUT_NODES:]]
+        result["glyph_font_capture"] = capture_glyph_fonts(page, result["nodes"])
+        result["actual_glyph_font"] = "see_per_text_font_usage"
         return result
     except Exception as error:
         return {

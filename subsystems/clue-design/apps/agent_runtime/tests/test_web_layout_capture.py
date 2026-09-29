@@ -1,6 +1,8 @@
 """Offline measured evidence for source/authored typography and media containers."""
 
+import base64
 import json
+from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
@@ -61,7 +63,8 @@ def test_reports_actual_type_drift_and_image_container_without_claiming_fidelity
     assert "linear-gradient" in frame["computed"]["background_image"]
     assert shot["pixel_composition"] == "unclassified"
     assert shot["loaded"] is False
-    assert report["actual_glyph_font"] == "not_measured"
+    assert report["actual_glyph_font"] == "see_per_text_font_usage"
+    assert source["texts"][0]["font_usage"]["status"] == "observed"
     assert report["quality_verdict"] == "not_computed"
     parent = authored["containers"][authored["texts"][1]["parent_container_id"]]
     assert authored["texts"][1]["box"]["height"] < parent["box"]["height"]
@@ -221,6 +224,8 @@ def test_native_capture_and_view_share_identity_and_refuse_stale_or_wrong_page(
     result = json.loads(tools._view_content("layout:375:node:test")[0]["text"])
     assert result["node"]["texts"][0]["text"] == "Heading"
     assert result["node"]["texts"][0]["computed"]["font_size"]
+    assert result["node"]["texts"][0]["font_usage"]["status"] == "observed"
+    assert result["glyph_font_capture"]["measured_text_owners"] > 0
     saved = json.loads((tmp_path / "layout_375.json").read_text())
     assert saved["nodes"][0] == result["node"]
     tools._preview_iteration = 0
@@ -229,3 +234,130 @@ def test_native_capture_and_view_share_identity_and_refuse_stale_or_wrong_page(
     assert json.loads(tools.add_page("other", "Other", "/other"))["status"] == "ok"
     assert not tools._layout_by_width
     assert json.loads(tools._view_content("layout:375")[0]["text"])["code"] == "layout.not_captured"
+
+
+def test_glyph_fonts_distinguish_a_loaded_alias_from_a_missing_family(page):
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    font = Path(__file__).resolve().parents[3] / "fonts/Inter-Regular.ttf"
+    encoded = base64.b64encode(font.read_bytes()).decode()
+    page.set_content(
+        '<style>@font-face{font-family:BrandAlias;src:url(data:font/ttf;base64,'
+        + encoded
+        + ")} .brand{font-family:BrandAlias,serif}.missing{font-family:MissingBrand,serif}</style>"
+        '<section data-node-id="s"><h2 class="brand">Brand heading</h2>'
+        '<p class="missing">Fallback paragraph</p></section>'
+    )
+    page.evaluate("document.fonts.ready")
+    report = capture_layout(page, [{"node_id": "s", "kind": "section"}])
+    heading, body = report["nodes"][0]["texts"]
+    assert heading["computed"]["font_family"].startswith("BrandAlias")
+    assert heading["font_usage"]["status"] == "observed"
+    assert heading["font_usage"]["fonts"][0]["family_name"] == "Inter"
+    assert heading["font_usage"]["fonts"][0]["is_custom_font"] is True
+    assert heading["font_usage"]["fonts"][0]["glyph_count"] > 0
+    assert heading["font_usage"]["fonts"][0]["postscript_name"]
+    assert body["font_usage"]["status"] == "observed"
+    assert all(f["family_name"] != "MissingBrand" for f in body["font_usage"]["fonts"])
+    assert all(f["is_custom_font"] is False for f in body["font_usage"]["fonts"])
+    assert report["glyph_font_capture"]["measured_text_owners"] == 2
+    assert report["quality_verdict"] == "not_computed"
+    assert "data:font" not in json.dumps(report)
+
+
+def test_font_failure_does_not_discard_layout_or_claim_fallback(page, monkeypatch):
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    def unsupported(*args):
+        raise RuntimeError("CDP unavailable")
+
+    page.set_content('<section data-node-id="s"><h2>Heading</h2></section>')
+    monkeypatch.setattr(page.context, "new_cdp_session", unsupported)
+    report = capture_layout(page, [{"node_id": "s", "kind": "section"}])
+    assert report["status"] == "observed"
+    assert report["nodes"][0]["texts"][0]["box"]["width"] > 0
+    assert report["nodes"][0]["texts"][0]["font_usage"]["status"] == "unavailable"
+    assert report["glyph_font_capture"]["status"] == "unavailable"
+
+
+def test_font_cap_samples_each_section_before_more_text_in_the_first(page, monkeypatch):
+    from lumen_agent.tools import web_font_capture
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    monkeypatch.setattr(web_font_capture, "MAX_FONT_TEXTS", 3)
+    page.set_content("".join(
+        f'<section data-node-id="s{i}"><h2>Heading {i}</h2><p>Body {i}</p></section>'
+        for i in range(3)
+    ))
+    report = capture_layout(page, [{"node_id": f"s{i}", "kind": "section"} for i in range(3)])
+    for row in report["nodes"]:
+        assert row["texts"][0]["font_usage"]["status"] == "observed"
+        assert row["texts"][1]["font_usage"] == {"status": "not_measured", "reason": "owner_cap"}
+    assert report["glyph_font_capture"]["status"] == "partial"
+    assert report["glyph_font_capture"]["omitted_text_owners"] == 3
+
+
+def test_nested_targets_share_one_font_probe_per_actual_text_owner(page, monkeypatch):
+    from lumen_agent.tools import web_font_capture
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    monkeypatch.setattr(web_font_capture, "MAX_FONT_TEXTS", 2)
+    page.set_content('<section data-node-id="outer"><section data-node-id="inner">'
+                     '<h2>Shared heading</h2></section></section>'
+                     '<section data-node-id="later"><h2>Distinct heading</h2></section>')
+    report = capture_layout(page, [
+        {"node_id": "outer", "kind": "section"}, {"node_id": "inner", "kind": "fragment"},
+        {"node_id": "later", "kind": "section"},
+    ])
+    outer, inner, later = [n["texts"][0] for n in report["nodes"]]
+    assert later["font_usage"]["status"] == "observed"
+    assert outer["text_owner_id"] == inner["text_owner_id"]
+    assert outer["font_usage"] == inner["font_usage"]
+    assert report["glyph_font_capture"]["measured_text_owners"] == 2
+    assert report["glyph_font_capture"]["omitted_text_owners"] == 0
+
+
+def test_font_probe_refuses_replaced_text_and_skips_hidden_owners(page):
+    from lumen_agent.tools.web_font_capture import capture_glyph_fonts
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    page.set_content('<section data-node-id="s"><h2>Original</h2><p hidden>Hidden</p></section>')
+    report = capture_layout(page, [{"node_id": "s", "kind": "section"}])
+    assert report["nodes"][0]["texts"][1]["font_usage"]["reason"] == "css_hidden"
+    page.locator("h2").evaluate("el => el.textContent='Replaced'")
+    summary = capture_glyph_fonts(page, report["nodes"])
+    assert summary["measured_text_owners"] == 0
+    assert summary["failed_text_owners"] == 1
+    assert report["nodes"][0]["texts"][0]["font_usage"]["reason"] == "owner_changed_or_missing"
+
+
+def test_font_probe_budget_is_an_omission_not_a_clean_font_result(page, monkeypatch):
+    from lumen_agent.tools import web_font_capture
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    monkeypatch.setattr(web_font_capture, "FONT_CAPTURE_SECONDS", 0)
+    page.set_content('<section data-node-id="s"><h2>Heading</h2></section>')
+    report = capture_layout(page, [{"node_id": "s", "kind": "section"}])
+    assert report["glyph_font_capture"]["status"] == "unavailable"
+    assert report["glyph_font_capture"]["omitted_text_owners"] == 1
+    assert report["nodes"][0]["texts"][0]["font_usage"]["reason"] == "time_budget"
+
+
+def test_mixed_glyph_fallback_is_reported_without_dom_mutation(page):
+    from lumen_agent.tools.web_layout_capture import capture_layout
+
+    font = Path(__file__).resolve().parents[3] / "fonts/Inter-Regular.ttf"
+    encoded = base64.b64encode(font.read_bytes()).decode()
+    page.set_content(
+        '<style>@font-face{font-family:PartialBrand;unicode-range:U+0041-005A;'
+        'src:url(data:font/ttf;base64,' + encoded + ")}" +
+        'h2{font-family:PartialBrand,serif}</style><section data-node-id="s">'
+        '<h2>ABC 123</h2></section>'
+    )
+    page.evaluate("document.fonts.ready")
+    before = page.content()
+    report = capture_layout(page, [{"node_id": "s", "kind": "section"}])
+    fonts = report["nodes"][0]["texts"][0]["font_usage"]["fonts"]
+    assert any(f["is_custom_font"] and f["family_name"] == "Inter" for f in fonts)
+    assert any(not f["is_custom_font"] for f in fonts)
+    assert page.content() == before

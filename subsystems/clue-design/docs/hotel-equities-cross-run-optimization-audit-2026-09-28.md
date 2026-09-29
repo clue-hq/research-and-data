@@ -124,7 +124,7 @@ Subsequent offline checkpoints under the same no-new-generation constraint:
 - `e776dda4`: paged plain-text inventory and exact text variants keep captured
   HTML/CSS/assets and existing pin state. Replayed all six eligible text targets
   in the held large feature fragment without transcribing its 201k CSS.
-- Current layout checkpoint: the ordinary native preview caches text styles,
+- `7512c94e`: the ordinary native preview caches text styles,
   boxes, media visibility and image-container geometry at 1440/768/375.
   `view("layout:<width>")` and per-node reads reuse that evidence and refuse stale
   document/page/preview iterations. Shared containers are described once. The
@@ -136,17 +136,20 @@ authored 32px/500 desktop heading styles, authored image wrappers with 18px top 
 background but CSS-hidden product imagery. It served 20 existing local assets,
 used no network/provider and changed no workspace artifact. This is a replay of
 the saved fragments/compose call, not a current native-page acceptance test.
-The measurements deliberately leave actual glyph-font identity, image alpha /
-baked-composite classification, occlusion and aesthetic quality unverified.
+At that checkpoint the measurements left actual glyph-font identity, image alpha /
+baked-composite classification, occlusion and aesthetic quality unverified. The
+glyph-font follow-up below adds usage measurements; the other limits remain.
 
 Those checkpoints have focused offline tests. None has yet demonstrated an
-improved native Hotel Equities page. Source controller reconstruction, actual
-font-origin/glyph verification, asset-pixel classification and framing repair,
-compact evidence-to-copy/CTA planning, retrieval/continuity and native visual
-acceptance remain open. No migration or standalone page implementation is needed
+improved native Hotel Equities page. Source controller reconstruction, source-font
+asset identity, asset-pixel classification and framing repair, retrieval/continuity
+and native visual acceptance remain open. Copy planning and glyph measurement
+have bounded follow-ups below. No migration or standalone page implementation is needed
 to continue the next mechanical slice.
 
 ## Copy planning follow-up
+
+Implemented locally in `5bddc95c`; native output remains unqualified.
 
 Re-read the latest run's actual plan write and composition arguments, not only its
 final summary. `L/log:524` drafted the hero words but described most later bands
@@ -183,6 +186,47 @@ clarified active-plan amendments and truthful section status. The correction
 resolves an observed planning contradiction and makes omissions reviewable.
 Native generation under long context, final visitor copy and visual quality remain
 unqualified; the no-new-run restriction remains in place.
+
+## Glyph-font follow-up
+
+The layout evidence previously exposed the computed CSS family stack, which
+could not distinguish a working alias from a fallback. The ordinary preview now
+adds Chromium's actual font family, PostScript name, custom-font flag and glyph
+count for bounded measured text owners. It reuses the same browser page, with no
+new page render or provider call. Nested component records share a measurement;
+later sections are sampled before further text from the first section. Missing
+protocol support, changed text, hidden owners and cap/time omissions are explicit.
+The existing native `view("layout:...")` path retains document/page/iteration
+freshness checks. This is evidence for diagnosis, not an automatic style repair.
+
+Replaying the same saved source feature and authored request-walk sections with
+20 existing local assets confirmed more than a CSS-name difference:
+
+| Width | Source heading | Authored heading |
+| --- | --- | --- |
+| 1440 | `SeasonMix-Regular-TRIAL`, 48px / 400 | `SeasonMix-Medium-TRIAL`, 32px / 500 |
+| 375 | `SeasonMix-Regular-TRIAL`, 32px / 400 | `SeasonMix-Medium-TRIAL`, 32px / 500 |
+
+Both used custom fonts. The authored face was different even where phone sizes
+matched. The font probe measured 32 distinct owners per replay, with no failed
+or omitted selected probes, in 105ms desktop / 56ms phone. These local timings
+are observations, not a production latency promise. The underlying layout still
+has explicit text caps; this does not establish complete page coverage.
+The background-only phone Inbox replay had 16 CSS-hidden captured text owners
+and no visible text owner to measure. It must not be reported as a font success.
+
+The source/product instructions now compare measured faces together with size,
+weight, line-height and responsive role. Twenty focused layout/font tests cover
+alias versus fallback, mixed fonts, protocol failure, replaced text, section
+sampling, duplicate nested owners and time-budget omissions. Twelve skill-loading
+checks pass; a separate native capture-to-view assertion confirms these receipts
+are exposed and stale/wrong-page reads are refused. Browser checks use blocked
+external requests and local fixtures. The held replay used no external requests.
+
+Font names do not establish stored-file identity, variable-axis or synthetic
+weight fidelity. Asset pixels/cropping, original controller reconstruction,
+actual visitor copy and native visual acceptance remain outstanding. No new
+Clue generation, current artifact repair or service restart occurred.
 
 ## Evidence locations and run index
 

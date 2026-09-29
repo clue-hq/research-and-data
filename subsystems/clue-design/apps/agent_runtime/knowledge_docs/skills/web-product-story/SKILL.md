@@ -44,7 +44,9 @@ reason to flatten a good band or start repeated image generations.
 
 - Measure the source heading/body family, weight, size, line-height and text width.
   Use [layout evidence](../web-source-readiness/references/layout-evidence.md)
-  for current rendered nodes; resolve the actual source font separately.
+  for current rendered nodes, including measured glyph-font usage. Match actual
+  source and authored faces before changing an alias; resolve the source asset
+  separately. A loaded font with the wrong face/weight is still a mismatch.
   Carry the resolved font roles into new siblings. Judge the page hierarchy together:
   do not accidentally make its opening smaller than ordinary later section headings.
 - Preserve the strong visual wrapper when replacing a missing controller. Use
