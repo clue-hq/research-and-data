@@ -69,3 +69,29 @@ platform API, design API, fleet worker and ingestion-pool logs and the money tab
   `.artifacts` blobs of that workspace are orphans on disk. Sign in fresh before the next walk.
 - The next stack start runs the fixed code (`f6c2a41f0`, `e818a815b`, `40c4185e9`) — the
   three defects above were never exercised live; the next onboarding is their live proof.
+
+## Second onboarding — live proof of the three fixes (traced 17:05 UTC)
+Stack up 14:45 UTC on the fixed code (all lane ports, 4 workers, ingestion pool). Conduit AI
+onboarded again: workspace `ws_3c96440b557a413fa02bda3fbf90cc5e`, brand
+`brd_ec0a9b5ddb734491af0e4f76bed3737b`, run `5856ce0f-1033-4600-b75c-ba15768aa393` (fleet task
+`0396160f-52fd-4225-ba3b-d93780e00fe8`), 16:18:24 → **completed** 16:26:30 (8m06s), all 15 steps
+completed. Website ingestion `ingest_c162dc8c5b99418284b42a21a7a80298` succeeded 16:34:36 (kit v1;
+560 assets, 402 described / 67 failed); ad harvest `ingest_4e6face312df4a7187151eb63433a861`
+succeeded with 0 ads kept (`advertiser_mismatch`).
+- **Exa ledger fix — proven.** 241 agent-poll rows, 232 NULL-USD, 9 priced (= the 9 terminal
+  bodies) summing $1.30 = the steps' own cost; `make cost-report` total now $7.41, not inflated.
+- **Fan-out fix — proven.** Same shape as run 1 (10 lineup entries, Inbox/Workflows/Operator
+  `model_reused`) → 7 product-research steps, run completed.
+- **Describer cap — proven, but runaways remain.** 0 calls above 32,768; 77 of 607 calls hit
+  exactly 32,768 ($0.034 each, $2.59 = 62% of the $4.19 describe spend; would have been ~$12 at
+  131k). Every capped answer is truncated JSON, so it is waste; 22 assets failed that way after
+  both attempts. Legitimate answers stop below ~17k (nothing between 17k and 32k).
+- **New findings (not fixed):** (1) persona `exa_search_evidence@1` asks for 6 results at $0.015,
+  which `is_thin_deep_response` (≤9 results and ≤$0.016) always calls thin → all 15 calls retried,
+  the retry is guaranteed double spend ($0.225); (2) ad harvest: no `advertiser_name` in the request,
+  so `select_creatives` took the dominant advertiser (employee "Cole Rubin") as the company, dropped
+  27 other ads as `thought_leader`, then the guard refused the rest vs the resolved "conduit" —
+  inferred from `onboarding.py:255` + `harvest.py:192/253`; the raw vendor body was not kept, so the
+  name distribution is unverified; (3) `onboarding_run.cost_usd` ($1.561) omits the grok synthesis
+  ($1.43) and the thin retries; (4) the design `brief` call (grok-4.5, 20.9k in / 4.4k out) is
+  unpriced; (5) the ad job waited 16 min behind the website job (coordinator has 1 slot).
