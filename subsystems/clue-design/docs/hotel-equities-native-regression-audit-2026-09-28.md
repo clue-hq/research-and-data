@@ -214,3 +214,36 @@ typography, or qualify the saved page. No paid probe, generation, live workspace
 runtime restart, or remote push was performed. Database checks used fresh disposable
 databases removed afterward. The next work remains the canonical correction/handoff,
 measured typography roles, and current-render acceptance checks above.
+
+## Selected component preservation requirement
+
+The founder clarified that the typography repair must retain the selected page
+component's structure and format. Matching a font family alone does not satisfy
+this requirement. The selected source/pin, its heading hierarchy, measured type
+roles, layout, spacing, media treatment and responsive behavior form the reference.
+Account copy must fit that reference; adding personalization does not authorize
+rebuilding it as a differently styled section. A genuinely new section must name
+the equivalent source roles it reuses. This is a requirement for the pending repair,
+not a claim that a runtime constraint has now been implemented.
+
+The existing exact-copy lane is `repair_cloned_section(text_edits_json=...)` after
+`inspect_cloned_section(text_only=True)`, or existing slot bindings when available.
+The exact-copy lane retains the captured markup/CSS and preserves the selected pin;
+it refuses stale text and conflicting human overrides. Raw HTML/CSS composition is
+not an equivalent preservation guarantee. Preserving source bytes still requires
+checking the new copy's wrapping, overflow and mobile height.
+
+Offline verification on the current checkout: all 11 native text-repair tests
+passed. The browser preservation test initially failed to launch Chromium because
+of the filesystem/process sandbox's macOS Mach-port restriction. Re-running that
+single network-blocked test outside the sandbox passed at 1440, 768 and 375px:
+the synthetic selected component retained type, padding, radius and width, showed
+the replacement copy, had no horizontal overflow, and kept its disclosure behavior.
+This verifies the existing tool capability on that fixture. It does not prove the
+agent selects that lane, validate the saved customer page, or repair its custom
+typography. The remaining implementation must carry the selected reference into
+composition and check the final rendered result against it. The no-account-logo-
+in-navigation correction remains a separate requirement.
+
+No generation, live-page edit, provider call, service restart or push was made for
+this verification. The failed native page remains preserved as regression evidence.
