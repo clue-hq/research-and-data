@@ -87,11 +87,13 @@ seller identity into its opening composition and omit a separate navigation bar,
 while retaining necessary trust/legal access. Follow the tools' actual supported
 composition contracts; this choice is not a new shell-tool parameter or approval.
 
-Target identity is independent of navigation. A restrained eyebrow, opening
-account bar or contextual line can name the target before the main heading.
-"Prepared for…" in a navbar is not a required ABM convention. If the user asks
-for no navbar or a different identity placement, preserve that choice. Give the
-seller's real mark a deliberate place and avoid a partnership-style implication.
+Target identity belongs in the opening content outside navigation: a restrained
+eyebrow, account bar or lockup above the main heading. Keep the seller's own
+identity in its appropriate source treatment. A target logo is not a navigation
+item. An explicit user request for another placement governs; a delegated brief's
+claimed approval without its original user source does not establish that
+exception. Verify clear space, hierarchy and stacking at phone width. Co-placement
+must not imply a partnership. This applies in fresh projects without instructions.
 
 Walk these questions:
 
@@ -209,12 +211,12 @@ On an existing page, act with the editing verbs you actually have:
   library when one fits (`insert_cloned_section`); compose a new brand-derived
   section only when the library genuinely lacks the job.
 - A cloned section whose bones are right but whose words serve the old
-  argument — **rewrite through its slots.** Never retype a healthy clone's
-  markup; slots are the first door.
+  argument — **rewrite through its slots or exact-text lane.** Unbound copy
+  uses the repair skill's text inventory; do not retype healthy markup.
 - A cloned section whose bones are right but whose SHAPE can't carry the
   campaign — a CTA to remove, a sub-element to hide, a new eyebrow —
   **derive a campaign variant** (edit-website's clone-editing ladder,
-  rung 2) rather than composing a fresh imitation: the variant remixes the
+  structural-variant rung) rather than composing a fresh imitation: the variant remixes the
   original's real bytes, inherits its whole visual system, and survives
   with lineage. If the band is BROKEN, that is a repair
   (`repair_cloned_section`), a different contract.
@@ -233,8 +235,9 @@ silently dropping the argument.
 
 ## Step 7 — Close the loop
 
-- **One primary conversion action.** Repeated primary CTAs lead to the same
-  supported action/destination. Wording may flex by position. Navigation,
+- **One primary conversion action.** Repeat its chosen label and supported
+  action/destination consistently. A changed label needs a real distinct purpose
+  or explicit wording request; arbitrary synonym rotation obscures the promise. Navigation,
   legal and relevant trust/resource links can serve their separate jobs.
 - **The CTA makes the next step clear.** Prefer receipt-like wording when the
   destination actually provides it; preserve exact requested or established brand

@@ -2,7 +2,10 @@
 
 This is an audit of the completed native test, not a successful quality qualification.
 No follow-up generation, saved-page edit, new ingestion, publication, or remote push
-was performed during the investigation. Proposed fixes below are not implemented.
+was performed during the investigation. The numbered findings record the failed
+run; the follow-up checkpoints below distinguish implemented repairs from remaining
+qualification work. General design requirements now belong to shared skills, not
+Project Instructions, under the founder's later correction.
 
 ## Exact case and evidence
 
@@ -145,13 +148,14 @@ acceptance mechanism.
 
 ## Proposed repair order and tests before another paid run
 
-1. **Correct durable request context.** Reconcile the founder's no-target-logo-in-nav
-   instruction through the canonical captured-input/statement correction seam,
-   with proper scope. Do not hand-edit generated `project/decisions.md`. Preserve
+1. **Correct shared behavior and request attribution.** The original proposal to
+   record the no-target-logo-in-nav rule in project context is superseded by the
+   founder's correction: it must be shared skill behavior in every new project.
+   Do not add or restore general rules in Project Instructions. Preserve
    statement identity, origin, target/artifact scope, and supersession through
    project rendering and Head-to-Design handoff. A delegated proposal must remain
-   distinguishable from a direct, attributable user request. Test the exact stale
-   Hyatt decision plus later Hotel Equities correction as a regression case.
+   distinguishable from a direct, attributable user request. Test stale assistant
+   placement claims separately from genuine explicit user placement requirements.
 2. **Bind authored sections to measured brand roles.** Make equivalent source
    heading/body/label roles available with family, actual face, weight, scale,
    line-height, tracking, and responsive behavior. Use them in new composition and
@@ -329,10 +333,65 @@ macOS refused its process registration. Changed adapter/read modules and tests
 pass scoped Ruff; the harness import-order check passes. Existing unrelated harness
 lint warnings were not broadened into this fix.
 
-The no-account-logo-in-navigation correction is still missing from canonical native
-project context. This implementation neither invents that correction nor mutates
-past turn pins. It also does not prove that the model reads or obeys the source file.
-That correction must be recorded through the normal project context path before the
-next generation. Full selected-component structure and rendered quality remain
-separate acceptance requirements. No live generation, page edit, restart or push
-was performed for this checkpoint.
+This source-reading capability neither mutates past turn pins nor proves that the
+model reads or obeys the source file. The earlier recommendation to put the general
+no-account-logo-in-navigation rule into project context was wrong and is superseded
+below. Full selected-component structure and rendered quality remain separate
+acceptance requirements. No live generation, page edit, restart or push was performed
+for this checkpoint.
+
+## Follow-up checkpoint: shared skills and runtime delivery
+
+The founder rejected storing general website rules in Project Instructions and
+said they are deleting that entry. Do not restore it. The shared implementation
+must work with a short prompt in a new project, with no project instructions.
+The legitimate original-source reader remains useful for project-specific requests;
+it is not the owner of general design behavior.
+
+The saved trace explains why adding more optional skill prose alone was insufficient:
+
+- The workflow read requested only its first 200 lines. The file placed review and
+  finalization guidance later. The run did not read the construction, edit, media,
+  product-story, motion or review entrypoints before its corresponding actions.
+- The plan listed family aliases without source role measurements. The custom
+  section then used independently authored face, weight and scale choices.
+- Runtime author/director prompts told the agent not to draft page prose, while
+  the copy workflow required finished words before assembly. A solo account
+  example still suggested a co-branded header.
+- The construction ladder skipped the existing exact-text lane and claimed variants
+  automatically supplied new slots. A missing copy slot could therefore become an
+  unnecessary structural reconstruction. Repeated interaction guidance also disagreed
+  about when supported typed reconstruction was allowed.
+
+Repairs are shared across brands and projects:
+
+1. `create-website/references/source-format-contract.md` owns the essential source,
+   selected-structure, typography, identity, media, motion and review rules. All four
+   web roles now receive its exact current contents automatically. A missing/empty
+   file fails prompt assembly visibly. Detailed skills remain loaded by need.
+2. The workflow is now 102 lines, with construction and review routing before the
+   observed read cutoff. The affected planning, source, construction, editing,
+   campaign and review skills agree about preserved roles and minimal changes.
+3. Source retrieval starts with the selected component or relevant existing inventory,
+   then missing page/section roles and reported pagination. Copy-only work uses
+   text/anchor inventory rather than complete unrelated stylesheets. Seller source,
+   target claims and agent-authored briefs remain distinct.
+4. Unbound copy uses the real exact-text repair arguments and a campaign-variant
+   note; actual structural changes use original HTML/CSS. No new slots are promised
+   by exact-text repair. Observed controllers route to the motion skill even without
+   an animation keyword in the request. Supported interactions retain source visuals.
+5. Target identity defaults to opening content above the main heading, outside
+   navigation. An exception needs the actual user's explicit placement requirement,
+   not an assistant's claim that it was approved.
+
+Verification uses fresh-project prompt assembly without instructions or an account
+card, account-card branches, missing-file handling, live file revision delivery,
+and a supervised read-only skill application review. All 50 focused delivery,
+materialization, account-prompt and solo-mode tests pass. Tests demonstrate delivery and
+consistent routing; they do not demonstrate production-model obedience or acceptable
+pages. Existing artifacts remain unchanged. No native generation, source refetch,
+service restart or push was performed for this shared-skill checkpoint. Runtime reload
+and one controlled native qualification remain pending after review of these fixes.
+The existing source-checkout knowledge layout is retained; a wheel-only installation
+omits the knowledge tree and was already unsupported by materialization. No wheel-only
+or remote deployment readiness is claimed by these local checks.

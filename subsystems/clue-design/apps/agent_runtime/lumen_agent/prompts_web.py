@@ -10,8 +10,30 @@ the ship bar is the review-website checklist instead of preflight.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from .rubrics import load_clone_review_rubric
+
+WEB_SOURCE_CONTRACT_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "knowledge_docs/skills/create-website/references/source-format-contract.md"
+)
+
+
+def _source_format_contract() -> str:
+    """Always deliver core skill guidance, including on empty/no-account projects.
+
+    The failed native run skipped construction/review skill reads. Keep the core
+    contract in one skill-owned file rather than another private prompt copy or
+    project-specific instructions. Read each time so edits reach every role.
+    """
+    try:
+        body = WEB_SOURCE_CONTRACT_PATH.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise RuntimeError("The shared website source contract could not be read") from error
+    if not body:
+        raise RuntimeError("The shared website source contract is empty")
+    return "Shared skill: create-website/references/source-format-contract.md\n\n" + body
 
 
 def _rubric_block() -> str:
@@ -143,25 +165,6 @@ releases capture drafts or campaign shells nor delays raw repairs, which are
 released at mint. Approval does not prove visual or behavioral fidelity."""
 
 
-WEB_TYPE_REFERENCE = """SELECTED COMPONENT FORMAT
-When the user wants a selected component's structure and format retained, keep its
-real markup and CSS: layout, heading hierarchy, spacing, media framing and responsive
-rules. Personalize existing slots or exact text leaves; do not replace it with a raw
-reconstruction. Fit new copy to those roles and check wrapping, overflow and mobile
-height. A typography edit does not authorize redesigning the selected component.
-After the source is rendered, use set_web_typography_reference to freeze the selected
-heading/body/label roles before editing them. For a new authored band, map its roles
-to inspected equivalent source roles, not just a family name. The mapping uses exact
-paths from view(layout:<width>:node:<id>) at 1440/768/375; these are measurement paths,
-not text-edit coordinates. Author roles use the director's current render.
-The tool checks current renders against the frozen reference and finalize cannot
-accept a declared mismatch or incomplete measurement. Correct the actual CSS or use
-the original component; never rebase the reference onto a drifted draft. Unmapped
-roles are unverified. A typography match alone does not establish structure, content
-fit, interaction behavior or overall quality. Preserve all applicable user constraints.
-"""
-
-
 WEB_ACCOUNT_EVIDENCE = """ACCOUNT EVIDENCE AND DELIVERY MODE — applies whenever the brief names a
 target account/contact, even without an account card. Read web-account-personalization.
 When workspace/project-context/snapshot.json is present, read it before planning:
@@ -237,14 +240,11 @@ def build_web_orchestrator_prompt(
         )
     else:
         routes = ", ".join(page_routes) or "none yet"
-        starting_state = (
-            f"The document has {len(page_routes)} page(s): {routes}. "
-            + (
-                "Treat the turn as an edit of the pages that already exist "
-                "unless the brief clearly asks for a rebuild."
-                if has_existing_content
-                else "They are empty; this turn creates the site."
-            )
+        starting_state = f"The document has {len(page_routes)} page(s): {routes}. " + (
+            "Treat the turn as an edit of the pages that already exist "
+            "unless the brief clearly asks for a rebuild."
+            if has_existing_content
+            else "They are empty; this turn creates the site."
         )
     account_block = (
         f"""
@@ -280,15 +280,13 @@ you must finish from what you already hold — the page as it stands is then the
 page that ships. Spend them deliberately and expect to use far fewer. There is
 NO reviewer subagent on this turn; you review the page yourself (step 5)."""
     )
-    review_steps = (
-        _ORCHESTRATOR_DELEGATED_REVIEW if web_reviewer else _ORCHESTRATOR_SELF_REVIEW
-    )
+    review_steps = _ORCHESTRATOR_DELEGATED_REVIEW if web_reviewer else _ORCHESTRATOR_SELF_REVIEW
     rubric_block = "" if web_reviewer else f"\n{_rubric_block()}\n"
     return f"""{WEB_SKILL_ROUTING}
 
 {WEB_ACCOUNT_EVIDENCE}
 
-{WEB_TYPE_REFERENCE}
+{_source_format_contract()}
 
 You direct a website-building turn for the document "{doc_title}".
 You do not author markup yourself — you delegate, verify with your own eyes,
@@ -524,8 +522,8 @@ OPERATING SHAPE
      seller's site without the target logo?" — if the answer is no, it is a
      rebuild, not a note.
    - RELATIONSHIP LANGUAGE: "Prepared for <account>" is one neutral option, not
-     mandatory copy or navigation. Place identity where the chosen campaign
-     composition calls for it; do not add a nav merely to name the target. Never imply
+     mandatory copy or navigation. Follow the shared source-format contract for
+     target identity placement outside navigation. Never imply
      "partner", "partnership", "customer", "trusted by <account>" or place them
      in a logo wall/testimonial merely because they are the target. Stronger
      framing requires evidence of that exact relationship; one kind of
@@ -535,10 +533,10 @@ OPERATING SHAPE
      reviewer can tell a new band from cloned chrome. The Brand Grammar Audit
      governs them exactly as it governs any new section.
 2. Delegate authoring to the `lumen-web-author` subagent with a concrete
-   brief: the brand anchor, the imagery decision, the section plan, the copy
-   angles, the primary CTA destination. The author owns markup; you own
-   intent. Keep the brief at structural altitude — never draft the page's
-   prose yourself for the author to transcribe.
+   brief: the brand anchor, imagery decision and existing section plan with
+   finished words, evidence references and action/destination choices. The author
+   owns markup and copy-fit refinements; do not substitute vague copy angles for
+   the campaign skill's finished-copy handoff or dictate replacement markup.
 3. When the author reports success, call `render_web_preview` — it renders
    the live document and captures screenshots at 1440, 768, and 375, plus
    STATE CAPTURES (dialog open, accordions expanded) when the page has
@@ -613,8 +611,7 @@ DISCIPLINE
 # The public client id is appended at prompt build; with no id the whole hotlink
 # block is omitted, because the URL would not resolve without one.
 _LOGO_CDN_HOTLINK_PREFIX = (
-    "https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark"
-    "/fallback/transparent/type/logo?c="
+    "https://cdn.brandfetch.io/domain/THEIR-DOMAIN/theme/dark/fallback/transparent/type/logo?c="
 )
 
 
@@ -691,13 +688,14 @@ Account authoring rules (binding):
 
 {WEB_ACCOUNT_EVIDENCE}
 
-{WEB_TYPE_REFERENCE}
+{_source_format_contract()}
 
 You are the website author. You work ON the page in front of
 you — you are not a from-scratch generator. When the document is EMPTY, the
 page is still ASSEMBLED before it is authored: an empty document is not an
-empty library. Check the released clone library first (`search_cloned_sections(q="", limit=8)`)
-— sections whose job a clone already does get PINNED. On an EMPTY page the
+empty library. Reuse the supplied relevant source/keeper inventory; when it is
+absent, start with `search_cloned_sections(q="", limit=8)` and then search only
+for missing roles. Sections whose job a clone already does get PINNED. On an EMPTY page the
 paved verb is `assemble_cloned_sections`: choose the keeper set, order it by
 the page's argument, and pin the whole ordered subset in ONE atomic act,
 rebinding slots to the campaign's words in the same call. (When the brief is
@@ -721,20 +719,20 @@ Cloned sections outrank your own compositions whenever both could serve: the
 clone is the client's real, market-tested band, and a composed imitation of
 an available clone is always the worse page.
 
-DERIVE A VARIANT, don't abandon the clone. When a HEALTHY cloned band's
-slots can't carry the campaign — a CTA to remove, a sub-element to hide, a
-new eyebrow, different emphasis — you do not abandon the clone and you do
-not compose its replacement from nothing. You derive a variant: `view` the
-original, remix its FULL markup and CSS through
-`repair_cloned_section(..., css=…)`, changing exactly the content and
-structure the campaign needs while keeping its geometry, type scale,
-surfaces, and responsive behavior. You inherit everything you don't touch,
-because you started from the original's real bytes. Composing fresh while
-the band's ancestor sits in the library is how invented content sneaks in:
-start from nothing and you must reinvent everything — including the truth.
-The variant's own texts and links come back as rebindable slots, so a
-well-made variant becomes a reusable, parameterized band for every later
-page of this campaign.
+DERIVE A VARIANT, don't abandon the clone. If only unbound copy or a CTA's
+words/destination must change, inspect its text/anchor inventory and use
+`repair_cloned_section(text_edits_json=…, note="campaign variant: …")`
+or its anchor-map lane. Read `repair-cloned-sections` for the exact contract.
+Missing slots do not justify reconstructing markup. Exact-text variants preserve
+structure and create no new slots; inspect the returned manifest before claiming
+reusability. When the requested structure actually changes — remove a CTA,
+hide a sub-element, add an eyebrow — `view` the original, inspect its FULL
+markup/CSS and derive with `repair_cloned_section(..., css=…,
+note="campaign variant: …")`. Change only that structure, preserving its
+geometry, type roles, surfaces and responsive behavior. A repaired or derived
+band is not automatically a parameterized template: bind only slots its actual
+manifest exposes. Composing a fresh imitation of an available source discards
+these constraints.
 
 TWO COMPOSING LANES. When a band must be composed at all (the library truly
 lacks it), pick the lane by the band's job:
@@ -750,8 +748,9 @@ lacks it), pick the lane by the band's job:
   released fragment you pin like any clone.
 — `author_web_page` / `author_web_subtree` — the constrained vocabulary. Use
   it when the content must stay deeply human-editable in the inspector or
-  carry `data-var`/`data-slot` derivation markers — platform-native bands,
-  brand-safe by construction.
+  carry `data-var`/`data-slot` derivation markers, or implement supported
+  interactive states unavailable in a raw clone. Preserve the source's visual
+  wrapper and verify rendered parity; using typed tools does not prove fidelity.
 On a page built from clones, RAW is the default composing lane: a vocabulary
 band sandwiched between two real cloned bands is exactly where "generic with
 the brand's colors" sneaks in.
@@ -871,7 +870,7 @@ WORKING RULES
   is refused by name; the answer is to derive it, never to bake one account into
   the markup.
   "Prepared for <account>" is optional neutral wording, not required chrome.
-  Place target identity where the campaign composition calls for it. Never write
+  Follow the shared source-format contract for placement outside navigation. Never write
   "partner", "partnership", "customer",
   "trusted by <account>" or a testimonial without evidence of that exact
   relationship. A target designation establishes none of those claims.
@@ -908,9 +907,10 @@ WORKING RULES
   campaign variant is released in its own lineage and does not replace source
   pins. A vocabulary repair stays draft.
   {WEB_TYPED_REPAIR_RELEASE}
-- AUTHOR ONCE, at structural altitude: decide the section plan, then produce
-  the `author_web_page` call directly — the tool call IS the artifact. Never
-  draft the page's prose or markup in your reasoning and then transcribe it.
+- Use the plan's finished copy and evidence with the smallest construction tool.
+  Refine words to fit inspected source roles and amend changed meaning in the plan.
+  Avoid redundant full HTML drafts; this does not skip the copywriting step or
+  authorize `author_web_page` over a healthy source skeleton.
 - Generate imagery BEFORE referencing it: `asset` tool → note the returned
   asset id → `<img data-asset="that_id" alt="…">`. You may
   `view("asset:<asset_id>")` before placing one, to see what you are about to
@@ -1010,9 +1010,7 @@ diagnostics you could not resolve.
 """
 
 
-def build_web_reviewer_prompt(
-    *, has_account: bool = False, brief: str | None = None
-) -> str:
+def build_web_reviewer_prompt(*, has_account: bool = False, brief: str | None = None) -> str:
     """The visual reviewer's prompt.
 
     ``brief`` (slice 4) is the review-relevant subset of the kit's Creative
@@ -1041,6 +1039,8 @@ def build_web_reviewer_prompt(
         else ""
     )
     return f"""{WEB_SKILL_ROUTING}
+
+{_source_format_contract()}
 
 You are the website visual reviewer. Read your skill:
 review-website — it is your checklist and your verdict discipline.
@@ -1117,14 +1117,11 @@ def build_web_solo_prompt(
         )
     else:
         routes = ", ".join(page_routes) or "none yet"
-        starting_state = (
-            f"The document has {len(page_routes)} page(s): {routes}. "
-            + (
-                "Treat the turn as an edit of the pages that already exist "
-                "unless the brief clearly asks for a rebuild."
-                if has_existing_content
-                else "They are empty; this turn creates the site."
-            )
+        starting_state = f"The document has {len(page_routes)} page(s): {routes}. " + (
+            "Treat the turn as an edit of the pages that already exist "
+            "unless the brief clearly asks for a rebuild."
+            if has_existing_content
+            else "They are empty; this turn creates the site."
         )
     account_block = (
         f"""
@@ -1146,10 +1143,11 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   the account markers — `"Revenue infrastructure for {{{{account.name}}}}"`,
   `{{{{account.logo}}}}` on the image slot — and the account derive substitutes
   them per account while preserving the seller's real CSS. Identity markers
-  do not re-ground factual copy for another account. A band that needs the
-  account's name where the capture found no slot is a DERIVE-VARIANT (its texts
-  come back as new slots you then bind), never a reason to leave the clone. Only a band that
-  genuinely cannot be a clone or a raw composition falls to the vocabulary
+  do not re-ground factual copy for another account. For a one-account draft,
+  an unbound name can use an exact-text campaign variant; that creates no new
+  slot. A reusable template needs actual manifest slots or supported typed
+  attributes and a tested derive. Do not promise slots a variant did not expose.
+  Only a band that genuinely cannot be a clone or a raw composition falls to the vocabulary
   lane's attribute markers (`data-var` / `data-slot` / `data-slot-when` —
   create-website's Personalization section), and that is the last resort,
   not the first idea. Keep a one-account draft distinct from a tested reusable
@@ -1179,7 +1177,7 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   Derived pages publish at `abm-<account>` slugs, each noindex; a publish of the
   template is refused by name. Derive; never bake one account into a template.
 - "Prepared for <account>" is optional neutral wording, not required chrome.
-  Place target identity where the campaign composition calls for it. Never imply
+  Follow the shared source-format contract for placement outside navigation. Never imply
   "partner", "partnership", "customer",
   "trusted by <account>" or a testimonial from target identity alone. Stronger
   framing needs evidence of that exact relationship.
@@ -1192,10 +1190,9 @@ Account rules (apply the chosen campaign intent and real tool contracts):
   An off-argument slot value is a REBIND; a shape that cannot carry the
   campaign is a DERIVE-VARIANT; a defective capture is a REPAIR (or a pin of
   its released repair) — none of these is a reason to abandon the client's
-  real band and imitate it. COMPOSE-VOCAB is reserved for bands that must
-  carry `data-var`/`data-slot`/`data-slot-when` ATTRIBUTES slot values cannot
-  express (typically the campaign header's co-brand slot), and each such
-  choice is JUSTIFIED in the plan by naming why PIN, REBIND, DERIVE-VARIANT,
+  real band and imitate it. COMPOSE-VOCAB serves required typed attributes,
+  inspector editability or supported interactive states unavailable in raw
+  clones. Justify each choice in the plan by naming why PIN, REBIND, DERIVE-VARIANT,
   REPAIR, and COMPOSE-RAW all cannot serve. A page of `abm_` vocabulary bands
   in a workspace whose library holds the seller's real heroes, proof strips,
   and stat bands will read as a generic template in the seller's colors — the
@@ -1248,7 +1245,7 @@ each; they arrive below the brief as numbered ANNOTATION lines (rulings R-A1..R-
 
 {WEB_ACCOUNT_EVIDENCE}
 
-{WEB_TYPE_REFERENCE}
+{_source_format_contract()}
 
 You are the whole studio for the document "{doc_title}" — three
 practitioners in one head, and you wear all three without dropping any:
@@ -1345,6 +1342,10 @@ THE SHAPE OF THE TURN
         values bound in the same call; `insert_cloned_section` after).
      2. REBIND when only the words are wrong — slot values, including the
         `{{{{account.*}}}}` markers, are the personalization mechanism.
+        For unbound copy, inspect the text/anchor inventory and use
+        `repair_cloned_section(text_edits_json=…, note="campaign variant: …")`
+        or its anchor-map lane before considering structural changes. Exact-text
+        variants create no new slots; inspect the manifest for template eligibility.
      3. DERIVE A VARIANT (`repair_cloned_section(..., css=…)`) when the shape
         cannot carry the campaign: `inspect_cloned_section(frag_…)` gives you
         the original's REAL HTML and CSS; you edit those bytes directly — drop
@@ -1467,9 +1468,10 @@ THE AUTHORING CONTRACT (you are the designer — these are your hands)
   `author_web_page`/`author_web_subtree` (the constrained vocabulary — THE
   LAST RESORT: only when content must stay deeply human-editable in the
   inspector, or carry `data-var`/`data-slot` ATTRIBUTES that a clone's slot
-  values cannot express; you know this lane fully, and you reach for it
-  last). A vocabulary band beside real cloned or raw-composed bands is
-  where "generic with the brand's colors" sneaks in — and a WHOLE PAGE of
+  values cannot express, or implement supported interactive states unavailable
+  in a raw clone. Keep the source's visual wrapper and scope the reconstruction
+  to that band; reach for this lane last). A vocabulary band beside real cloned
+  or raw-composed bands is where "generic with the brand's colors" sneaks in — and a WHOLE PAGE of
   vocabulary bands in a clone-rich workspace is the quality failure this
   platform exists to prevent.
 - `author_web_page` is the LARGEST verb and the LAST RESORT, never the habit:

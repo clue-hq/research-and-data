@@ -116,7 +116,12 @@ Its verbs, smallest blast radius first:
    `slots` and any `text_overrides`; the payload replaces, never merges). The copy you bind follows the
    conversion-copywriting skill's slot-geometry rule: match the original's
    approximate length and line count; markers count at rendered size.
-2. **Derive a campaign variant** (`repair_cloned_section(..., css=…)`).
+2. **Change unbound copy without changing structure.** Read
+   `repair-cloned-sections`; use its paged text inventory and exact `text_edits_json`
+   or anchor-label/href maps with `note="campaign variant: ..."`. These preserve
+   source markup/CSS/assets and the current pin. They do not add editable slots.
+   A missing slot never establishes that the component's shape is wrong.
+3. **Derive a structural campaign variant** (`repair_cloned_section(..., css=…)`).
    The band is HEALTHY but its shape can't carry the campaign: a second
    CTA to remove, a logo carousel to hide, a new eyebrow, a different
    emphasis. Do not abandon the clone and do not compose its replacement
@@ -128,12 +133,12 @@ Its verbs, smallest blast radius first:
    CTA instead of two, the carousel dropped, and a campaign eyebrow —
    every visual property inherited. The variant is lineage-tracked
    (`derived_from`), the original survives untouched, and the variant's
-   own texts and links come back as rebindable slots — so one well-made
-   variant becomes a reusable, parameterized band for every later page of
-   the campaign. Before deriving, read the repair-cloned-sections skill's
+   returned manifest states which texts/links are rebindable; do not assume all
+   copy became slots. Inspect it before promising a parameterized band for later
+   pages. Before deriving, read the repair-cloned-sections skill's
    adaptation contract: the visual system is what's preserved, and every
    removed element is a named decision.
-3. **Repair it** (`repair_cloned_section`). The band is BROKEN — a defect
+4. **Repair it** (`repair_cloned_section`). The band is BROKEN — a defect
    you diagnosed. A repair has two lanes: the RAW lane (pass `css=`)
    remixes the original's own markup and stylesheet — the default when
    the band must keep looking like the seller's site — and is released
@@ -144,7 +149,7 @@ Its verbs, smallest blast radius first:
    faithful-repair discipline (lineage check, the behavior inventory,
    ugly-is-not-wrong, the repair-scope contract, verification against the
    original).
-4. **Replace it.** A different released clone fits better
+5. **Replace it.** A different released clone fits better
    (`insert_cloned_section` + `remove_node`), or the library lacks the job
    and you compose a new band (see "Composing a new section" below).
 
@@ -217,7 +222,7 @@ healthy clone: it discards the seller's real source work.
    pins the whole keeper set at once — see the fresh-page section above).
 2. A clone has the right bones, wrong words → pin it and rebind slots.
 3. A clone has the right bones, wrong shape → derive a campaign variant
-   (the clone-editing ladder's rung 2: remix its real bytes, inherit its
+   (the clone-editing ladder's structural-variant rung: remix its real bytes, inherit its
    visual system).
 4. The library genuinely lacks the job → compose a new section (next
    section of this file).

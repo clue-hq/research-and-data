@@ -18,11 +18,19 @@ source or changed version. Do not confuse necessary pagination with duplicate wo
 
 ## Read, classify, then choose
 
+Retrieve in task order, not catalog order. If the request selects a component,
+inspect that exact source/current pin first. For missing material, search by the
+section's job and use returned page URLs to inspect relevant product, use-case
+or customer-story sources; do not assume the homepage covers those roles.
+Reuse source content already returned. Keep original captures distinct from
+previous generated campaign variants, whose wording and design need rechecking.
+
 1. Read `view("brand")` and `view("doc")`. Name the selected seller kit/version
    when exposed and the requested page purpose. Keep the target account's
    identity separate from the seller's visual system.
-2. Use `search_cloned_sections(q="", limit=8)` and narrower role/query reads
-   for the planned bands. Follow `next_offset` as `offset` with the same
+2. Reuse relevant source/keeper inventory already supplied. When absent, start
+   with `search_cloned_sections(q="", limit=8)`. Use narrower role/query or
+   known-page reads only for missing planned bands. Follow `next_offset` as `offset` with the same
    q/role/page_url when unseen matches matter; null ends that result set.
    `page_url` filters by an exact returned page URL, including query parameters;
    associated derivatives remain eligible. Check `inventory_truncated` and
@@ -40,6 +48,10 @@ source or changed version. Do not confuse necessary pagination with duplicate wo
    Missing previews and unread source remain evidence gaps; do not claim to
    have inspected missing bytes. Pagination supplies inspection, not a targeted
    attribute-edit capability; use the repair skill to assess that separate limit.
+   For copy-only work, inspect slots or paged `text_only=True` inventory instead
+   of filling context with complete stylesheets. Complete HTML/CSS is required
+   when actually changing structure. Read resolved layout evidence for a type
+   mismatch; inspecting more unrelated pages cannot establish the missing face.
 4. Check source provenance, kit association, capture time when available,
    required page/section coverage, dependency availability and rendered
    behavior separately. Record unknown fields as unknown. Use the
@@ -50,6 +62,9 @@ source or changed version. Do not confuse necessary pagination with duplicate wo
    behavior gaps, and the next action. Do not dump the catalog or create a
    second plan. Separate exact pin, slot rebind, campaign variant, defect
    repair and new composition as `create-website` describes.
+   Tie each requested property to the source that establishes it: section/role
+   and measured type/layout, asset/rendition, observed state, or named missing
+   dependency. A catalog count or a list of URLs is not usable design evidence.
 
 ## Decide without overstating readiness
 

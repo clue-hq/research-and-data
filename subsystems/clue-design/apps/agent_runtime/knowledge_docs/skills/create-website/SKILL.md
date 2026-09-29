@@ -5,6 +5,10 @@ description: Use when building a website or a new section from inspected brand s
 
 # Compose a website from inspected source
 
+Apply the [source and format contract](references/source-format-contract.md).
+The runtime delivers this same reference to all website roles, including new
+projects without instructions. This skill supplies the construction details.
+
 Read `web-source-readiness` before a new source-faithful page. Its evidence
 sets the available lanes; an approved kit alone does not establish reusable
 sections. For an existing page, `edit-website` owns the smallest sufficient
@@ -27,6 +31,7 @@ a full-source remix from the visible prefix.
 |---|---|
 | Exact released band | `insert_cloned_section(fragment_id, index=None, slot_values_json=None)`; on an empty page, batch ordered ids through `assemble_cloned_sections(fragment_ids_json, slot_values_json=None)`. JSON arguments are strings. |
 | Existing text/link/image/visibility slots suffice | Rebind the returned slot keys. On an existing pin, `web_ops(operations_json)` sets its complete kind payload; preserve other slots and human overrides. |
+| Healthy source needs different words but has no slot | Use `repair-cloned-sections`' text inventory and exact-text/anchor lane with a campaign-variant note; keep its markup/CSS. |
 | Healthy band needs a structural campaign change | Pin it, then `repair_cloned_section(fragment_id, html, rung, note, css=...)` with `note="campaign variant: ..."`; read `repair-cloned-sections`. |
 | A diagnosed source defect | Read `repair-cloned-sections`; prefer a suitable released repair already in that lineage. |
 | Missing band, inspected sources establish its grammar | `compose_web_section(html, css, section_role="other", label=None, note="...")`, then explicitly pin the returned id. This is new composition, not captured source. |
@@ -42,9 +47,14 @@ real asset registration and existing node identity rules from the reference.
 
 ## Preserve context and campaign intent
 
+For a selected component, keep the original structure and format unless the
+request actually changes them. Adapt content inside it before considering a new
+section. A missing text slot is not a structural limitation.
+
 Retain source responsive rules, inherited font/custom-property/root-unit
 context, assets, image ratios and section rhythm. For new raw bands, carry the
-inspected heading/body font families and roles explicitly: semantic `h1`/`h2`
+inspected heading/body faces, weights, sizes, line heights, tracking, measures and
+breakpoint changes explicitly: semantic `h1`/`h2`
 tags alone do not recreate a captured display font. A source-site CSS variable
 scoped inside a clone is not available to sibling raw bands; use the native
 theme role or a resolved family backed by the kit's custodied font asset.

@@ -5,6 +5,10 @@ description: Use when changing an existing website page, selected element, compo
 
 # Edit the current artifact, at the requested scope
 
+Apply the [source and format contract](../create-website/references/source-format-contract.md).
+Retain the selected component's structure and format through copy/typography
+edits; use an exact-text variant for unbound copy before changing markup.
+
 1. Resolve the request's artifact/version/page/element against fresh session
    context and `list_pages()`. Switch only to the intended page. `view("doc")`
    gives the section/count/asset summary; `view("node:<id>")` reads one exact

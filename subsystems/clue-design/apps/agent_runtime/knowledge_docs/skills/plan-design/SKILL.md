@@ -105,7 +105,9 @@ or general brand impressions. Name, concretely:
 - Image-to-copy ratio and how imagery is treated
 - Surface language (borders vs shadows vs background shifts; radii)
 - Color frequency (where accents appear, and how rarely)
-- Typography posture (weight, scale, tracking, case, heading length)
+- Typography by source role: actual face/weight, size, line-height, tracking,
+  text measure and 1440/768/375 changes. An alias such as `headingFont` is not
+  the face or the scale. Mark unavailable measurements instead of guessing.
 - Interaction temperament (restrained or playful)
 - Concrete constants where you can read them: container widths, section
   padding, radius values, type sizes
@@ -134,6 +136,9 @@ Source:    PIN frag_… | REBIND frag_… (slots: …) |
            REPAIR frag_… (the defect) |
            COMPOSE-RAW (remix ancestor frag_…) | COMPOSE-VOCAB (why)
 Design:    layout / CTA treatment / surface / density vs its ancestor
+Preserve:  source hierarchy / layout / spacing / media frame / responsive rules
+Type:      source node/role and measured face, weight, size, line height,
+           tracking and measure at each available width; name unknowns
 Adds:      what the reader learns here beyond the preceding bands
 Words:     actual heading, explanation and card/panel copy, or an exact reference
            to inspected source copy deliberately retained unchanged
@@ -153,6 +158,10 @@ detail is an explicit unresolved dependency; inspect it before writing its copy.
 A second product exhibit earns space by answering a different question, not
 because the library has another attractive screenshot. Merge repeated arguments
 while preserving useful explanation; do not solve length by making type smaller.
+
+For a selected component, `Preserve` starts with its complete structure and format.
+List only the explicit requested differences. New wording fits those roles through
+slots or exact text leaves; it does not silently authorize a new component.
 
 ### 4. Review & Finish tasks
 

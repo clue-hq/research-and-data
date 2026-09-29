@@ -5,6 +5,12 @@ family is a group of skills, not a separately running agent. Entry files are
 short; read their detailed references for the operation at hand. This works
 from a workspace's captured brand sources, not a hardcoded customer pack.
 
+The runtime includes `create-website/references/source-format-contract.md` in
+every website role's prompt, including new projects with no saved instructions.
+It supplies the shared retrieval, preservation, identity and final-review rules;
+the families below supply task-specific depth. Model compliance still needs
+observed trace and rendered proof; presence in context alone is not qualification.
+
 | Family | Responsibilities | Skills |
 |---|---|---|
 | Source readiness | observed-page acquisition; coverage/freshness/version; provenance/dependencies; gap/refetch handoff | `web-source-readiness` |

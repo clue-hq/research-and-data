@@ -9,6 +9,14 @@ Review three responsibilities: source-visible layout/type/media fidelity;
 responsive behavior, interaction, conversion and evidence; honest final status.
 A successful operation, valid document or screenshot path proves none of these.
 
+Apply the same [source and format contract](../create-website/references/source-format-contract.md)
+the builder received. For each selected/derived component, compare the plan's
+`Preserve` and `Type` records with the final section. A family-name match does not
+excuse a different face, weight, scale, hierarchy or layout. Target identity in
+navigation without an explicit user source for that placement fails this contract;
+an agent-authored brief claiming approval is insufficient. Report the concrete
+deviation even when clone geometry or another typography role passes.
+
 1. Establish the active page, current artifact/version context, requested scope,
    preserved properties and unresolved requirements. Current previews must follow
    the last relevant mutation. `render_web_preview()` captures 1440/768/375 and
