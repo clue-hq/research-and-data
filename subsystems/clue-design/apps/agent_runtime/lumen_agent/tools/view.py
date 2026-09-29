@@ -208,7 +208,7 @@ def _text_block(text: str) -> dict:
     return {"type": "text", "text": text}
 
 
-def _asset_alpha_inspection_blocks(raw: bytes) -> list[dict]:
+def _asset_alpha_inspection_blocks(raw: bytes, *, report_opaque: bool = False) -> list[dict]:
     """Disambiguate transparent artwork from the vision client's implicit matte.
 
     Inspection only: never register these composites or change source bytes.
@@ -221,7 +221,8 @@ def _asset_alpha_inspection_blocks(raw: bytes) -> list[dict]:
         rgba = source.convert("RGBA")
     alpha = rgba.getchannel("A")
     counts = alpha.histogram()
-    if counts[255] == rgba.width * rgba.height:
+    opaque = counts[255] == rgba.width * rgba.height
+    if opaque and not report_opaque:
         return []
     bounds = alpha.getbbox()
     facts = {
@@ -231,17 +232,28 @@ def _asset_alpha_inspection_blocks(raw: bytes) -> list[dict]:
             "translucent_pixels": sum(counts[1:255]),
             "visible_bounds_px": list(bounds) if bounds else None,
         },
+        "preview_sha256": hashlib.sha256(raw).hexdigest(),
+        "decoded_frame_index": 0,
+        "composition": "unclassified",
         "inspection_only": (
-            "The next image shows the SAME source preview on two artificial surfaces: "
+            "These facts measure the decoded preview before vision resizing, not proof "
+            "about an unavailable original. Alpha does not classify a product cutout "
+            "versus a finished composite: small translucent edges or rounded corners "
+            "may surround a baked background. Visible bounds are not a recommended "
+            "crop; they can include shadows or omit intentional transparent spacing. "
+            "Bounds are [left, top, right, bottom], with right/bottom exclusive; no "
+            "artwork means null bounds. "
+            + ("All decoded pixels are opaque; no comparison surface is added." if opaque else
+            "The next image shows the SAME preview on two artificial surfaces: "
             "LEFT white (#FFFFFF), RIGHT charcoal (#202020). These surfaces are not "
             "baked into the source and are not placement assets. The preceding image "
             "is the original preview. Transparent pixels may otherwise appear black "
             "or white in a vision client. Compare actual ink and contrast here; place "
-            "the original asset ID. Alpha observations describe this decoded preview, "
-            "not proof about an unavailable original. Bounds are [left, top, right, "
-            "bottom], with right/bottom exclusive; no artwork means null bounds."
+            "the original asset ID.")
         ),
     }
+    if opaque:
+        return [_text_block(json.dumps(facts))]
     side, inset = 512, 24
     scale = (side - 2 * inset) / max(rgba.size)
     size = (max(1, round(rgba.width * scale)), max(1, round(rgba.height * scale)))

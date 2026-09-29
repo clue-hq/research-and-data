@@ -14,6 +14,8 @@ two lanes cannot drift.
 from __future__ import annotations
 
 import base64
+import copy
+import hashlib
 import io
 import json
 from dataclasses import replace
@@ -25,6 +27,61 @@ from lumen_agent.tools.asset_preview import asset_preview_path
 from lumen_agent.tools.web_substrate import LumenWebTools
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_web_asset_view_exposes_preview_alpha_without_mutation_or_original_claim(tmp_path):
+    from PIL import Image, ImageDraw
+
+    tools = _tools(tmp_path)
+    # Paletted transparency is used by the held product assets too. The preview
+    # can differ from the original; only these decoded bytes are being measured.
+    image = Image.new("P", (512, 256), 0)
+    image.putpalette([0, 0, 0, 255, 255, 255] + [0] * 762)
+    image.info["transparency"] = bytes([0, 255])
+    ImageDraw.Draw(image).rectangle((128, 64, 383, 191), fill=1)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    raw = buf.getvalue()
+    digest = hashlib.sha256(raw).hexdigest()
+    ref = f"sha256/{digest[:2]}/{digest}"
+    path = tmp_path / "store" / ref
+    path.parent.mkdir(parents=True)
+    path.write_bytes(raw)
+    record = _raster_record("product", thumb_ref=ref, thumb_size=(512, 256))
+    tools.web_doc["assets"] = {"product": record}
+    before = copy.deepcopy(tools.web_doc)
+
+    blocks = tools._view_content("asset:product", can_render=False)
+    assert len([b for b in blocks if b["type"] == "image"]) == 2
+    receipt = json.loads(blocks[2]["text"])
+    assert receipt["preview_alpha"] == {
+        "width_px": 512, "height_px": 256,
+        "transparent_pixels": 98304, "opaque_pixels": 32768,
+        "translucent_pixels": 0, "visible_bounds_px": [128, 64, 384, 192],
+    }
+    assert receipt["preview_sha256"] == digest
+    assert receipt["composition"] == "unclassified"
+    assert receipt["decoded_frame_index"] == 0
+    assert "not proof about an unavailable original" in receipt["inspection_only"]
+    comparison = Image.open(io.BytesIO(base64.b64decode(blocks[3]["data"])))
+    assert comparison.getpixel((0, 0)) == (255, 255, 255)
+    assert comparison.getpixel((comparison.width - 1, 0)) == (32, 32, 32)
+    assert tools.web_doc == before
+    assert path.read_bytes() == raw
+
+
+def test_web_opaque_preview_reports_pixels_without_inventing_a_composite(tmp_path):
+    tools = _tools(tmp_path)
+    ref = _blob(tmp_path / "store", "e" * 64, (512, 256))
+    tools.web_doc["assets"] = {"photo": _raster_record("photo", thumb_ref=ref)}
+    blocks = tools._view_content("asset:photo")
+    receipts = [json.loads(b["text"]) for b in blocks
+                if b["type"] == "text" and b["text"].startswith('{"preview_alpha"')]
+    assert len(receipts) == 1, "Opaque pixels need an explicit receipt, not silence"
+    assert receipts[0]["preview_alpha"]["opaque_pixels"] == 512 * 256
+    assert receipts[0]["preview_alpha"]["transparent_pixels"] == 0
+    assert receipts[0]["composition"] == "unclassified"
+    assert len([b for b in blocks if b["type"] == "image"]) == 1
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -204,10 +261,13 @@ def test_a_full_size_preview_reports_its_dimensions_once(tmp_path: Path):
     record = _raster_record("asset_kit_raw", thumb_ref=None, primary_ref=ref)
     tools = _tools(tmp_path, brand_kit_assets={"asset_kit_raw": {"record": record}})
 
-    text = _texts(tools._view_content("asset:asset_kit_raw"))
+    blocks = tools._view_content("asset:asset_kit_raw")
+    text = blocks[0]["text"]
 
     assert "source 1600x1000px" in text
     assert "preview" not in text
+    measured = json.loads(blocks[2]["text"])["preview_alpha"]
+    assert (measured["width_px"], measured["height_px"]) == (1600, 1000)
 
 
 def test_dimensions_are_omitted_when_the_record_carries_none(tmp_path: Path):
@@ -219,10 +279,15 @@ def test_dimensions_are_omitted_when_the_record_carries_none(tmp_path: Path):
     record.pop("raster")
     tools = _tools(tmp_path, brand_kit_assets={"asset_kit_bare": {"record": record}})
 
-    text = _texts(tools._view_content("asset:asset_kit_bare"))
+    blocks = tools._view_content("asset:asset_kit_bare")
+    text = blocks[0]["text"]
 
     assert "px" not in text
     assert "source brand_guide" in text
+    # Missing catalog dimensions remain absent from the label; decoded preview
+    # measurements are separate evidence, never invented original dimensions.
+    measured = json.loads(blocks[2]["text"])["preview_alpha"]
+    assert (measured["width_px"], measured["height_px"]) == (600, 400)
     assert any(b.get("type") == "image" for b in tools._view_content("asset:asset_kit_bare"))
 
 

@@ -228,6 +228,61 @@ weight fidelity. Asset pixels/cropping, original controller reconstruction,
 actual visitor copy and native visual acceptance remain outstanding. No new
 Clue generation, current artifact repair or service restart occurred.
 
+## Image composition follow-up
+
+Re-read `L/log:450,712` and the five exact image digests in the saved request-walk
+composition. The run requested explicit asset views for two of those five images;
+others may also have been visible in section previews. It is not accurate to say
+the agent never looked at product imagery. The composition nevertheless applied
+one `.abm-shot` background and 18px top / 12px side padding to all five images
+(12px / 8px on phone), despite their different layering needs.
+
+Inspection of the five existing, digest-verified blobs shows:
+
+| Saved image | Pixels | Fully transparent | Translucent | Visible composition |
+| --- | --- | --- | --- | --- |
+| Voice example | 1140×929 | 0% | 5.7506% | Product plus an existing textured brand field |
+| Inbox detail | 1520×1238 | 0% | 0.1076% | Product plus an existing brand field |
+| Operator/inbox | 2048×963 | 0% | 0.0140% | Product plus an existing brand field |
+| Workflow overlay | 2032×1752 | 26.2996% | 9.6869% | UI layers with transparent space |
+| Escalation cards | 2032×1752 | 62.1655% | 7.6429% | UI layers with transparent space |
+
+Composition descriptions above come from viewing the pixels; percentages alone
+do not establish them. All five files have non-opaque pixels, so a boolean alpha
+check would incorrectly treat finished composites like product-only overlays.
+The extra CSS padding exposes a second brand frame around the first three. A
+blanket removal of the background would instead harm the last two. Original
+source staging and edge blending still govern whether a backdrop is retained.
+
+The scene/ad viewer already had a shared transparency inspection helper, but the
+web viewer did not use it. The native web asset view now returns decoded-preview
+alpha counts/bounds and an identifying hash, plus a controlled white/charcoal
+comparison for non-opaque previews. Opaque previews return a text receipt without
+another image. It uses the same byte read for the shown image and observations;
+the original asset and document are unchanged. No new tool, generation, cropping
+operation or automatic composition classifier was added.
+
+The default asset resolver still prefers an available thumbnail. Consequently
+these receipts describe the inspected preview and **do not certify unavailable
+original pixels**. This audit did not establish that thumbnail quality caused the
+historical double-frame error. The new comparison surfaces are inspection-only,
+and alpha bounds are not suggested crop rectangles.
+
+A read-only baseline comprehension probe already chose distinct treatments under
+the existing skills. The prose update clarifies mixed classes, feathered corners,
+transparent margins and the new receipts; it is not proof of a causal improvement
+in agent behavior. Independent code review and a different-industry comprehension
+case found no concrete blocker. Native quality acceptance remains outstanding.
+
+Verification: 68 focused web/scene asset-view, format and skill-loading cases pass.
+Two initial regression failures proved the web evidence was missing. Two old label
+assertions were scoped to the metadata label so separate decoded measurements
+remain truthful. Shared scene behavior is covered. Replaying the helper on all
+five held blobs verified matching hashes and alpha counts, taking 24–33ms per file
+locally; this is not a production latency guarantee. Ruff reports unchanged legacy
+debt in the touched files and no new finding relative to HEAD; whitespace checks
+pass. No live page, source asset, service or provider changed.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.

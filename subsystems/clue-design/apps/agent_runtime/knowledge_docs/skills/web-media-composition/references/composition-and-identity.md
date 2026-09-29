@@ -8,6 +8,27 @@ Compare the source section's pixels and inspected HTML/CSS. Record its visible c
 
 Separate what is **inside the image** from what CSS supplies. A product screenshot may already contain rounded corners, UI chrome, shadows or transparent margins. Double rounding can cut controls; wrapping an alpha image in an opaque panel can destroy its intended silhouette. Preserve source alpha and edges. When the available view cannot establish alpha or baked geometry, state the uncertainty rather than calling the crop exact.
 
+`view("asset:<id>")` supplies decoded **preview** alpha counts, visible bounds and
+a white/charcoal inspection comparison for non-opaque previews. Its hash identifies
+the inspected bytes, not an unavailable original; the comparison surfaces are not
+placement assets. A thumbnail can lose original edge detail. Alpha alone does not
+classify composition: rounded corners or a slight fade can make a finished
+product/background composite non-opaque. Identify the visible background in the
+pixels and compare the source's actual staging before choosing a treatment.
+
+Choose per asset, even when several images currently share one CSS class:
+
+| Evidence | Scoped treatment |
+| --- | --- |
+| Image already includes the product and intended brand field | Preserve that composite. Remove an unintended padded outer rim only for its placements; retain a backdrop if the source uses it through transparent edges. Do not crop into the product to hide the rim. |
+| Product artwork has transparent space, shadows or independent foreground parts | Preserve the source's separate brand background and layering. Match source positioning and crop deliberately; alpha bounds are not a safe auto-trim rectangle. |
+| Preview/source relationship or composition is unclear | Keep the asset unchanged, inspect source placement and name the uncertainty. Do not infer a new layer arrangement from a filename, alpha percentage or shared class. |
+
+Use separate scoped treatments when a mixed image group requires different
+staging. Compare the repaired rim plus product size, controls, shadows and edge
+blending at desktop/tablet/phone. Fixing the border by flattening every background
+or shrinking all product imagery fails the original request.
+
 Keep product UI readable and recognizable. Preserve navigation, labels, meaningful states and device proportions. Do not redraw a dashboard, edit its metrics, stretch it, or crop out the feature the copy describes to fill an attractive box. If a new crop is requested, retain the original asset and label the selected treatment as an adaptation; verify that the product story remains true.
 
 Stage independent elements independently: decorative background, product screenshot, frame/shadow, foreground accents, copy and logos. Reuse an existing composite when the source is intentionally composite; do not invent editable layers it does not contain. An adaptation can retain the original screenshot inside a new arrangement, but it must not be reported as the original complete composition.

@@ -23,7 +23,9 @@ Preserve what the source image means and how the source stages it. A real asset 
 For a hidden image, crop or doubled frame, use the cached
 [layout evidence](../web-source-readiness/references/layout-evidence.md) alongside
 asset pixels before changing the composition. Container styles alone cannot
-classify a baked background or transparent UI.
+classify a baked background or transparent UI. Asset views expose preview alpha
+and controlled inspection surfaces; read the composition reference before treating
+non-opaque pixels or visible bounds as a reason to add a background or crop.
 
 ## Handoff
 

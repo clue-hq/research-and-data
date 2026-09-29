@@ -133,6 +133,7 @@ from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
 from .view import (
     _VISION_MANY_IMAGE_MAX_PX,
+    _asset_alpha_inspection_blocks,
     _image_block,
     _image_bytes_block,
     _image_observation_label,
@@ -10798,15 +10799,19 @@ class LumenWebTools:
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )
+        # The shown image and alpha facts must describe the same file read.
+        raw = path.read_bytes()
         return [
             _text_block(_image_observation_label(
                 path, f"view: asset {asset_id} — {label} ({', '.join(details)})",
                 source_mime=(record.get("media") or {}).get("mime_type"),
+                raw=raw,
             )),
             # G5 (see the preview branch): every web view image rides the
             # many-image ceiling, kit assets included — they accumulate in the
             # same conversation as the page captures.
-            _image_block(path, max_px=_VISION_MANY_IMAGE_MAX_PX),
+            _image_bytes_block(raw, max_px=_VISION_MANY_IMAGE_MAX_PX),
+            *_asset_alpha_inspection_blocks(raw, report_opaque=True),
         ]
 
     def _view_state(self, target: str) -> list:
@@ -11032,7 +11037,11 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         State captures sample supported interactions, not every panel or behavior;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE
         pixel dimensions (a brand kit asset, a `search_assets` library result, or
-        one already registered in the document);
+        one already registered in the document), decoded preview alpha counts/bounds
+        and a light/dark inspection comparison when non-opaque. Those artificial
+        surfaces are not placement assets. Alpha alone does not distinguish a baked
+        background from product-only artwork; preview facts do not prove original
+        pixels and alpha bounds are not a crop recommendation;
         "cloned_section:<fragment_id>" returns the picture of a cloned section
         `search_cloned_sections` returned, so you can see the band before
         reusing it; "doc" returns a section/count/asset summary.
