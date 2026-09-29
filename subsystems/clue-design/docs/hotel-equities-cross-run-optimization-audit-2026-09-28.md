@@ -596,6 +596,70 @@ shell, CSS/artifact and dependency checks are included. Fatal-error lint and
 whitespace checks pass. Logs: `/tmp/clue-card-custody-final.{log,xml}`. These are
 focused checks, not a rerun or a green claim for both full Python suites.
 
+## Held-source image and font comparison
+
+Follow-up at `c169c4c2`: compared the held public Conduit feature capture with an
+offline **production author → checked repair → artifact → fresh pin → render**
+path. Registry custody was in-memory. Images and fonts came from the existing
+local capture store, not generated or seeded into a workspace. All browser
+requests were intercepted and only local digest-addressed bytes were served.
+This is a diagnostic of the native rendering path, not another model-generated
+page, a deployed repair, or account-copy acceptance.
+
+The four product layers are palette PNGs with genuine transparent pixels
+(`RGBA` conversion gives alpha 0–255); roughly 30.6–69.8% of their pixels are
+not fully opaque. The separate source background is 1200×1034; the four product
+layers are 2032×1752. Here background plus product is the correct composition.
+This differs from the latest run's *other*, already-composited screenshots: an
+extension/MIME/filename alone cannot select a layering strategy.
+
+Six source font faces were resolved from the held CSS into a temporary input
+using the existing brand-font interface. Chromium reports actual
+`SeasonMix-Regular-TRIAL` glyphs for both the held source heading and the native
+rich label, at 24px/400 with 25.92px line height. This proves the font interface
+can render those bytes; it does not prove every workspace's kit resolver has
+selected the same faces. No live kit was modified.
+
+| Viewport | Source/native grid | Measured outcome |
+| --- | --- | --- |
+| 1440 | Both 1160×438 | Same media bounds and left cards. Source right cards are 224.59375/205.40625px; shared-row native recipe makes both 215px. |
+| 768 | Both 728×980.203125 | All four control rectangles and both visible image rectangles match. |
+| 375 | Both 335×974.703125 | All four control rectangles and both visible image rectangles match; no horizontal overflow. |
+
+All four native selections were exercised at all three widths. Each selected
+exactly one panel, with the expected background/product digest pair loaded and
+decoded. An initial immediate `decode()` failed for offscreen lazy images; the
+diagnostic now brings the selected panel into view and waits for its actual load
+before asserting readiness. This was a test-observation timing issue, not evidence
+of a broken source asset. Desktop states and phone/tablet compositions were
+visually inspected. Manual selection is demonstrated; the source's captured
+partial progress bar was not turned into a fake timer. Autoplay and transition
+timing are still not reproduced or qualified.
+
+Pixel inspection also exposed misleading source metadata: the “response review”
+alternative text belongs to a resolution-rate chart, and the “calling systems”
+description belongs to an integrations marketplace image. Those visuals may
+support a product explanation, but they do not independently prove a target's
+outcome, installed tools or specific automation. The existing media/product
+skills already require pixel inspection and claim-to-state pairing; this is an
+adherence/verification case, not a reason to append another generic instruction.
+
+The comparison narrows the next work. Native rich labels, authentic media layering
+and source fonts are feasible with existing interfaces after the reuse fixes.
+Exact desktop independent-column sizing remains a declared recipe gap; do not
+hide it with text-specific fixed heights. A source-faithful component is also
+not yet a concise account story: the captured feature grid alone is about 975px
+tall on phone. Choose only product demonstrations that advance the account's
+decision, then verify the entire page's readable mobile flow. Preserve the
+no-new-generation boundary until the user authorizes a new candidate.
+
+Local evidence, not committed customer artifacts:
+`.local-setup/native-account-skills/source-parity/native-feature-comparison/`
+contains `comparison.json`, source/native screenshots at the three widths,
+four native panel screenshots per width, the rendered diagnostic HTML and
+`replay.py`. The replay uses held source bytes, checked native helper operations
+and no model. It deliberately does not run the application or publish a page.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.
