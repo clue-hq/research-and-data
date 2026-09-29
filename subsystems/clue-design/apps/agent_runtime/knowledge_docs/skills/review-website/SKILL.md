@@ -49,6 +49,10 @@ A successful operation, valid document or screenshot path proves none of these.
    facets appear. A name/logo alone is not verified relevance or relationship proof.
    For an account-content build,
    read [account argument](../web-account-personalization/references/account-argument.md) and compare its decision map with the visitor-visible page.
+   Compare each section's Words, Evidence and Actions record with the actual
+   rendered text and buttons, including captured unslotted labels. Name omitted
+   explanations, unsupported additions and repeated mechanisms by section. The
+   plan is a comparison aid, not evidence that its claims or promises are true.
    Verify read coverage includes relevant overview/committee/approach/watch-outs;
    then point to the real relevance, product mechanism, evidence and evaluation
    material. Missing substance, internal provenance/disclaimer copy, or identity

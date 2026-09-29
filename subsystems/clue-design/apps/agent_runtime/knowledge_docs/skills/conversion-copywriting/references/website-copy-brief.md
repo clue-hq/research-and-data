@@ -39,6 +39,27 @@ budget authority, personal frustration or private/sensitive facets from their ro
 5. **Action:** actual label, destination and what happens there. A demo booking does
    not promise a pilot, implementation, bespoke workshop or response commitment.
 
+## Hand the builder usable words
+
+Put the finished copy in each `plan-design` section record: **Adds, Words,
+Evidence, Actions**. Write headings, explanations and intended card/panel text;
+"adapt for this account" is not the copy. For unchanged captured text, reference
+the inspected source and text target instead of transcribing it again. Retained
+words still need to serve this page's argument. An unread source state stays a
+dependency to inspect, not permission to invent its caption or mark it complete.
+
+Associate material factual sentences with the existing evidence keys. Read the
+account fact and seller capability separately before joining them into a proposed
+application. A recommendation to standardize procedures does not establish a
+product feature that automatically inherits them across properties. Retain only
+the mechanism actually supported, then explain how the reader could apply it.
+
+Read this copy in page order before assembly. Each substantial band contributes
+new understanding or useful proof; combine repeated mechanisms, remove filler,
+and preserve enough explanation to make the remaining product visuals meaningful.
+Record unresolved meaning once for the builder rather than improvising it during
+HTML composition. Amend the active record when geometry requires a wording change.
+
 Keep **internal evidence notes and visitor copy separate**. Import mechanics,
 verification caveats and editorial restrictions belong in the plan/review. Replace
 "this is not a deployment claim" with the supported application the reader can

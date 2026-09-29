@@ -11,6 +11,7 @@ from lumen_agent.materialize import materialize_agent_workspace
 
 ROOT = Path(__file__).resolve().parents[1] / "knowledge_docs"
 SKILLS = (
+    "plan-design",
     "web-source-readiness",
     "create-website",
     "repair-cloned-sections",

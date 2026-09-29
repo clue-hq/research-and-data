@@ -111,6 +111,8 @@ For account/contact/event personalization: web-account-personalization; for writ
 copy: conversion-copywriting. For researched account substance: web-decision-material;
 for a named reader: web-contact-personalization. Write the argument, useful material
 and action/destination choice before component assembly, using campaign-landing-page.
+For a new page or substantial rewrite, carry the finished words, evidence references
+and all retained actions in plan-design's section records; a copy angle is not a handoff.
 For image/logo/crop decisions: web-media-composition; for authentic product UI on
 its branded background and coherent type hierarchy: web-product-story;
 for CSS animation/video/custom-component/WebGL requirements: web-motion-fidelity.

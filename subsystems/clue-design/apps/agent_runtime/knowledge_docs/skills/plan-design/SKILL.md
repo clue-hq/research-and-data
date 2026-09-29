@@ -118,6 +118,12 @@ off-plan even if it looks good.
 
 ### 3. Sections
 
+For a campaign or account page, read
+[website copy brief](../conversion-copywriting/references/website-copy-brief.md)
+before writing these records. Carry its finished copy into this plan, not a
+second copy brief. Keep each evidence excerpt once in Anchors and reference it
+from the sentences it supports.
+
 One entry per band the page will carry, in page order. Each entry:
 
 ```
@@ -128,7 +134,12 @@ Source:    PIN frag_… | REBIND frag_… (slots: …) |
            REPAIR frag_… (the defect) |
            COMPOSE-RAW (remix ancestor frag_…) | COMPOSE-VOCAB (why)
 Design:    layout / CTA treatment / surface / density vs its ancestor
-Content:   the copy angle and where its facts come from
+Adds:      what the reader learns here beyond the preceding bands
+Words:     actual heading, explanation and card/panel copy, or an exact reference
+           to inspected source copy deliberately retained unchanged
+Evidence:  anchor references for factual sentences; distinguish proposed application
+Actions:   each retained button's label, destination/behavior and purpose; name
+           inherited buttons to replace/remove, or state that the band has none
 ```
 
 The argument decides WHICH sections exist and in what order — that is the
@@ -136,7 +147,12 @@ campaign-landing-page skill's job, done before this plan is written. A
 section with no named source, or answering no question, does not go in
 the plan. Decisions the grammar audit constrains (how many dark
 intervals, where CTAs sit) are closed HERE, in writing, not at build
-time.
+time. The builder receives words it can place, not instructions such as
+"personalize the feature cards" or "explain portfolio value." A missing source
+detail is an explicit unresolved dependency; inspect it before writing its copy.
+A second product exhibit earns space by answering a different question, not
+because the library has another attractive screenshot. Merge repeated arguments
+while preserving useful explanation; do not solve length by making type smaller.
 
 ### 4. Review & Finish tasks
 
@@ -147,13 +163,15 @@ invented afterward to match whatever got built:
 - Compare against the cloned source page — it is the acceptance
   reference for grammar, rhythm, and density.
 - The logo-off test on every composed or derived band.
-- One primary conversion action: its CTAs use the real supported destination.
+- The chosen primary action, if any, has the planned label, purpose and real
+  destination. Check every retained source button, including unslotted ones.
   Useful source, legal and navigation links retain their distinct purposes.
 - Every factual meaning traces to the evidence inventory in the anchors section,
   at that source's strength, subject and use scope. Walk the rendered page and check.
 - Re-read the finished page top to bottom as the arriving visitor
   (campaign-landing-page step 8).
-- Every section's status is `verified`.
+- Every section has a recorded review result. Mark `verified` only after its
+  required checks pass; keep failed or missing checks explicit as unfinished work.
 
 ## Status tracking
 
@@ -168,7 +186,8 @@ Mid-build you will sometimes be right to deviate: a pin refuses, a band
 genuinely cannot carry the argument, the render reveals a wrong guess.
 The rule is not "never deviate"; it is:
 
-> Append the amendment to plan.md FIRST, then act on it.
+> Update the active section record in plan.md FIRST, retain a short change note,
+> then act on it.
 > `AMENDMENT: <what changes> — <why> — <which sections it affects>`
 
 Before writing an amendment, re-read the ANCHORS and the GRAMMAR AUDIT —
@@ -197,8 +216,8 @@ even when it looks good.
 - **Mechanics** — assembly, lanes, variants, repairs: edit-website and
   repair-cloned-sections; the plan names the source, those skills own
   executing it.
-- **Words** — conversion-copywriting owns the copy the content specs
-  gesture at.
+- **Words** — conversion-copywriting owns the wording; this plan carries its
+  resolved copy and evidence references through assembly and review.
 - **Research acquisition and verification** — owned by the platform. This plan
   consumes available scoped evidence through `web-account-personalization`; it
   does not launch discovery or promote supplied assertions into verified claims.

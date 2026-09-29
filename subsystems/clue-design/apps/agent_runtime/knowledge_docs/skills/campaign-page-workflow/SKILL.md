@@ -101,8 +101,9 @@ Attributed user anchors (verbatim), revisable working choices and evidence,
 the brand grammar audit extracted from the real
 bands you viewed in step 2, one spec per section with its NAMED source —
 PIN · REBIND · DERIVE-VARIANT · REPAIR · COMPOSE-RAW · COMPOSE-VOCAB —
-and the Review & Finish tasks, written before building so acceptance
-criteria cannot be invented afterward.
+carrying the finished words, evidence references, new reader takeaway and all
+retained actions from step 3; and the Review & Finish tasks, written before
+building so acceptance criteria cannot be invented afterward.
 
 From here on the plan is the reference: update each section's status
 (planned → built → verified) as you go; a change of direction is a

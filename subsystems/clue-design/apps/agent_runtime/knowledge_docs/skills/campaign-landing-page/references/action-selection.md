@@ -23,6 +23,14 @@ One page can have a coherent primary action and relevant secondary resources.
 Repeat an action where it helps the decision; a button in every band is not a
 quality requirement. A no-sales-CTA brief remains valid.
 
+Carry those decisions into the section plan's **Actions** field for every retained
+source button, including unslotted labels: keep with its actual purpose, change
+label and destination together, or remove it. Classify real secondary actions
+explicitly. A valid inherited demo URL does not make an unwanted demo CTA relevant.
+Use the exposed exact text/href repair when slots cannot carry the chosen words;
+changing only the href leaves the source's visible promise in place. Inspect and
+report unsupported removal/adaptation rather than silently accepting it.
+
 For `assemble_abm_page`, supply chosen `cta_label` and `cta_href` explicitly when
 using its header. The shell's compatibility fallback (`Book a walkthrough` →
 `#contact`) is not an approved offer. A local anchor is valid only if its target

@@ -146,6 +146,44 @@ compact evidence-to-copy/CTA planning, retrieval/continuity and native visual
 acceptance remain open. No migration or standalone page implementation is needed
 to continue the next mechanical slice.
 
+## Copy planning follow-up
+
+Re-read the latest run's actual plan write and composition arguments, not only its
+final summary. `L/log:524` drafted the hero words but described most later bands
+as topics, screenshots and component choices. It retained both a five-step request
+walk and a three-frame inbox stack, justifying the latter as the strongest source
+exhibit. It explicitly tolerated inherited demo labels in some bands and proposed
+a pilot label over a demo endpoint in others. `L/log:694,712,730` then introduced
+the longer argument, source caveats and evaluation questions inside raw composition.
+The current plan template still asked for a "copy angle" and said content specs
+only "gesture at" the words, despite the copy skill requiring finished explanations.
+
+The latest run did request the four seller product documents (`L/log:197`), unlike
+the earliest account revisions. The retained seller files support inbox assignment,
+connected systems and published package pricing; the pricing mention alone should
+not be labeled invented. They do not establish the composed promise that procedures
+written once per flag are automatically inherited by properties. This is a failure
+to retain the distinction between documented capability and recommended application,
+not evidence that no research was read. Saved local files do not reverify their
+underlying public sources or prove every returned excerpt was consumed.
+
+The bounded change replaces that vague handoff with **Adds / Words / Evidence /
+Actions** in the existing section plan. Unchanged source text can be referenced
+exactly; evidence is recorded once; each inherited button gets a deliberate
+disposition. The shared runtime router, copy guide, campaign workflow and reviewer
+use this record. There is no new artifact schema, hard readiness gate or agent.
+
+A pre-change synthetic skill-comprehension check already produced sensible complete
+copy, omitted repetitive screenshots and avoided an unjustified demo. This does
+**not** demonstrate that all the old instructions were absent or that this edit
+causally improves model performance. A separate post-change logistics fixture
+used the explicit section records, preserved account fact boundaries, replaced
+the unwanted booking action and left uninspected states unresolved. A review also
+clarified active-plan amendments and truthful section status. The correction
+resolves an observed planning contradiction and makes omissions reviewable.
+Native generation under long context, final visitor copy and visual quality remain
+unqualified; the no-new-run restriction remains in place.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.
