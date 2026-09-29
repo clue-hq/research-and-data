@@ -54,6 +54,11 @@ composing lanes in edit-website:
   artifact cannot preserve its declared dependencies. Exact text/link edits retain
   them; the ordinary release rules still apply.
 
+  Portable custom class rules also travel with the repair. Global CSS, cascade
+  layers and ID-dependent styles that cannot survive independent pins refuse
+  minting while leaving the typed section available. For card labels and product
+  image switching, read [rich card controls](../../web-motion-fidelity/references/rich-card-controls.md).
+
 The lane changes WHO releases and WHAT the replacement is written in —
 never what quality means. Everything else in this file binds identically
 in both lanes: the behavior inventory, ugly-is-not-wrong, the repair-scope

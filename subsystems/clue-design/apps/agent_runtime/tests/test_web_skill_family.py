@@ -71,6 +71,13 @@ def test_every_family_is_discoverable_and_nested_references_survive_materializat
     assert (tmp_path / "knowledge_docs/knowledge/web/skill-families.md").is_file()
 
 
+def test_rich_product_controls_have_a_delivered_native_reconstruction_guide(tmp_path):
+    read_required_skill_reference(
+        tmp_path, "web-motion-fidelity", "rich card controls",
+        before="read ", after=" before flattening it to a static section.",
+    )
+
+
 def test_account_argument_guide_is_required_and_delivered_with_the_skill(tmp_path):
     read_required_skill_reference(
         tmp_path,

@@ -13,6 +13,8 @@ Captured pixels, CSS definitions and media bytes establish different facts. A ca
 2. **Choose an implemented route.** Reuse supported source CSS/media when it survives custody and works. Otherwise use supported platform interaction, or the governed custom-component ladder for a concrete unmet behavior. A newly authored reconstruction has its own provenance; it is not recovered source code. If the behavior remains unavailable, preserve its meaning with an explicit equivalent or compact static fallback, removing dead height and unreachable content. Use `repair-cloned-sections` for changes to pinned originals. Never replay arbitrary source scripts or bypass a sandbox, missing-asset refusal, or compiler restriction.
 3. **Verify behavior.** Have the director/solo role run current previews and the behavioral walk; authors/reviewers without those tools hand back. Inspect the captures, then obtain the interaction/temporal evidence the feature requires. Follow [playback verification](references/playback-verification.md). Static screenshots cannot prove a video advances, an animation loops, or a visitor can operate a control. Render caching, forced states and omitted captures are coverage limits. Keep unobserved behavior unverified.
 
+For feature cards that select different product images, read [rich card controls](references/rich-card-controls.md) before flattening it to a static section.
+
 ## Reduced motion and handoff
 
 Choose a visible, usable reduced-motion state for every moving region. Essential copy, product content and CTAs stay accessible with motion stopped and at mobile widths. Source reveal classes must not strand content at opacity zero. A media query or a still screenshot alone is not proof that playback stops correctly.

@@ -530,6 +530,72 @@ image framing on a real page; readable final phone/tablet review; and human
 quality acceptance. These checks establish retained native behavior, not those
 qualities. The user's no-new-generation restriction remains in force.
 
+## Rich-card styling and conflicting authoring guidance follow-up
+
+Continued from `060d99c8`, still without another native generation. Inspected the
+held feature artifact and, separately, the public source section read-only. The
+source has four rich card controls, four distinct product images and a separate
+background. Clicking each live source card selected its corresponding image.
+This observation establishes manual control/image mapping, not recovered React
+source or measured autoplay/progress timing. The live desktop columns also have
+independent card heights; one shared two-row grid is not an exact reproduction.
+
+The existing typed tab label accepts `span[class]` runs, so number/title/body
+labels do not by themselves require a new component type. However, a production
+author → repair → artifact → fresh pin fixture found **custom CSS was omitted**:
+`compile_section_css` sealed utilities but not accepted document custom rules.
+The controls still switched, while the grid disappeared and 24px serif labels
+became 16px sans-serif. The same component worked on its authoring page because
+that page still supplied its custom stylesheet. This is an independently
+reproduced reuse defect, not a claimed cause of the historical latest run's
+explicit static-fallback choice.
+
+The bounded repair now carries local, unlayered custom rules through the existing
+artifact scoper. Review found dependencies that this scoper cannot preserve
+across independently pinned sections: renamed IDs, global at-rules, layer order
+and indirect keyframe names. Those refuse library minting explicitly; the checked
+typed section remains on the authoring page. This does not loosen capture-script,
+asset or release rules. The new rich-control reference teaches source mapping,
+rich labels, hidden panels, geometry comparison and those refusal boundaries.
+
+There was also a concrete instruction conflict. The finished Words / Evidence /
+Actions handoff coexisted with authoring instructions that said copy should first
+be written in markup. That guide also encouraged shortening copy regardless of
+lost meaning, mandatory header actions, treating fallback theme values as brand
+proof, and booking placeholders. The guide now carries resolved wording/actions
+into assembly, amends the active record for necessary changes, preserves important
+capability limits, permits no navigation/action, and checks source typography.
+Missing booking destinations remain dependencies. These were real contradictions;
+we cannot identify a single sentence as the cause of an individual model decision.
+
+Read-only application probes used an unrelated synthetic account. Before changes,
+the reviewer could produce a sensible handoff only by explicitly overruling
+conflicting instructions. Afterwards it followed the finished copy, preserved a
+measured 48px regular/flat treatment against 32px medium/shadow defaults, chose a
+roomier source-based card instead of deleting a capability limit, and omitted an
+unrequested booking header. A missing-destination case remained incomplete rather
+than gaining a fake link. A separate four-state probe retained manual interaction
+and reported geometry/timing/font portability limits. These are comprehension
+checks, not an estimate of Clue model adherence or better generated-page quality.
+
+Browser regression compares the actual typed render with two fresh pins at
+1440/768/375 across all four states, checking layout, label typography, selected
+appearance, hidden content, no horizontal overflow, arrow keys and independent
+instances under reduced-motion preference. Refusal cases cover the unsupported
+CSS dependencies above. All requests are blocked; registry custody is in-memory.
+No live database, generation, ingestion, service restart or publication occurred.
+Exact Conduit visual parity, asset-layer rendering with those source images,
+source timing and a readable account-specific final page remain outstanding.
+
+Final focused regression: **247 passed, one existing exact-docstring assertion
+failed** (`test_the_tool_docstrings_carry_the_amendment_too`). Its expected search
+phrase is absent from the unchanged tool docstring, as recorded at the previous
+checkpoint. No assertion was removed to manufacture a green result. The new
+13-case styling/refusal file passes; materialization, native behavior, campaign
+shell, CSS/artifact and dependency checks are included. Fatal-error lint and
+whitespace checks pass. Logs: `/tmp/clue-card-custody-final.{log,xml}`. These are
+focused checks, not a rerun or a green claim for both full Python suites.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.

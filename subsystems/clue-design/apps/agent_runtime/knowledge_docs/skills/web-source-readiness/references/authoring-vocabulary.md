@@ -17,11 +17,14 @@ rejections; the `diagnostics` list you repair from never contains it.
 
 ## Author once, at structural altitude
 
-The tool call IS the artifact. Plan the page as structure — "hero, proof
-strip, three feature panels, how-it-works, FAQ, CTA band" — and produce the
-build call as soon as the structure is decided. Never draft the page's prose
-or markup in your reasoning and then transcribe it into the call: that doubles
-the cost and the two copies drift. Copy is written once, inside the markup.
+The tool call IS the artifact. Build markup once from the active section
+records: **Words** supplies the finished copy, **Evidence** its supported
+meaning, and **Actions** each label, destination and expected receipt. Carry
+resolved wording and actions into the markup instead of inventing a second
+story during assembly. If these records are missing, resolve them with
+`plan-design` and `conversion-copywriting` before building. Amend the active
+record when a fit or evidence problem requires a change. Select only sections
+that advance the reader's decision; there is no mandatory homepage section list.
 
 ## The vocabulary (everything else is rejected)
 
@@ -31,7 +34,7 @@ the cost and the two copies drift. Copy is written once, inside the markup.
 | `<div class="…">` | container | All layout: flex/grid utilities live here. Optional `data-href`, `data-new-tab="true"` makes the whole container clickable. |
 | `<h1>`…`<h4>`, `<p>` | text | Variant from the tag. Override with `data-variant="display\|small\|overline"`. |
 | `<div data-text="rich" data-variant="body\|small">…</div>` | structured text | One editable text node whose children may be semantic `<p>`, `<ul>`, `<ol>`, and `<li>` blocks. Use it when paragraphs/lists must remain one rich-text field. |
-| `<a data-button="primary\|secondary\|outline\|ghost\|link" href="…">Label</a>` | button | Button styling comes from the theme — do not restyle with classes. |
+| `<a data-button="primary\|secondary\|outline\|ghost\|link" href="…">Label</a>` | button | Uses resolved theme styling. Preserve source buttons through the repair route when the theme mismatches; avoid arbitrary redesign. |
 | `<img data-asset="ASSET_ID" alt="…">` | image | `ASSET_ID` must already exist (generate/import first). External `src` is rejected. Optional `data-href`, `data-new-tab="true"`. |
 | `<i data-icon="NAME"></i>` | icon | Must be empty. Size/color via classes (`size-6 text-primary`). |
 
@@ -93,15 +96,16 @@ Tailwind palettes (`text-slate-900`, `bg-red-500`) are hard errors.
   base layer, 768 is `md:`, 1440 is covered by `lg:`).
 - Non-color arbitrary values are fine: `max-w-[1180px] leading-[1.06]`.
 
-**The theme already styles the type ramp and buttons.** An `<h1>` lands with
-the brand's display face, size, and weight with **zero classes**; a
-`data-button="primary"` is already the brand CTA. Add classes only for
-*deviations*: color accents, spacing, width caps, alignment.
+**The theme supplies the type ramp and buttons.** An `<h1>` uses the resolved
+theme face, size and weight; `data-button="primary"` uses its button treatment.
+These may be measured kit values or fallback defaults. Compare resolved values
+and loaded font faces with the inspected source before relying on them. A valid
+theme default is not proof of brand fidelity. Correct a measured mismatch;
+preserve source weights and geometry rather than silently substituting defaults.
 
-**Brand geometry — ten utilities that resolve the kit's own shape.** A brand's
-radii, elevations, hairlines and rhythm are as much its identity as its colors,
-and they are CLASSES, not numbers you pick. Each one resolves the pinned kit's
-measured token:
+**Brand geometry — ten utilities that resolve the kit's shape or fallback.**
+Radii, elevations, hairlines and rhythm matter as much as colors. Use the
+resolved token when it agrees with the source measurement:
 
 | Class | Resolves | Write it on |
 |---|---|---|
@@ -116,15 +120,15 @@ measured token:
 | `gap-stack` | `space.stack.default` | gaps between stacked items and grid cells |
 | `p-card` | `space.card.padding` | a card's inner padding |
 
-- **They work on every kit.** When a brand measured nothing (a flat site, the
-  platform default theme), the utility walks the kit's chain and lands on a
-  platform default. It is never an error and never a silent no-op — writing one
-  is always safe, so prefer it over a raw `rounded-2xl` / `shadow-lg` / `py-20`
-  / `p-6` wherever a utility exists.
+- **They resolve on every kit.** Missing measurements fall back to platform
+  defaults. Check that origin and the rendered result; a flat source does not
+  need a default shadow, and fallback spacing must not replace measured spacing.
+  Prefer an accurate kit token over an invented number. For a measured mismatch,
+  preserve the source treatment through the supported authoring/repair route.
 - **`border-w-card`, NOT `border-card`.** `card` is a color token, so
   `border-card` is a border COLOR and will not change any width.
 - **`shadow-brand` / `shadow-card` are elevations, not shadow colors.** They set
-  the brand's real box-shadow; they say nothing about color.
+  the resolved box-shadow, which still needs comparison with the source.
 - Everything geometry-shaped with no utility above — horizontal padding
   (`px-6`), max-widths, leading, one-off spacing — stays a raw class. That is
   correct, not a gap.
@@ -153,10 +157,12 @@ specific to our editor, brands, and formats.
 4. **Imagery posture.** Read it from the brief and brand card: text-forward
    brands get fewer, quieter images. When the posture says text-only, OMIT
    the imagery section rather than decorate it.
-5. **Copy-fit budgets.** Sibling headings within one line of each other at
-   desktop; card copy in a 3-column grid within ~25% length variance; 2–3
-   sentences max in a narrow column. **Rewrite the copy before styling
-   around it** — long copy is a copy problem, not a layout problem.
+5. **Copy fit.** Review sibling wrapping and narrow-column density in the
+   rendered page. Remove repetition through an explicit Words amendment,
+   preserving requested wording, supported meaning and proof conditions. If
+   necessary explanation cannot fit the source card, derive a source-based
+   layout variant; do not delete a capability limit or shrink brand typography
+   merely to satisfy a length target.
 6. **Composition menu.** Name the layout of each band before building:
    centered statement, asymmetric split, editorial stack, proof strip,
    comparison block, full-bleed hero. Repeat a composition by design where
@@ -184,19 +190,19 @@ below are fallbacks when that evidence is absent, not rules for overriding
 source container widths, image ratios, surfaces, or responsive composition.
 
 - Example content wrapper: `<div class="mx-auto max-w-[1180px] px-6
-  py-section …">` — `py-section` IS the brand's measured band rhythm, so it
-  replaces a raw `py-20`. A hero may go larger (`py-section md:py-32`) and a
+  py-section …">` — use `py-section` when its resolved rhythm matches the
+  source. A hero may go larger (`py-section md:py-32`) and a
   header stays tight (`py-4`); the horizontal `px-6` and the max-width are raw
   by design. Keep the source's deliberate container relationships; do not impose one width
   when its text, full-bleed media and chrome use different widths.
 - When supported by the source, band backgrounds can alternate between `bg-light` and `bg-card` (or a
   `bg-dark`/`text-inverse` statement band). Choose the footer surface from the source, not this example.
 - Card grids: `grid gap-stack md:grid-cols-3`, cards `p-card rounded-card
-  shadow-card bg-…`. A bordered card is `border border-w-card border-border`
-  instead of the shadow — pick one, not both.
-- Badges and pills carry `rounded-badge`; a button you style at all keeps
-  `rounded-button` (a `data-button` already lands with the brand's radius —
-  only a hand-built control needs the class).
+  bg-…`. Add `shadow-card` or `border border-w-card border-border` only when
+  supported by the source; a flat card may need neither.
+- Badges/pills may use `rounded-badge`; controls may use `rounded-button`.
+  Both resolve kit values or defaults, so compare the actual radius with the
+  source. A `data-button` already receives the resolved button radius.
 - Exactly ONE `h1` (the hero). Heading levels never skip.
 
 ## Multi-page sites
@@ -211,16 +217,19 @@ lowercase words joined by dashes, no trailing slash.
   on. It only reads; the director is who adds, removes and switches pages.
 - Link between pages by route: `<a href="/pricing">`. Publishing turns the route
   into the live address.
-- You may link off the site. On a campaign page that is rarely a good idea — every
-  link away is a visitor who stops reading the argument. Prefer the site's own
-  pages and the one CTA. If you link away, say why in your summary.
+- Follow the Actions record for destinations, including useful product,
+  evidence or informational links off the page. Retention, replacement or
+  removal applies to every inherited button, including unslotted ones. A source
+  booking CTA does not establish this page's goal. A page may have no primary action.
 
 ## Responsive (mobile-first, no scripts)
 
-Base classes are the phone layout; add `md:`/`lg:` for wider. The header
-pattern without JS: logo + primary CTA always visible, the nav-link row
-`hidden md:flex`. Stack hero content by default, `md:flex-row` when paired
-with imagery. Verify nothing depends on hover to be reachable.
+Base classes are the phone layout; add `md:`/`lg:` for wider. When the selected
+shell includes navigation and an action, keep the seller identity and chosen
+action usable while the nav-link row collapses. A page without navigation or a
+primary action needs neither added. Place target-account identity according to
+the section plan, not automatically in the navigation. Stack hero content by
+default and verify nothing depends on hover to be reachable.
 
 ## Interactive components (Tier 2)
 
@@ -267,12 +276,14 @@ Contracts:
   whose FIRST child is a short Text label (it becomes the tab button) and
   whose remaining children are the panel. `data-default-tab` is the
   0-based initially-open item.
-- **calendly embed** — the ONLY embed you may author, and only with a real
-  `https://calendly.com/…` link from the brief; none given → the obvious
-  placeholder + flag at finalize. The element is empty and needs an
+- **calendly embed** — the ONLY embed you may author, and only when the chosen
+  action requires scheduling and a real `https://calendly.com/…` destination
+  is supplied. A missing destination stays an unresolved dependency; do not
+  insert a booking placeholder. The element is empty and needs an
   explicit height class. **A calendly embed inside a dialog is the
-  complete book-a-call flow** — dialog owns open/close, the embed owns
-  scheduling. Custom URL/snippet embeds are human-editor territory, never
+  scheduling structure** — dialog owns open/close, the embed owns
+  scheduling. Verify the supplied destination and embed before calling the flow
+  working. Custom URL/snippet embeds are human-editor territory, never
   authored.
 
 **The escalation ladder — climb reluctantly.** Palette (sections, text,
@@ -291,11 +302,10 @@ duplicate a dialog per trigger, never nest a trigger's logic into the
 component.
 
 **Real endpoints only.** The recipe's "real links only" extends to endpoints:
-never invent a booking URL, form endpoint, or integration. When a dialog needs
-one and none was given, use an obvious placeholder
-(`https://example.com/PLACEHOLDER-booking`), flag it in the finalize summary,
-and ask for the real one. This remains an incomplete draft conversion path;
-never report the placeholder as a working booking flow or a completed page.
+never invent a booking URL, form endpoint, or integration. When the selected
+action needs one and none was given, record the missing destination and ask for
+it. Keep that conversion path incomplete instead of emitting a clickable fake.
+An informational page with no booking action needs no scheduling flow.
 
 ## Personalization markers (templates & account pages)
 
