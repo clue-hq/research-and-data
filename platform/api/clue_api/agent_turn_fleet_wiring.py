@@ -1867,6 +1867,8 @@ def build_agent_turn_work_handler(
         context_policy=project_conversation_context_policy(),
         child_runner=child_runner,
         namer=namer,
+        # Spec 2026-09-29 §3.1: the project conversation continues its saved conversation.
+        continuation=components.head_of_abm_continuation_enabled,
         conn_factory=conn_factory,
     )
     design_legs_runner = DesignLegTurnRunner(

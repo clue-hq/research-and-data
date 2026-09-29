@@ -413,6 +413,20 @@ class Settings(BaseSettings):
     # three rounds before the end and then finalizes ``awaiting_input`` ("reply continue").
     # Env: ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``.
     head_of_abm_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Conversation compaction for every governed agent (founder ruling 2026-09-29). The model's
+    # context window comes from OpenRouter's catalogue unless overridden; compaction starts at
+    # TRIGGER_FRACTION of it and keeps the newest KEEP_FRACTION whole. With no known window the
+    # fixed pair applies. Env: ``CLUE_AGENT_CONTEXT_WINDOW_TOKENS``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_FRACTION``, ``CLUE_AGENT_COMPACT_KEEP_FRACTION``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_TOKENS``, ``CLUE_AGENT_COMPACT_KEEP_MESSAGES``.
+    agent_context_window_tokens: int | None = Field(default=None, ge=1)
+    agent_compact_trigger_fraction: float = Field(default=0.90, gt=0, lt=1)
+    agent_compact_keep_fraction: float = Field(default=0.10, gt=0, lt=1)
+    agent_compact_trigger_tokens: int = Field(default=170_000, ge=1)
+    agent_compact_keep_messages: int = Field(default=6, ge=1)
+    # Head-of-ABM chat turns resume the thread's last completed turn (append-only prompt).
+    # Env: ``CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED``.
+    head_of_abm_continuation_enabled: bool = True
     # Wall clock per Head-of-ABM chat turn, seconds; 0 means no timeout. When set, the agent is
     # told to wrap up about three minutes before it. Env: ``CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S``.
     head_of_abm_turn_timeout_s: float = Field(default=0.0, ge=0)
@@ -1009,6 +1023,16 @@ class Settings(BaseSettings):
     # horizon, so a within-horizon reconnect can never observe a hole; configuring less is logged
     # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
     design_run_event_retention_s: float = 2_592_000.0  # 30d
+
+    @field_validator("agent_context_window_tokens", mode="before")
+    @classmethod
+    def _blank_context_window_is_unknown(cls, value: Any) -> Any:
+        """``CLUE_AGENT_CONTEXT_WINDOW_TOKENS=`` (blank, the documented default) means "use the
+        model catalogue" — ``None`` — rather than an unparsable integer (env-parity rule)."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("stage0_crawl_max_depth", mode="before")
     @classmethod

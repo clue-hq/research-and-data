@@ -313,3 +313,21 @@ def test_explicit_env_value_beats_the_overlay() -> None:
         _env_file=None, product_path="integration_pilot", exa_account_deep_acquisition_enabled=False
     )
     assert s.exa_account_deep_acquisition_enabled is False
+
+
+def test_compaction_and_continuation_defaults() -> None:
+    s = load_settings(_env_file=None)
+    assert s.agent_context_window_tokens is None
+    assert s.agent_compact_trigger_fraction == 0.90
+    assert s.agent_compact_keep_fraction == 0.10
+    assert s.agent_compact_trigger_tokens == 170_000
+    assert s.agent_compact_keep_messages == 6
+    assert s.head_of_abm_continuation_enabled is True
+
+
+def test_a_blank_context_window_line_loads_as_unknown() -> None:
+    """The documented ``CLUE_AGENT_CONTEXT_WINDOW_TOKENS=`` line must load (env-parity rule)."""
+    assert (
+        load_settings(_env_file=None, agent_context_window_tokens="").agent_context_window_tokens
+        is None
+    )

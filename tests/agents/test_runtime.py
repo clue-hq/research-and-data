@@ -448,7 +448,16 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
     )
     framework_tools = [
         {"name": name}
-        for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
+        for name in (
+            "compact_conversation",
+            "edit_file",
+            "glob",
+            "grep",
+            "ls",
+            "read_file",
+            "write_file",
+            "write_todos",
+        )
     ]
     governed_tools = factory.build()
     effective_names = {tool.name for tool in governed_tools}

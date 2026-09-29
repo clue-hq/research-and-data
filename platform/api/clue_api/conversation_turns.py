@@ -40,12 +40,15 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DeterministicAgentContextAssembler,
+    HistoryMessageRef,
     MountRequest,
     ResolvedAgentProfile,
     WorkspaceSeedFile,
 )
+from clue_agents.contracts import ContinuationRef
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
 from clue_api.agent_execution_wiring import (
+    C5AgentExecutionAdapter,
     DbAgentPlanJournal,
     FreshWakeChildRunner,
     postgres_agent_checkpointer,
@@ -61,6 +64,11 @@ from clue_api.agent_runtime_wiring import (
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.attachment_binding import DbAttachmentDescriber
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.conversation_continuation import (
+    continuation_config_for,
+    find_resume_point,
+    gap_history,
+)
 from clue_api.conversation_naming import (
     ConversationNamer,
     NamingOutcome,
@@ -80,6 +88,7 @@ from clue_api.turn_binding import CapturedTurnBinder
 from clue_core import ContextAssembly, ExecutionId, MemoryType
 from clue_db import ConnFactory, transaction
 from clue_execution import CompatibilityLoader, RecipeExecutor
+from clue_obs import get_logger
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 __all__ = [
@@ -236,6 +245,9 @@ class DelegationWithheld:
         raise RuntimeError("specialist_delegation_withheld_on_conversation_surface")
 
 
+log = get_logger("clue_api.conversation_turns")
+
+
 @dataclass(frozen=True, slots=True)
 class ConversationTurnResult:
     """One executed (or replayed) turn."""
@@ -271,9 +283,13 @@ class ConversationTurnEngine:
         captured_turns: CapturedTurnBinder,
         plans: DbAgentPlanJournal,
         namer: ConversationNamer | None = None,
+        continuation_enabled: bool = False,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.surface = surface
+        # Spec 2026-09-29 §3.1: a turn continues the thread's last completed turn's saved
+        # conversation instead of rebuilding it (the production conversation only).
+        self._continuation_enabled = continuation_enabled
         self.resolved = resolved
         self.components = components
         self._tools = tools
@@ -427,11 +443,6 @@ class ConversationTurnEngine:
         if stream is not None:
             await stream.turn_started()
         if committed is None:
-            context = await self._contexts.assemble(
-                request=request,
-                profile=self.resolved.profile,
-                history=prior_history,
-            )
             # The code sandbox's one binding (spec 2026-09-19 §3.4). ``ToolContext`` carries
             # the execution id and nothing else, so this is where ``run_python@1`` is told which
             # host directories this turn owns — derived from the lease the spill sink below is
@@ -474,6 +485,17 @@ class ConversationTurnEngine:
                     spill_sink=lease.backend,
                     conn_factory=self._conn_factory,
                 )
+                # Continue or open fresh — decided before assembly, because a turn has exactly one
+                # opening-context receipt (spec 2026-09-29 §3.1).
+                history, continuation, continuation_config = await self._continuation_for(
+                    request=request, lease=lease, execution=execution, fresh_history=prior_history
+                )
+                context = await self._contexts.assemble(
+                    request=request,
+                    profile=self.resolved.profile,
+                    history=history,
+                    continuation=continuation,
+                )
                 outcome = await self._runtime.run(
                     request=request,
                     context=context,
@@ -482,6 +504,7 @@ class ConversationTurnEngine:
                     completion_guard=completion_guard,
                     stream=stream,
                     input_seeds=input_seeds,
+                    continuation_config=continuation_config,
                 )
             finally:
                 # On every exit path — returned, raised, cancelled — and idempotent, because the
@@ -500,6 +523,76 @@ class ConversationTurnEngine:
             replayed=committed is not None,
             naming_scope=(request.constitution.project_id, request.user_message_artifact_ref),
         )
+
+    async def _continuation_for(
+        self,
+        *,
+        request: AgentTurnRequest,
+        lease: AgentWorkspaceLease,
+        execution: C5AgentExecutionAdapter,
+        fresh_history: tuple[HistoryMessageRef, ...],
+    ) -> tuple[tuple[HistoryMessageRef, ...], ContinuationRef | None, dict[str, Any] | None]:
+        """The history this turn opens with, and what it continues (if anything).
+
+        Continues the thread's latest completed Head-of-ABM turn under the same profile, prompt
+        and tool surface when its saved conversation is settled; otherwise the turn opens fresh
+        with the whole thread history, exactly as before.
+        """
+        if not self._continuation_enabled:
+            return fresh_history, None, None
+        constitution = request.constitution
+        async with self._conn_factory() as conn:
+            point = await find_resume_point(
+                conn,
+                workspace_id=constitution.workspace_id,
+                thread_id=request.thread_id,
+                current_turn_id=request.turn_id,
+                profile_name=constitution.profile_ref.name,
+                profile_version=constitution.profile_ref.version,
+                profile_sha256=constitution.profile_ref.sha256,
+                resource_manifest_sha256=constitution.resource_manifest_sha256,
+            )
+        if point is None:
+            return fresh_history, None, None
+        config = continuation_config_for(point)
+        # Missing, unsettled or unreadable all open fresh (spec §3.1). An unreadable one must not
+        # fail the turn: the resume point would not change, so every later turn would fail too.
+        try:
+            settled = await self._runtime.continuation_is_settled(
+                request=request, lease=lease, execution=execution, continuation_config=config
+            )
+            reason = "saved_conversation_not_settled"
+        except Exception:
+            log.warning(
+                "agent_turn.continuation_unreadable",
+                turn_id=str(request.turn_id),
+                resume_turn_id=str(point.turn_id),
+                exc_info=True,
+            )
+            settled = False
+            reason = "saved_conversation_unreadable"
+        if not settled:
+            log.warning(
+                "agent_turn.continuation_fallback",
+                turn_id=str(request.turn_id),
+                resume_turn_id=str(point.turn_id),
+                reason=reason,
+            )
+            return fresh_history, None, None
+        async with self._conn_factory() as conn:
+            gap = await gap_history(
+                conn,
+                workspace_id=constitution.workspace_id,
+                thread_id=request.thread_id,
+                after_sequence=point.last_message_sequence,
+                current_turn_id=request.turn_id,
+            )
+        continuation = ContinuationRef(
+            turn_id=point.turn_id,
+            execution_id=ExecutionId(point.execution_id),
+            gap_message_ids=tuple(item.message_id for item in gap),
+        )
+        return gap, continuation, config
 
     async def _result_from_outcome(
         self,
@@ -675,6 +768,7 @@ def build_conversation_turn_engine(
     context_policy: ContextAssemblyPolicy,
     child_runner: FreshWakeChildRunner | None = None,
     namer: ConversationNamer | None = None,
+    continuation: bool = False,
     conn_factory: ConnFactory = transaction,
 ) -> ConversationTurnEngine:
     """Compose one conversation engine for one declared capability surface.
@@ -738,5 +832,6 @@ def build_conversation_turn_engine(
         captured_turns=captured_turns,
         plans=DbAgentPlanJournal(conn_factory=conn_factory),
         namer=namer,
+        continuation_enabled=continuation,
         conn_factory=conn_factory,
     )

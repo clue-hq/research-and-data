@@ -781,3 +781,52 @@ def test_a_tagged_leg_document_is_marked_with_its_artifact_number(
             )
 
     run_async(scenario())
+
+
+def test_a_stopped_design_turn_hands_the_leg_back(
+    tmp_path: Path,
+    registry: Any,  # noqa: F811
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Stop must free the thread, exactly as a crash does (live incident 2026-09-29).
+
+    The Stop path cancelled the turn and its runs but left the leg ``running``: the chat kept
+    saying "Agent is designing", queued every later message and Stop had nothing left to stop.
+    """
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_three_document_leg(conn, storage_root=tmp_path, label="stopped")
+            submission = await _submit_message(conn, seeds, label="stopped", message="make them")
+            leg = await design_legs.get_open_leg_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert leg is not None
+            await design_legs.mark_leg_running(
+                conn, workspace_id=seeds["workspace_id"], leg_id=leg["id"]
+            )
+
+            runner = _runner(seeds, registry, _LaneThatNeverTerminalizes())
+            await runner.request_stop_for_turn(
+                workspace_id=seeds["workspace_id"], turn_id=submission.turn_id
+            )
+            await runner.await_stopped_turn(
+                workspace_id=seeds["workspace_id"], turn_id=submission.turn_id
+            )
+
+            after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=leg["id"]
+            )
+            assert after["state"] == "open_awaiting_user"
+            announced = await conn.scalar(
+                text(
+                    "SELECT count(*) FROM agent_turn_event_stream "
+                    "WHERE workspace_id=:ws AND turn_id=:turn AND event_type='leg.awaiting_user'"
+                ),
+                {"ws": seeds["workspace_id"], "turn": submission.turn_id},
+            )
+            assert announced == 1
+
+    run_async(scenario())

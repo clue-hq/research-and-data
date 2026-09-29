@@ -49,6 +49,7 @@ from clue_agents import (
 )
 from clue_agents.catalog import FolderProfileCatalog, FolderPromptCatalog, FolderSkillCatalog
 from clue_agents.ports import SpillSink
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
     CheckpointerFactory,
@@ -1084,6 +1085,7 @@ class ResearchUnitRuntime:
                         tool.description += "\n\n" + COMPLETION_INSTRUCTIONS
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
+                    compaction_for=compaction_for,
                     models=self.models,
                     execution=adapter,
                     max_runtime_s=(

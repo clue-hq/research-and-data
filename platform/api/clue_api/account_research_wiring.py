@@ -23,6 +23,7 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_agents.workspace import AgentWorkspaceLease
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -281,6 +282,7 @@ class AccountResearchAgentRuntime:
         ).build()
         return await DurableDeepAgentTurnRunner(
             runtime=DeepAgentTurnRuntime(
+                compaction_for=compaction_for,
                 models=self._models,
                 execution=execution,
                 max_runtime_s=resolved.profile.turn_timeout_s,

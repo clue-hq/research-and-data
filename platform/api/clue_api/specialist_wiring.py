@@ -31,6 +31,7 @@ from clue_agents import (
     SpecialistTaskEnvelope,
     WorkspaceSeedFile,
 )
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -457,6 +458,7 @@ class FreshWakeSpecialistRunner:
             ).build()
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
+                    compaction_for=compaction_for,
                     models=self._models,
                     execution=execution,
                     max_runtime_s=(
