@@ -90,6 +90,7 @@ from lumen_api.fragments.render import (
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
+from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -5186,6 +5187,7 @@ class LumenWebTools:
 
     def inspect_cloned_section(
         self, fragment_id: str, html_offset: int = 0, css_offset: int = 0,
+        text_only: bool = False, text_offset: int = 0,
     ) -> str:
         """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
         its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
@@ -5204,6 +5206,14 @@ class LumenWebTools:
         and whether more remains (`*_truncated`). Never reconstruct unseen source. Pagination
         is inspection only; it does not patch links or preserve omitted CSS in a raw repair.
 
+        For copy changes, pass `text_only=True` for up to 16 text targets and no HTML/CSS.
+        Each target has an exact stored-fragment structural path, expected text and editability
+        reason. `text_inventory.next_offset` continues the target list via `text_offset`.
+        These are STORED coordinates, not rendered/editor coordinates: hidden slot siblings
+        remain counted. This inventory does not assert rendered visibility. Use editable
+        targets in `repair_cloned_section(text_edits_json=...)`; bind existing text slots
+        instead. Text mode requires zero html/css offsets; text_offset requires text mode.
+
         `text_overrides` lists the HUMAN's own edits to individual elements of the pins of this
         clone on the page — the one interior change a person may make to a cloned band — and
         they are to be respected, never rewritten: re-binding a slot preserves them (the engine
@@ -5219,6 +5229,14 @@ class LumenWebTools:
                 return self._tool_error(
                     "cloned_section.bad_offset", f"{field} must be a non-negative integer."
                 )
+        if (not isinstance(text_only, bool) or not isinstance(text_offset, int)
+                or isinstance(text_offset, bool) or text_offset < 0
+                or (text_only and (html_offset or css_offset))
+                or (not text_only and text_offset)):
+            return self._tool_error(
+                "cloned_section.bad_offset", "text mode needs a nonnegative integer text_offset "
+                "and zero raw-source offsets; text_offset requires text_only=True.",
+            )
         registry = self._cloned_section_registry()
         try:
             source = registry.read_source(clean_id)
@@ -5266,6 +5284,20 @@ class LumenWebTools:
             "css_truncated": css_end < len(css),
             "css": css[css_offset:css_end],
         }
+        if text_only:
+            try:
+                inventory = inspect_text_targets(
+                    html, manifest={slot["key"]: slot for slot in (source.get("slots") or [])},
+                    offset=text_offset,
+                )
+            except FragmentRefused as error:
+                return self._tool_error(str(error.code), str(error.message))
+            for key in list(payload):
+                if key in {"html", "css", "page_char_limit"} or (
+                    key.startswith(("html_", "css_")) and key not in {"html_chars", "css_chars"}
+                ):
+                    del payload[key]
+            payload.update(text_only=True, text_inventory=inventory)
         for key in (
             "source_kit_id", "source_kit_version", "source_kit_bindings", "page_url",
             "section_index", "created_at", "payload_digest", "degraded",
@@ -5279,7 +5311,9 @@ class LumenWebTools:
             "author",
             "cloned_section_inspected",
             input_summary=clean_id,
-            output_summary=f"{len(html)} html chars, {len(css)} css chars",
+            output_summary=(f"text targets {text_offset}:{inventory['next_offset'] or inventory['total']} "
+                            f"of {inventory['total']}; source bytes omitted" if text_only
+                            else f"{len(html)} html chars, {len(css)} css chars"),
         )
         return json.dumps(payload, indent=2)
 
@@ -6746,6 +6780,7 @@ class LumenWebTools:
     def _repair_cloned_hrefs(
         self, fragment_id: str, mapping_json: str | None, rung: int, note: str,
         label_mapping_json: str | None = None,
+        text_edits_json: str | None = None,
     ) -> str:
         """Source-preserving, one-pin lane; the registry alone reads and derives the payload."""
         pins = [
@@ -6754,12 +6789,12 @@ class LumenWebTools:
             if node.get("kind") == "fragment" and node.get("fragment_id") == fragment_id
         ]
         if len(pins) != 1:
-            return self._tool_error("repair.ambiguous_pin", "exact href repair requires one pin")
-        if label_mapping_json is not None and pins[0].get("text_overrides"):
+            return self._tool_error("repair.ambiguous_pin", "exact source repair requires one pin")
+        if (label_mapping_json is not None or text_edits_json is not None) and pins[0].get("text_overrides"):
             return self._tool_error(
-                "repair.label_override_conflict",
+                "repair.text_override_conflict" if text_edits_json is not None else "repair.label_override_conflict",
                 "this pin has human text overrides; edit the existing text override instead "
-                "of deriving a label that may be masked by it. Nothing changed.",
+                "of deriving copy that may be masked by it. Nothing changed.",
             )
 
         def unique_pairs(pairs: list) -> dict:
@@ -6774,6 +6809,7 @@ class LumenWebTools:
         for key, encoded, validator, code in (
             ("replacements", mapping_json, validate_href_replacements, "repair.bad_href_map"),
             ("label_replacements", label_mapping_json, validate_label_replacements, "repair.bad_label_map"),
+            ("text_edits", text_edits_json, validate_text_edits, "repair.bad_text_edits"),
         ):
             if encoded is None:
                 continue
@@ -6796,7 +6832,7 @@ class LumenWebTools:
         except Exception as error:
             return self._tool_error(
                 "repair.mint_unconfirmed",
-                f"href repair mint could not be confirmed ({type(error).__name__}); page unchanged",
+                f"source repair mint could not be confirmed ({type(error).__name__}); page unchanged",
             )
         new_id = str(minted.get("fragment_id") or "")
         if minted.get("status") != "approved":
@@ -6841,14 +6877,15 @@ class LumenWebTools:
             "label": resolved.get("label"), "section_role": resolved.get("section_role"),
             "composed": resolved.get("composed"),
         }
-        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact anchors",
+        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact source edits",
                     output_summary=f"{new_id} released; existing pin preserved", payload=minted)
         return json.dumps({
             "status": "ok", "repaired": fragment_id, "repair_fragment_id": new_id,
             "released": True, "pinned": True, "node_id": pin["id"],
-            "href_only": label_mapping_json is None,
+            "href_only": label_mapping_json is None and text_edits_json is None,
             "match_counts": minted.get("match_counts"), "converged": minted.get("converged"),
             "label_match_counts": minted.get("label_match_counts", {}),
+            "text_match_paths": minted.get("text_match_paths", []),
             "lineage_kept": minted.get("lineage_kept"), "note": note,
             "report": "released repair; future pins follow stored lineage; existing pin preserved",
         }, indent=2)
@@ -6857,12 +6894,14 @@ class LumenWebTools:
         self, fragment_id: str, html: str | None = None, rung: int = 1, note: str = "",
         css: str | None = None, href_replacements_json: str | None = None,
         cta_label_replacements_json: str | None = None,
+        text_edits_json: str | None = None,
     ) -> str:
         """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
 
         TWO INTENTS, one door. (1) REPAIR a BROKEN band — a defect you diagnosed. (2) DERIVE A
         CAMPAIGN VARIANT of a HEALTHY band whose slots can't carry the campaign — a CTA to
-        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For a variant, use
+        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For copy-only
+        variants prefer existing slots or EXACT TEXT EDITS below. For structural variants, use
         the RAW lane and remix the original's FULL markup and CSS, changing exactly what the
         campaign needs while keeping its geometry, type scale, surfaces, and responsive
         behavior — you inherit everything you don't touch because you started from the
@@ -6892,6 +6931,19 @@ class LumenWebTools:
         the action. For a campaign-specific change use note="campaign variant: ..." to start
         its own lineage. Otherwise this is a canonical released repair; state that future
         original pins may resolve to it. Existing explicit href bindings still win over fallback.
+
+        EXACT TEXT EDITS: for unbound captured feature/FAQ copy, first inspect_cloned_section
+        with text_only=True. Pass text_edits_json as a list of 1-8 objects containing path,
+        expected and replacement. Copy the STORED structural path and normalized expected
+        text from that inventory, not from editor coordinates. Each edit changes one immediate
+        text leaf (<=2048 chars), retaining all markup, CSS, assets and the existing pin.
+        Stale text, unsupported/split content, existing text slots, accessible-name conflicts,
+        duplicate targets and pins with human overrides refuse. Use the binding or existing
+        human override instead. The whole batch validates before a new artifact is minted.
+        Use note="campaign variant: ..." for account copy; this starts separate lineage.
+        Canonical repairs affect future original pins. Can combine with exact anchor maps,
+        never raw html/css. Rendering must still verify wrapping and mobile height: preserving
+        CSS does not guarantee longer copy fits. It does not repair interactions or imagery.
 
         TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
         RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
@@ -6979,17 +7031,20 @@ class LumenWebTools:
             )
         instances = pinned[clean_id]
 
-        if href_replacements_json is not None or cta_label_replacements_json is not None:
+        if (href_replacements_json is not None or cta_label_replacements_json is not None
+                or text_edits_json is not None):
             if html is not None or css is not None:
                 return self._tool_error(
-                    "repair.bad_href_map", "exact anchor repair cannot also supply html or css"
+                    "repair.bad_text_edits" if text_edits_json is not None else "repair.bad_href_map",
+                    "exact source repair cannot also supply html or css",
                 )
             return self._repair_cloned_hrefs(
                 clean_id, href_replacements_json, int(rung), cleaned_note,
                 label_mapping_json=cta_label_replacements_json,
+                text_edits_json=text_edits_json,
             )
         if html is None:
-            return self._tool_error("repair.html_missing", "provide html, href_replacements_json or cta_label_replacements_json")
+            return self._tool_error("repair.html_missing", "provide html, href_replacements_json, cta_label_replacements_json or text_edits_json")
 
         if css is not None:
             # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------

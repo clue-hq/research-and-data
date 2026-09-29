@@ -1092,20 +1092,22 @@ class DurableAgentClonedSectionRegistry:
     def mint_href_repair(
         self, *, replaces: str, replacements: Mapping[str, str] | None = None,
         label_replacements: Mapping[str, str] | None = None, rung: int, note: str,
+        text_edits: list[dict[str, str]] | None = None,
     ) -> JsonObject:
-        """Repair exact anchor targets/labels from held source; preserve markup, assets and CSS."""
+        """Repair exact anchors/text from held source; preserve markup, assets and CSS."""
         original = self._repository().find_web_fragment(replaces)
         if original is None:
             raise FragmentRefused("fragment.unresolved", "this workspace holds no such fragment")
         reason = repair_reason(rung=rung, trigger=original.get("degraded_reason"), note=note)
         provenance = _repair_provenance(original, rung=rung, note=note, replaces=replaces)
         provenance["repair"]["source"] = (
+            "captured_text_repair" if text_edits is not None else
             "captured_anchor_repair" if label_replacements is not None else "captured_href_repair"
         )
         row, repair, converged = create_href_repaired_fragment(
             self.blobs.storage, workspace_id=self.workspace_id, replaces=replaces,
             replacements=replacements, label=_repair_label(original), derived_reason=reason,
-            provenance=provenance, label_replacements=label_replacements,
+            provenance=provenance, label_replacements=label_replacements, text_edits=text_edits,
         )
         fragment_id = repair.artifact.fragment_id
         if row.get("status") == "draft":
@@ -1124,6 +1126,7 @@ class DurableAgentClonedSectionRegistry:
             "fragment_id": fragment_id, "status": row.get("status"),
             "derived_from": row.get("derived_from"), "match_counts": repair.match_counts,
             "label_match_counts": repair.label_match_counts,
+            "text_match_paths": repair.text_match_paths,
             "derived_reason": row.get("derived_reason"), "requested_derived_reason": reason,
             "converged": converged,
             "lineage_kept": (

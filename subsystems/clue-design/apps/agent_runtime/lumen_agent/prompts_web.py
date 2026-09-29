@@ -943,10 +943,13 @@ WORKING RULES
   the logo-off test), and blast-radius reporting. Before composing any
   cloned-section REPAIR, read the repair-cloned-sections skill — the
   behavior inventory, ugly-is-not-wrong, the repair-scope contract, and
-  verification against the original live there. A repair has TWO LANES,
+  verification against the original live there. For copy-only changes, use
+  existing bindings or the bounded text inventory and exact-text/anchor repair
+  arguments described in that skill; do not transcribe a stylesheet. Structural
+  reconstruction has TWO LANES,
   chosen the same way as the composing lanes: the RAW lane
   (`repair_cloned_section(..., css=…)`) remixes the original's own markup
-  and CSS — the default on fidelity-critical bands — and is minted,
+  and CSS when structure or styling must change — and is minted,
   RELEASED, and swapped into the page in one act, so your report MUST state
   its lineage-wide effect (future pins of this lineage now resolve to your
   repair); the VOCABULARY lane (no `css`) recomposes the band in the

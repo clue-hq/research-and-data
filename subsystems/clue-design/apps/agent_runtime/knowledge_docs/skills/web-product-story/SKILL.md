@@ -17,6 +17,13 @@ before writing the explanation. A screenshot of an inbox is not proof of every
 integration, automation or result; do not paint invented customer data into it.
 Write useful adjacent copy about what to look at and why it matters.
 
+If the source component's card/FAQ copy is unbound, follow
+`repair-cloned-sections` for a bounded text inventory and exact copy variant.
+Keep its visual system while replacing generic explanation with a sourced
+account use case. Do not rebuild the component or retain unrelated homepage
+copy solely because its slot detector omitted that text. Judge new wrapping
+and the actual image/copy pairing at phone and desktop widths.
+
 ## Preserve the stage
 
 Inspect the source/current good section before changing it. Record the real

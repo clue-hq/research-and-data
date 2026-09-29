@@ -3,7 +3,17 @@
 Read after the repair-cloned-sections skill when choosing a repair lane or
 working through behavior fallback, scope and lineage.
 
-## Two repair lanes — pick by what the band must stay
+## Prefer bounded edits before reconstructing a band
+
+Existing slots are the first choice. For unbound plain feature/FAQ copy, use
+`inspect_cloned_section(text_only=True)` and exact `text_edits_json` through
+`repair_cloned_section`; for anchors use its exact href/label arguments. Read
+the parent repair skill for bounds, stored coordinates and refusal handling.
+These paths retain the library's HTML/CSS/assets and existing pin without
+transcribing source. Copy-only adaptation needs neither a raw remix nor a
+new visual composition. It still needs research-grounded copy and render review.
+
+## Two reconstruction lanes — pick by what the band must stay
 
 A replacement is composed in one of two lanes, and the choice mirrors the
 composing lanes in edit-website:
@@ -13,8 +23,8 @@ composing lanes in edit-website:
   sanitize-once door every captured byte passes. Compose it as a REMIX of
   the original's own markup and stylesheet — you have already viewed the
   section; keep its real class names, spacing constants, and type scale,
-  and change only what the defect requires. This is the DEFAULT on a
-  fidelity-critical band: the band must go on looking like the seller's
+  and change only what the defect requires. Use this when a
+  fidelity-critical band needs structural or CSS changes: it must keep looking like the seller's
   site, and the original's own CSS is the only faithful source for that.
   On success, the repair is minted, RELEASED, and swapped into the page
   in one call — there is no chat gate on this lane. Mint/release precedes
@@ -42,8 +52,8 @@ contract, and verification against the original.
 `repair_cloned_section` serves a second intent: **deriving a campaign
 variant of a HEALTHY band** whose slots can't carry the campaign — a CTA
 to remove, a sub-element to hide, a new eyebrow, a different emphasis.
-This is the raw lane used deliberately on a band with no defect, and it is
-the RIGHT move: composing a fresh band while its ancestor sits in the
+Use exact edits for copy-only changes; use the raw lane when structure must
+change. Composing a fresh band while its ancestor sits in the
 library reinvents everything — including, too easily, the truth.
 
 The variant's contract differs from a repair's in what may change:
@@ -55,8 +65,10 @@ The variant's contract differs from a repair's in what may change:
 - **The visual system MAY NOT change.** Geometry, type scale, surfaces,
   spacing rhythm, responsive behavior, and the brand's character are
   inherited from the original's real bytes — that inheritance is the
-  entire reason to derive instead of compose. `view` the original preview and use `inspect_cloned_section` for its
-  actual markup/CSS first; never reconstruct it from memory.
+  entire reason to derive instead of compose. `view` the original preview;
+  structural/raw variants inspect complete actual markup/CSS first. Copy-only
+  variants use the bounded text inventory instead; never reconstruct styling
+  from memory or request a whole stylesheet merely to change one sentence.
 - **The behavior inventory still binds.** Dropping the logo carousel or
   the second CTA is a NAMED decision in your note and report, never a
   silent loss.
@@ -71,10 +83,11 @@ The variant's contract differs from a repair's in what may change:
   homepage hero with one CTA and an eyebrow is the textbook case — and say
   in your report that the original is untouched for every other page.
 
-One more inheritance: the variant's own texts and links come back as
+For a raw variant, its own texts and links come back as
 detected slots, so a well-made variant is itself a parameterized,
 rebindable band — derive it once, then rebind per page for the rest of
-the campaign.
+the campaign. Exact text edits retain the original manifest; they do not
+create new slots. Their stored expected-text inventory is the editing surface.
 
 ## The behavior inventory — every loss is a decision
 

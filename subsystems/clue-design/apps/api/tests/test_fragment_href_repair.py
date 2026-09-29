@@ -343,3 +343,39 @@ def test_href_registry_reports_minted_fragment_when_release_is_unconfirmed(
     assert caught.value.code == "repair.release_unconfirmed"
     assert caught.value.reference in custody.rows
     assert len(custody.persisted) == 1 and not custody.released
+
+
+@pytest.mark.parametrize("variant_first", [False, True])
+def test_text_registry_separates_campaign_and_canonical_birth_intents(custody, captured, variant_first):
+    args = dict(replaces=captured.fragment_id, rung=1, text_edits=[{
+        "path": ":nth-child(1) > :nth-child(1)", "expected": "Native cards",
+        "replacement": "Account workflow",
+    }])
+    notes = ["Correct caption", "campaign variant: account workflow"]
+    if variant_first:
+        notes.reverse()
+    first = custody.registry.mint_href_repair(**args, note=notes[0])
+    second = custody.registry.mint_href_repair(**args, note=notes[1])
+    assert first["fragment_id"] != second["fragment_id"]
+    assert first["lineage_kept"] and second["lineage_kept"]
+    assert not first["converged"] and not second["converged"]
+    again = custody.registry.mint_href_repair(**args, note=notes[1])
+    assert again["fragment_id"] == second["fragment_id"] and again["converged"]
+    assert len(custody.released) == 2
+    stored = custody.persisted[0]
+    assert stored["workspace_id"] == "ws_held" and stored["degraded"] is True
+    assert stored["provenance"]["snapshot_id"] == "snap_held"
+    assert stored["provenance"]["repair"]["source"] == "captured_text_repair"
+    assert stored["artifact"].payload["asset_digests"] == captured.payload["asset_digests"]
+
+
+def test_stale_second_text_edit_never_persists_or_releases(custody, captured):
+    with pytest.raises(FragmentRefused):
+        custody.registry.mint_href_repair(
+            replaces=captured.fragment_id, rung=1, note="campaign variant: account story",
+            text_edits=[
+                {"path": ":nth-child(1) > :nth-child(1)", "expected": "Native cards", "replacement": "Account workflow"},
+                {"path": ":nth-child(1) > :nth-child(2)", "expected": "Stale", "replacement": "Wrong"},
+            ],
+        )
+    assert not custody.persisted and not custody.released

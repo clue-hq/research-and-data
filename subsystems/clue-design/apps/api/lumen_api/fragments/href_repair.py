@@ -16,6 +16,7 @@ from .artifact import FragmentArtifact, canonical_bytes
 from .cssscope import _ANIMATION_PROPERTIES, _GLOBAL_BLOCK_AT_RULES, _KEYFRAMES_AT_RULES
 from .refs import FragmentRefused, fragment_wrapper_class, link_scheme_allowed
 from .slots import SLOT_MARKER_ATTR
+from .text_repair import replace_text_targets, text_leaves
 
 MAX_HREF_REPLACEMENTS = 8
 MAX_HREF_CHARS = 2048
@@ -26,6 +27,7 @@ class HrefRepair:
     artifact: FragmentArtifact
     match_counts: dict[str, int]
     label_match_counts: dict[str, int] = field(default_factory=dict)
+    text_match_paths: list[str] = field(default_factory=list)
 
 
 def validate_href_replacements(replacements: Any) -> dict[str, str]:
@@ -64,6 +66,7 @@ def validate_label_replacements(replacements: Any) -> dict[str, str]:
 
 def build_href_repair(
     source: Mapping[str, Any], replacements: Any = None, *, label_replacements: Any = None,
+    text_edits: Any = None, text_edit_scope: str = "canonical_repair",
 ) -> HrefRepair:
     """Accept only a stored, sanitized payload; no arbitrary markup/CSS input or re-sanitization.
 
@@ -72,7 +75,7 @@ def build_href_repair(
     """
     mapping = validate_href_replacements(replacements) if replacements is not None else {}
     labels = validate_label_replacements(label_replacements) if label_replacements is not None else {}
-    if not mapping and not labels:
+    if not mapping and not labels and text_edits is None:
         raise FragmentRefused("repair.bad_href_map", "provide href or label replacements")
     tree = LexborHTMLParser(source["html"])
     body = tree.body
@@ -91,6 +94,7 @@ def build_href_repair(
     if not all(counts.values()):
         raise FragmentRefused("repair.href_unmatched", "every old href must match an anchor")
     label_counts = _replace_labels(body, labels, source["slot_manifest"])
+    text_paths = replace_text_targets(body, text_edits, source["slot_manifest"]) if text_edits is not None else []
     payload = copy.deepcopy(dict(source))
     payload["html"] = _inner_html(body)
     for key, spec in payload["slot_manifest"].items():
@@ -104,6 +108,11 @@ def build_href_repair(
     }
     if labels:
         identity["anchor_label_derivative_version"] = 1
+    if text_paths:
+        if text_edit_scope not in {"canonical_repair", "campaign_variant"}:
+            raise FragmentRefused("repair.bad_text_scope", "unknown text derivation scope")
+        identity["text_derivative_version"] = 1
+        identity["text_edit_scope"] = text_edit_scope
     fragment_id = "frag_" + hashlib.sha256(canonical_bytes(identity)).hexdigest()[:16]
     payload["css"] = _rebase_css(source["css"], source["fragment_id"], fragment_id)
     payload["fragment_id"] = fragment_id
@@ -111,7 +120,7 @@ def build_href_repair(
     encoded = canonical_bytes(payload)
     return HrefRepair(
         FragmentArtifact(fragment_id, payload, encoded, hashlib.sha256(encoded).hexdigest(), ()),
-        counts, label_counts,
+        counts, label_counts, text_paths,
     )
 
 
@@ -121,15 +130,8 @@ def _replace_labels(body: Any, mapping: dict[str, str], manifest: Mapping[str, A
     if not mapping:
         return counts
 
-    def leaves(node: Any) -> list:
-        if node.tag in {"svg", "math", "style", "script"} or node.attributes.get("aria-hidden") == "true":
-            return []
-        if node.tag == "-text":
-            return [node] if node.text().strip() else []
-        return [leaf for child in node.iter(include_text=True) for leaf in leaves(child)]
-
     for anchor in body.css("a[href]"):
-        text_nodes = leaves(anchor)
+        text_nodes = text_leaves(anchor)
         label = " ".join("".join(node.text() for node in text_nodes).split())
         if label not in mapping:
             continue
