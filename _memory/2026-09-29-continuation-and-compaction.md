@@ -26,7 +26,8 @@ Branch `codex/ai-ark-committee-discovery-spec-v1`, commits `cdec04fa7..` (local 
   L1 is not re-sent; its manifest still records it. Receipt payload gains `continuation`.
   Settledness is checked **before assembly** through the turn's own graph (a turn has one
   context receipt; the durable runner abandons a turn on any exception). Otherwise: fresh, as
-  before. Stage-0 trial surface: always fresh.
+  before — including when the saved state cannot be read (`agent_turn.continuation_unreadable`).
+  Stage-0 trial surface: always fresh.
 - Settings (all in `.env.example`): `CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED=true`,
   `CLUE_AGENT_CONTEXT_WINDOW_TOKENS=` (blank = catalogue), `CLUE_AGENT_COMPACT_TRIGGER_FRACTION=0.90`,
   `CLUE_AGENT_COMPACT_KEEP_FRACTION=0.10`, `CLUE_AGENT_COMPACT_TRIGGER_TOKENS=170000`,
@@ -60,3 +61,8 @@ in full every turn. The share looked 87–94% only because those threads' histor
   journaled `abandoned`.
 - Scripted test models must issue unique tool-call ids per turn (a continued conversation drops
   a repeated id) — `_ScriptedModels` in the O6 test now does.
+- Deferred minors (final self-review): a failed catalogue fetch is cached as "unknown" until
+  restart (170k fallback) and is a one-time sync fetch on the event loop; the image-history cap
+  no longer bounds images already inside a continued conversation (compaction does); a turn in
+  flight across the release (fresh first attempt, continued redelivery) conflicts on its receipt
+  and fails once; compaction is sized to the primary model even if the fallback model answers.

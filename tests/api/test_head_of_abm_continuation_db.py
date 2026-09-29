@@ -358,3 +358,25 @@ def test_a_thread_compacts_once_and_later_turns_build_on_the_summary(tmp_path: P
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+
+def test_an_unreadable_saved_conversation_opens_the_next_turn_fresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spec §3.1: a resume point whose checkpoint cannot be read means a fresh rebuild.
+
+    Without it, the thread would fail on every later turn — the resume point never changes.
+    """
+    from clue_api.head_of_abm_wiring import HeadOfAbmStage0Runtime
+
+    async def unreadable(self: Any, **kwargs: Any) -> bool:
+        del self, kwargs
+        raise ValueError("checkpoint could not be deserialized")
+
+    monkeypatch.setattr(HeadOfAbmStage0Runtime, "continuation_is_settled", unreadable)
+
+    async def check(conn: Any, last_of_a: list[BaseMessage], first_of_b: list[BaseMessage]) -> None:
+        del conn
+        _opens_fresh(last_of_a, first_of_b)
+
+    _scenario(tmp_path, check)

@@ -555,14 +555,28 @@ class ConversationTurnEngine:
         if point is None:
             return fresh_history, None, None
         config = continuation_config_for(point)
-        if not await self._runtime.continuation_is_settled(
-            request=request, lease=lease, execution=execution, continuation_config=config
-        ):
+        # Missing, unsettled or unreadable all open fresh (spec §3.1). An unreadable one must not
+        # fail the turn: the resume point would not change, so every later turn would fail too.
+        try:
+            settled = await self._runtime.continuation_is_settled(
+                request=request, lease=lease, execution=execution, continuation_config=config
+            )
+            reason = "saved_conversation_not_settled"
+        except Exception:
+            log.warning(
+                "agent_turn.continuation_unreadable",
+                turn_id=str(request.turn_id),
+                resume_turn_id=str(point.turn_id),
+                exc_info=True,
+            )
+            settled = False
+            reason = "saved_conversation_unreadable"
+        if not settled:
             log.warning(
                 "agent_turn.continuation_fallback",
                 turn_id=str(request.turn_id),
                 resume_turn_id=str(point.turn_id),
-                reason="saved_conversation_not_settled",
+                reason=reason,
             )
             return fresh_history, None, None
         async with self._conn_factory() as conn:
