@@ -109,3 +109,31 @@ ngrok (`docs/specs/demo-2026-08-29-runbook.md`).
   feature not yet in `apps/frontend` (S2 dependency); permission vocabulary in
   `platform/auth/clue_auth/policy.py` (revision 2; `workspace.manage_settings` = settings spec rev 3).
 - Next: founder reviews the spec → writing-plans for S1 (and the S0 runbook).
+
+## Addendum 2026-09-17 — S0 + S1 implementation plan written (no code)
+- `docs/superpowers/plans/2026-09-17-custom-domain-publishing-s0-s1.md`: 14 tasks (settings/env parity,
+  migration, `clue_spine.hostnames` pure + DAL + `create_workspace` allocation, backfill command, shared
+  CSP/asset check in `clue_design.publishes`, the `clue_page_origin` package with fake-backed route tests,
+  entrypoint/Dockerfile/dev stack 8040, host-independent publish in `web_export`, `lumen_api.public_pages`
+  + tool/route changes, interim `/w/` route deletion with a `published_html` test helper, share-menu
+  wiring, the `pages-edge` Worker, the S0 runbook).
+- Nine plan-level decisions flagged for the founder in the plan's "Decisions" section (text+CHECK not
+  enum; one allocator with three callers incl. the design API's `_ensure_workspace`; suffix as a spine
+  parameter; X-Robots-Tag from the manifest; both tables in one migration; `public_origin`/`custom_origin`
+  on publish responses; no sniff on `/asset-store`; ads hide the host segment; second link line → S2).
+- Verified while planning: the chat-shell share menu is a dummy (no listener for
+  `clue:artifact-publish-request`, `fetchWebPublishInfo`/`publishWebDocument` have no consumers);
+  `activeDocumentId` is in scope at the `ArtifactHeader` render site, so Task 12 wires it for real.
+- Next: founder reviews the plan → execute (subagent-driven, Opus implementers, Fable reviews).
+
+## Addendum 2026-09-17 — S2 plan written (no code)
+- `docs/superpowers/plans/2026-09-17-custom-domain-publishing-s2.md` (12 tasks): config/deps; custom-hostname
+  validation (tldextract offline) + DAL + atomic label change; `clue_spine.pages_settings` + origin
+  fallback/favicon reads; Cloudflare client (MockTransport fixtures); DNS observer + pure status ladder;
+  `workspace.manage_settings` (policy rev 3); `/frontend/v1/settings/pages` routes (read/PATCH/uploads/label,
+  then connect/check/remove with a ticking test clock); design-API publish-time defaults; frontend model/
+  repository/actions; the settings shell lifted verbatim from port-of-spain with only Pages bound
+  (Task 11 GATED on the co-founder's four connection-card frames or a written waiver); contract doc.
+- Seven plan-level decisions flagged in the plan (txt_missing measured from connect; local 403 mapping;
+  verbatim shell lift with fixture for non-Pages sections; no sidebar entry point; DNS in a thread;
+  publish-time defaults scope; custom_url appears once a row is active).

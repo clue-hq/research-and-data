@@ -59,13 +59,16 @@ tenant's* data, and every request-path bug of that shape is invisible until it i
 incident. ``default_workspace_id()`` survives only for DIRECT store constructions (scripts, the
 startup sweep, tests) that have no request to read a header from.
 
-One surface genuinely cannot send a header, and names its tenant in the URL instead:
+One surface genuinely could not send a header, and named its tenant in the URL instead:
 
 * **Public publish serving** — an anonymous visitor sends no headers at all. O6b (ratified:
-  option (a)) puts the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
-  main.py's ``public_repository`` dependency, which builds this store with
-  ``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an
-  unknown tenant through the fail-closed workspace-scoped reads.
+  option (a)) put the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
+  main.py's ``public_repository`` dependency. **Custom-domain publishing S1 deleted that whole
+  surface**: the page origin serves published pages, resolving the tenant from the request
+  HOSTNAME through the hostname registry, and this app has no public route left. What survives
+  here is the ``ensure_workspace=False`` constructor flag the page origin (and the test helpers
+  that read a publish row) still build this store with — an anonymous read must never write, so
+  an unknown tenant reads nothing through the fail-closed workspace-scoped reads.
 
 (The run-event SSE stream used to be a second: ``EventSource`` cannot set request headers, so
 ``GET /agent/runs/{id}/events`` took ``?workspace_id=``. **D7 closed it.** The stream is now opened
@@ -74,7 +77,7 @@ with a single-use token minted through a normal header-authenticated ``POST
 that could not carry a header no longer carries a *claim* either. See ``lumen_api.run_stream``.)
 
 The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes
-that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
+that scaffolding. (The interim ``/w/{workspace_id}/p/...`` route is already gone; see above.)
 """
 
 from __future__ import annotations
@@ -98,7 +101,13 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
+from clue_config import Settings
 from clue_db import create_engine
+from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
+from clue_spine.hostnames import ensure_system_hostname
+from clue_spine.hostnames import lock_system_hostname as _lock_system_hostname
+from clue_spine.hostnames import system_hostname as _system_hostname
+from clue_spine.pages_settings import get_pages_settings
 from py_lumen_obs import get_logger
 from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
@@ -117,7 +126,6 @@ from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
 from clue_design import web_fragments as design_web_fragments
-from clue_design import workspace_handles as design_workspace_handles
 from clue_design.enums import DesignRunKind
 from clue_design.errors import (
     DesignArtifactConflictError,
@@ -319,7 +327,12 @@ class DesignStoreBridge:
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
     """Dev-only scaffolding (dies at Part-IV auth): the dev workspace row must exist for the
-    tenancy FKs; ensured once per process per workspace, idempotently."""
+    tenancy FKs; ensured once per process per workspace, idempotently.
+
+    It also allocates the workspace's system hostname (custom-domain publishing §4.1), the same
+    allocator ``clue_spine.create_workspace`` uses — so a dev workspace scaffolded here has the
+    registry row every public page URL is minted from, exactly like a provisioned one.
+    """
     with _ensure_lock:
         already = workspace_id in _ensured_workspaces
     if already:
@@ -330,6 +343,9 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
             " ON CONFLICT (workspace_id) DO NOTHING"
         ),
         {"w": workspace_id},
+    )
+    await ensure_system_hostname(
+        conn, workspace_id=workspace_id, name=workspace_id, suffix=Settings().pages_system_suffix
     )
     with _ensure_lock:
         _ensured_workspaces.add(workspace_id)
@@ -1340,6 +1356,41 @@ class HybridRepository:
             )
         )
 
+    def system_hostname(self) -> str | None:
+        """The workspace's permanent ``<label>.<suffix>`` hostname.
+
+        Custom-domain publishing §4.1.
+        """
+        return self._bridge._run(lambda conn: _system_hostname(conn, self.workspace_id))
+
+    def active_custom_hostname(self) -> str | None:
+        return self._bridge._run(lambda conn: _active_custom_hostname(conn, self.workspace_id))
+
+    def pages_defaults(self) -> dict[str, str | None]:
+        """Workspace page defaults applied at publish time (custom-domain publishing §4.2).
+
+        They FILL IN, never override: the description is used only when the page derives an
+        empty one, and the social preview only when the page carries no image node.
+        """
+
+        async def _read(conn: AsyncConnection) -> dict[str, str | None]:
+            row = await get_pages_settings(conn, self.workspace_id)
+            return {
+                "page_description": row.page_description,
+                "social_preview_sha256": row.social_preview_sha256,
+            }
+
+        return self._bridge._run(_read)
+
+    def lock_system_hostname(self) -> None:
+        """Freeze the workspace's system label at a successful publish (F5 R-F5-5, adopted by
+        the 2026-09-28 reconciliation ruling): a published URL is out in the world, so its host
+        segment must not move. Idempotent — ``locked_at`` stays the moment the address first
+        went public."""
+        self._bridge._run(
+            lambda conn: _lock_system_hostname(conn, workspace_id=self.workspace_id)
+        )
+
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         return self._bridge._run(
             lambda conn: design_publishes.get_web_publish_for_document(
@@ -1351,6 +1402,14 @@ class HybridRepository:
         return self._bridge._run(
             lambda conn: design_publishes.set_web_publish_status(
                 conn, workspace_id=self.workspace_id, slug=slug, status=status
+            )
+        )
+
+    def unpublish_other_slugs(self, document_id: str, keep_slug: str) -> list[str]:
+        """Take ``document_id`` off every live slug but ``keep_slug`` (a republish is a move)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.unpublish_other_slugs(
+                conn, workspace_id=self.workspace_id, document_id=document_id, keep_slug=keep_slug
             )
         )
 
@@ -1378,52 +1437,6 @@ class HybridRepository:
             lambda conn: design_publishes.list_web_publish_pages(
                 conn, workspace_id=self.workspace_id, slug=slug
             )
-        )
-
-    # --- workspace handle (F5 task 14, ruling R-F5-5) -----------------------------------------
-    # The DNS label this workspace's published sites hang off. Derived from the workspace name,
-    # editable until the first publish, frozen after — see `clue_design.workspace_handles`.
-
-    def get_workspace_handle(self) -> Optional[JsonObject]:
-        """This workspace's handle row, or ``None`` if it has never had one."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.get_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def ensure_workspace_handle(self) -> JsonObject:
-        """The handle, minting the name-derived default the first time. Never overwrites."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.ensure_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def set_workspace_handle(self, handle: str) -> JsonObject:
-        """Choose the handle. ``ValueError`` carries the refusal:
-        ``handle_locked`` / ``handle_invalid`` / ``handle_taken``."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.set_workspace_handle(
-                conn, workspace_id=self.workspace_id, handle=handle
-            )
-        )
-
-    def lock_workspace_handle(self) -> JsonObject:
-        """Freeze the handle at a successful publish. Idempotent; mints one if absent."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.lock_workspace_handle(
-                conn, workspace_id=self.workspace_id
-            )
-        )
-
-    def get_workspace_by_handle(self, handle: str) -> Optional[str]:
-        """``handle -> workspace_id``, the public host router's reverse lookup (Task 15).
-
-        Cross-workspace ON PURPOSE — it answers *which* tenant a host belongs to, so it is the
-        one store method whose result is not scoped to ``self.workspace_id``."""
-        return self._bridge._run(
-            lambda conn: design_workspace_handles.get_workspace_by_handle(conn, handle=handle)
         )
 
     # --- custom-component registry (D2.4B) ----------------------------------------------------

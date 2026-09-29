@@ -64,13 +64,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_api", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_api", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_page_origin"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["subsystems/research/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks", "libs/clue-spine/clue_spine", "libs/clue-storage/clue_storage", "libs/clue-spend/clue_spend", "subsystems/memory/clue_memory", "subsystems/content/clue_content", "subsystems/design/clue_design", "platform/auth/clue_auth", "platform/toolbelt/clue_toolbelt", "platform/agents/clue_agents", "platform/execution/clue_execution", "platform/fleet/clue_fleet", "platform/projections/clue_projections", "platform/api/clue_api"]
-mypy_path = "libs/clue-spend:subsystems/research:subsystems/memory:subsystems/content:subsystems/design:platform/auth:platform/toolbelt:platform/agents:platform/execution:platform/fleet:platform/projections:platform/api:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks:libs/clue-spine:libs/clue-storage"
+files = ["subsystems/research/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks", "libs/clue-spine/clue_spine", "libs/clue-storage/clue_storage", "libs/clue-spend/clue_spend", "subsystems/memory/clue_memory", "subsystems/content/clue_content", "subsystems/design/clue_design", "platform/auth/clue_auth", "platform/toolbelt/clue_toolbelt", "platform/agents/clue_agents", "platform/execution/clue_execution", "platform/fleet/clue_fleet", "platform/projections/clue_projections", "platform/api/clue_api", "platform/page_origin/clue_page_origin"]
+mypy_path = "libs/clue-spend:subsystems/research:subsystems/memory:subsystems/content:subsystems/design:platform/auth:platform/toolbelt:platform/agents:platform/execution:platform/fleet:platform/projections:platform/api:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks:libs/clue-spine:libs/clue-storage:platform/page_origin"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -144,7 +144,7 @@ filterwarnings = [
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_packages = ["clue_research", "clue_core", "clue_obs", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api"]
+root_packages = ["clue_research", "clue_core", "clue_obs", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api", "clue_page_origin"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 [[tool.importlinter.contracts]]
@@ -647,6 +647,14 @@ forbidden_modules = [
     "clue_fleet",
     "clue_projections",
 ]
+
+# Custom-domain publishing S1 — the page origin reads the spine, the design DAL and storage; never a
+# capability plane, the research subsystem, or the two API apps.
+[[tool.importlinter.contracts]]
+name = "page origin imports only core + config + db + obs + spine + design + storage"
+type = "forbidden"
+source_modules = ["clue_page_origin"]
+forbidden_modules = ["clue_research", "clue_api", "clue_auth", "clue_gateway", "clue_locks", "clue_memory", "clue_content", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections"]
 
 # Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
 # into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —

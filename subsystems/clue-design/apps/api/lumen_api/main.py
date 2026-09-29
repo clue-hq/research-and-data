@@ -8,7 +8,6 @@ import inspect
 import io
 import json
 import logging
-import os
 import re
 
 # D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
@@ -40,12 +39,10 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
-    HTMLResponse,
     JSONResponse,
     Response,
     StreamingResponse,
 )
-from starlette.routing import Host
 
 from . import (
     ad_runtime,
@@ -162,15 +159,18 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
-from .public_address import HOST_SUFFIX_ENV, PublicSiteAddress, public_site_address
-from .public_pages import PUBLISH_NOT_FOUND_HTML, build_public_pages_app
+from .public_pages import (
+    custom_public_origin,
+    custom_site_address,
+    site_address,
+    system_public_origin,
+)
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
-    SetWorkspaceHandleRequest,
     RenameDocumentRequest,
     SetAgentInstructionsRequest,
     SetDocumentArchivedRequest,
@@ -1082,34 +1082,19 @@ def create_app(
         """
         return DesignBlobStore(app.state.storage, repo.workspace_id)
 
-    def public_blob_store(workspace_id: str) -> DesignBlobStore:
-        """The O6b analogue of ``public_repository``: an anonymous publish-asset GET names its
-        tenant in the PATH and must never create a workspace row."""
-        return DesignBlobStore(
-            app.state.storage, workspace_id, ensure_workspace=False
-        )
-
     def repository(request: Request) -> HybridRepository:
         # D2.5B: SQLite is deleted; every store domain is Postgres via clue_design. The O4 seam is
         # STRICT — resolve_workspace_id 401s when X-Workspace-Id is absent instead of falling
-        # back to the dev workspace. Three routes are exempt because they cannot receive a
-        # header and take no tenant state: /build-info (engine handshake), /asset-store/{digest}
+        # back to the dev workspace. Two routes are exempt because they cannot receive a
+        # header and take no tenant state: /build-info (engine handshake) and /asset-store/{digest}
         # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
-        # iframe load — a custom header there would fail CORS preflight), and the
-        # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
+        # iframe load — a custom header there would fail CORS preflight). A third — the
+        # /w/{workspace_id}/... O6b public serving group — is GONE: custom-domain publishing S1
+        # deleted it, and the page origin serves published pages now.
         # The run-event SSE stream WAS a fourth ("?workspace_id=", because EventSource cannot send
         # headers); D7 closed it — the stream is opened with a single-use token minted through this
         # very dependency, and its workspace is read off the token row.
         return HybridRepository(workspace_id=resolve_workspace_id(request))
-
-    def public_repository(workspace_id: str) -> HybridRepository:
-        # O6b (RATIFIED 2026-08-08, option (a); PD-part2-design-substrate §6). The public
-        # publish routes serve anonymous visitors, who send no X-Workspace-Id header — so the
-        # tenant comes from the PATH instead. `ensure_workspace=False`: an anonymous GET must
-        # never create a workspace row, so an unknown tenant reads nothing and 404s through the
-        # fail-closed workspace-scoped reads. INTERIM AND DISPOSABLE: Part-IV item 5 owns real
-        # public routing and DELETES this whole surface.
-        return HybridRepository(workspace_id=workspace_id, ensure_workspace=False)
 
     # --- D6: the ONE shim from a design route to the governed write path ------------------- #
 
@@ -4584,7 +4569,6 @@ def create_app(
     @app.get("/documents/{document_id}/web/export.pdf")
     def export_web_document_pdf(
         document_id: str,
-        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
         # The whole SITE as one PDF: every page rendered by Chromium from the same
@@ -4600,7 +4584,6 @@ def create_app(
                 repo,
                 document,
                 blobs=blob_store(repo),
-                public_base=str(request.base_url).rstrip("/"),
                 workspace_id=store_workspace_id(repo),
                 node_bin=app.state.web_export_node_bin,
                 runtime=document_thumbnails.resolve_tailwind_runtime(),
@@ -4668,7 +4651,6 @@ def create_app(
         document: JsonObject,
         *,
         slug: str,
-        public_base: str,
         idempotency_key: Optional[str] = None,
         noindex: bool = False,
     ) -> JsonObject:
@@ -4682,11 +4664,10 @@ def create_app(
         publish is byte-identical to what it produced before this task.
         """
         try:
-            published = run_design_tool(
+            return run_design_tool(
                 "design_publish_web",
                 {
                     "document_id": document["id"],
-                    "public_base": public_base,
                     "slug": slug,
                     "noindex": noindex,
                 },
@@ -4694,13 +4675,6 @@ def create_app(
                 idempotency_key=idempotency_key,
                 refusals=_publish_refusals(slug, document["id"]),
             )
-            # T14 / R-F5-5: something is now on the air at this workspace's handle, so the
-            # handle stops being editable. AFTER the publish and only on success — a refused
-            # publish must leave the marketer free to keep choosing. Idempotent, so the
-            # hundredth republish (and every account page of a batch) is a no-op that cannot
-            # move `locked_at` off the moment the address actually became public.
-            repo.lock_workspace_handle()
-            return published
         except web_export.WebExportUnresolvedMarkers as error:
             # R25-7: the un-derived TEMPLATE renders its `{{account.…}}` markers to a visitor.
             # A 422, not a 502: nothing broke — the wrong document was handed to publish, and the
@@ -4731,7 +4705,6 @@ def create_app(
     def publish_web_document(
         document_id: str,
         payload: WebPublishRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
         idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
@@ -4740,12 +4713,10 @@ def create_app(
         slug = (payload.slug or "").strip() or web_default_slug(
             document["title"], document_id
         )
-        public_base = str(request.base_url).rstrip("/")
         publish = _publish_web(
             repo,
             document,
             slug=slug,
-            public_base=public_base,
             idempotency_key=idempotency_key,
             noindex=payload.noindex,
         )
@@ -4757,12 +4728,16 @@ def create_app(
             slug=slug,
             doc_version=publish["doc_version"],
         )
-        address = publish_site_address(repo, slug, request_base_url=public_base)
+        address = site_address(repo, slug)
+        custom = custom_site_address(repo, slug)
         routes = list(publish.get("routes") or []) or ["/"]
         return {
             "schema_version": 1,
             "slug": slug,
             "url": address.page_url("/"),
+            "custom_url": None if custom is None else custom.page_url("/"),
+            "public_origin": address.origin,
+            "custom_origin": None if custom is None else custom.origin,
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4773,29 +4748,36 @@ def create_app(
             # F5: every route this publish just put on the air, in document order.
             "routes": list(publish.get("routes") or []),
             # F5/R-F5-1: and their ABSOLUTE addresses, built by the ONE builder that knows where
-            # sites live. The share menu shows exactly these — joining a site root to a route is
-            # the server's job, so a deployment that moves the public origin (or a workspace
-            # that has just earned its own host) moves the links the marketer copies with it.
+            # sites live (the hostname registry). The share menu shows exactly these — joining a
+            # site root to a route is the server's job, so the links the marketer copies move
+            # with the workspace's addresses. One map per origin: the always-live system
+            # hostname, and the active custom domain when there is one.
             "page_urls": {route: address.page_url(route) for route in routes},
+            "custom_page_urls": (
+                {} if custom is None else {route: custom.page_url(route) for route in routes}
+            ),
         }
 
     @app.get("/documents/{document_id}/web/publish")
     def get_web_publish_state(
         document_id: str,
-        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
-            return {"schema_version": 1, "published": False}
-        # F5/R-F5-1: the site's public address, config-sourced. `request` supplies only the
-        # interim fallback origin — the workspace still comes from the store, and a configured
-        # host suffix ignores the request entirely.
-        address = publish_site_address(
-            repo, publish["slug"], request_base_url=str(request.base_url).rstrip("/")
-        )
+            # Even unpublished, the state names WHERE this document would publish — the
+            # workspace's always-live system origin, and its custom origin when it has one.
+            return {
+                "schema_version": 1,
+                "published": False,
+                "public_origin": system_public_origin(repo),
+                "custom_origin": custom_public_origin(repo),
+            }
+        # F5/R-F5-1: the site's public address, from the hostname registry — never the request.
+        address = site_address(repo, publish["slug"])
+        custom = custom_site_address(repo, publish["slug"])
         pages = repo.list_web_publish_pages(publish["slug"])
         # A pre-F5 publish has no page rows and still serves its one page at `/`.
         routes = [page["route"] for page in pages] or ["/"]
@@ -4804,6 +4786,9 @@ def create_app(
             "published": True,
             "slug": publish["slug"],
             "url": address.page_url("/"),
+            "custom_url": None if custom is None else custom.page_url("/"),
+            "public_origin": address.origin,
+            "custom_origin": None if custom is None else custom.origin,
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -4817,83 +4802,12 @@ def create_app(
             # its single page at `/` from the publish row's own html.
             "pages": pages,
             # F5: the absolute address of EVERY route this site serves. The editor shows exactly
-            # these — there is no host constant on the client, so a deployment that moves the
-            # public origin moves the links the marketer copies with it.
+            # these — there is no host constant on the client. One map per origin.
             "page_urls": {route: address.page_url(route) for route in routes},
+            "custom_page_urls": (
+                {} if custom is None else {route: custom.page_url(route) for route in routes}
+            ),
         }
-
-    def workspace_handle_dto(handle: JsonObject) -> JsonObject:
-        """The wire shape of a workspace handle: the label, whether it is frozen, and — only if
-        this deployment actually has a wildcard host — the host it resolves to.
-
-        ``public_host`` is ``null`` whenever ``LUMEN_PUBLIC_PAGES_HOST_SUFFIX`` is unset, which
-        is the dev default. Reporting ``acme.pages.cluehq.ai`` for a deployment with no such DNS
-        would be a URL nobody can open, and the client owns no host constant of its own to catch
-        it with (R-F5-1) — so the honest answer is "there is no public host yet".
-        """
-        suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
-        return {
-            "schema_version": 1,
-            "handle": handle["handle"],
-            "locked": handle["locked"],
-            "locked_at": handle["locked_at"],
-            "public_host": f"{handle['handle']}.{suffix}" if suffix else None,
-        }
-
-    @app.get("/workspace/handle")
-    def get_workspace_handle(repo: HybridRepository = Depends(repository)) -> JsonObject:
-        """This workspace's publishing handle (F5 T14, ruling R-F5-5).
-
-        A GET that MINTS the default rather than answering "none yet": every workspace has an
-        address from the moment it exists, so the share surface has something to show — and a
-        publish would have derived exactly the same label a moment later anyway.
-        """
-        return workspace_handle_dto(repo.ensure_workspace_handle())
-
-    @app.put("/workspace/handle")
-    def put_workspace_handle(
-        payload: SetWorkspaceHandleRequest,
-        repo: HybridRepository = Depends(repository),
-    ) -> JsonObject:
-        """Choose the handle — until the first publish freezes it.
-
-        The three refusals are the DAL's, mapped one-for-one: 409 ``locked`` (something is
-        already on the air at this address, and a live URL's host does not move), 422 ``invalid``
-        (not a DNS label, or a name the hosting domain reserves for itself) and 409 ``taken``.
-        """
-        try:
-            return workspace_handle_dto(repo.set_workspace_handle(payload.handle))
-        except ValueError as error:
-            reason = str(error)
-            if reason == "handle_locked":
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "workspace_handle.locked",
-                        "message": (
-                            "this workspace has already published a site, so its handle is "
-                            "fixed — changing it would break every URL already shared"
-                        ),
-                    },
-                ) from error
-            if reason == "handle_taken":
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "workspace_handle.taken",
-                        "message": f"the handle {payload.handle!r} is already in use",
-                    },
-                ) from error
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "workspace_handle.invalid",
-                    "message": (
-                        f"{payload.handle!r} is not a usable handle: 3-63 lowercase letters, "
-                        "digits and inner dashes, and not a reserved name"
-                    ),
-                },
-            ) from error
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
@@ -5647,7 +5561,6 @@ def create_app(
         account_id: str,
         publish: bool,
         slug_base: str,
-        public_base: str,
     ) -> JsonObject:
         """Derive (and optionally publish) one account against `template`.
         Never raises: any failure is captured on the manifest row (status
@@ -5753,13 +5666,9 @@ def create_app(
                 # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
                 # the publish tool resolves the document itself, so it reads the row that
                 # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
-                _publish_web(
-                    repo, derived, slug=slug, public_base=public_base, noindex=abm
-                )
+                _publish_web(repo, derived, slug=slug, noindex=abm)
                 row["slug"] = slug
-                row["url"] = publish_site_address(
-                    repo, slug, request_base_url=public_base
-                ).page_url("/")
+                row["url"] = site_address(repo, slug).page_url("/")
                 row["noindex"] = abm
                 row["status"] = "published"
             return row
@@ -5775,9 +5684,7 @@ def create_app(
             )
             return row
 
-    def _process_web_batch(
-        repo: HybridRepository, batch: JsonObject, public_base: str
-    ) -> JsonObject:
+    def _process_web_batch(repo: HybridRepository, batch: JsonObject) -> JsonObject:
         """Synchronous-chunked processing (chunk 5): the cursor persists after
         every chunk so an interrupted batch resumes exactly where it stopped.
         Status is "partial" mid-way and "completed" when the cursor reaches the
@@ -5830,7 +5737,6 @@ def create_app(
                         account_ids[index],
                         batch["publish"],
                         batch["slug_base"],
-                        public_base,
                     )
                 )
             status = "completed" if chunk_end >= total else "partial"
@@ -5848,7 +5754,6 @@ def create_app(
     def create_web_batch(
         document_id: str,
         payload: WebBatchRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
@@ -5897,7 +5802,6 @@ def create_app(
                     ),
                 },
             )
-        public_base = str(request.base_url).rstrip("/")
         batch_ref = run_design_tool(
             "design_create_web_batch",
             {
@@ -5915,9 +5819,7 @@ def create_app(
             },
             workspace_id=store_workspace_id(repo),
         )
-        batch = _process_web_batch(
-            repo, repo.require_web_batch(batch_ref["batch_id"]), public_base
-        )
+        batch = _process_web_batch(repo, repo.require_web_batch(batch_ref["batch_id"]))
         log_event(
             api_logger,
             logging.INFO,
@@ -5932,13 +5834,12 @@ def create_app(
 
     @app.post("/web/batches/{batch_id}/resume")
     def resume_web_batch(
-        batch_id: str, request: Request, repo: HybridRepository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
             return web_batch_response(batch)
-        public_base = str(request.base_url).rstrip("/")
-        batch = _process_web_batch(repo, batch, public_base)
+        batch = _process_web_batch(repo, batch)
         return web_batch_response(batch)
 
     @app.get("/web/batches/{batch_id}")
@@ -5946,195 +5847,6 @@ def create_app(
         batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
-
-    # --- O6b interim public serving surface ------------------------------- #
-    # RATIFIED 2026-08-08 (option (a)), docs/specs/PD-part2-design-substrate.md §6: publish
-    # slugs became workspace-LOCAL when design_web_publish gained PK (workspace_id, slug) — O6 —
-    # so a bare /p/{slug} is genuinely AMBIGUOUS across tenants and is DELETED (404), not kept
-    # as a fallback. The workspace comes from the PATH because a public visitor sends no header.
-    # Part-IV item 5 (design-integration-master-plan.md) owns the real public routing and
-    # DELETES these three routes when it ships.
-
-    @app.get("/w/{workspace_id}/p-assets/{asset_name}")
-    def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
-        # D4: per-tenant byte custody is real, so the workspace segment is no longer decorative —
-        # it IS the storage scope this read resolves against (`{workspace}/design/{sha256}`).
-        # Another tenant's digest simply has no row here and 404s, the same refusal an unknown
-        # digest gets. `ensure_workspace=False`: an anonymous GET must never create a workspace.
-        match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
-        if match is None:
-            return Response(status_code=404)
-        digest, extension = match.groups()
-        try:
-            data, media_type = web_export.resolve_publish_asset(
-                public_blob_store(workspace_id), digest, extension
-            )
-        except web_export.WebExportError:
-            return Response(status_code=404)
-        return Response(
-            content=data,
-            media_type=media_type,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=31536000, immutable",
-                "ETag": f'"sha256-{digest}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}/manifest.json")
-    def serve_publish_manifest(
-        workspace_id: str, slug: str, repo: HybridRepository = Depends(public_repository)
-    ) -> Response:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return Response(status_code=404)
-        manifest = publish.get("manifest")
-        if not isinstance(manifest, dict):
-            return Response(status_code=404)
-        return Response(
-            content=json.dumps(
-                manifest,
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            media_type="application/json",
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("manifest_digest")}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    def _serve_site_page(
-        repo: HybridRepository, slug: str, route: str, csp_origin: str
-    ) -> HTMLResponse:
-        """One published site page, by route (F5). The ONE serving body every route shares.
-
-        The publish row is the site: it must exist and be ``active``, whichever page is asked
-        for. The page itself comes from the per-route pages the last publish materialized.
-
-        A publish made before F5 has NO page rows at all, so `/` falls back to the publish row's
-        own denormalized html — that is what keeps an already-live page live across the deploy
-        that adds this. Every other route on such a publish is genuinely absent, and gets the
-        same 404 an unknown route gets.
-
-        ``csp_origin`` is the origin the page is actually being served from, and is the one
-        thing the two ADDRESSES disagree on (T15): the interim routes pass the request's own
-        base url, the public host app passes the site's ``PublicSiteAddress.origin``. Passed in
-        rather than re-derived from the request, so the delivery CSP names the origin the site's
-        own stylesheet and fonts are loaded from in either mode.
-        """
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
-        page = repo.get_web_publish_page(slug, route)
-        if page is not None:
-            html, html_digest = page["html"], page["html_digest"]
-        elif route == "/":
-            html, html_digest = publish["html"], publish.get("html_digest")
-        else:
-            return HTMLResponse(content=PUBLISH_NOT_FOUND_HTML, status_code=404)
-        return HTMLResponse(
-            content=html,
-            status_code=200,
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{html_digest}"',
-                "Content-Security-Policy": web_export._delivery_csp(csp_origin),
-                "X-Content-Type-Options": "nosniff",
-                "Referrer-Policy": "no-referrer",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}")
-    def serve_published_page(
-        workspace_id: str,
-        slug: str,
-        request: Request,
-        repo: HybridRepository = Depends(public_repository),
-    ) -> HTMLResponse:
-        return _serve_site_page(repo, slug, "/", str(request.base_url).rstrip("/"))
-
-    # DECLARED AFTER `serve_publish_manifest` ON PURPOSE: this pattern also matches
-    # `/w/{ws}/p/{slug}/manifest.json`, and FastAPI matches in declaration order, so the
-    # manifest route must come first or a site could never serve its own manifest again.
-    @app.get("/w/{workspace_id}/p/{slug}/{route:path}")
-    def serve_published_site_page(
-        workspace_id: str,
-        slug: str,
-        route: str,
-        request: Request,
-        repo: HybridRepository = Depends(public_repository),
-    ) -> HTMLResponse:
-        # A trailing slash is the same page (a static host would serve the folder index), and
-        # an empty path is the site root.
-        normalized = "/" + route.strip("/")
-        return _serve_site_page(
-            repo, slug, normalized, str(request.base_url).rstrip("/")
-        )
-
-    # --- T15: the PUBLIC ORIGIN — `{handle}.<suffix>/{slug}{route}` -------------------------- #
-    # The routes above are the interim, tenant-in-the-path scheme. This is the real address a
-    # published site is shared at, and it reuses the four bodies above verbatim — one publish
-    # read, one 404 page, one CSP. See `public_pages.py` for the custom-domain seam.
-
-    def resolve_workspace_for_handle(handle: str) -> Optional[str]:
-        """``handle -> workspace_id``. Cross-workspace by nature: it answers *which* tenant a
-        hostname belongs to. ``ensure_workspace=False`` (and a router-only placeholder tenant)
-        so a stranger's hostname reads nothing and mints nothing."""
-        return HybridRepository(
-            workspace_id="ws_public_host_router", ensure_workspace=False
-        ).get_workspace_by_handle(handle)
-
-    def host_serve_site_page(
-        *,
-        workspace_id: str,
-        handle: str,
-        slug: str,
-        route: str,
-        request_base_url: str,
-    ) -> HTMLResponse:
-        address = public_site_address(
-            request_base_url=request_base_url,
-            workspace_id=workspace_id,
-            slug=slug,
-            handle=handle,
-        )
-        return _serve_site_page(
-            public_repository(workspace_id), slug, route, address.origin
-        )
-
-    suffix = (os.environ.get(HOST_SUFFIX_ENV) or "").strip().strip("/")
-    if suffix:
-        # Read ONCE, here: a `Host` pattern is compiled into the route table, so changing the
-        # suffix needs a restart (documented in DEV_STACK.md). Blank mounts nothing and every
-        # route above behaves exactly as it did before this existed.
-        #
-        # INSERTED FIRST so a request whose Host header matches the wildcard is served as a
-        # published site before any path route can claim it; every other host falls through the
-        # host route (Match.NONE) into the API's own routes, unchanged.
-        app.router.routes.insert(
-            0,
-            Host(
-                f"{{handle}}.{suffix}",
-                app=build_public_pages_app(
-                    resolve_workspace_for_handle=resolve_workspace_for_handle,
-                    serve_site_page=host_serve_site_page,
-                    serve_publish_manifest=lambda workspace_id, slug: (
-                        serve_publish_manifest(
-                            workspace_id, slug, public_repository(workspace_id)
-                        )
-                    ),
-                    serve_publish_asset=serve_publish_asset,
-                    # A thunk, not the function object: `get_asset_store_bytes` is defined
-                    # further down this factory, so binding it eagerly here is a NameError. The
-                    # closure cell is filled long before any request arrives.
-                    serve_asset_store=lambda digest: get_asset_store_bytes(digest),
-                ),
-            ),
-        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(
@@ -8072,31 +7784,6 @@ if not isinstance(otel_trace.get_tracer_provider(), SdkTracerProvider):
 def store_workspace_id(repo: HybridRepository) -> str:
     """The workspace the store is bound to."""
     return repo.workspace_id
-
-
-def publish_site_address(
-    repo: HybridRepository, slug: str, *, request_base_url: str
-) -> PublicSiteAddress:
-    """The ONE builder for a publish's public address (founder ruling R-F5-1).
-
-    Replaces the old ``public_publish_path``, which could only ever answer with the interim
-    ``/w/{workspace}/p/{slug}`` path and answered it RELATIVELY — a URL nobody outside this API
-    could use, and a shape that cannot survive a site moving onto its own host. The workspace
-    still comes from the STORE the publish row lives in, never from the request URL; the
-    request only supplies the fallback origin, and only while no host suffix is configured.
-
-    The handle (T14, ruling R-F5-5) is ENSURED rather than read: a workspace's first publish must
-    not have to answer "where is this site?" with the interim path merely because nobody had
-    minted its label yet. ``ensure`` never overwrites, so calling it on every address build is
-    free of consequence — and with no host suffix configured the handle changes nothing about
-    the answer anyway.
-    """
-    return public_site_address(
-        request_base_url=request_base_url,
-        workspace_id=store_workspace_id(repo),
-        slug=slug,
-        handle=repo.ensure_workspace_handle()["handle"],
-    )
 
 
 def require_document(repo: HybridRepository, document_id: str) -> JsonObject:

@@ -585,6 +585,8 @@ class OpenRouterDescriber:
         body = {
             "model": self.model,
             "temperature": 0,
+            # A looping answer stops here, not at the model's 131k ceiling (see the setting).
+            "max_tokens": describe_max_tokens(len(items)),
             "provider": {"require_parameters": True},
             "messages": [
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -640,6 +642,16 @@ class OpenRouterDescriber:
             message = str(error)[:FAILURE_EXCERPT_MAX]
             self.last_failure_reason = f"{type(error).__name__}: {message}"
             return None
+
+
+#: The hard ceiling a describe call may ask for, whatever the per-asset setting and item count.
+MAX_DESCRIBE_TOKENS = 131072
+
+
+def describe_max_tokens(item_count: int) -> int:
+    """``max_tokens`` for one describe call: the per-asset cap times the assets in the call."""
+    per_asset = settings.lumen_ingestion_describe_max_tokens_per_asset
+    return min(MAX_DESCRIBE_TOKENS, per_asset * max(1, item_count))
 
 
 def _items_manifest(items: list[DescribeItem]) -> str:

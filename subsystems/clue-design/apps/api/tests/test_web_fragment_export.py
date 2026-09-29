@@ -38,7 +38,7 @@ from fastapi.testclient import TestClient
 
 from clue_design.storage import SOURCE_KEY_ASSET
 
-from conftest import make_blob_store, make_client
+from conftest import make_blob_store, make_client, published_html, published_manifest
 from PIL import Image
 
 from lumen_api.design_store import DesignStoreBridge, HybridRepository
@@ -206,11 +206,7 @@ def _publish(
         f"/documents/{document_id}/web/publish", json={"slug": slug}
     )
     assert published.status_code == 200, published.text
-    served = client.get(f"/w/{workspace_id}/p/{slug}")
-    assert served.status_code == 200, served.text
-    manifest = client.get(f"/w/{workspace_id}/p/{slug}/manifest.json")
-    assert manifest.status_code == 200, manifest.text
-    return served.text, manifest.json()
+    return published_html(workspace_id, slug), published_manifest(workspace_id, slug)
 
 
 def _fragment_region(html: str, fragment_id: str) -> str:
@@ -908,13 +904,22 @@ def test_a_page_with_no_cloned_sections_is_not_rendered_a_second_time() -> None:
 def test_the_meta_csp_carries_no_frame_ancestors_while_the_header_keeps_it():
     """`frame-ancestors` inside a `<meta http-equiv>` CSP is ignored by spec, and the browser
     says so on the console — the walk's ONE console error, and it was ours. The serving header
-    (main.py) still enforces it; the meta emitters stop claiming it."""
+    (main.py) still enforces it; the meta emitters stop claiming it.
+
+    Since custom-domain publishing S1 the policy takes NO origin: published assets are
+    same-origin by construction, so `'self'` covers them on whichever hostname served the page,
+    and the CSP can no longer name the host it was built for."""
     from lumen_api.web_export import _delivery_csp
 
-    header = _delivery_csp("https://pages.example")
+    header = _delivery_csp()
     assert "frame-ancestors 'self'" in header
 
-    meta = _delivery_csp("https://pages.example", meta=True)
+    meta = _delivery_csp(meta=True)
     assert "frame-ancestors" not in meta
     # Everything else is unchanged between the two shapes.
     assert meta == header.replace("; frame-ancestors 'self'", "")
+    # No origin allow-list on either shape — `'self'`, never a hostname.
+    assert "script-src 'self' 'unsafe-inline' data:" in header
+    assert "script-src 'self' 'unsafe-inline' data:" in meta
+    assert "pages.example" not in header
+    assert "pages.example" not in meta

@@ -37,7 +37,6 @@ from clue_toolbelt import (
     ToolOutput,
 )
 
-from ..public_address import PublicSiteAddress, public_site_address
 from .base import DesignTool
 
 __all__ = [
@@ -101,8 +100,6 @@ def publish_web_document(
     node_bin: str,
     document: dict[str, Any],
     slug: str,
-    public_base: str,
-    site_address: PublicSiteAddress | None = None,
     noindex: bool = False,
 ) -> WebPublishRef:
     """Build, persist and point one publish at ``slug``. The ONE publish write path.
@@ -114,27 +111,33 @@ def publish_web_document(
     system rather than a promise each caller has to keep. The direction is one-way on purpose: a
     publish can only ever ADD the robots meta, and nothing that publishes can take it off.
 
-    ``site_address`` is the site's real public address (founder ruling R-F5-1: config, never a
-    constant). It rides ALONGSIDE ``public_base`` rather than replacing it, because
-    ``public_base`` is part of the tool's idempotency body and the address is derived from it —
-    see ``PublishWebDocumentTool.run``, which builds the address from the inputs it was already
-    given so the body, and therefore every recorded operation id, is unchanged. ``None`` means
-    "let the package resolve the interim address itself", which is the same answer.
+    The site's public address comes from the hostname registry (custom-domain publishing §6.1,
+    reconciliation 2026-09-28): ``site_address(repository, slug)`` on the workspace's always-live
+    system hostname, never the request. And the first successful publish LOCKS the workspace's
+    system label (F5 R-F5-5): something is now on the air at that address, so its host segment
+    stops being editable.
     """
 
     from .. import web_export
     from ..database import utc_now
+    from ..public_pages import site_address
 
     noindex = bool(noindex) or bool(document.get("web_noindex"))
+    address = site_address(repository, slug)
+    # Workspace page defaults (custom-domain publishing §4.2), read here — at the ONE publish
+    # write path — so every route that publishes picks them up, and so a default set today
+    # reaches a page on its next republish rather than only through the screen that set it.
+    defaults = repository.pages_defaults()
     package = web_export.build_publish_package(
         core,
         repository,
         document,
         blobs=blobs,
         slug=slug,
-        public_base=public_base,
-        site_address=site_address,
+        site_address=address,
         workspace_id=repository.workspace_id,
+        default_description=defaults["page_description"],
+        default_social_preview_sha256=defaults["social_preview_sha256"],
         node_bin=node_bin,
         noindex=noindex,
     )
@@ -171,6 +174,10 @@ def publish_web_document(
             ],
         }
     )
+    # F5 R-F5-5: the label stops being editable once a revision exists to be served at it.
+    # Idempotent, so every republish (and every account page of a batch) is a no-op that cannot
+    # move `locked_at` off the moment the address first went public.
+    repository.lock_system_hostname()
     publish = repository.upsert_web_publish(
         slug,
         document["id"],
@@ -179,6 +186,11 @@ def publish_web_document(
         package.runtime_version,
         publish_id,
     )
+    # A document lives at ONE address. Republishing it under a new slug is a move (the share
+    # menu's promise: "the site stays up at its current address until the marketer
+    # republishes"), so the address it moved from stops serving — found live 2026-09-30, when a
+    # renamed page kept answering at its old slug beside the new one.
+    repository.unpublish_other_slugs(document["id"], slug)
     return WebPublishRef(
         slug=slug,
         document_id=document["id"],
@@ -202,15 +214,12 @@ def publish_web_document(
 
 class PublishWebDocumentInput(ToolInput):
     document_id: str
-    #: The public origin the published HTML embeds its absolute links against. It is part of the
-    #: rendered bytes, so it is part of the idempotency body — two origins are two publishes.
-    public_base: str
     slug: str
     #: Emit ``<meta name="robots" content="noindex">`` on this page (clone-fidelity F4.3, ruling
     #: R25-4). PER PAGE, defaulting off: CP2's ABM account pages are reachable by their explicit
     #: URL and by nothing else, so they ask for it; a homepage publish never does and stays
-    #: byte-identical. Like ``public_base`` it is part of the rendered bytes, so it belongs in
-    #: the idempotency body — an indexed and a de-indexed page are two publishes.
+    #: byte-identical. It is part of the rendered bytes, so it belongs in the idempotency body —
+    #: an indexed and a de-indexed page are two publishes.
     #:
     #: R-F1 added the page's OWN durable ``web_noindex``, and it deliberately does NOT appear
     #: here. It is a property of the document row, exactly like the scene the publish renders,
@@ -294,23 +303,6 @@ class PublishWebDocumentTool(DesignTool):
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, PublishWebDocumentInput)
         repository = self.host.repository(ctx.workspace_id)
-        # R-F5-1: where the site is served from is configuration, resolved HERE — from inputs
-        # the operation body already carries — so the body (and every recorded operation id)
-        # is untouched while the address itself can move with the deployment. With no host
-        # suffix configured this is exactly the interim `/w/{workspace}/p/{slug}` scheme.
-        site_address = public_site_address(
-            request_base_url=inputs.public_base,
-            workspace_id=repository.workspace_id,
-            slug=inputs.slug,
-            # T14 / R-F5-5: the workspace's own DNS label. ENSURED, not read — the same call
-            # `publish_site_address` makes for the API's reported url, so the BYTES a publish
-            # mints (canonical, og:url, the manifest back-reference, and the rebased internal
-            # links) name the same address the API reports. Left `None` here, a site served on
-            # `{handle}.<suffix>` would carry interim `/w/{workspace}/p/{slug}` links, which do
-            # not exist on that host. `ensure` never overwrites, and with no host suffix
-            # configured the handle changes nothing about the answer at all.
-            handle=repository.ensure_workspace_handle()["handle"],
-        )
         return publish_web_document(
             repository=repository,
             blobs=self.host.blobs(ctx.workspace_id),
@@ -318,8 +310,6 @@ class PublishWebDocumentTool(DesignTool):
             node_bin=self.host.need("web_export_node_bin"),
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
-            public_base=inputs.public_base,
-            site_address=site_address,
             noindex=inputs.noindex,
         )
 

@@ -22,11 +22,20 @@ from fontTools.ttLib import TTFont
 
 from clue_design.storage import SOURCE_KEY_ASSET
 
-from conftest import make_blob_store, make_client
+from conftest import (
+    is_served,
+    make_blob_store,
+    make_client,
+    published_html,
+    published_manifest,
+    published_page,
+    published_page_html,
+)
 from PIL import Image
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
+from lumen_api.public_pages import system_public_origin
 from lumen_api.web_export import _CompiledTheme, _build_input_css
 
 
@@ -276,9 +285,7 @@ def test_publish_html_carries_brand_geometry(
         f"/documents/{document['id']}/web/publish", json={"slug": "geometry-page"}
     )
     assert published.status_code == 200, published.text
-    served = client.get(f"/w/{workspace_id}/p/geometry-page")
-    assert served.status_code == 200, served.text
-    html = served.text
+    html = published_html(workspace_id, "geometry-page")
     assert "--radius-button" in html
     assert "border-width: var(--border-width-card)" in html
 
@@ -487,9 +494,7 @@ def test_the_publish_manifest_stops_discarding_the_font_exclusions(
     )
     assert published.status_code == 200, published.text
 
-    manifest = client.get(f"/w/{workspace_id}/p/font-exclusions/manifest.json")
-    assert manifest.status_code == 200, manifest.text
-    body = manifest.json()
+    body = published_manifest(workspace_id, "font-exclusions")
 
     assert {"family": "Locked Display", "reason": "license not embeddable"} in body[
         "font_families_excluded"
@@ -497,8 +502,7 @@ def test_the_publish_manifest_stops_discarding_the_font_exclusions(
     assert "Export Sans" in body["font_families_included"]
     # The included family's faces really are on the page (the gate let them through), and its
     # @font-face points at the digest route.
-    served = client.get(f"/w/{workspace_id}/p/font-exclusions")
-    assert f"/asset-store/{ofl_digest}" in served.text
+    assert f"/asset-store/{ofl_digest}" in published_html(workspace_id, "font-exclusions")
 
 
 def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
@@ -535,7 +539,7 @@ def test_the_publish_manifest_names_the_basis_a_family_embeds_under(
         f"/documents/{document['id']}/web/publish", json={"slug": "font-basis"}
     )
     assert published.status_code == 200, published.text
-    body = client.get(f"/w/{workspace_id}/p/font-basis/manifest.json").json()
+    body = published_manifest(workspace_id, "font-basis")
 
     assert "Workspace Brand Sans" in body["font_families_included"]
     assert {
@@ -600,12 +604,11 @@ def test_publish_names_the_woff2_blob_on_the_digest_route(
     )
     assert published.status_code == 200, published.text
 
-    served = client.get(f"/w/{workspace_id}/p/sfnt-to-woff2")
-    assert served.status_code == 200, served.text
+    html = published_html(workspace_id, "sfnt-to-woff2")
     sha_of_ttf = hashlib.sha256(inter).hexdigest()
-    assert f"/asset-store/{sha_of_ttf}" not in served.text
-    match = re.search(r'src:url\("/asset-store/([0-9a-f]{64})"\)', served.text)
-    assert match is not None, served.text[:2000]
+    assert f"/asset-store/{sha_of_ttf}" not in html
+    match = re.search(r'src:url\("/asset-store/([0-9a-f]{64})"\)', html)
+    assert match is not None, html[:2000]
     woff2_digest = match.group(1)
     blob = make_blob_store(client.app).read(woff2_digest)
     assert blob[:4] == b"wOF2"
@@ -649,18 +652,20 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert published.status_code == 200, published.text
     body = published.json()
     slug = body["slug"]
-    # F5/R-F5-1: the reported URL is ABSOLUTE and config-sourced. With no host suffix set
-    # (the default, and what the test env has) it is the interim path on the request origin.
-    assert body["url"] == f"http://testserver/w/{workspace_id}/p/{slug}"
+    # The reported URL is ABSOLUTE and comes from the hostname registry: the workspace's
+    # always-live system origin, then the slug (custom-domain publishing §6.1).
+    assert body["url"] == f"{body['public_origin']}/{slug}"
     assert body["doc_version"] == 1
     assert body["previous_available"] is False
 
-    # Served page: inlined style + canonical, no external stylesheet link.
-    served = client.get(f"/w/{workspace_id}/p/{slug}")
-    assert served.status_code == 200, served.text
-    assert 'id="lumen-static-css"' in served.text
-    assert '<link rel="canonical"' in served.text
-    assert '<link rel="stylesheet" href="site.css">' not in served.text
+    # Published page: inlined style, no external stylesheet link. The package is HOST-FREE
+    # since custom-domain publishing S1 (the page origin knows the hostname, the package does
+    # not), so it carries a relative icon link and NO canonical.
+    html = published_html(workspace_id, slug)
+    assert 'id="lumen-static-css"' in html
+    assert '<link rel="icon" href="/favicon.ico">' in html
+    assert '<link rel="canonical"' not in html
+    assert '<link rel="stylesheet" href="site.css">' not in html
 
     # Edit a text marker, republish → doc_version bumps + previous available.
     text_id = find_node(get_document(client, document["id"])["scene"], "text")
@@ -684,25 +689,25 @@ def test_publish_serve_republish_rollback(client: TestClient, workspace_id: str)
     assert republished.status_code == 200, republished.text
     assert republished.json()["doc_version"] == 2
     assert republished.json()["previous_available"] is True
-    assert "MARKER_TWO" in client.get(f"/w/{workspace_id}/p/{slug}").text
+    assert "MARKER_TWO" in published_html(workspace_id, slug)
 
     # Rollback → serves the previous publish, doc_version back to 1.
     rolled = client.post(f"/web/publishes/{slug}/rollback")
     assert rolled.status_code == 200, rolled.text
     assert rolled.json()["doc_version"] == 1
     assert rolled.json()["status"] == "active"
-    assert "MARKER_TWO" not in client.get(f"/w/{workspace_id}/p/{slug}").text
+    assert "MARKER_TWO" not in published_html(workspace_id, slug)
 
     # GET publish state reflects the document.
     state = client.get(f"/documents/{document['id']}/web/publish").json()
     assert state["published"] is True
     assert state["slug"] == slug
 
-    # Unpublish → /p 404.
+    # Unpublish → nothing is served at that slug any more.
     unpub = client.delete(f"/web/publishes/{slug}")
     assert unpub.status_code == 200, unpub.text
     assert unpub.json()["status"] == "unpublished"
-    assert client.get(f"/w/{workspace_id}/p/{slug}").status_code == 404
+    assert not is_served(workspace_id, slug)
 
 
 def test_publish_noindex_option_reaches_the_served_page(
@@ -720,9 +725,7 @@ def test_publish_noindex_option_reaches_the_served_page(
         json={"slug": "hidden-page", "noindex": True},
     )
     assert published.status_code == 200, published.text
-    served = client.get(f"/w/{workspace_id}/p/hidden-page")
-    assert served.status_code == 200, served.text
-    assert '<meta name="robots" content="noindex">' in served.text
+    assert '<meta name="robots" content="noindex">' in published_html(workspace_id, "hidden-page")
 
 
 def test_publish_slug_validation(client: TestClient) -> None:
@@ -765,7 +768,13 @@ def test_unpublish_unknown_slug_is_404(client: TestClient) -> None:
 def test_get_publish_state_unpublished(client: TestClient) -> None:
     document = seed_document(client)
     state = client.get(f"/documents/{document['id']}/web/publish").json()
-    assert state == {"schema_version": 1, "published": False}
+    # Custom-domain publishing S1: even unpublished, the state names WHERE this document would
+    # publish — the workspace's always-live system origin, and its custom origin when it has one.
+    assert set(state) == {"schema_version", "published", "public_origin", "custom_origin"}
+    assert state["schema_version"] == 1
+    assert state["published"] is False
+    assert state["custom_origin"] is None
+    assert state["public_origin"].startswith("https://")
 
 
 # --- (g) scene documents are rejected on the new endpoints -------------------
@@ -819,9 +828,9 @@ def test_rewrite_site_links_touches_only_document_routes() -> None:
         '<a href="/pricing">a</a><a href="/careers">b</a>'
         '<img src="/asset-store/abc"><a href="/">home</a>'
     )
-    out = rewrite_site_links(html, ["/", "/pricing"], "/w/ws1/p/site")
-    assert 'href="/w/ws1/p/site/pricing"' in out
-    assert 'href="/w/ws1/p/site"' in out
+    out = rewrite_site_links(html, ["/", "/pricing"], "/site")
+    assert 'href="/site/pricing"' in out
+    assert 'href="/site"' in out
     # A path that merely LOOKS like a route, and a non-href attribute, are untouched.
     assert 'href="/careers"' in out
     assert 'src="/asset-store/abc"' in out
@@ -856,18 +865,24 @@ def test_publish_serves_every_page_at_its_route(
     assert published.status_code == 200, published.text
     assert published.json()["routes"] == ["/", "/pricing"]
 
-    home = client.get(f"/w/{workspace_id}/p/multi")
-    pricing = client.get(f"/w/{workspace_id}/p/multi/pricing")
-    assert home.status_code == 200, home.text
-    assert "Home" in home.text
-    assert pricing.status_code == 200, pricing.text
-    assert "Plans" in pricing.text
-    # The site link is rewritten to the served address of the pricing page.
-    assert f'href="/w/{workspace_id}/p/multi/pricing"' in home.text
-    # ...and each page carries its OWN canonical.
-    assert '<link rel="canonical" href="' in pricing.text
-    assert f"/w/{workspace_id}/p/multi/pricing" in pricing.text
-    assert client.get(f"/w/{workspace_id}/p/multi/nope").status_code == 404
+    home = published_page_html(workspace_id, "multi", "/")
+    pricing = published_page_html(workspace_id, "multi", "/pricing")
+    assert "Home" in home
+    assert "Plans" in pricing
+    # The site link is rewritten to the pricing page's ROOT-RELATIVE address on the workspace's
+    # hostname (`/{slug}{route}`), so it works on the system hostname and any custom domain.
+    assert 'href="/multi/pricing"' in home
+    # No page carries a canonical (spec A6: published HTML names no host), and every page links
+    # the site's one manifest root-relatively.
+    for page_html in (home, pricing):
+        assert '<link rel="canonical"' not in page_html
+        assert 'property="og:url"' not in page_html
+        assert '<link rel="lumen-publish-manifest" href="/multi/manifest.json">' in page_html
+    assert published_page(workspace_id, "multi", "/nope") is None
+    # The share menu's per-route links are absolute on the always-live system origin.
+    origin = system_public_origin(HybridRepository(workspace_id=workspace_id))
+    assert published.json()["page_urls"]["/pricing"] == f"{origin}/multi/pricing"
+    assert published.json()["custom_page_urls"] == {}
 
     state = client.get(f"/documents/{document['id']}/web/publish").json()
     assert [page["route"] for page in state["pages"]] == ["/", "/pricing"]
@@ -911,7 +926,7 @@ def test_export_zip_writes_one_folder_per_page(client: TestClient) -> None:
 def test_the_static_bundle_csp_allows_the_bundles_own_files() -> None:
     """The zip's `index.html` refused to load the zip's own bytes.
 
-    `build_export_bundle` injected the PUBLISH policy with no `public_base` — so under
+    `build_export_bundle` injected the PUBLISH policy with no origin allowed — so under
     `default-src 'none'` the page allowed no origin at all, and its own `site.css`,
     `assets/<digest>.<ext>` and `fonts/<digest>.woff2` were blocked BY THE PAGE ITSELF, on
     disk and on any static host. `'self'` covers the static-host case; `file:` is required on
@@ -940,20 +955,16 @@ def test_the_static_bundle_csp_allows_the_bundles_own_files() -> None:
     assert "frame-ancestors" not in policy
 
 
-def test_the_served_policy_is_byte_identical_without_the_static_bundle_flag() -> None:
-    """The publish/serving path is NOT touched by the export fix. This pins the exact string
-    `_delivery_csp` produced before `static_bundle` existed, captured from the pre-change code."""
+def test_the_served_policy_is_the_shared_one_without_the_static_bundle_flag() -> None:
+    """The publish/serving path is NOT touched by the export fix: without `static_bundle` the
+    policy is exactly the one `clue_design.publishes` shares with the page origin's header
+    (custom-domain publishing §6.2), and the `file:` source appears only in the bundle's."""
+    from clue_design.publishes import DELIVERY_CSP_HEADER, DELIVERY_CSP_META
     from lumen_api.web_export import _delivery_csp
 
-    assert _delivery_csp("http://127.0.0.1:8016", meta=True) == (
-        "default-src 'none'; "
-        "script-src 'unsafe-inline' data: http://127.0.0.1:8016; "
-        "style-src 'unsafe-inline' http://127.0.0.1:8016; "
-        "img-src data: blob: http://127.0.0.1:8016; "
-        "font-src data: http://127.0.0.1:8016; "
-        "connect-src 'none'; object-src 'none'; worker-src 'none'; "
-        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
-    )
+    assert _delivery_csp(meta=True) == DELIVERY_CSP_META
+    assert _delivery_csp() == DELIVERY_CSP_HEADER
+    assert "file:" not in _delivery_csp(meta=True)
 
 
 def test_export_pages_carry_the_static_bundle_csp(client: TestClient) -> None:
@@ -1091,3 +1102,43 @@ def test_an_exported_zip_loads_its_own_css_and_images_from_disk(
         "heroBackground"
     ]
     assert violations == [], violations
+
+
+# --- (h) the publish package names no host (custom-domain publishing S1) -----
+
+
+def test_publish_package_is_host_independent(client: TestClient) -> None:
+    from lumen_api.public_address import PublicSiteAddress
+    from lumen_api.web_export import build_publish_package
+
+    document = get_document(client, seed_document(client)["id"])
+    repo = HybridRepository()
+    package = build_publish_package(
+        client.app.state.core,
+        repo,
+        document,
+        blobs=make_blob_store(client.app),
+        slug="host-free",
+        site_address=PublicSiteAddress(
+            origin="https://acme.pages.test",
+            site_path="/host-free",
+            asset_origin="https://acme.pages.test",
+        ),
+        workspace_id=repo.workspace_id,
+        node_bin=client.app.state.web_export_node_bin,
+    )
+    html = package.html
+    assert "/w/" not in html
+    assert '<link rel="canonical"' not in html
+    assert 'property="og:url"' not in html
+    assert '<link rel="icon" href="/favicon.ico">' in html
+    assert '<link rel="lumen-publish-manifest" href="/host-free/manifest.json">' in html
+    # The package mints URLs only in the <head>; author-written body anchors are the page's own
+    # content and must survive verbatim. The only absolute URL the head may carry is og:image,
+    # which unfurlers require absolute and which points at the always-live system origin.
+    head = html[: html.index("</head>")]
+    absolute = re.findall(r'(?:href|src|content)="(https?://[^"]+)"', head)
+    assert all(url.startswith("https://acme.pages.test/asset-store/") for url in absolute), absolute
+    assert package.manifest["canonical_url"] == "https://acme.pages.test/host-free"
+    csp = re.search(r'http-equiv="Content-Security-Policy" content="([^"]+)"', html)
+    assert csp is not None and "http" not in csp.group(1) and "frame-ancestors" not in csp.group(1)

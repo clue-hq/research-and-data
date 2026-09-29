@@ -2040,11 +2040,17 @@ export interface WebPublishPage {
 
 /** The document's current publish state (`GET /documents/{id}/web/publish`).
  * `published: false` is the unpublished case; the slug/url/version fields carry
- * values only when `published` is true. */
+ * values only when `published` is true. `publicOrigin`/`customOrigin` are the
+ * workspace's public hosts and are served in both states; `customOrigin`,
+ * `customUrl` and `customPageUrls` are null/empty while the workspace has no
+ * active custom hostname. */
 export interface WebPublishState {
   published: boolean;
   slug: string | null;
   url: string | null;
+  customUrl: string | null;
+  publicOrigin: string | null;
+  customOrigin: string | null;
   docVersion: number | null;
   status: string | null;
   previousAvailable: boolean;
@@ -2059,6 +2065,9 @@ export interface WebPublishState {
   /** F5: the ABSOLUTE address of every route, computed by the server (R-F5-1).
    * The client never builds a public URL from a host constant of its own. */
   pageUrls: Record<string, string>;
+  /** The same routes on the workspace's active custom hostname, computed by the
+   * server. Empty when the workspace has no active custom hostname. */
+  customPageUrls: Record<string, string>;
 }
 
 /** Read the document's publish state. Throws (with the server message) on any
@@ -2079,6 +2088,9 @@ export async function fetchWebPublishInfo(
     published?: unknown;
     slug?: unknown;
     url?: unknown;
+    custom_url?: unknown;
+    public_origin?: unknown;
+    custom_origin?: unknown;
     doc_version?: unknown;
     status?: unknown;
     previous_available?: unknown;
@@ -2089,11 +2101,15 @@ export async function fetchWebPublishInfo(
     html_digest?: unknown;
     pages?: unknown;
     page_urls?: unknown;
+    custom_page_urls?: unknown;
   };
   return {
     published: payload.published === true,
     slug: typeof payload.slug === "string" ? payload.slug : null,
     url: typeof payload.url === "string" ? payload.url : null,
+    customUrl: typeof payload.custom_url === "string" ? payload.custom_url : null,
+    publicOrigin: typeof payload.public_origin === "string" ? payload.public_origin : null,
+    customOrigin: typeof payload.custom_origin === "string" ? payload.custom_origin : null,
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     status: typeof payload.status === "string" ? payload.status : null,
     previousAvailable: payload.previous_available === true,
@@ -2103,7 +2119,8 @@ export async function fetchWebPublishInfo(
     packageDigest: typeof payload.package_digest === "string" ? payload.package_digest : null,
     htmlDigest: typeof payload.html_digest === "string" ? payload.html_digest : null,
     pages: parseWebPublishPages(payload.pages),
-    pageUrls: parseStringMap(payload.page_urls)
+    pageUrls: parseStringMap(payload.page_urls),
+    customPageUrls: parseStringMap(payload.custom_page_urls)
   };
 }
 
@@ -2140,6 +2157,9 @@ export interface WebPublishResult {
   schemaVersion: number | null;
   slug: string;
   url: string;
+  customUrl: string | null;
+  publicOrigin: string | null;
+  customOrigin: string | null;
   docVersion: number | null;
   runtimeVersion: string | null;
   previousAvailable: boolean;
@@ -2156,6 +2176,9 @@ export interface WebPublishResult {
    * server's to compute, because only it knows whether this workspace's sites
    * live on their own host or on the interim tenant path. */
   pageUrls: Record<string, string>;
+  /** Every one of those routes on the workspace's active custom hostname, built
+   * by the server. Empty when there is no active custom hostname. */
+  customPageUrls: Record<string, string>;
 }
 
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
@@ -2194,6 +2217,9 @@ export async function publishWebDocument(
     schema_version?: unknown;
     slug?: unknown;
     url?: unknown;
+    custom_url?: unknown;
+    public_origin?: unknown;
+    custom_origin?: unknown;
     doc_version?: unknown;
     runtime_version?: unknown;
     previous_available?: unknown;
@@ -2203,11 +2229,15 @@ export async function publishWebDocument(
     html_digest?: unknown;
     routes?: unknown;
     page_urls?: unknown;
+    custom_page_urls?: unknown;
   };
   return {
     schemaVersion: typeof payload.schema_version === "number" ? payload.schema_version : null,
     slug: typeof payload.slug === "string" ? payload.slug : "",
     url: typeof payload.url === "string" ? payload.url : "",
+    customUrl: typeof payload.custom_url === "string" ? payload.custom_url : null,
+    publicOrigin: typeof payload.public_origin === "string" ? payload.public_origin : null,
+    customOrigin: typeof payload.custom_origin === "string" ? payload.custom_origin : null,
     docVersion: typeof payload.doc_version === "number" ? payload.doc_version : null,
     runtimeVersion:
       typeof payload.runtime_version === "string"
@@ -2223,7 +2253,8 @@ export async function publishWebDocument(
     routes: Array.isArray(payload.routes)
       ? payload.routes.filter((route): route is string => typeof route === "string")
       : [],
-    pageUrls: parseStringMap(payload.page_urls)
+    pageUrls: parseStringMap(payload.page_urls),
+    customPageUrls: parseStringMap(payload.custom_page_urls)
   };
 }
 

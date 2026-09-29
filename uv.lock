@@ -24,6 +24,7 @@ members = [
     "clue-locks",
     "clue-memory",
     "clue-obs",
+    "clue-page-origin",
     "clue-projections",
     "clue-research",
     "clue-spend",
@@ -745,8 +746,10 @@ dependencies = [
     { name = "clue-spend" },
     { name = "clue-storage" },
     { name = "clue-toolbelt" },
+    { name = "dnspython" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "uvicorn" },
     { name = "yt-dlp", extra = ["default"] },
@@ -766,8 +769,10 @@ requires-dist = [
     { name = "clue-spend", editable = "libs/clue-spend" },
     { name = "clue-storage", editable = "libs/clue-storage" },
     { name = "clue-toolbelt", editable = "platform/toolbelt" },
+    { name = "dnspython", specifier = ">=2.6,<3" },
     { name = "fastapi", specifier = ">=0.138.0" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "python-multipart", specifier = ">=0.0.9,<1" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "uvicorn", specifier = ">=0.35.0" },
     { name = "yt-dlp", extras = ["default"], specifier = ">=2026.8.19" },
@@ -1008,6 +1013,39 @@ requires-dist = [
 ]
 
 [[package]]
+name = "clue-page-origin"
+version = "0.0.0"
+source = { editable = "platform/page_origin" }
+dependencies = [
+    { name = "clue-config" },
+    { name = "clue-core" },
+    { name = "clue-db" },
+    { name = "clue-design" },
+    { name = "clue-obs" },
+    { name = "clue-spine" },
+    { name = "clue-storage" },
+    { name = "fastapi" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "clue-config", editable = "libs/clue-config" },
+    { name = "clue-core", editable = "libs/clue-core" },
+    { name = "clue-db", editable = "libs/clue-db" },
+    { name = "clue-design", editable = "subsystems/design" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
+    { name = "clue-spine", editable = "libs/clue-spine" },
+    { name = "clue-storage", editable = "libs/clue-storage" },
+    { name = "fastapi", specifier = ">=0.138.0" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "uvicorn", specifier = ">=0.35.0" },
+]
+
+[[package]]
 name = "clue-projections"
 version = "0.0.0"
 source = { editable = "platform/projections" }
@@ -1109,6 +1147,7 @@ dependencies = [
     { name = "clue-db" },
     { name = "pydantic" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "tldextract" },
 ]
 
 [package.metadata]
@@ -1117,6 +1156,7 @@ requires-dist = [
     { name = "clue-db", editable = "libs/clue-db" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "tldextract", specifier = ">=5,<6" },
 ]
 
 [[package]]
@@ -1298,6 +1338,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dnspython"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/8b/57666417c0f90f08bcafa776861060426765fdb422eb10212086fb811d26/dnspython-2.8.0.tar.gz", hash = "sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f", size = 368251, upload-time = "2025-09-07T18:58:00.022Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/5a/18ad964b0086c6e62e2e7500f7edc89e3faa45033c71c1893d34eed2b2de/dnspython-2.8.0-py3-none-any.whl", hash = "sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af", size = 331094, upload-time = "2025-09-07T18:57:58.071Z" },
+]
+
+[[package]]
 name = "docstring-parser"
 version = "0.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1333,6 +1382,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5b/58/ff455d9fe47c60abadb34b9e05a304b1f05f5ab8000ac01565156b6f5e43/fastapi-0.138.0.tar.gz", hash = "sha256:d445a4877636ad191e7053e08c9bf98cb921a6756776848400bb773d1740c061", size = 419240, upload-time = "2026-06-20T01:18:05.259Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6c/ff/8496d9847a5fedae775eb49460722d3efaa80487854273e9647ae876218c/fastapi-0.138.0-py3-none-any.whl", hash = "sha256:b6f54fd1bd72c80b0f899f172c61a600f6f7af9b43d4d772a018f35624048cb0", size = 126779, upload-time = "2026-06-20T01:18:03.483Z" },
+]
+
+[[package]]
+name = "filelock"
+version = "4.0.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/95/31/fbad823d8dfc56e2ff694db0319959382bdb01f2fe40c382e34c6f672392/filelock-4.0.5.tar.gz", hash = "sha256:2b155f098c4f285fb41954a22c616c4e8a0635b78c184338ba3023c1c91a4b4d", size = 247758, upload-time = "2026-09-28T05:07:19.736Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/34/d90d7e7ef972900e09f45b9c0661376dd03e77fece26ee83ec93b7719bae/filelock-4.0.5-py3-none-any.whl", hash = "sha256:be9166068623636cedcad7b2ef735b04e5fb4344d978e09fd6fbd6ede06f14f0", size = 108976, upload-time = "2026-09-28T05:07:18.341Z" },
 ]
 
 [[package]]
@@ -2212,6 +2270,7 @@ dependencies = [
     { name = "clue-locks" },
     { name = "clue-obs" },
     { name = "clue-spend" },
+    { name = "clue-spine" },
     { name = "fastapi" },
     { name = "fonttools" },
     { name = "httpx" },
@@ -2241,6 +2300,7 @@ requires-dist = [
     { name = "clue-locks", editable = "libs/clue-locks" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "clue-spend", editable = "libs/clue-spend" },
+    { name = "clue-spine", editable = "libs/clue-spine" },
     { name = "fastapi", specifier = ">=0.111,<1" },
     { name = "fonttools", specifier = ">=4.53,<5" },
     { name = "httpx", specifier = ">=0.27,<1" },
@@ -3739,6 +3799,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-file"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
+]
+
+[[package]]
 name = "requests-toolbelt"
 version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4066,6 +4138,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5c/5d/76b4383ac4e5b5e254e50c09807b3e13820bed6d6c11cd540264988d6802/tld-0.13.2.tar.gz", hash = "sha256:d983fa92b9d717400742fca844e29d5e18271079c7bcfabf66d01b39b4a14345", size = 467175, upload-time = "2026-03-06T23:50:34.498Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/90/39a85a4b63c84213e78b3c17d22e1bf45328acf8ebb33ef93be30d0a3911/tld-0.13.2-py2.py3-none-any.whl", hash = "sha256:9b8fdbdb880e7ba65b216a4937f2c94c49a7226723783d5838fc958ac76f4e0c", size = 296743, upload-time = "2026-03-06T23:50:32.465Z" },
+]
+
+[[package]]
+name = "tldextract"
+version = "5.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "requests-file" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/a9/ed5d3be29bfaf90c00b7159d3884b311f3880b55833d1c7be764164dc288/tldextract-5.3.2.tar.gz", hash = "sha256:c017431bc0800f2d3d1b57cce36e06668f0930f60a6d8c4615d4e2b8da298fa9", size = 191971, upload-time = "2026-08-08T20:53:13.732Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4a/3b/930310b274dfe3b9a4fe64ef8b24e5faf376c9a6f94bba6fc6e438058598/tldextract-5.3.2-py3-none-any.whl", hash = "sha256:6c90d2a259f5c89f4fcf01f97af15708416a59ffedddff006d67222ab30d0fb0", size = 106415, upload-time = "2026-08-08T20:53:12.675Z" },
 ]
 
 [[package]]

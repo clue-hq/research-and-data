@@ -4,14 +4,18 @@ Before this slice an absent header silently resolved to the dev workspace, so a 
 read and wrote another tenant's rows and looked perfectly healthy doing it. These tests pin both
 halves of the new contract: the refusal, and the exact, deliberate list of routes exempt from it.
 
-The exemptions are exactly three, each because the caller *cannot* send a header:
+The exemptions are exactly two (they were three until the ``/w/`` group below was deleted),
+each because the caller *cannot* send a header:
 
 * ``/build-info`` — the editor's engine handshake, read before any workspace context exists.
 * ``/asset-store/{digest}`` — content-addressed public bytes the PUBLISHED page and the
   origin-"null" preview iframe load; a custom header would make them preflighted requests the
   wildcard CORS response cannot satisfy.
-* ``/w/{workspace_id}/...`` — the O6b public serving group, which names its tenant in the PATH
-  because an anonymous visitor sends no headers at all.
+* ``/w/{workspace_id}/...`` — the O6b public serving group, which named its tenant in the PATH
+  because an anonymous visitor sends no headers at all. **DELETED by custom-domain publishing
+  S1**: the page origin serves published pages, so this app has no public surface at all and the
+  exemption list is down to two. The test below keeps a probe on the old prefix as the proof the
+  group is gone.
 
 There used to be a fourth, near-exemption: ``GET /agent/runs/{id}/events`` accepted
 ``?workspace_id=`` because ``EventSource`` cannot set request headers. **D7 closed it.** The stream
@@ -93,19 +97,14 @@ def test_asset_store_bytes_are_exempt(bare: TestClient, app) -> None:
     assert response.headers["Access-Control-Allow-Origin"] == "*"
 
 
-def test_the_public_publish_group_is_exempt(bare: TestClient, workspace_id: str) -> None:
-    """An anonymous visitor sends no header, so these routes must REACH their handler.
+def test_the_public_publish_group_is_gone(bare: TestClient, workspace_id: str) -> None:
+    """The O6b interim serving group no longer exists on this app (custom-domain publishing S1).
 
-    A 404 (nothing published at that slug, through the fail-closed workspace-scoped read) is the
-    proof: the request got past the seam. A 401 would mean the public page is unreachable. The
-    happy path — a real publish rendering under ``/w/{ws}/p/{slug}`` — is covered by
-    ``test_web_export.py``, which owns the export toolchain.
+    A 404 here is route-table absence, not a fail-closed read: the design API serves no public
+    page at all now — the page origin does, and ``tests/page_origin/test_routes.py`` owns that
+    contract. This probe stays so a re-introduced ``/w/`` surface cannot land unnoticed.
     """
     assert bare.get(f"/w/{workspace_id}/p/seam-page").status_code == 404
-    assert bare.get(f"/w/{workspace_id}/p/seam-page/manifest.json").status_code == 404
-    assert bare.get(f"/w/{workspace_id}/p-assets/{'a' * 64}.css").status_code == 404
-    # An unknown tenant is refused the same way a missing page is — existence never leaks.
-    assert bare.get("/w/ws_not_a_tenant/p/seam-page").status_code == 404
 
 
 def test_the_run_event_stream_is_token_gated_and_takes_no_workspace_parameter(

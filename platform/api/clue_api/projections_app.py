@@ -971,6 +971,7 @@ def create_projections_app(
             conn_factory=conn_factory,
             provision_enabled=resolved.self_serve_provisioning_enabled,
             clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
+            pages_system_suffix=resolved.pages_system_suffix,
             # The workspace switcher's company logo (Brandfetch's embed-only Logo API).
             brandfetch_client_id=resolved.brandfetch_client_id,
         )

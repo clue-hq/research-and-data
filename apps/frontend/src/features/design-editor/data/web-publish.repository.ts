@@ -18,6 +18,12 @@ export interface WebPublishOutcome {
   /** Every route the site now serves, absolute. Keyed by route (`"/"` is the
    * site root). */
   pageUrls: Record<string, string>;
+  /** The site root on the workspace's active custom hostname; `null` when the
+   * workspace has none. */
+  customUrl: string | null;
+  /** Every route on that custom hostname, built by the server. Empty when the
+   * workspace has no active custom hostname. */
+  customPageUrls: Record<string, string>;
 }
 
 /**
@@ -91,6 +97,9 @@ export function downloadFilenameFrom(
 }
 
 const UNPUBLISHED: WebPublishState = {
+  customOrigin: null,
+  customPageUrls: {},
+  customUrl: null,
   docVersion: null,
   htmlDigest: null,
   manifestDigest: null,
@@ -99,6 +108,7 @@ const UNPUBLISHED: WebPublishState = {
   pages: [],
   previousAvailable: false,
   publishId: null,
+  publicOrigin: null,
   published: false,
   slug: null,
   status: null,
@@ -144,7 +154,13 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
         updatedAt: new Date(0).toISOString(),
         url,
       });
-      return { pageUrls: { "/": url }, slug, url };
+      return {
+        customPageUrls: {},
+        customUrl: null,
+        pageUrls: { "/": url },
+        slug,
+        url,
+      };
     },
     async state(documentId) {
       return published.get(documentId) ?? UNPUBLISHED;
@@ -203,6 +219,10 @@ export function createHttpWebPublishRepository(
         noindex,
       });
       return {
+        // A custom hostname's addresses come only from the server; there is no
+        // local join for them, so an empty map means "no custom hostname".
+        customPageUrls: result.customPageUrls,
+        customUrl: result.customUrl,
         // The server's own map wins (F5 task 14): it is the only side that
         // knows whether this workspace's sites are served from its handle's
         // host or from the interim tenant path, so joining a root to a route

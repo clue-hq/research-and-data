@@ -1,20 +1,23 @@
+// Built from spec §8.2 pending the co-founder's frames (2026-09-18); re-lift when they land.
+"use client";
+
 import { Upload } from "lucide-react";
-import type { StaticSettings } from "../model/settings";
+import { useRef, useState, type ReactNode } from "react";
+
+import { Button } from "@/components/ui/button";
+
+import { usePagesSettings } from "../hooks/use-pages-settings";
+import type { PagesSettingsRead } from "../model/pages";
+import { CustomDomainCard } from "./custom-domain-card";
 import styles from "./settings.module.css";
-import {
-  SectionLead,
-  SettingsCard,
-  SettingsInput,
-  SettingsTextarea,
-  SettingsToggle,
-} from "./settings-primitives";
+import { SettingsCard, SettingsInput } from "./settings-primitives";
 
 function FormRow({
   children,
   description,
   label,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   description?: string;
   label: string;
 }) {
@@ -29,112 +32,194 @@ function FormRow({
   );
 }
 
-export function PagesSettings({ pages }: { pages: StaticSettings["pages"] }) {
+/** Spec §8.2 / A1: the system hostname is read-only; only its label is editable. */
+function ClueAddressRow({
+  busy,
+  canManage,
+  hostname,
+  label,
+  onSave,
+}: {
+  busy: boolean;
+  canManage: boolean;
+  hostname: string;
+  label: string;
+  onSave: (label: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+  return (
+    <FormRow description="Changing it makes existing links stop working" label="Your Clue address">
+      {editing ? (
+        <div className="flex items-center gap-2">
+          <input
+            aria-label="Clue address label"
+            className={styles.input}
+            onChange={(event) => setDraft(event.target.value)}
+            value={draft}
+          />
+          <Button
+            disabled={busy}
+            onClick={() => {
+              void onSave(draft.trim()).then((saved) => {
+                if (saved) setEditing(false);
+              });
+            }}
+            size="sm"
+            variant="secondary"
+          >
+            Save
+          </Button>
+          <Button
+            onClick={() => {
+              setDraft(label);
+              setEditing(false);
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span>{hostname}</span>
+          {canManage ? (
+            <Button
+              onClick={() => {
+                setDraft(label);
+                setEditing(true);
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              Edit
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </FormRow>
+  );
+}
+
+export function PagesSettings({
+  canManage,
+  initial,
+}: {
+  canManage: boolean;
+  initial: PagesSettingsRead;
+}) {
+  const pages = usePagesSettings(initial);
+  const { settings, systemHostname, customHostname } = pages.state;
+  const faviconInput = useRef<HTMLInputElement>(null);
+  const previewInput = useRef<HTMLInputElement>(null);
+
   return (
     <div className={styles.pagesStack}>
       <SettingsCard className={styles.formCard}>
-        <FormRow
-          description="Host your site on your own domain"
-          label="Custom domain"
-        >
-          <SettingsInput
-            ariaLabel="Custom domain"
-            defaultValue={pages.customDomain}
-          />
-        </FormRow>
-        <FormRow
-          description="Broken or audited links send visitors here"
-          label="Fallback URL"
-        >
+        <ClueAddressRow
+          busy={pages.busy}
+          canManage={canManage}
+          hostname={systemHostname.hostname}
+          label={systemHostname.label}
+          onSave={pages.changeLabel}
+        />
+        <FormRow description="Broken or audited links send visitors here" label="Fallback URL">
           <SettingsInput
             ariaLabel="Fallback URL"
-            defaultValue={pages.fallbackUrl}
+            {...pages.fallbackUrl}
+            readOnly={!canManage || pages.fallbackUrl.readOnly}
           />
         </FormRow>
         <FormRow description="128 × 128px recommended" label="Favicon">
-          <button
-            aria-label="Upload favicon"
-            className={styles.uploadSquare}
-            type="button"
-          >
-            <Upload size={15} strokeWidth={1.25} />
-          </button>
+          <div className="flex items-center gap-3">
+            {settings.faviconUrl ? (
+              // A workspace-uploaded favicon is served from the page origin, which is
+              // not a configured `next/image` host, so it stays a plain `<img>`.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img alt="Current favicon" className="size-8" src={settings.faviconUrl} />
+            ) : null}
+            <button
+              aria-label="Upload favicon"
+              className={styles.uploadSquare}
+              disabled={!canManage || pages.busy}
+              onClick={() => faviconInput.current?.click()}
+              type="button"
+            >
+              <Upload size={15} strokeWidth={1.25} />
+            </button>
+            <input
+              accept="image/png,image/x-icon,image/svg+xml"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void pages.upload("favicon", file);
+              }}
+              ref={faviconInput}
+              type="file"
+            />
+          </div>
         </FormRow>
-        <FormRow
-          description="Used when a page is shared"
-          label="Social preview"
-        >
-          <button className={styles.uploadPreview} type="button">
-            <Upload size={16} strokeWidth={1.25} />
-            <span>Upload image</span>
-          </button>
+        <FormRow description="Used when a page is shared" label="Social preview">
+          <div className="flex flex-col gap-3">
+            {settings.socialPreviewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt="Current social preview"
+                className="w-full"
+                src={settings.socialPreviewUrl}
+              />
+            ) : null}
+            <button
+              className={styles.uploadPreview}
+              disabled={!canManage || pages.busy}
+              onClick={() => previewInput.current?.click()}
+              type="button"
+            >
+              <Upload size={16} strokeWidth={1.25} />
+              <span>Upload image</span>
+            </button>
+            <input
+              accept="image/png,image/jpeg"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void pages.upload("social-preview", file);
+              }}
+              ref={previewInput}
+              type="file"
+            />
+          </div>
         </FormRow>
         <FormRow label="Page title">
           <SettingsInput
             ariaLabel="Page title"
-            defaultValue={pages.pageTitle}
+            {...pages.pageTitle}
+            readOnly={!canManage || pages.pageTitle.readOnly}
           />
         </FormRow>
         <FormRow label="Page description">
-          <SettingsTextarea
-            ariaLabel="Page description"
-            defaultValue={pages.pageDescription}
+          <textarea
+            aria-label="Page description"
+            className={styles.textarea}
             rows={3}
+            {...pages.pageDescription}
+            readOnly={!canManage || pages.pageDescription.readOnly}
           />
         </FormRow>
       </SettingsCard>
 
-      <section className={styles.connectionSection}>
-        <SectionLead>Search engine settings</SectionLead>
-        <SettingsCard className={styles.toggleCard}>
-          <SettingsToggle
-            defaultChecked={pages.allowIndexing}
-            label="Allow search engines & LLMs to index assets"
-          />
-          <div className={styles.divider} />
-          <SettingsToggle
-            defaultChecked={pages.allowFollowing}
-            label="Let search engines follow links on assets"
-          />
-        </SettingsCard>
-      </section>
-
-      <section className={styles.connectionSection}>
-        <SectionLead>Additional code snippets</SectionLead>
-        <SettingsCard className={styles.formCard}>
-          <FormRow label="Head html">
-            <SettingsTextarea
-              ariaLabel="Head HTML"
-              defaultValue={pages.headHtml}
-              placeholder="<!-- Add code to the head -->"
-            />
-          </FormRow>
-          <FormRow label="Body html">
-            <SettingsTextarea
-              ariaLabel="Body HTML"
-              defaultValue={pages.bodyHtml}
-              placeholder="<!-- Add code before the body closes -->"
-            />
-          </FormRow>
-        </SettingsCard>
-      </section>
-
-      <section className={styles.connectionSection}>
-        <SectionLead>AI crawler discovery</SectionLead>
-        <SettingsCard className={styles.formCard}>
-          <FormRow label="LLMs.txt">
-            <SettingsTextarea
-              ariaLabel="LLMs.txt"
-              defaultValue={pages.llmsText}
-              placeholder="Add crawler guidance"
-            />
-          </FormRow>
-          <SettingsToggle
-            defaultChecked={pages.autoGenerateLlmsText}
-            label="Autogenerate LLMs.txt when pages are published"
-          />
-        </SettingsCard>
-      </section>
+      <CustomDomainCard
+        busy={pages.busy}
+        canManage={canManage}
+        custom={customHostname}
+        onCheck={() => void pages.check()}
+        onConnect={(hostname) => void pages.connect(hostname)}
+        onRemove={() => void pages.remove()}
+        refusal={pages.refusal}
+      />
     </div>
   );
 }

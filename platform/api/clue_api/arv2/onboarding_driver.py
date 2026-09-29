@@ -531,9 +531,7 @@ class OnboardingRunWorkHandler:
         # The ICP turn reads what the fast lane published and does not wait for the per-product
         # reports, so it starts alongside the fan-out rather than after it.
         synthesis_task = asyncio.create_task(self._synthesis_step(scope))
-        background = [
-            self._product_research(scope, link) for link in links if link.product_id is not None
-        ]
+        background = [self._product_research(scope, link) for link in _one_link_per_product(links)]
         if not reviews_fast:
             background.append(self._reviews(scope, phase="background"))
         semaphore = asyncio.Semaphore(self._settings.onboarding_max_parallel_runs)
@@ -668,30 +666,46 @@ class OnboardingRunWorkHandler:
         mapper: Callable[[ExaAgentRun], KnowledgeDocument],
         subject: str | None = None,
     ) -> None:
-        """One Exa Agent step: open the step and its document, call, settle. Never raises."""
+        """One Exa Agent step: open the step and its document, call, settle. Never raises.
+
+        The open is inside the containment too. Its one known failure is the store refusing a
+        second step of the same ``(run, kind, subject)`` — a driver defect (the 2026-09-29
+        onboarding lost a finished run to a duplicate product launch this way), which is logged
+        loudly and costs this step, never the run: no provider call is made, no row is touched.
+        """
         step_id = self._step_id(scope, kind, subject)
         document_id = self._document_id(scope, path)
-        async with self._connection() as conn:
-            await self._store.start_step(
-                conn,
-                step_id=step_id,
-                run_id=scope.run_id,
-                workspace_id=scope.workspace_id,
-                kind=kind,
-                phase=phase,
-                subject_ref=subject,
-            )
-            await self._store.open_document(
-                conn,
-                document_id=document_id,
-                workspace_id=scope.workspace_id,
-                brand_id=scope.brand_id,
-                folder=folder,
-                path=path,
-                kind=doc_kind,
-                step_id=step_id,
-            )
         label = f"{kind}:{subject}" if subject else kind
+        try:
+            async with self._connection() as conn:
+                await self._store.start_step(
+                    conn,
+                    step_id=step_id,
+                    run_id=scope.run_id,
+                    workspace_id=scope.workspace_id,
+                    kind=kind,
+                    phase=phase,
+                    subject_ref=subject,
+                )
+                await self._store.open_document(
+                    conn,
+                    document_id=document_id,
+                    workspace_id=scope.workspace_id,
+                    brand_id=scope.brand_id,
+                    folder=folder,
+                    path=path,
+                    kind=doc_kind,
+                    step_id=step_id,
+                )
+        except Exception:
+            log.exception(
+                "onboarding.step_open_failed",
+                run_id=str(scope.run_id),
+                workspace_id=scope.workspace_id,
+                step=label,
+                step_id=str(step_id),
+            )
+            return
         raw, ledger = BufferedRawSink(), BufferedLedger()
         client = self._exa(run_id=scope.run_id, step_label=label, raw=raw, ledger=ledger)
         try:
@@ -1143,6 +1157,26 @@ def _hung_message(what: str) -> str:
 def _searches(run: ExaAgentRun) -> int:
     value = run.usage.get("searches") if isinstance(run.usage, Mapping) else None
     return int(value) if isinstance(value, int) else 0
+
+
+def _one_link_per_product(links: Sequence[ProductLink]) -> tuple[ProductLink, ...]:
+    """The product fan-out's input: the first link per product, in lineup order.
+
+    The lineup is a list of *entries* and the reconciler maps entries to products, so two entries
+    can legitimately resolve to one product (the second is ``model_reused``). A product-research
+    step is keyed on ``(run, kind, product_id)``, so launching one per entry opened the same step
+    twice and the store refused the second — the 2026-09-29 onboarding (10 entries, 7 products)
+    failed on its eighth launch after every real step had completed. Entries with no product
+    (unresolved) are skipped, as before.
+    """
+    seen: set[str] = set()
+    kept: list[ProductLink] = []
+    for link in links:
+        if link.product_id is None or link.product_id in seen:
+            continue
+        seen.add(link.product_id)
+        kept.append(link)
+    return tuple(kept)
 
 
 def _failed_step(error: Exception) -> _StepOutcome:

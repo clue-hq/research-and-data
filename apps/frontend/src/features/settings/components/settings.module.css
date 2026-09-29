@@ -1007,3 +1007,50 @@
 .memberMenu > div[data-highlighted] {
   background: var(--clue-ds-color-bg-neutral-hover);
 }
+
+/* Settings → Pages custom-domain card (DNS records table and status dot).
+   Restored from the pre-merge Pages slice: the merge kept this shell's
+   stylesheet, which never carried the card's classes. */
+.fieldTableFrame {
+  overflow: auto;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 4px;
+}
+
+.fieldTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: var(--clue-ds-color-bg-neutral);
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: left;
+}
+
+.fieldTable th,
+.fieldTable td {
+  height: 44px;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid var(--clue-ds-color-border-subtle);
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.fieldTable th {
+  height: 40px;
+  color: var(--clue-ds-color-content-subtle);
+  font-weight: 500;
+}
+
+.fieldTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--clue-ds-color-primitives-positive-600);
+}

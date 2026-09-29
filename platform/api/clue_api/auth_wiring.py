@@ -55,6 +55,7 @@ from clue_config import Settings
 from clue_db import ConnFactory
 from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
+from clue_spine import DEFAULT_PAGES_SYSTEM_SUFFIX
 
 AUTH_PREFIX = "/auth/v1"
 WORKSPACE_HEADER = "X-Clue-Workspace-Id"
@@ -379,6 +380,7 @@ def build_auth_router(
     *,
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
     clerk_api: ClerkApi | None = None,
     provision_enabled: bool = True,
     brandfetch_client_id: str = "",
@@ -484,6 +486,7 @@ def build_auth_router(
                         last_name=body.last_name,
                         job_role=body.job_role,
                         company_website=body.company_website,
+                        pages_system_suffix=pages_system_suffix,
                     )
                     if email:
                         await update_platform_user_email(conn, provisioned.user.user_id, email)
@@ -633,6 +636,7 @@ def install_auth_wiring(
     *,
     service: PrincipalService,
     conn_factory: ConnFactory | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
     clerk_api: ClerkApi | None = None,
     provision_enabled: bool = True,
     brandfetch_client_id: str = "",
@@ -640,7 +644,10 @@ def install_auth_wiring(
     """Install the provider-free session routes and stable auth error envelope.
 
     ``conn_factory`` additionally enables ``POST /auth/v1/provision`` (FI-4 D-2 self-serve
-    onboarding); without it the router serves only the session/principal reads."""
+    onboarding); without it the router serves only the session/principal reads.
+    ``pages_system_suffix`` is the suffix a provisioned workspace's system hostname is allocated
+    under (custom-domain publishing §4.1) — the composition root passes
+    ``settings.pages_system_suffix``."""
 
     @app.exception_handler(PrincipalError)
     async def _principal_error_handler(request: Request, exc: PrincipalError) -> JSONResponse:
@@ -685,6 +692,7 @@ def install_auth_wiring(
         build_auth_router(
             service=service,
             conn_factory=conn_factory,
+            pages_system_suffix=pages_system_suffix,
             clerk_api=clerk_api,
             provision_enabled=provision_enabled,
             brandfetch_client_id=brandfetch_client_id,

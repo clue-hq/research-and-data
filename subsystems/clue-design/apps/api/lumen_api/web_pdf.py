@@ -71,6 +71,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import web_export
 from .database import NotFoundError
 from .document_thumbnails import _CAPTURE_SLOTS, inline_tailwind
+from .public_pages import site_address
 
 logger = logging.getLogger("lumen_api.web_pdf")
 
@@ -180,7 +181,6 @@ def build_web_pdf(
     document: JsonObject,
     *,
     blobs: Any,
-    public_base: str,
     workspace_id: str,
     node_bin: str = "node",
     runtime: Optional[bytes] = None,
@@ -198,18 +198,23 @@ def build_web_pdf(
     so the route maps it the way the ZIP route maps it.
     """
 
+    # A throwaway slug: nothing is persisted and no pointer moves, but the
+    # package builds its manifest link and internal links from the site's
+    # address, which the hostname registry answers for a slug.
+    slug = "pdf-export"
     package = web_export.build_publish_package(
         core,
         repo,
         document,
         blobs=blobs,
-        # A throwaway slug: nothing is persisted and no pointer moves, but the
-        # package mints canonical/og URLs and needs a slug to build them from.
-        slug="pdf-export",
-        public_base=public_base,
+        slug=slug,
+        site_address=site_address(repo, slug),
         workspace_id=workspace_id,
         node_bin=node_bin,
         noindex=False,
+        # The custom-component runtimes ride INSIDE the html: `set_content` gives the page no
+        # origin, so a root-relative `/p-assets/<digest>` reference would resolve nowhere.
+        embed_runtime_assets=True,
     )
     pages = list(package.pages) or [
         web_export.PublishedPage(
