@@ -29,10 +29,11 @@ stamps, never values) — validated structurally at the input model. Their exist
 provenance is the research-view surface's job: the only way a head-of-abm holds claim ids at all
 is by having read them through ``get_research_view``.
 
-What this tool does **not** do: dispatch anything. Opening a leg spends nothing and runs no
-design turn; the agent's next act is to tell the user the design session is open and end its
-turn. The user's next message on the thread is what becomes the first design turn (the P3.4
-routing rule in ``agent_turn_fleet_wiring``).
+Opening or reopening a leg queues its first design turn from the opening turn's captured
+user submission, in the same transaction (2026-09-20, spec §2.3). The tool itself makes no
+provider call; the queued design turn spends separately. A replay queues no duplicate, and a
+machine-originated opening without a captured submission queues nothing. The agent ends its
+turn so the queued work can proceed; the user does not need to send a second start message.
 
 **@2 — document birth at leg-open (genweb slice 2, plan §4.1).** A leg may now *create* the
 document its docstring always promised (§2.1). ``doc_kind="web"`` on a document-less open
@@ -618,9 +619,13 @@ class OpenDesignLegTool(Tool):
         "To resume a design session you closed by "
         "mistake, pass reopen_leg_id — a reopen ignores every other field. While the leg is "
         "open, every user message on this thread goes directly to Design — you will not see the "
-        "thread again until the leg closes. Opening a leg spends nothing and runs no design "
-        "turn: the user's NEXT message is what starts generation, and generating a page takes "
-        "minutes, not seconds. Tell the user the design session is open and end your turn."
+        "thread again until the leg closes. Opening or reopening from a captured user message "
+        "automatically queues the first design turn using that same message; a replay does not "
+        "queue another. The tool itself makes no provider call, but the queued design turn "
+        "can incur generation cost. A machine-originated opening with no captured user "
+        "submission queues nothing. For a user-requested design, say generation is queued "
+        "and end your turn so it can proceed. Do not ask for another message to start it. "
+        "Generating a page takes minutes, not seconds; queued does not mean completed."
     )
     input_model: ClassVar[type[ToolInput]] = OpenDesignLegInput
     output_model: ClassVar[type[ToolOutput]] = OpenDesignLegOutput
@@ -700,7 +705,7 @@ class OpenDesignLegTool(Tool):
         return ()
 
     def estimate(self, inputs: ToolInput) -> ToolEstimate:
-        """Opening a leg is free — the spend happens inside governed design turns, later."""
+        """No direct provider spend; an automatically queued design turn spends separately."""
 
         del inputs
         return ToolEstimate.free()

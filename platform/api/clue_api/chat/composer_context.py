@@ -63,7 +63,8 @@ __all__ = [
 # prompt that stops telling the user to speak before generation begins: the leg's first design
 # turn is queued from the message that opened it.
 # v61 changes only the manual references for direct-file and recursive-prefix searches.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v61"
+# v62 aligns the manual with the existing automatic first-turn queue; the prompt is unchanged.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v62"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

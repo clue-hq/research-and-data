@@ -680,3 +680,22 @@ All paths below are relative to `subsystems/clue-design/` unless stated otherwis
 Repo-root ignored tool-output indexes: `.local-setup/hotel-equities-import/{native-v3,native-account-revision,native-account-final,native-quality-batch,native-scoped-quality-batch,native-simple-prompt,native-skill-repair-validation}/`. Some early manifest status snapshots say running; terminal saved traces/finals establish the historical end state. They are not evidence of a live worker that should be restarted.
 
 The previous detailed latest-run report remains at `docs/hotel-equities-native-run-trace-audit-2026-09-27.md`; this audit does not overwrite its existing working-tree edit. Source logs and snapshots remain local/ignored. No raw trace or customer dossier is added to durable operational memory.
+
+## Upstream design-start guidance follow-up
+
+The active Head-of-ABM prompt already said the first design turn starts from the
+opening message. Its tool descriptor and three manual chapters still said the
+user must send another message. Runtime inspection and existing database tests
+confirm a captured submission is queued automatically, replay adds no duplicate,
+and an opening without a captured submission queues nothing.
+
+Manual v9 / Head-of-ABM v62 correct this contradiction without changing execution,
+models, permissions, caps or the prompt. Catalog generation and hash verification
+pass. The broader agent/catalog/registry suite has 418 passing tests and four
+skips; one existing unrelated refusal-documentation failure was reproduced with
+the previous manual inputs. Twelve runtime/design-entry DB tests and migration
+up/down/up pass on a disposable database. Root `make check` stops on formatting
+in an unrelated untracked research test. No global-green claim is made.
+
+The user has now authorized one fresh native account draft. This checkpoint is
+still an offline correction, not evidence that the new page is better.

@@ -161,8 +161,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
         # and the `manual-*@v7` bodies that render this profile version into their title.
         # v61 moves only the manual pins to v8 for repaired file-search semantics.
-        # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("7abe442eb9f907be30bf73416436710b7f785febac0424322e3a1961404ad3dd"),
+        # v62 moves the manual pins to v9 to describe automatic design first-turn queuing.
+        # Digest measured off this tree; tool grants and runtime policy are unchanged.
+        AgentRole.HEAD_OF_ABM: ("751218205cf6f459f0d5c6c4aa8f5c0afef0ad1fe3244bdad69a16341b2acfa8"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -579,7 +580,7 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v61"
+    assert production.profile_ref.address == "profile:head-of-abm@v62"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
         "skill:stage0-interview@v34"
     )
@@ -694,7 +695,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -875,7 +876,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v8" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v9" for name in MANUAL_CHAPTERS),
     ]
 
 

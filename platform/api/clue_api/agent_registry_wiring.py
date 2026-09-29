@@ -204,8 +204,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # the leg, so prompt pin v12→v13 changes one sentence. No tool address moves, so the recipe
     # stays at 30; the manual re-mints at `manual-*@v7` because its generated chapters render this
     # profile's version into their title.
-    # v61 keeps v60's exact policy and prompt, with manual v8 describing repaired file search.
-    AgentRole.HEAD_OF_ABM: "v61",
+    # v62 preserves policy/prompt with manual v9 matching automatic design first-turn queuing.
+    AgentRole.HEAD_OF_ABM: "v62",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
