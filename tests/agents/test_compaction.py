@@ -51,6 +51,13 @@ def test_a_known_window_compacts_at_the_fraction() -> None:
     assert type(tool).__name__ == "SummarizationToolMiddleware"
 
 
+def test_the_summary_is_built_from_the_whole_evicted_part() -> None:
+    """Founder ruling 2026-09-29: not just its last 4,000 tokens (LangChain's hidden default)."""
+    for window in (500_000, None):
+        summariser, _ = build_compaction_middleware(_fake(), None, _settings(window))
+        assert summariser._lc_helper.trim_tokens_to_summarize is None
+
+
 def test_an_unknown_window_uses_the_fixed_fallback_never_unlimited() -> None:
     summariser, _ = build_compaction_middleware(_fake(), None, _settings(None))
     assert summariser._lc_helper.trigger == ("tokens", 170_000)

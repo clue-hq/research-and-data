@@ -327,6 +327,9 @@ def test_a_thread_compacts_once_and_later_turns_build_on_the_summary(tmp_path: P
 
                 # Exactly one compaction across turns 2 and 3.
                 assert len(models.summaries) == 1
+                # The summary is built from the whole evicted part — turn 1's own words included —
+                # not only its last few thousand tokens.
+                assert any(FIRST_MESSAGE in str(m.content) for m in models.summaries[0])
                 # Turn 3 opens on turn 2's summary, and turn 1's own words are gone from it.
                 third_first = models.requests[submissions[2][1]]
                 texts = [str(message.content) for message in third_first]

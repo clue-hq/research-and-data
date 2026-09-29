@@ -122,6 +122,10 @@ def build_compaction_middleware(
         backend=HistoryPathBackend(backend) if backend is not None else backend,
         trigger=trigger,
         keep=keep,
+        # The summary is built from the whole evicted part (founder ruling 2026-09-29), not
+        # LangChain's default of only its last 4,000 tokens. The evicted part is bounded by the
+        # trigger, so it always fits the same model's window.
+        trim_tokens_to_summarize=None,
     )
     # ``system_prompt=None``: the tool is registered and callable, but no nudge is appended to the
     # system prompt, so every agent's prompt stays byte-identical (prompt cache, manual size).
