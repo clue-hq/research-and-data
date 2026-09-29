@@ -236,7 +236,13 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # the job's committee limit. Prompt v18 and `stage0-interview@v40` are v17/v39 with only
     # their briefing and manual paths repointed, and the manual re-mints at `manual-*@v13`. No
     # tool address moves; the recipe stays.
-    AgentRole.HEAD_OF_ABM: "v67",
+    # v68 (founder ruling 2026-09-29): v67 minus three tools of the retired research lane that
+    # could never serve current research — `get_research_view@1` (needs an old-lane
+    # project_run/account_run), `draft_account_research_directive@5` and
+    # `open_directive_confirmation_gate@1` (a directive nothing executes). `stage0-interview@v41`
+    # only repoints its manual paths, and the manual re-mints at `manual-*@v14` (the siblings
+    # chapter's "tools that lead nowhere" loses those bullets). Prompt v18 and the recipe stay.
+    AgentRole.HEAD_OF_ABM: "v68",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -422,7 +428,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_set_asset_status": (AgentRole.DESIGN,),
     "design_set_brand_kit_approval": (AgentRole.DESIGN,),
     "design_upsert_binding_set": (AgentRole.DESIGN,),
-    "draft_account_research_directive": (AgentRole.HEAD_OF_ABM,),
+    # Dropped from head-of-abm at v68 (retired research lane: a directive nothing executes).
+    "draft_account_research_directive": (),
     # P3.5 (PD-part3 §2.2): the leg-level exit, granted to the composite design deepagent — the
     # only path to a closed leg. Turn-level finalization (the design harness's final.json) is a
     # different authority and stays design-runtime-internal; this is the engine-validated
@@ -441,8 +448,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # deep-reasoning search for first-person evidence, at most once per persona role. No other
     # role may buy it: this is the onboarding synthesis turn's own governed provider call.
     "exa_search_evidence": (AgentRole.ONBOARDING_SYNTHESIS,),
+    # head-of-abm lost it at v68: it needs an old-lane project_run/account_run, which current
+    # research never creates. The specialists keep their (unreachable) delegation grants.
     "get_research_view": (
-        AgentRole.HEAD_OF_ABM,
         AgentRole.RESEARCH,
         AgentRole.CONTENT_DRAFTER,
         AgentRole.REVIEWER,
@@ -511,7 +519,8 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # gate-opening tool is granted to that role. It writes an immutable gate row and nothing else —
     # it confirms nothing, spends nothing, and cannot address a gate to anybody but the human whose
     # turn it is answering (the addressee is derived from the durable submission, not proposed).
-    "open_directive_confirmation_gate": (AgentRole.HEAD_OF_ABM,),
+    # Dropped from head-of-abm at v68 with the directive draft it confirmed.
+    "open_directive_confirmation_gate": (),
     # ARV2 onboarding O6: dropped at v44. Discovery scope is not configured from the Stage-0
     # conversation on the new lane — the human attaches the accounts to the turn.
     "open_discovery_configuration_gate": (),
@@ -635,11 +644,8 @@ C6_SURFACE_POLICIES: tuple[AgentSurfacePolicy, ...] = (
         role=AgentRole.HEAD_OF_ABM,
         withheld_tools=frozenset(
             {
-                # D4 added the gate tool to the role. The trial keeps it withheld alongside the
-                # launches below, which is where it belongs: a dev harness that could present a
-                # real, durable, addressed confirmation gate — but never act on the answer — would
-                # be inviting a human to approve spend that no surface here can perform.
-                "open_directive_confirmation_gate",
+                # (``open_directive_confirmation_gate`` was withheld here until head-of-abm v68
+                # dropped it from the role altogether; there is nothing left to withhold.)
                 # P3.4 added the design delegation entry to the role. The trial withholds it for
                 # the same sentence as delegation itself: this surface is a manual conversation,
                 # and a leg opened from a dev CLI would durably reroute a thread no design
@@ -822,8 +828,8 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # they now fall through to the authority map above, which says `()` for every version.)
     if name == "propose_field":
         return (AgentRole.HEAD_OF_ABM,) if address == "propose_field@2" else ()
-    if name == "draft_account_research_directive":
-        return (AgentRole.HEAD_OF_ABM,) if address == "draft_account_research_directive@5" else ()
+    # (head-of-abm v68 dropped `draft_account_research_directive`; its `@5`-only rule is gone and
+    # every version falls through to the map's `()`.)
     # ARV2 onboarding O6 (T4/T6): ``@2`` presents the ICP knowledge document instead of a draft
     # ``icp_spec`` row, and its approval mints a confirmed version of that document. ``@1``'s
     # subject — a draft ``icp_spec`` row — is not written on this lane at all. O6 granted @2;

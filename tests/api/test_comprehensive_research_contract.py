@@ -451,7 +451,8 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     from clue_api.agent_registry_wiring import C6_ACTIVE_PROFILE_VERSIONS, c6_roles_for_tool
     from clue_api.chat.composer_context import PROJECT_CONVERSATION_AGENT_PROFILE_ID
 
-    assert c6_roles_for_tool("draft_account_research_directive@5") == (AgentRole.HEAD_OF_ABM,)
+    # head-of-abm v68 dropped the directive lane (founder ruling 2026-09-29): no version is granted.
+    assert c6_roles_for_tool("draft_account_research_directive@5") == ()
     assert c6_roles_for_tool("draft_account_research_directive@3") == ()
     assert c6_roles_for_tool("draft_account_research_directive@4") == ()
     # v42 was re-minted from comprehensive; its contract carried into active v43 at the R0 merge
@@ -466,5 +467,5 @@ def test_the_comprehensive_directive_tool_is_the_granted_head_of_abm_version() -
     # the first version that takes tools AWAY (the three document tools, now file writes under
     # `project/`), and the directive draft is not among them, so the granted address is unmoved
     # and the two pins must still agree.
-    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v67"
-    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v67"
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v68"
+    assert PROJECT_CONVERSATION_AGENT_PROFILE_ID == "head-of-abm@v68"
