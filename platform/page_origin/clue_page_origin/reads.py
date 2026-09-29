@@ -9,6 +9,7 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict
 
 from clue_db import ConnFactory, transaction
+from clue_design.brand import approved_brand_mark_sha256
 from clue_design.errors import DesignNotFoundError
 from clue_design.publishes import get_web_publish, get_web_publish_page
 from clue_design.storage import read_design_blob, read_public_design_blob
@@ -115,8 +116,12 @@ class DbPageReads:
             return (await get_pages_settings(conn, workspace_id)).fallback_url
 
     async def favicon(self, workspace_id: str) -> tuple[str, bytes] | None:
+        """The admin's uploaded favicon, else the brand mark website ingestion took from the
+        client's own site (one-brand workspaces only), else None."""
         async with self._conn_factory() as conn:
             sha256 = (await get_pages_settings(conn, workspace_id)).favicon_sha256
+            if sha256 is None:
+                sha256 = await approved_brand_mark_sha256(conn, workspace_id=workspace_id)
             if sha256 is None:
                 return None
             try:
