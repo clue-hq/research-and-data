@@ -5324,7 +5324,8 @@ class LumenWebTools:
         return json.dumps(payload, indent=2)
 
     def search_cloned_sections(
-        self, q: str = "", role: Optional[str] = None, limit: int = 8
+        self, q: str = "", role: str | None = None, limit: int = 8,
+        offset: int = 0, page_url: str | None = None,
     ) -> str:
         """Find released reusable website sections in this workspace's library.
 
@@ -5338,11 +5339,17 @@ class LumenWebTools:
         human releases them by approving the brand kit they came from. A draft or a retired
         section is not offered here, because pinning one is refused.
 
-        `q` is optional — no query returns a bounded sample of released sections; compare
-        count with total before claiming complete library coverage.
+        `q` is optional — no query returns a bounded page of released sections. Continue with
+        the returned `next_offset`, keeping q/role/page_url unchanged; null ends this result set.
+        `limit` is 1–20. Restart at offset 0 after a library change; offsets are not snapshots.
+        `total` counts matches in the scanned inventory, not necessarily the entire library:
+        check `inventory_truncated` and `inventory_note` before claiming complete coverage.
         With a query it matches over the label, the role, the page it came from and the slot
         names. Naming a `frag_…` id anywhere in the query returns that section first.
         `role` filters to one section role (`nav`, `hero`, `footer`, `proof`, …).
+        `page_url` optionally filters by an EXACT returned page_url (source_url fallback),
+        including query parameters. It filters before pagination and includes repairs/variants
+        associated with that page; it does not certify captured origin. Inspect lineage.
 
         EACH ROW carries:
           - `fragment_id`   — what `insert_cloned_section` takes;
@@ -5383,7 +5390,12 @@ class LumenWebTools:
                 "cloned_section.bad_limit",
                 f"limit must be an integer from 1 to {_CLONED_SECTION_SEARCH_LIMIT_MAX}.",
             )
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            return self._tool_error(
+                "cloned_section.bad_offset", "offset must be a non-negative integer.",
+            )
         requested_role = (role or "").strip().lower() or None
+        requested_page = (page_url or "").strip() or None
         try:
             listing = registry.list_sections(requested_role)
         except Exception as error:  # noqa: BLE001 - capability boundary
@@ -5403,8 +5415,20 @@ class LumenWebTools:
             for section in (listing or {}).get("sections") or []
             if isinstance(section, dict) and section.get("fragment_id")
         ]
+        inventory_scanned = len(candidates)
+        inventory_total = (listing or {}).get("total")
+        if type(inventory_total) is not int or inventory_total < inventory_scanned:
+            inventory_total = None
+        inventory_truncated = (
+            inventory_total > inventory_scanned if inventory_total is not None else None
+        )
+        if requested_page:
+            candidates = [
+                section for section in candidates
+                if (section.get("page_url") or section.get("source_url")) == requested_page
+            ]
         ranked = self._rank_cloned_sections(candidates, q or "")
-        ordered = ranked[:limit]
+        ordered = ranked[offset:offset + limit]
         # DESCRIBE ONLY WHAT IS RETURNED. The slot kinds live in each artifact's payload and the
         # preview lives in durable storage, so describing the whole library to answer one query
         # would read a blob per section the agent never sees.
@@ -5512,29 +5536,68 @@ class LumenWebTools:
             "status": "ok",
             "query": q or None,
             "role": requested_role,
+            "page_url": requested_page,
+            "offset": offset,
+            "next_offset": offset + len(results) if offset + len(results) < len(ranked) else None,
             "count": len(results),
             # What MATCHED, beside what is shown (W5). `count` alone cannot tell a complete
             # answer from a truncated one, and the default limit is 8 — so on the F2 walk's own
             # site an unqualified call showed 8 of 13 with nothing saying the other 5 existed.
             "total": len(ranked),
+            "inventory_scanned": inventory_scanned,
+            "inventory_total": inventory_total,
+            "inventory_truncated": inventory_truncated,
             "results": results,
         }
-        if len(ranked) > len(results):
+        if inventory_truncated:
+            payload["inventory_note"] = (
+                f"The registry returned {inventory_scanned} of {inventory_total} released "
+                "sections for this role. Search total and pagination cover only those rows, "
+                "not complete library coverage. A narrower role may expose other rows; "
+                "changing q/page_url or raising offset cannot cross the registry cap."
+            )
+        elif inventory_truncated is None:
+            payload["inventory_note"] = (
+                "The registry did not supply a valid inventory total. Pagination covers the "
+                "returned rows only; complete library coverage is unknown."
+            )
+        if payload["next_offset"] is not None:
             payload["note"] = (
-                f"showing {len(results)} of {len(ranked)} matching cloned section(s) — raise "
-                "`limit` (max "
-                f"{_CLONED_SECTION_SEARCH_LIMIT_MAX}) or narrow the query to see the rest."
+                f"Showing matches {offset + 1}–{offset + len(results)} of {len(ranked)}. "
+                f"Continue with offset={payload['next_offset']} and the same q/role/page_url. "
+                "Restart at offset 0 if the library changes."
             )
         if not results:
-            payload["note"] = self._cloned_section_empty_note(
-                q or "", requested_role, len(candidates)
-            )
+            if offset and ranked:
+                payload["note"] = (
+                    f"offset {offset} is past the {len(ranked)} matching sections. "
+                    "This result set is exhausted; restart at offset 0 if the library changed."
+                )
+            elif requested_page:
+                payload["note"] = (
+                    f"No matches for this query on recorded page_url {requested_page!r} "
+                    f"within {inventory_scanned} scanned released sections. "
+                    "Clear page_url to inspect the available page URLs; this does not "
+                    "establish that the page has never been captured."
+                )
+            else:
+                payload["note"] = self._cloned_section_empty_note(
+                    q or "", requested_role, len(candidates)
+                )
         self.record(
             "author",
             "cloned_sections_searched",
-            input_summary=f"q={q!r} role={requested_role or '*'}",
+            input_summary=(
+                f"q={q!r} role={requested_role or '*'} page_url={requested_page!r} offset={offset}"
+            ),
             output_summary=f"{len(results)} released cloned section(s)",
-            payload={"fragment_ids": [row["fragment_id"] for row in results]},
+            payload={
+                "fragment_ids": [row["fragment_id"] for row in results],
+                **{key: payload[key] for key in (
+                    "offset", "next_offset", "total", "inventory_scanned",
+                    "inventory_total", "inventory_truncated",
+                )},
+            },
             sink_extra={"result_count": len(results)},
         )
         return json.dumps(payload, indent=2)
@@ -5557,7 +5620,7 @@ class LumenWebTools:
     ) -> List[tuple]:
         """`[(section, id_match), …]`, best first. The `search_assets` ranking, one library.
 
-        An EMPTY query keeps the registry's own order (newest first) rather than inventing one:
+        An EMPTY query keeps the registry's own document order rather than inventing one:
         "show me what I have" is a legitimate call, and reordering an unfiltered list by a
         relevance score computed from nothing would be noise dressed as ranking.
         """

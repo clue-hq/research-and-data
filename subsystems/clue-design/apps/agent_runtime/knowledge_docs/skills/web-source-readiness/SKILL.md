@@ -22,9 +22,15 @@ source or changed version. Do not confuse necessary pagination with duplicate wo
    when exposed and the requested page purpose. Keep the target account's
    identity separate from the seller's visual system.
 2. Use `search_cloned_sections(q="", limit=8)` and narrower role/query reads
-   for the planned bands. Compare `count` with `total`; eight results do not
-   prove eight total. Search lists released sections only: zero results means
-   no matching reusable result, not no source page or no capture drafts.
+   for the planned bands. Follow `next_offset` as `offset` with the same
+   q/role/page_url when unseen matches matter; null ends that result set.
+   `page_url` filters by an exact returned page URL, including query parameters;
+   associated derivatives remain eligible. Check `inventory_truncated` and
+   `inventory_note`: the registry can cap the scanned inventory separately from
+   the result page. Changing search words cannot reveal rows outside that cap.
+   Restart at offset 0 after a library change. Search lists released sections
+   only: zero results means no matching reusable result, not no source page
+   or no capture drafts.
 3. For candidates, use `view("cloned_section:<returned id>")` for pixels and
    `inspect_cloned_section(fragment_id="<returned id>")` for HTML, CSS, slots,
    lineage and human text overrides. For more source, pass the returned

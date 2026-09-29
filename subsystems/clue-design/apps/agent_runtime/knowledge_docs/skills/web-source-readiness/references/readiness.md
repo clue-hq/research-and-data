@@ -35,6 +35,23 @@ and `approved`. A binding is not a new origin, fetch date or fidelity verdict;
 check the matching version and its release evidence rather than just the kit
 name. `count` and `total` describe search results, not captured-page coverage.
 
+Continue a result set with `offset=next_offset`, holding q/role/page_url fixed.
+`next_offset=null` means no more matching rows in the scanned inventory. The
+registry currently exposes at most 200 rows per role selection; compare
+`inventory_scanned` with `inventory_total`. `inventory_truncated=true` means
+more inventory exists outside that scan; null means its extent is unknown.
+A narrower role is applied by the registry before that cap, whereas q/page_url
+are applied afterward. Do not silently treat either a capped or unknown
+inventory as exhaustive. If the needed band is still inaccessible, record the
+retrieval gap instead of recapturing or composing it merely to bypass search.
+Offsets are not versioned snapshots; restart after a library change.
+
+Use `page_url` only with an exact observed page URL (query parameters retained).
+It can select a product or customer page without fuzzy matches from other
+pages, but it includes repairs/variants associated with that URL. Inspect
+`composed`, `derived_from`, degradation and replacement fields independently;
+a URL filter neither certifies captured origin nor ranks visual quality.
+
 For a chosen row, `inspect_cloned_section` exposes these source fields:
 
 | Field | Meaning and limit |

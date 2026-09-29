@@ -83,7 +83,7 @@ An empty `broken_clones` list or media-readiness success does not prove meaningf
 
 ## Why the cycle consumed time without converging
 
-1. **Repeated broad retrieval.** The simple create made 14 clone searches. Three differently worded source queries returned the identical first 20 fragment IDs. There were 44 source matches, but the tool caps at 20 and has no offset. Empty queries returned eight authored derivatives in both later creates; `role=features` initially returned authored compositions while important captured bands were classified elsewhere. This increases rediscovery and selection ambiguity. The current result includes lineage, but does not rank by proven output quality.
+1. **Repeated broad retrieval.** The simple create made 14 clone searches. Three differently worded source queries returned the identical first 20 fragment IDs. There were 44 matches for those queries, but the audit-baseline tool capped at 20 and had no offset. This was fuzzy text matching, not a captured-origin filter: authored labels could match too. Empty queries returned eight authored derivatives in both later creates; `role=features` initially returned authored compositions while important captured bands were classified elsewhere. This increases rediscovery and selection ambiguity. The current result includes lineage, but does not rank by proven output quality. The retrieval checkpoint below addresses paging, not visual-quality ranking.
 2. **Large source/context payloads.** The latest run reached 164,945 input tokens before building the page. Its compaction took 53.4 seconds and initial plan write 70.5 seconds. The simple create spent 92.3 seconds in two compactions. These are logged model-call durations, not additional wall time to add to the run total.
 3. **Narrative state drift.** The original account compaction said no plan had been written after a successful plan write, and forgot relevant failure/assembly state. Reads were repeated. Evidence: A/run_0d643…/log **365,373,478,484,499,590**. Its final accumulated plan is 319 lines/28,051 characters with eight amendments, canceled sibling plans and superseded IDs/assertions. The last small copy/type request still used 24 model calls and 51 tool requests. A compact artifact/version/evidence ledger is more reliable than re-summarizing a large conversation.
 4. **Repair ambiguity.** Broad prompts, wrong-node changes, typography guesses and preserved dead controls caused follow-up paid turns. More concurrent generators would amplify these mistakes.
@@ -282,6 +282,59 @@ five held blobs verified matching hashes and alpha counts, taking 24–33ms per 
 locally; this is not a production latency guarantee. Ruff reports unchanged legacy
 debt in the touched files and no new finding relative to HEAD; whitespace checks
 pass. No live page, source asset, service or provider changed.
+
+## Section retrieval checkpoint — offline, 2026-09-28
+
+Re-read S/simple-create's 14 search calls and saved tool responses. Trace lines
+11, 25 and 37 record the same 20 IDs for `conduit.ai`, `www.conduit.ai/ section`
+and `from:https://www.conduit.ai/`. The latter is not a supported search operator;
+all three are fuzzy text. Saved responses report 44 matches. A source-worded
+query therefore neither paginated nor established captured origin.
+
+The native `search_cloned_sections` now accepts `offset` and exact `page_url`,
+returns `next_offset`, and describes only the returned page (still at most 20).
+Exact page filtering precedes pagination, retains URL query parameters, and
+keeps associated derivatives with their existing lineage/degradation fields.
+Existing ranking, workspace scoping and release filtering are unchanged. No
+quality score or inferred source-authenticity classification was introduced.
+
+The registry separately caps its row projection at 200 per role selection.
+Search now exposes scanned/total inventory and explicit truncated/unknown state.
+`next_offset=null` ends matches in that scan; it does not waive the registry cap.
+Role filtering precedes the cap, while query/page filtering follows it. This
+checkpoint exposes that remaining retrieval limit, rather than removing it.
+Offsets are not versioned snapshots: restart after library changes. The existing
+source-readiness family documents those limits and stops retrieval once the
+necessary bands have been inspected.
+
+Offline historical-response replay used the **73 distinct rows actually exposed**
+by the saved searches, not a fabricated reconstruction of all 87 registry rows.
+The first page matches the saved 20 IDs exactly; two further pages expose 21
+additional observed matches (20/20/1). Only 38 rows have a Conduit source URL;
+three other matches arise from fuzzy text, illustrating the origin distinction.
+The exact homepage filter finds 11 observed rows. The replay preserves the
+document and describes each returned row once. Receipt:
+`/tmp/clue-search-held-replay-20260928.json`. Missing historical rows remain
+missing; these results are not an exhaustive current-inventory claim.
+
+The old skill already advised pagination and avoiding duplicate searches; its
+tool lacked pagination. A read-only baseline probe correctly refused to invent
+unsupported parameters. Independent review found no blocker, and a separate
+capped-inventory comprehension case distinguished query exhaustion, lineage,
+unknown coverage and library changes. This supplies a missing capability;
+it does not prove fewer paid calls or better website aesthetics.
+
+Verification: 22 focused discovery/search checks and 12 skill-materialization
+checks pass, including real native tool-schema invocation and read-only document
+behavior. Eight new regression cases failed before implementation. The broader
+reuse/repair/shell run initially had 182 passes and two wording failures: the
+changed pagination-note assertion was replaced by checking that the remaining
+rows are actually reachable, then passed. The other still expects the historical
+phrase “never casually rewrite a working cloned section”; it fails identically
+with the pre-change HEAD search method. It remains an explicit pre-existing
+test issue, so the broader suite is not claimed green. Ruff adds no finding
+relative to HEAD (297 existing tool-file findings; five test-file findings),
+and whitespace checks pass. No live/provider generation or service change.
 
 ## Evidence locations and run index
 

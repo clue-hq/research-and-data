@@ -111,6 +111,11 @@ class FakeRegistry:
         return {
             "schema_version": 1,
             "workspace_id": "ws_test",
+            "total": sum(
+                section["status"] == "approved"
+                and (section_role is None or section["section_role"] == section_role)
+                for section in self.sections.values()
+            ),
             "sections": [
                 {
                     key: value
@@ -416,6 +421,124 @@ def test_a_bad_limit_is_refused(tmp_path: Path, registry: FakeRegistry) -> None:
         json.loads(_tools(tmp_path, registry).search_cloned_sections(limit=0))["error_code"]
         == "cloned_section.bad_limit"
     )
+
+
+def test_search_can_reach_every_match_without_redescribing_earlier_pages(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    expected = []
+    for index in range(44):
+        fragment_id = f"frag_{index:016x}"
+        expected.append(fragment_id)
+        registry.add(fragment_id, role="features", label="Product", html="<section/>")
+    tools = _tools(tmp_path, registry)
+    pages = []
+    offset = 0
+    while offset is not None:
+        page = json.loads(tools.search_cloned_sections(q="product", limit=20, offset=offset))
+        assert page["offset"] == offset
+        assert page["total"] == 44
+        assert page["inventory_truncated"] is False
+        pages.append([row["fragment_id"] for row in page["results"]])
+        offset = page["next_offset"]
+    assert [len(page) for page in pages] == [20, 20, 4]
+    assert [fragment_id for page in pages for fragment_id in page] == expected
+    assert registry.describe_calls == pages
+
+
+def test_page_filter_precedes_pagination_and_preserves_source_lineage(tmp_path: Path) -> None:
+    registry = FakeRegistry(tmp_path)
+    urls = ["https://insight.example/", "https://insight.example/product?tab=care"]
+    for index in range(6):
+        registry.add(
+            f"frag_{index:016x}", role="features", label="Product", html="<section/>",
+            source_url=urls[index % 2],
+        )
+    derived = registry.sections["frag_0000000000000003"]
+    derived.update(composed="agent", derived_from="frag_0000000000000001")
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.search_cloned_sections(page_url=urls[1], limit=1, offset=1))
+    assert result["total"] == 3
+    assert result["page_url"] == urls[1]
+    assert result["next_offset"] == 2
+    row = result["results"][0]
+    assert row["fragment_id"] == derived["fragment_id"]
+    assert row["composed"] == "agent"
+    assert row["derived_from"] == "frag_0000000000000001"
+    assert registry.describe_calls == [[derived["fragment_id"]]]
+    # Exact URL filtering does not silently drop query parameters or override the filter
+    # for a named ID. The URL identifies a recorded page, not captured-code authenticity.
+    missing = json.loads(tools.search_cloned_sections(
+        q="frag_0000000000000000", page_url=urls[1],
+    ))
+    assert missing["results"] == []
+    assert "no cloned sections released" not in missing["note"]
+
+
+def test_an_exhausted_search_page_is_not_reported_as_an_empty_library(
+    tmp_path: Path, registry: FakeRegistry,
+) -> None:
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.search_cloned_sections(offset=2))
+    assert result["results"] == []
+    assert result["total"] == 2
+    assert result["next_offset"] is None
+    assert "offset" in result["note"]
+    assert "no cloned sections released" not in result["note"]
+    assert registry.describe_calls == []
+
+
+def test_search_exposes_a_registry_cap_instead_of_claiming_complete_coverage(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = registry.list_sections()
+    listing["total"] = 203  # Registry can expose only a bounded inventory.
+    monkeypatch.setattr(registry, "list_sections", lambda role: listing)
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+    assert result["total"] == 2
+    assert result["inventory_scanned"] == 2
+    assert result["inventory_total"] == 203
+    assert result["inventory_truncated"] is True
+    assert result["next_offset"] is None
+    assert "203" in result["inventory_note"]
+    assert "complete" in result["inventory_note"]
+
+
+@pytest.mark.parametrize("offset", [-1, True, 1.5, "20"])
+def test_bad_search_offsets_refuse_before_reading_the_registry(
+    tmp_path: Path, registry: FakeRegistry, offset,
+) -> None:
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections(offset=offset))
+    assert result["error_code"] == "cloned_section.bad_offset"
+    assert registry.list_calls == []
+
+
+def test_native_search_tool_accepts_page_arguments_and_keeps_the_document_unchanged(
+    tmp_path: Path, registry: FakeRegistry,
+) -> None:
+    from langchain_core.tools import StructuredTool
+
+    tools = _tools(tmp_path, registry)
+    before = json.dumps(tools.web_doc, sort_keys=True)
+    result = json.loads(StructuredTool.from_function(tools.search_cloned_sections).invoke({
+        "page_url": "https://insight.example/", "limit": 1, "offset": 1,
+    }))
+    assert [row["fragment_id"] for row in result["results"]] == [NAV_ID]
+    assert result["offset"] == 1 and result["next_offset"] is None
+    assert registry.describe_calls == [[NAV_ID]]
+    assert json.dumps(tools.web_doc, sort_keys=True) == before
+
+
+def test_search_does_not_invent_an_inventory_total_from_missing_metadata(
+    tmp_path: Path, registry: FakeRegistry, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listing = registry.list_sections()
+    listing.pop("total")
+    monkeypatch.setattr(registry, "list_sections", lambda role: listing)
+    result = json.loads(_tools(tmp_path, registry).search_cloned_sections())
+    assert result["total"] == 2
+    assert result["inventory_total"] is None
+    assert result["inventory_truncated"] is None
+    assert "unknown" in result["inventory_note"]
 
 
 # --------------------------------------------------------------------------- #
@@ -1097,7 +1220,11 @@ def test_search_says_how_many_matched_not_only_how_many_it_showed(
     narrowed = json.loads(_tools(tmp_path, registry).search_cloned_sections(limit=1))
     assert narrowed["count"] == 1
     assert narrowed["total"] > 1
-    assert "of" in narrowed["note"] and "limit" in narrowed["note"]
+    assert narrowed["next_offset"] == 1
+    remainder = json.loads(_tools(tmp_path, registry).search_cloned_sections(
+        offset=narrowed["next_offset"],
+    ))
+    assert remainder["count"] + narrowed["count"] == narrowed["total"]
 
 
 def _seed_doc_with_two_pins_of_one_band(fragment_id: str = HERO_ID) -> dict:
