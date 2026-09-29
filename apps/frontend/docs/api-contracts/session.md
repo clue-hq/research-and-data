@@ -30,13 +30,19 @@ a live Clerk instance and could not have worked in either token shape.
 
 ```text
 user_id
-memberships[]: membership_id, workspace_id, workspace_name, role_key, permissions[]
+memberships[]: membership_id, workspace_id, workspace_name, role_key, permissions[], workspace_logo_url?
 ```
 
 `workspace_name` is the workspace's display name and is required on every membership: it is
 the only workspace value a person is ever shown. The id stays a routing key and a cookie
 value and never reaches a screen — not in the post-sign-in chooser, not in the sidebar
 switcher.
+
+`workspace_logo_url` (added 2026-09-30) is the company's logo for the sidebar workspace switcher:
+Brandfetch's embed-only Logo API mark (`https://cdn.brandfetch.io/…`, square icon, lettermark
+fallback) for the website given at onboarding — the sign-up website, else the latest brand
+onboarding's domain. `null` (or absent) when there is no website or no Brandfetch client id; the
+switcher then shows the workspace's initials. The browser loads it directly (`unoptimized`).
 
 `GET /auth/v1/principal` additionally requires `X-Clue-Workspace-Id` as a selector. The backend
 accepts it only when the resolved Clue user has a current active membership and returns the closed

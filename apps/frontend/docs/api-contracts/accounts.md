@@ -233,7 +233,7 @@ The frontend never re-derives any of these (master plan §6).
 | `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 made `overallFit` nullable) |
 | `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
 | `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is and never computes tenure from the browser clock; `employmentStartedAt` exists for sorting and date display |
-| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. `[]` in v1 (ruling S9) |
+| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. Served since 2026-09-30 (S9's later slice): the account's design documents from every project |
 | `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
 | `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
 | `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
@@ -405,7 +405,7 @@ labels where the list serves bands, and drops the list-only membership fields.
 | `insightSummary` | string[] | optional (default `[]`) | computed: `"{n} insights"`, `"{m} people"` |
 | `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `insightsDisplay` |
 | `insightsDisplay` | DisplayBlock (`page: "insights"`) | optional | omitted when the insights page has not been generated |
-| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; `[]` in v1 (S9) |
+| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; served since 2026-09-30: the design documents made for this account (through `design_account.account_entity_id`) from **every** project, newest first, `projectName` = the project's name, archived ones omitted; `thumbnailPath` = the gallery's `/api/clue/design/documents/{id}/thumbnail?v={current_version}` (render `unoptimized`: session-authenticated route); `type` `ad` or `web` |
 | `activity` | AccountActivity[] | required | see Shared shapes |
 
 **FI-2 fields kept until D4.** None — this endpoint is new in v1.

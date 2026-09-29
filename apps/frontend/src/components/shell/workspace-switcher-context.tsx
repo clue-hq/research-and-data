@@ -7,6 +7,8 @@ export type SwitcherWorkspace = {
   name: string;
   initials: string;
   role: string;
+  /** The company's logo; the initials stand in when there is none. */
+  logoUrl?: string | null;
 };
 
 type SwitcherValue = {
