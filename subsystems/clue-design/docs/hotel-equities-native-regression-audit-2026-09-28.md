@@ -1,0 +1,188 @@
+# Native website regression audit — 28 September 2026
+
+This is an audit of the completed native test, not a successful quality qualification.
+No follow-up generation, saved-page edit, new ingestion, publication, or remote push
+was performed during the investigation. Proposed fixes below are not implemented.
+
+## Exact case and evidence
+
+- Chat: `thr_a7807c40f8c855e89498ed90d0e823fb` in Conduit Fresh.
+- Run: `run_25af62e80280522cb1ebf1c8f6ba4791`.
+- Design session: `dsess_cf97dbc453a05e94b9f439934fc31ee1`.
+- Document: `doc_36478cffebd05e1c87aaeaaf9d01fcde`.
+- Runtime source checkpoint: `cff9484c`, `codex/design-agent-v1`.
+- Saved revision 1; final local generation version 14. Runtime succeeded with
+  `completed_with_warnings`; this is distinct from acceptable creative quality.
+- Original request was a short request to create a one-to-one page using saved
+  account research and Conduit branding, with the correct account mention.
+
+Inspected the Head-of-ABM checkpoint messages and tool results, design checkpoint
+calls/results, all 982 lines of the design run log, plan/brief, final WebDoc,
+rendered layout/font observations, review receipts, and native desktop/tablet/mobile
+previews. Local checkpoints and files provided the necessary traces; no LangSmith
+inspection is claimed.
+
+Local evidence is retained under:
+
+- `.local-setup/native-account-skills/approved-native-20260928/`: sanitized Head
+  checkpoint messages, native-run trace audit, model-cost receipts, browser captures.
+- `.deepagent-workspace/sessions/dsess_cf97dbc453a05e94b9f439934fc31ee1/` relative
+  to this subsystem: `workspace/brief.md`, `workspace/plan.md`, and
+  `turns/run_25af62e80280522cb1ebf1c8f6ba4791/`.
+- Within that turn: `logs/run.jsonl`, `final.json`, `final_web_doc.json`,
+  `iter_3/layout_{1440,768,375}.json`, previews, and earlier clone-review captures.
+
+Raw customer context and trace bodies remain in ignored local diagnostics.
+
+## 1. The two sections use different authoring paths and typography
+
+The user's first screenshot is the new `compose_web_section` fragment
+`frag_5770a008a92daa9d`, `#abm_workflow`. The second is the source-derived agent
+three-up `frag_c400a456d8d7b626`, with text slots rebound while retaining captured CSS.
+
+Measured actual glyph faces and computed styles at 1440px:
+
+| Role | Source-derived section | Newly composed section |
+| --- | --- | --- |
+| Section heading | Season Mix Regular; 48px; weight 400; line height 48px; tracking -1.44px | Season Mix Medium; 32px; weight 500; line height 35.2px; tracking -0.32px |
+| Smaller heading | Season Mix Regular; 24px; weight 400; line height 25.92px | PP Neue Montreal Medium; 20px; weight 500; line height 26px |
+| Section heading at 375px | Season Mix Regular; 32px; weight 400 | Season Mix Medium; 28px; weight 500 |
+
+The fonts are loaded. These are observed rendered glyph faces, not merely font-family
+declarations. A missing font, stale frontend cache, or fallback font is not the cause
+of this specific mismatch. Not every heading should have identical size; the defect
+is that the agent invented a separate role hierarchy without grounding it in an
+equivalent source role.
+
+At physical log line 486, the model explicitly authored `font-weight:500` for the
+custom H2 and `font-family:bodyFont` for its H3s. The plan's typography inventory
+named families but omitted a measured role-by-role size/weight/line-height/breakpoint
+contract. Source inspections included text-only reads and a product CSS tail window
+containing unrelated styles; they did not establish equivalent heading-role rules
+before composition. Raw composition accepts these independent CSS choices, and the
+review path does not compare their resolved roles against source measurements.
+
+## 2. The logo regression begins in old project context
+
+The Head agent's checkpoint message 17 contains the materialized
+`project/decisions.md`. It includes an older Hyatt test instruction to place both
+corporate logos in a balanced header, and a later instruction to put the target
+logo on the landing page. The later no-navigation correction from this Codex
+conversation is absent from the context delivered to this run.
+
+The causal chain is visible without inference about hidden model reasoning:
+
+1. The project library presents these decisions as what the human told the project.
+2. Head checkpoint message 35 calls `open_design_leg`, changing the old target to
+   Hotel Equities and explicitly requesting both logos in a balanced header.
+3. Design `workspace/plan.md:5` labels the expanded brief as verbatim user
+   requirements. Lines 28 and 100 justify the header by saying the user asked for it.
+4. Log line 477 calls `compose_web_section` with `section_role: nav` and target
+   identity inside `#abm_header`. The mobile layout wraps that identity below the
+   seller row inside the same header; it is not a separate hero identity treatment.
+
+The new brief does identify itself as agent-authored context, but the model still
+promoted its contents to direct user requirements. The earlier provenance repair
+was instruction-level guidance and did not enforce this distinction. It also did
+not reconcile the stale project instruction. Both failures matter.
+
+Current persistence already supports corrections: `stage0/governed.py:618`
+`read_statements` excludes rows superseded by `correction_of_id`. However,
+`project_status.py:495` projects rows into `DecisionItem(route_key, quote)`, then
+`:628` renders only those two fields. The delivered file drops statement/input IDs,
+creation time, and route reference. The read model also omits the table's actor and
+entity fields. Downstream agents consequently lack useful scope/attribution detail.
+
+This proves the no-nav correction was absent from delivered context; it does not
+claim an exhaustive search found no such statement anywhere in the database.
+The user should not need to repeat this correction in every generation prompt.
+
+## 3. Review collected evidence but did not enforce qualification
+
+`final.json.review_evidence` is explicit:
+
+- `status: incomplete`, `quality_verdict: not_computed`.
+- `persisted_revision_checked: false`.
+- Final local version 14: only the last preview tile was opened at each width
+  (1440: tile 4 of 5; 768: tile 5 of 6; 375: tile 7 of 8).
+- The clone walk was version 13 and therefore stale after the footer change.
+- Source comparison was unavailable because reference width 1920 differed from
+  rendered width 1440. An empty `broken_clones` list is not source-parity proof.
+- No interaction-state captures establish retained JavaScript behavior.
+
+Earlier versions had additional inspection; the point is that full current-version
+coverage was incomplete. Yet the model's final prose described strict checks as
+having no blank/missing/unusable-height issues. `finalize_web_run` in
+`apps/agent_runtime/lumen_agent/tools/web_substrate.py:10973` validates the outcome
+enum and attaches evidence; it does not enforce these coverage/quality conditions.
+Saving a recoverable draft with warnings is useful. Presenting it as qualified is
+not supported. Metadata instrumentation was incorrectly treated as if it were an
+acceptance mechanism.
+
+## 4. Other limitations verified in the same run
+
+- The latest mounted skills were available. There were ten successful skill or
+  reference reads, covering workflow, planning, account personalization, source
+  readiness, campaign composition, decision material, and copywriting. There were
+  no reads of the motion, media, or review skill files. This is not an old-library
+  deployment explanation.
+- Native tab reuse was available in earlier offline work, but this run did not use
+  it. Source feature behavior reported a missing retained controller; the agent
+  chose a static replacement. Inbox Todo/Follow Up/Done controls also remain static.
+  The live Follow Up activation left Todo selected. No original-JavaScript parity
+  is established by copying source HTML/CSS into the React-backed WebDoc renderer.
+- The phone page is 8267px tall at 375px. The agent retained an Inbox band showing
+  background without the desktop product chrome and acknowledged that in its
+  final note. All checked images loaded; successful fetch does not make this a
+  useful mobile composition.
+- The page reads account research but still spends much of its eight sections on
+  generic source product material. One custom workflow and a few evaluation
+  questions do not establish a strong account-specific argument. The zero-count
+  grounding ledger should not be misread as proof no research was read.
+- Five primary demo links share one destination. CTA wording is consistent in this
+  run, but that choice came from old project instructions. The current short
+  request did not independently request a demo offer.
+
+## Proposed repair order and tests before another paid run
+
+1. **Correct durable request context.** Reconcile the founder's no-target-logo-in-nav
+   instruction through the canonical captured-input/statement correction seam,
+   with proper scope. Do not hand-edit generated `project/decisions.md`. Preserve
+   statement identity, origin, target/artifact scope, and supersession through
+   project rendering and Head-to-Design handoff. A delegated proposal must remain
+   distinguishable from a direct, attributable user request. Test the exact stale
+   Hyatt decision plus later Hotel Equities correction as a regression case.
+2. **Bind authored sections to measured brand roles.** Make equivalent source
+   heading/body/label roles available with family, actual face, weight, scale,
+   line-height, tracking, and responsive behavior. Use them in new composition and
+   compare rendered roles against that reference. Test this actual failed custom
+   fragment beside the source fragment at desktop and phone widths. Avoid
+   Conduit-only constants in global skills.
+3. **Separate draft persistence from quality acceptance.** Check explicit critical
+   constraints against final DOM/roles, current-version readable coverage, and
+   required interaction behavior. Report incomplete evidence as incomplete, even
+   when saving a draft succeeds. Bound the repair loop; missing evidence must not
+   trigger endless provider calls or an invented pass.
+4. **Make behavior and account content decisions before composition.** For required
+   dynamic sections select supported native reconstruction and verify state
+   changes; name unsupported behavior before choosing a static treatment. Give
+   each retained section a distinct account question, evidence, product mechanism,
+   and useful reader takeaway. Treat research limitations outside visitor copy.
+
+These are cross-layer corrections, not a proposal to add more general prose to the
+skill library. Existing instruction and packaging tests do not prove compliance.
+First run offline regressions against this saved failure and inspect the native
+renderer. Only after those checks should another separately authorized generation
+be considered. No source or live-project correction was made in this audit.
+
+## Time, spend, and boundary
+
+The completed test took about 12m36s including Head orchestration; design execution
+was about 10m54s. Recorded model receipts: 7 Head calls / $0.365542 and 36 Design
+calls / $3.061164, totaling $3.426706. A prior accidentally submitted account-picker
+entry was canceled before design and incurred 2 Head calls / $0.119156. Combined
+recorded model spend is $3.545862; this is not a claim about all provider charges.
+
+The native output is a failed quality test and is retained for regression evidence.
+The broader website-quality goal remains incomplete. No additional generation was
+started during the audit.
