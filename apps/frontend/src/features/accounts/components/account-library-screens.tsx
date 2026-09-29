@@ -105,8 +105,7 @@ export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
                     behind the BFF, and the image optimizer's server-side refetch would 401. */}
                 <div className={styles.thumbnail}><Image alt="" className="object-cover" fill sizes="(max-width: 640px) 80vw, 300px" src={artifact.thumbnailPath} unoptimized /></div>
                 <div className={styles.cardBody}>
-                  <div className={styles.cardTitle}><ArtifactTypeIcon type={artifact.type} /><span>{artifact.title}</span></div>
-                  {artifact.projectName ? <p>{artifact.projectName}</p> : null}
+                  <div className={styles.cardTitle}><ArtifactTypeIcon type={artifact.type} /><span className={styles.nameText}><span>{artifact.title}</span>{artifact.projectName ? <small>{artifact.projectName}</small> : null}</span></div>
                   <p>{artifactTypeLabels[artifact.type]}<span aria-hidden="true"> · </span><ArtifactUpdated artifact={artifact} /></p>
                 </div>
               </button>
