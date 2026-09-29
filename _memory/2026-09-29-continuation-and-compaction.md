@@ -66,3 +66,10 @@ in full every turn. The share looked 87–94% only because those threads' histor
   no longer bounds images already inside a continued conversation (compaction does); a turn in
   flight across the release (fresh first attempt, continued redelivery) conflicts on its receipt
   and fails once; compaction is sized to the primary model even if the fallback model answers.
+
+## Live proof 1 — prompt caching (2026-09-29, clue_dubai, thread thr_4a22561d…)
+
+PASSED. Turn 1 (v69, fresh): first call 38,511 input / 0 cached; its last call 58,760 input.
+Turn 2 (continued: receipt L6 = 0 items, i.e. no rebuilt history; L1 recorded, not re-sent): first
+call 64,060 input / **58,752 cached (92%)** — the whole of turn 1 (58,760) came from cache, vs the
+old flat 41,472. No `continuation_fallback` in worker logs. Compaction proof (part 2) still owed.
