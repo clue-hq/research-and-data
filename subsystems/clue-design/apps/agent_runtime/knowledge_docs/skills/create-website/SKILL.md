@@ -25,6 +25,17 @@ ancestor for each new band in the existing plan. A palette is not a grammar.
 If preview or source is missing/truncated, state the limitation; never claim
 a full-source remix from the visible prefix.
 
+Before a new raw text band, render the selected source skeleton and read
+`view("typography:node:<source-node-id>")`. Find node IDs in `view("layout:1440")`.
+This returns up to eight exact text paths with desktop/tablet/phone measurements
+and actual glyph faces; continue its `next_target`. For a retained source section,
+freeze equivalent roles to themselves with `set_web_typography_reference` before
+authoring. After pinning and rendering the new section, map its real node/path
+to that frozen source; the tool reuses the original measurements. Follow the
+source and format contract's sequence rather than inventing a future target ID.
+Missing or stale measurements are not defaults. The read does not infer CSS
+between those widths; preserve the inspected source's real responsive rules.
+
 ## Choose the smallest sufficient construction
 
 | Required change | Callable path |

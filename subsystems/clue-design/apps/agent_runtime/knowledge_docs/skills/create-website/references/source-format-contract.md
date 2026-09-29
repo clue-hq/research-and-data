@@ -42,10 +42,33 @@ tracking, measure and breakpoint changes in the existing plan. Family aliases
 alone are insufficient: a Regular display heading is not a Medium heading or a
 sans body label. Do not shrink text to fit an oversized argument; edit the copy.
 
-With a current source render, use `set_web_typography_reference` before changing
-the selected text roles. Read exact measurement paths from `view("layout:<width>:node:<id>")`
-at 1440/768/375; stored text-edit paths are different. New authored roles map to
-equivalent inspected source roles. Never rebase a reference onto a drifted draft.
+Render the selected source skeleton before composing missing text sections; reuse
+its current render if one already exists.
+Use `view("layout:1440")` to find its node IDs, then
+`view("typography:node:<source-node-id>")` for one compact cross-viewport read.
+Follow `next_target` for additional text paths; inspect `capture_coverage` and
+per-width gaps. The view joins measured values, not guessed brand defaults or
+inferred responsive CSS. Inspect source CSS for the actual breakpoint rules.
+If source measurements are unavailable, report that gap rather than claiming fidelity.
+
+For an existing selected text role, use `set_web_typography_reference` with the
+same source and target before changing it. The compact view's `reference_path`
+values are rendered paths at 1440/768/375; stored text-edit paths are different.
+
+For a missing raw section, the new target ID does not exist before composition:
+
+1. Choose an equivalent role in a source section that will remain on this page.
+   Freeze it with its measured node/path as both reference and target.
+2. Compose and pin the new section. Render the draft, then read its real target
+   node/path through the layout index and compact typography view.
+3. Map that new target to the exact source node/path frozen in step 1. The tool
+   reuses the original frozen measurements, even after the document changes;
+   it does not sample the later draft as a new reference.
+4. Repair differences using the inspected source CSS, render, and check review.
+
+Do not invent future node IDs or rendered paths. A self-bound source must remain
+on the page because review also checks it; do not use a temporary section that
+will be deleted. Never rebase a reference onto a drifted draft.
 Unmapped or unmeasured roles stay unverified. This check covers typography only;
 compare structure, content fit and behavior separately.
 

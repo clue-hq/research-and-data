@@ -94,6 +94,97 @@ def _sample(row: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
     return sample, gaps
 
 
+def typography_inventory(
+    layouts: dict[int, dict[str, Any]], identity: dict[str, Any], node_id: str, offset: int = 0
+) -> dict[str, Any]:
+    """Join current native measurements by exact rendered path, without choosing roles.
+
+    These are observations at three widths, not a stylesheet or inferred breakpoints.
+    Reuse the same freshness and sample rules as frozen role references so the read
+    cannot present a weaker measurement as a usable reference.
+    """
+    nodes = {}
+    for width in WIDTHS:
+        layout = layouts.get(width)
+        if not _current(layout, identity, width):
+            raise TypographyReferenceError(
+                "typography.measurements_unavailable",
+                f"Current native measurements at {width}px are missing, stale or unavailable.",
+            )
+        assert layout is not None
+        matches = [n for n in layout.get("nodes", []) if n.get("node_id") == node_id]
+        if len(matches) != 1 or matches[0].get("status") != "measured":
+            raise TypographyReferenceError(
+                "typography.node_not_measured",
+                f"No unique measured node {node_id!r} at {width}px; inspect the layout index.",
+            )
+        nodes[width] = matches[0]
+
+    paths = list(dict.fromkeys(
+        text.get("rendered_path") for node in nodes.values() for text in node.get("texts", [])
+        if isinstance(text.get("rendered_path"), str)
+        and _PATH.fullmatch(text["rendered_path"]) is not None
+    ))
+    if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= len(paths):
+        raise TypographyReferenceError(
+            "typography.bad_offset", f"Use a text offset from zero through {len(paths)}.",
+        )
+    coverage = {
+        str(width): {
+            "complete": node.get("complete") is True,
+            "omitted": copy.deepcopy(node.get("omitted") or {}),
+            "invalid_paths": sum(
+                not isinstance(t.get("rendered_path"), str)
+                or _PATH.fullmatch(t["rendered_path"]) is None
+                for t in node.get("texts", [])
+            ),
+        } for width, node in nodes.items()
+    }
+    rows = []
+    for path in paths:
+        widths = {}
+        for width in WIDTHS:
+            text = _text(layouts[width], node_id, path)
+            sample, gaps = _sample(text)
+            widths[str(width)] = {
+                "status": "incomplete" if gaps else "hidden" if not sample["css_visible"]
+                else "observed",
+                "text_excerpt": str((text or {}).get("text") or "")[:160],
+                "sample": sample,
+                "gaps": gaps,
+            }
+        rows.append({"reference_path": path, "widths": widths})
+    next_offset = offset + 8 if offset + 8 < len(paths) else None
+    measurements_complete = all(
+        c["complete"] and not c["invalid_paths"] and not any(c["omitted"].values())
+        for c in coverage.values()
+    ) and all(not w["gaps"] for row in rows for w in row["widths"].values())
+    return {
+        "status": "observed",
+        "scope": "current_native_render_text_measurements",
+        **identity,
+        "reference_node_id": node_id,
+        "kind": nodes[1440].get("kind"),
+        "fragment_id": nodes[1440].get("fragment_id"),
+        "path_space": "rendered_node_relative",
+        "total_captured_paths": len(paths),
+        "offset": offset,
+        "next_target": None if next_offset is None else
+        f"typography:node:{node_id}:offset:{next_offset}",
+        "measurements_complete": measurements_complete,
+        "complete": offset == 0 and next_offset is None and measurements_complete,
+        "capture_coverage": coverage,
+        "texts": rows[offset:offset + 8],
+        "quality_verdict": "not_computed",
+        "note": "Choose equivalent source and target roles deliberately, then freeze them with "
+        "set_web_typography_reference. This view does not register references, alter CSS, infer "
+        "breakpoints or prove this node is an original source. Verify fragment provenance. "
+        "Rendered paths are not stored text-edit paths. Excerpts are limited to 160 characters. "
+        "measurements_complete describes the saved inventory, not what the agent has read. "
+        "complete is true only when this response includes that entire complete inventory.",
+    }
+
+
 class TypographyReferences:
     def __init__(self) -> None:
         self.bindings: list[dict[str, Any]] = []
@@ -165,26 +256,36 @@ class TypographyReferences:
                     "This turn already has 24 role references; "
                     "no additional mappings were registered.",
                 )
-            samples = {}
-            for width in WIDTHS:
-                layout = layouts.get(width)
-                if not _current(layout, identity, width):
-                    raise TypographyReferenceError(
-                        "typography.reference_unavailable",
-                        f"A current native measurement at {width}px is required. "
-                        "Render once; inspect its layout paths.",
+            frozen_source = next((b for b in pending if all(
+                b[k] == identity[k] for k in ("document_id", "page_id")
+            ) and all(b[k] == row[k] for k in ("reference_node_id", "reference_path"))), None)
+            if frozen_source is not None:
+                # A raw target gets its real node ID only after mint/pin. Reuse the
+                # source frozen before that mutation, never the latest changed draft.
+                samples = frozen_source["samples"]
+                reference_identity = {k: frozen_source[k] for k in identity}
+            else:
+                samples = {}
+                reference_identity = identity
+                for width in WIDTHS:
+                    layout = layouts.get(width)
+                    if not _current(layout, identity, width):
+                        raise TypographyReferenceError(
+                            "typography.reference_unavailable",
+                            f"A current native measurement at {width}px is required. "
+                            "Render once; inspect its layout paths.",
+                        )
+                    sample, gaps = _sample(
+                        _text(layout, row["reference_node_id"], row["reference_path"])
                     )
-                sample, gaps = _sample(
-                    _text(layout, row["reference_node_id"], row["reference_path"])
-                )
-                if gaps:
-                    raise TypographyReferenceError(
-                        "typography.reference_unavailable",
-                        f"Reference at {width}px is incomplete: {', '.join(gaps)}. "
-                        "No partial reference was registered.",
-                    )
-                samples[str(width)] = sample
-            pending.append({**row, **identity, "samples": copy.deepcopy(samples)})
+                    if gaps:
+                        raise TypographyReferenceError(
+                            "typography.reference_unavailable",
+                            f"Reference at {width}px is incomplete: {', '.join(gaps)}. "
+                            "No partial reference was registered.",
+                        )
+                    samples[str(width)] = sample
+            pending.append({**row, **reference_identity, "samples": copy.deepcopy(samples)})
         self.bindings = pending
 
     def report(

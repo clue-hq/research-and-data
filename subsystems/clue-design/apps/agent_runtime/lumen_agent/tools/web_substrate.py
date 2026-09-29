@@ -93,7 +93,9 @@ from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
 from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
 from .web_layout_capture import capture_layout, layout_targets
-from .web_typography_reference import TypographyReferenceError, TypographyReferences
+from .web_typography_reference import (
+    TypographyReferenceError, TypographyReferences, typography_inventory,
+)
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -6788,6 +6790,13 @@ class LumenWebTools:
         sentence structure. The result is minted as a released library fragment and renders
         through the same path that gives clones their fidelity.
 
+        Before writing new text styles, use view("typography:node:<source-node-id>") on a
+        current render of the selected source skeleton. It joins exact source measurements
+        across desktop/tablet/phone. Freeze equivalent retained source roles to themselves with
+        set_web_typography_reference. After pinning and rendering this new section, bind its real
+        node/path to those frozen sources; do not guess a future target ID or a heading scale.
+        Measurements at three widths do not replace the source's real responsive CSS.
+
         FORMAT:
         - `html`: ONE section — `<section id="...">...</section>`. Real markup, any elements.
           Scripts/handlers are stripped by the sanitizer (same as every captured byte). Images
@@ -10473,6 +10482,42 @@ class LumenWebTools:
                 ]
             return reply(payload)
 
+    def _view_typography(self, target: str, *, can_render: bool) -> list:
+        """One bounded cross-viewport read of the existing native measurements."""
+        with self.tool_lock:
+            match = re.fullmatch(r"typography:node:(.+?)(?::offset:(0|[1-9][0-9]*))?", target)
+            try:
+                if not match:
+                    raise TypographyReferenceError(
+                        "typography.bad_target",
+                        "Use typography:node:<id> or its returned next_target.",
+                    )
+                payload = typography_inventory(
+                    self._layout_by_width, self._typography_identity(), match[1],
+                    int(match[2] or 0),
+                )
+                payload["persisted_revision_checked"] = False
+                encoded = json.dumps(payload, ensure_ascii=False)
+                if len(encoded.encode("utf-8")) > _WEB_NODE_VIEW_MAX_BYTES:
+                    raise TypographyReferenceError(
+                        "typography.too_large", "Text measurements exceed the view byte limit; "
+                        "inspect the existing per-width layout views. No partial row returned.",
+                    )
+            except TypographyReferenceError as error:
+                recovery = ""
+                if error.code == "typography.measurements_unavailable":
+                    recovery = (
+                        " Call render_web_preview() once, then inspect the current source."
+                        if can_render else " Return to the director for current measurements; "
+                        "do not keep editing to chase a fresh preview."
+                    )
+                encoded = json.dumps({
+                    "status": "error", "code": error.code, "message": str(error) + recovery,
+                })
+            self.record("agent", "web_view_called", input_summary=target[:300],
+                        output_summary="typography_observation")
+            return [_text_block(encoded)]
+
     def _view_content(self, target: str, can_render: bool = True) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool.
 
@@ -10483,6 +10528,8 @@ class LumenWebTools:
         stale views because the refusal said "call render_web_preview() first"."""
         if target.startswith("layout:"):
             return self._view_layout(target, can_render=can_render)
+        if target.startswith("typography:"):
+            return self._view_typography(target, can_render=can_render)
         if target == "review":
             report = self._review_evidence_report()
             self.record("agent", "web_review_evidence_viewed", payload=report)
@@ -10596,7 +10643,8 @@ class LumenWebTools:
         )
         return [
             _text_block(
-                f"view: unknown target {target!r}. Use \"layout:1440\", \"preview:1440\", "
+                f"view: unknown target {target!r}. Use \"typography:node:<id>\", "
+                '"layout:1440", "preview:1440", '
                 '"preview:768", "preview:375", "preview:<width>:tile:<n>", '
                 '"state:<n>", "state:<n>:tile:<index>", "review", "asset:<asset_id>", '
                 '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
@@ -10700,13 +10748,17 @@ class LumenWebTools:
         """Pin selected source text roles and check a draft against them without rendering.
 
         Use after one native render and before restyling a selected component. For each new
-        authored role, choose the equivalent source role deliberately. Read exact node IDs and
-        rendered paths with view("layout:1440:node:<id>") and the 768/375 equivalents.
+        authored role, choose the equivalent source role deliberately. Find exact node IDs in
+        view("layout:1440"), then paths and all widths in view("typography:node:<id>").
         Pass a JSON list of 1–8 objects with role, reference_node_id, reference_path,
         target_node_id, target_path. Paths are the exact rendered_node_relative :nth-child
         chains, NOT stored text-edit paths; an empty path means the measured root text itself.
-        Reference and target may be the same for a selected-element edit. Targets may be authored
-        later, but references must have complete current measurements at all three widths.
+        Reference and target may be the same for a selected-element edit. For a new raw section,
+        first freeze an equivalent retained source role to itself. Compose/pin, render the draft,
+        read the new target's real node/path, then map it to that same frozen reference. The tool
+        reuses the original snapshot across document mutations within this page and turn. New
+        source roles require complete current measurements at all three widths. Never invent
+        future node IDs or paths. Self-bound source nodes must remain on the final page.
 
         This freezes source family, actual glyph faces, weight, size, line height, tracking,
         alignment, synthesis, visibility and element tag within THIS TURN (24 role references
@@ -11181,6 +11233,13 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         Computed font-family does not prove the actual glyph face; pixels and baked
         image backgrounds are unclassified. Compare asset pixels and source evidence.
         Stale/wrong-page measurements refuse, and none is an aesthetic verdict.
+        "typography:node:<id>" combines that node's measured text faces, weights, sizes,
+        line heights, tracking and alignment across 1440/768/375 into one bounded read.
+        Use the source node ID from the layout index before composing a sibling section;
+        each reference_path is ready for set_web_typography_reference after you choose
+        the equivalent target role. Follow next_target for more than eight captured paths.
+        Missing glyph evidence and capture omissions stay explicit. This read neither
+        freezes references nor infers responsive CSS or establishes source provenance.
         Use tile:0 then
         coverage.next_target to inspect tall/mobile pages. JSON reports source
         hash/dimensions/render version, crop, tile count and other tile ranges

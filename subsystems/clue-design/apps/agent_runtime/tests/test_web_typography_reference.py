@@ -101,6 +101,45 @@ def test_role_reference_detects_authored_weight_and_mobile_scale_drift(tmp_path)
     assert report["quality_verdict"] == "not_computed"
 
 
+def test_retained_source_can_be_frozen_before_composition_then_bound_to_real_new_node(tmp_path):
+    tools = _bare_tools(tmp_path)
+    layouts(tools)
+    assert bind(tools, target_node_id="source")["status"] == "registered"
+    original_version = tools._doc_version
+    tools._doc_version += 1  # composition/pinning returned the new target ID; old render is stale
+    result = bind(tools)
+    assert result["status"] == "registered"
+    assert result["typography_references"]["status"] == "incomplete"
+    layouts(tools, authored_weight="500")
+    # Even if the retained source is later restyled, the new target keeps the original reference.
+    tools._layout_by_width[1440]["nodes"][0]["texts"][0]["computed"]["font_size"] = "40px"
+    report = tools._review_evidence_report()["typography_references"]
+    target = next(b for b in report["bindings"] if b["target_node_id"] == "authored")
+    assert target["reference_document_version"] == original_version
+    assert target["status"] == "mismatch"
+    assert target["widths"]["1440"]["differences"]["font_weight"] == {
+        "expected": "400", "actual": "500",
+    }
+    assert "font_size" not in target["widths"]["1440"]["differences"]
+
+
+@pytest.mark.parametrize("change", ["new_source", "different_document", "different_page"])
+def test_frozen_source_reuse_does_not_authorize_other_sources_or_scopes(tmp_path, change):
+    tools = _bare_tools(tmp_path)
+    layouts(tools)
+    bind(tools, target_node_id="source")
+    tools._doc_version += 1
+    args = {}
+    if change == "new_source":
+        args["reference_node_id"] = "another_source"
+    elif change == "different_document":
+        tools.web_doc["id"] = "another_document"
+    else:
+        tools.page_id = "another_page"
+    assert bind(tools, **args)["status"] == "error"
+    assert len(tools._typography_references.bindings) == 1
+
+
 def test_copy_and_glyph_counts_can_change_while_selected_type_stays_exact(tmp_path):
     tools = _bare_tools(tmp_path)
     layouts(tools)
@@ -237,10 +276,14 @@ def test_role_limit_refuses_new_bindings_without_discarding_existing_ones(tmp_pa
 def test_real_browser_measurements_detect_drift_then_verify_css_repair(tmp_path):
     from langchain_core.tools import StructuredTool
     from lumen_agent.tools.web_layout_capture import capture_layout
+    from lumen_agent.tools.web_substrate import make_web_view_tool
     from playwright.sync_api import sync_playwright
 
     tools = _bare_tools(tmp_path)
     targets = [{"node_id": n, "kind": "section"} for n in ("source", "authored")]
+    authored_html = (
+        '<section class="authored" data-node-id="authored"><h2>Account heading</h2></section>'
+    )
     html = """<style>
         body{margin:0}
         h2{font-family:serif;line-height:1;letter-spacing:-1px;text-align:left}
@@ -248,25 +291,24 @@ def test_real_browser_measurements_detect_drift_then_verify_css_repair(tmp_path)
         .authored h2{font-size:32px;font-weight:500}
         @media(max-width:767px){.source h2{font-size:32px}.authored h2{font-size:28px}}
         </style>
-        <section class="source" data-node-id="source"><h2>Reference heading</h2></section>
-        <section class="authored" data-node-id="authored"><h2>Account heading</h2></section>"""
+        <section class="source" data-node-id="source"><h2>Reference heading</h2></section>"""
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         try:
 
-            def measure(repaired=False):
-                tools._preview_iteration = 1 if not repaired else 2
+            def measure(*, source_only=False, repaired=False):
+                tools._preview_iteration = (tools._preview_iteration or 0) + 1
                 tools._preview_doc_version = tools._doc_version
                 for width in (1440, 768, 375):
                     page = browser.new_page(viewport={"width": width, "height": 900})
                     page.route("**/*", lambda route: route.abort())
-                    page.set_content(html)
+                    page.set_content(html if source_only else html + authored_html)
                     if repaired:
                         page.add_style_tag(
                             content=".authored h2{font-size:48px;font-weight:400}"
                             "@media(max-width:767px){.authored h2{font-size:32px}}"
                         )
-                    report = capture_layout(page, targets)
+                    report = capture_layout(page, targets[:1] if source_only else targets)
                     report.update(
                         {
                             k: v
@@ -277,8 +319,31 @@ def test_real_browser_measurements_detect_drift_then_verify_css_repair(tmp_path)
                     tools._layout_by_width[width] = report
                     page.close()
 
-            measure()
+            measure(source_only=True)
+            source = json.loads(make_web_view_tool(tools).invoke(
+                {"target": "typography:node:source"}
+            )[0]["text"])
+            assert source["complete"] is True
+            heading = source["texts"][0]
+            assert heading["widths"]["1440"]["sample"]["font_size"] == "48px"
+            assert heading["widths"]["375"]["sample"]["font_size"] == "32px"
+            assert heading["widths"]["1440"]["sample"]["font_weight"] == "400"
             exposed = StructuredTool.from_function(tools.set_web_typography_reference)
+            # Pin a retained source before the new section has a node ID or rendered path.
+            frozen = json.loads(exposed.invoke({"bindings_json": json.dumps([{
+                "role": "retained heading",
+                "reference_node_id": source["reference_node_id"],
+                "reference_path": heading["reference_path"],
+                "target_node_id": source["reference_node_id"],
+                "target_path": heading["reference_path"],
+            }])}))
+            assert frozen["typography_references"]["status"] == "matched"
+            source_iteration = tools._preview_iteration
+            tools._doc_version += 1  # a new section is composed and pinned
+            measure()
+            target = json.loads(make_web_view_tool(tools).invoke(
+                {"target": "typography:node:authored"}
+            )[0]["text"])
             result = json.loads(
                 exposed.invoke(
                     {
@@ -286,10 +351,10 @@ def test_real_browser_measurements_detect_drift_then_verify_css_repair(tmp_path)
                             [
                                 {
                                     "role": "heading",
-                                    "reference_node_id": "source",
-                                    "reference_path": PATH,
-                                    "target_node_id": "authored",
-                                    "target_path": PATH,
+                                    "reference_node_id": source["reference_node_id"],
+                                    "reference_path": heading["reference_path"],
+                                    "target_node_id": target["reference_node_id"],
+                                    "target_path": target["texts"][0]["reference_path"],
                                 }
                             ]
                         )
@@ -297,11 +362,18 @@ def test_real_browser_measurements_detect_drift_then_verify_css_repair(tmp_path)
                 )
             )
             assert result["typography_references"]["status"] == "mismatch"
+            authored = result["typography_references"]["bindings"][1]
+            assert authored["reference_render_iteration"] == source_iteration
+            assert authored["widths"]["1440"]["differences"]["font_size"] == {
+                "expected": "48px", "actual": "32px",
+            }
             tools._doc_version += 1
             measure(repaired=True)
             report = tools._review_evidence_report()["typography_references"]
             assert report["status"] == "matched", report
-            assert report["bindings"][0]["reference_render_iteration"] == 1
+            assert all(
+                b["reference_render_iteration"] == source_iteration for b in report["bindings"]
+            )
             assert (
                 json.loads(tools.finalize_web_run("accepted", "Other checks assumed by fixture"))[
                     "outcome"
