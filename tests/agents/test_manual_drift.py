@@ -285,6 +285,28 @@ def test_every_cross_reference_names_a_chapter_that_exists(chapters: dict[str, s
     assert not problems, "; ".join(problems)
 
 
+def test_every_tool_description_points_at_its_own_entry_in_the_current_tools_chapter(
+    toolbelt: ToolRegistry,
+) -> None:
+    """A description's ``Manual:`` pointer names the chapter the agent actually holds.
+
+    Hard-coded versions sat at ``manual-tools/v5`` through six re-mints, so the model was sent to
+    a file no current profile mounts. The pointer is built by ``tool_manual_link`` now; this pins
+    that every description that has one uses the current version and its own tool's anchor.
+    """
+
+    pointer = re.compile(r"\.deepagent/skills/manual-tools/(v[0-9]+)/SKILL\.md#([a-z0-9_]+)")
+    problems: list[str] = []
+    for descriptor in toolbelt.all_descriptors():
+        for version, anchor in pointer.findall(descriptor.model_description):
+            if version != manual.MANUAL_VERSION or anchor != descriptor.name:
+                problems.append(
+                    f"{descriptor.name}@{descriptor.version} points at manual-tools/{version}"
+                    f"#{anchor}; expected {manual.MANUAL_VERSION}#{descriptor.name}"
+                )
+    assert not problems, "; ".join(problems)
+
+
 # =================================================================================================
 # (f) the profile pin and the capability map
 # =================================================================================================

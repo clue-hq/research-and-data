@@ -63,7 +63,7 @@ export const adminSettingsNavigation: SettingsNavigationItem[] = [
   {
     href: "/settings/data-model",
     icon: "data-model",
-    label: "Research fields",
+    label: "Data Model",
     section: "data-model",
   },
   {

@@ -7,6 +7,7 @@
 .PHONY: help install format lint typecheck contracts test check \
 	db-up db-down db-fresh migrate migrate-down db-smoke eval eval-verification eval-design-exit \
 	redis-up redis-down manual manual-check manual-link cost-report langfuse-check \
+	pages-backfill-hostnames
 	sandbox-image
 
 help: ## Show this help
@@ -118,6 +119,10 @@ eval-design-exit: ## P3.6 design-leg exit-judgment golden-set DEMO (fail-safe en
 # --- cost (lane 3 slice 1) ---------------------------------------------------
 cost-report: ## Print a workspace's cost report from the two ledgers. Usage: make cost-report ARGS="--workspace acme [--project P] [--json]"
 	uv run python -m clue_projections.cost_cli $(ARGS)
+
+# --- pages hostnames (custom-domain publishing S1) ---------------------------
+pages-backfill-hostnames: ## Allocate missing system hostnames. Usage: make pages-backfill-hostnames ARGS="--database-url postgresql+asyncpg://... [--suffix pages.localhost] [--dry-run]"
+	uv run python scripts/backfill_workspace_hostnames.py $(ARGS)
 
 # --- Langfuse (lane 3 slice 3) ----------------------------------------------
 langfuse-check: ## Is Langfuse enabled and does the host accept the keys? Reads .env; sends no trace

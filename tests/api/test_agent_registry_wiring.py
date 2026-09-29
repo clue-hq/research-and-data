@@ -164,7 +164,12 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # account-research-briefing v2 (repointed paths, one worded example) and the re-minted
         # `manual-*@v11` bodies that state the turn limits without numbers.
         # Digest measured off this tree.
-        AgentRole.HEAD_OF_ABM: ("9b961077b74aad88a52a0ec5dcb8d22bcaa1646248721828233a4615f8ac8b61"),
+        # v66 (discovery rebuild, 2026-09-28): stage0-interview@v39 and manual-*@v12.
+        # v67 (2026-09-29): briefing v3 without the one-person trial scope; prompt v18,
+        # stage0-interview@v40 and manual-*@v13 repointed.
+        # v68 (2026-09-29): three retired-lane tools dropped; stage0-interview@v41, manual-*@v14.
+        # v69 (2026-09-29): 4 MB workspace files for offloaded history; stage0@v42, manual@v15.
+        AgentRole.HEAD_OF_ABM: ("092fe5f8afa4cdfcbb277d53378ca57b8fff387e56bcd06161099f5142e40209"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -502,14 +507,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # pins that exact contract, whose input carries an `artifacts` list instead of one `title` —
     # so `@4` drops to ROLE_UNAVAILABLE beside the other superseded addresses.
     assert available == {
-        "draft_account_research_directive@5",
-        "get_research_view@1",
         "inspect_statement_history@1",
         "launch_arv2_account_research@1",
         "launch_arv2_discovery@1",
         "launch_arv2_person_research@1",
         "open_design_leg@5",
-        "open_directive_confirmation_gate@1",
         "configure_project_targeting@1",
         "propose_field@2",
         "propose_source@1",
@@ -590,9 +592,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v65"
+    assert production.profile_ref.address == "profile:head-of-abm@v69"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v38"
+        "skill:stage0-interview@v42"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -639,7 +641,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v38")
+    body = production.open_skill("skill:stage0-interview@v42")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -699,27 +701,27 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v38",
+        "skill:stage0-interview@v42",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
-        "skill:account-research-briefing@v2",
+        "skill:account-research-briefing@v3",
         "skill:icp-authoring@v3",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v11" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v15" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
     assert "Ask one question at a time" in body
-    briefing_path = ".deepagent/skills/account-research-briefing/v2/SKILL.md"
+    briefing_path = ".deepagent/skills/account-research-briefing/v3/SKILL.md"
     launch = build_toolbelt(storage=None, gateway=None).descriptor("launch_arv2_account_research")
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v11")
+    assert briefing_path in head.open_skill("skill:manual-tools@v15")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -832,7 +834,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v38")
+    body = head.open_skill("skill:stage0-interview@v42")
 
     assert required_guidance in body
 
@@ -886,18 +888,18 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v38" not in remaining
+    assert "skill:stage0-interview@v42" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
-        "skill:account-research-briefing@v2",
+        "skill:account-research-briefing@v3",
         "skill:icp-authoring@v3",
         "skill:persona-authoring@v2",
         "skill:plan-authoring@v2",
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v11" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v15" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -927,7 +929,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v17/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v18/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(

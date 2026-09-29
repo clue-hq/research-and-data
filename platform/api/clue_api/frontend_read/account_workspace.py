@@ -18,10 +18,13 @@ Four properties are structural rather than incidental:
   Deriving either in the browser would be a second place for the two to disagree;
 * **``researchEvidence`` covers exactly what the page cites**, so every citation chip on the
   insights page opens onto a row rather than onto nothing;
-* **``insights`` and ``artifacts`` are served as empty lists, never omitted.** ``insights`` (the
-  dummy's legacy per-source rows) has no backend owner and ``insightsDisplay`` is where this
-  account's insight prose actually lives; account-scoped artifact binding is its own later slice
-  (D0 ruling S9). An empty list is the honest answer, and the contract requires both keys.
+* **``insights`` is served as an empty list, never omitted.** It is the dummy's legacy per-source
+  rows, which have no backend owner; ``insightsDisplay`` is where this account's insight prose
+  actually lives. The contract requires the key.
+* **``artifacts`` are the design documents made for this account** (D0 ruling S9's later slice):
+  the artifacts library's own rows narrowed to the account through ``design_account``, from every
+  project and labelled with the project's name (founder, 2026-09-30), archived ones left out, with
+  the gallery's thumbnail route.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Query
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -36,16 +40,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.display.blocks import insight_summary
 from clue_api.arv2.display.recipes import Page
 from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.design_leg_wiring import design_document_card_fields, workspace_design_documents
 from clue_api.frontend_read.account_detail import AccountNotFound
 from clue_api.frontend_read.app import WorkspaceDep
 from clue_api.frontend_read.contacts import _account_404
 from clue_api.frontend_read.contract_v1 import (
+    AccountArtifact,
     AccountWorkspaceResponseV1,
     AccountWorkspaceV1,
     ResearchDisplayBlock,
 )
 from clue_api.frontend_read.display_pages import DisplayPages, committee
-from clue_api.frontend_read.v1_shared import activity_for, research_evidence_for
+from clue_api.frontend_read.v1_shared import activity_for, iso_utc, research_evidence_for
 from clue_core import EntityId, EntityType
 from clue_db import ConnFactory
 from clue_research.identity import get_account, surviving_id
@@ -108,11 +114,53 @@ async def read_account_workspace(
             insight_summary=tuple(insight_summary(page.display_block, len(members))),
             research_evidence=tuple(evidence),
             insights_display=ResearchDisplayBlock.model_validate(page.display_block),
-            # D0 ruling S9: account-scoped artifact binding is a later slice.
-            artifacts=(),
+            artifacts=await account_artifacts(
+                conn, workspace_id=workspace_id, account_entity_id=canonical
+            ),
             activity=tuple(activity),
         )
     )
+
+
+#: Enough for any real account; the tab has no paging of its own.
+_ACCOUNT_ARTIFACT_LIMIT = 200
+
+
+async def account_artifacts(
+    conn: AsyncConnection, *, workspace_id: str, account_entity_id: EntityId
+) -> tuple[AccountArtifact, ...]:
+    """The account's design documents, newest first, from every project; archived ones left out."""
+    rows = await workspace_design_documents(
+        conn,
+        workspace_id=workspace_id,
+        user_id=None,
+        limit=_ACCOUNT_ARTIFACT_LIMIT,
+        account_entity_id=str(account_entity_id),
+    )
+    items: list[AccountArtifact] = []
+    for row in rows:
+        if row["archived_at"] is not None:
+            continue
+        updated: datetime = row["updated_at"]
+        document_id = str(row["id"])
+        items.append(
+            AccountArtifact(
+                id=document_id,
+                title=str(row["title"]),
+                type=design_document_card_fields(row)["kind"],
+                account_id=str(account_entity_id),
+                project_name=str(row["project_title"]),
+                updated_at=iso_utc(updated),
+                # The gallery's own thumbnail route (``artifact-library.ts``), versioned so a new
+                # design version is a new image.
+                thumbnail_path=(
+                    f"/api/clue/design/documents/{quote(document_id, safe='')}/thumbnail"
+                    f"?v={int(row['current_version'])}"
+                ),
+                last_edited_label=f"Last edited {updated:%b} {updated.day}, {updated.year}",
+            )
+        )
+    return tuple(items)
 
 
 # --- the route --------------------------------------------------------------------------------

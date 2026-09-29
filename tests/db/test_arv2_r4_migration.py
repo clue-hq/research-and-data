@@ -29,7 +29,7 @@ def test_fleet_kind_and_r4_tables_exist() -> None:
                 for r in await conn.execute(
                     text(
                         "SELECT table_name FROM information_schema.tables WHERE table_name IN "
-                        "('arv2_discovery_run','arv2_discovery_candidate')"
+                        "('arv2_discovery_run','arv2_discovery_candidate','arv2_discovery_search')"
                     )
                 )
             }
@@ -39,37 +39,83 @@ def test_fleet_kind_and_r4_tables_exist() -> None:
     assert "arv2_discovery" in labels
     assert FleetTaskKind.ARV2_DISCOVERY.value == "arv2_discovery"
     assert labels == [k.value for k in FleetTaskKind]
-    assert tables == {"arv2_discovery_run", "arv2_discovery_candidate"}
+    assert tables == {"arv2_discovery_run", "arv2_discovery_candidate", "arv2_discovery_search"}
 
 
 @pytest.mark.usefixtures("require_db")
-def test_a_run_row_records_the_webset_and_both_of_its_search_ids() -> None:
-    """The "never buy this twice" columns: the webset, and the two searches inside it.
+def test_a_run_owns_its_searches_one_webset_each_and_no_longer_carries_one_webset() -> None:
+    """``97427f8eb3d6`` (rulings 2026-09-28): a run makes up to three searches, each a webset of its
+    own, recorded before it is bought; the one-webset columns and the fixed provider ask are gone,
+    and the disposition that remembers an earlier run's company is ``found_before``."""
 
-    ``webset_id`` alone was not enough — a resumed relaxed pass could buy a second widening search
-    whose exclusion did not name the first, and a resumed run with no strict id had to guess which
-    search was the strict one by array position (final review I2).
-    """
-
-    async def scenario() -> dict[str, str]:
+    async def scenario() -> tuple[set[str], set[str], set[str], str]:
         async with db_lifespan() as engine, engine.connect() as conn:
-            return {
-                str(r.column_name): str(r.is_nullable)
+            run_columns = {
+                str(r.column_name)
                 for r in await conn.execute(
                     text(
-                        "SELECT column_name, is_nullable FROM information_schema.columns "
-                        "WHERE table_name = 'arv2_discovery_run' AND column_name IN "
-                        "('webset_id', 'strict_search_id', 'relaxed_search_id')"
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'arv2_discovery_run'"
                     )
                 )
             }
+            search_columns = {
+                str(r.column_name)
+                for r in await conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'arv2_discovery_search'"
+                    )
+                )
+            }
+            constraints = {
+                str(r.conname)
+                for r in await conn.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conrelid = 'arv2_discovery_search'::regclass"
+                    )
+                )
+            }
+            disposition = str(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                            "WHERE conname = 'arv2_discovery_candidate_disposition'"
+                        )
+                    )
+                ).scalar_one()
+            )
+        return run_columns, search_columns, constraints, disposition
 
-    columns = run_async(scenario())
-    assert columns == {
-        "webset_id": "YES",
-        "strict_search_id": "YES",
-        "relaxed_search_id": "YES",
+    run_columns, search_columns, constraints, disposition = run_async(scenario())
+    assert not run_columns & {
+        "webset_id",
+        "strict_search_id",
+        "relaxed_search_id",
+        "strict_count",
+        "relaxed_requested",
     }
+    assert {"asked", "found_strict", "found_relaxed", "recall_estimate"} <= run_columns
+    assert search_columns >= {
+        "run_id",
+        "ordinal",
+        "kind",
+        "external_id",
+        "webset_id",
+        "asked",
+        "criteria",
+        "exclude_webset_ids",
+        "found",
+        "finished_at",
+    }
+    assert constraints >= {
+        "arv2_discovery_search_pkey",
+        "arv2_discovery_search_kind",
+        "arv2_discovery_search_external_id",
+    }
+    assert "found_before" in disposition and "not_chosen_before" not in disposition
 
 
 @pytest.mark.usefixtures("require_db")

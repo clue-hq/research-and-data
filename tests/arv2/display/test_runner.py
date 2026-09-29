@@ -414,25 +414,12 @@ def test_contact_refs_resolve_case_insensitively_and_unknown_names_are_dropped()
     assert draft.checks["unresolved_refs"] == 1
 
 
-def test_the_item_subject_is_kept_only_on_contact_insights() -> None:
+def test_an_item_subject_is_dropped_outside_the_subject_section() -> None:
     item = {
         "h2": "What Dev said",
         "body": [{"text": "One sentence.", "claimIds": []}],
         "subject": {"name": "Dev Rao"},
     }
-    insights = _section("contact-insights", [HOBBY], page="insights")
-    draft, _ = _write(
-        [_reply_body({"section": {"key": "contact-insights", "items": [item]}})],
-        insights,
-        subject=ACCOUNT_SUBJECT,
-    )
-    assert draft.items[0]["subject"] == {
-        "accountId": ACCOUNT,
-        "contactId": DEV,
-        "name": "Dev Rao",
-        "persona": "Blocker",
-    }
-
     openers = _section("openers", [HOBBY])
     other, _ = _write([_reply_body({"section": {"key": "openers", "items": [item]}})], openers)
     assert "subject" not in other.items[0]

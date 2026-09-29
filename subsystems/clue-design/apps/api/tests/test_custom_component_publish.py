@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import re
 import zipfile
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import is_served, make_client, published_html, published_manifest
 from sqlalchemy import text as sa_text
 from sqlalchemy.exc import DBAPIError
 
@@ -289,9 +289,9 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
 
     first = publish(client, document["id"], "interactive-primary")
     sibling_publish = publish(client, sibling["id"], "interactive-sibling")
-    first_html = client.get(f"/w/{workspace_id}/p/interactive-primary").text
-    sibling_html = client.get(f"/w/{workspace_id}/p/interactive-sibling").text
-    first_manifest = client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").json()
+    first_html = published_html(workspace_id, "interactive-primary")
+    sibling_html = published_html(workspace_id, "interactive-sibling")
+    first_manifest = published_manifest(workspace_id, "interactive-primary")
 
     assert first["publish_id"].startswith("webpub_")
     assert first["package_digest"]
@@ -323,16 +323,16 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
     )
     # Compiling a newer durable source does not consult or change either live
     # publish. Both still serve the exact first immutable revision.
-    assert client.get(f"/w/{workspace_id}/p/interactive-primary").text == first_html
-    assert client.get(f"/w/{workspace_id}/p/interactive-sibling").text == sibling_html
+    assert published_html(workspace_id, "interactive-primary") == first_html
+    assert published_html(workspace_id, "interactive-sibling") == sibling_html
 
     repin_component(client, document["id"], artifact_v2)
     republished = publish(client, document["id"], "interactive-primary")
-    second_html = client.get(f"/w/{workspace_id}/p/interactive-primary").text
+    second_html = published_html(workspace_id, "interactive-primary")
     assert republished["publish_id"] != first["publish_id"]
     assert republished["package_digest"] != first["package_digest"]
     assert "Artifact version two" in str(runtime_frame(second_html)["srcdoc"])
-    assert client.get(f"/w/{workspace_id}/p/interactive-sibling").text == sibling_html
+    assert published_html(workspace_id, "interactive-sibling") == sibling_html
     assert (
         client.get("/documents/doc_publish_sibling/web/publish").json()[
             "publish_id"
@@ -345,21 +345,15 @@ def test_publish_is_immutable_repin_scoped_and_rollback_exact(
     assert rolled.json()["publish_id"] == first["publish_id"]
     assert rolled.json()["package_digest"] == first["package_digest"]
     assert rolled.json()["html_digest"] == first["html_digest"]
-    assert client.get(f"/w/{workspace_id}/p/interactive-primary").text == first_html
-    assert (
-        client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").json()
-        == first_manifest
-    )
+    assert published_html(workspace_id, "interactive-primary") == first_html
+    assert published_manifest(workspace_id, "interactive-primary") == first_manifest
 
     unpublished = client.delete("/web/publishes/interactive-primary")
     assert unpublished.status_code == 200
-    assert client.get(f"/w/{workspace_id}/p/interactive-primary").status_code == 404
-    assert (
-        client.get(f"/w/{workspace_id}/p/interactive-primary/manifest.json").status_code == 404
-    )
+    assert not is_served(workspace_id, "interactive-primary")
     reactivated = publish(client, document["id"], "interactive-primary")
     assert reactivated["publish_id"] != first["publish_id"]
-    assert client.get(f"/w/{workspace_id}/p/interactive-primary").status_code == 200
+    assert is_served(workspace_id, "interactive-primary")
 
 
 def test_publish_manifest_assets_csp_export_and_curated_packages(
@@ -376,22 +370,23 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
     attach_component(client, document["id"], interactive)
     published = publish(client, document["id"], "delivery-security")
 
-    page = client.get(f"/w/{workspace_id}/p/delivery-security")
-    manifest_response = client.get(f"/w/{workspace_id}/p/delivery-security/manifest.json")
-    manifest = manifest_response.json()
-    frame = runtime_frame(page.text)
+    page_html = published_html(workspace_id, "delivery-security")
+    manifest = published_manifest(workspace_id, "delivery-security")
+    frame = runtime_frame(page_html)
     srcdoc = str(frame["srcdoc"])
 
-    assert page.headers["etag"] == f'"sha256-{published["html_digest"]}"'
-    assert "connect-src 'none'" in page.headers["content-security-policy"]
-    assert "frame-ancestors 'self'" in page.headers["content-security-policy"]
+    # The DELIVERED page's response headers (ETag, the delivery CSP) are the page origin's
+    # contract now, pinned by tests/page_origin/test_routes.py. What this test owns is the
+    # PACKAGE those headers are computed FROM: the recorded digest really does describe the
+    # recorded html (the ETag's whole basis), and the embedded runtime frame carries its sandbox.
+    assert published["html_digest"] == hashlib.sha256(page_html.encode("utf-8")).hexdigest()
     assert "connect-src 'none'" in srcdoc
     assert "worker-src 'none'" in srcdoc
     assert "frame-src 'none'" in srcdoc
     assert "form-action 'none'" in srcdoc
     assert "Artifact version one" in srcdoc
     assert srcdoc.index("Artifact version one") < srcdoc.index('type="module"')
-    assert "web-editor-bridge" not in page.text
+    assert "web-editor-bridge" not in page_html
     assert "data-custom-component-editor" not in frame
 
     asset_records = manifest["custom_components"]["assets"]
@@ -412,20 +407,14 @@ def test_publish_manifest_assets_csp_export_and_curated_packages(
         for item in asset_records
         for role in item["roles"]
     )
+    # Serving those assets — the immutable cache headers, the digest/extension integrity
+    # refusals — belongs to the page origin and is pinned by tests/page_origin/test_routes.py
+    # (test_publish_assets_are_integrity_checked_and_immutable). Here the manifest RECORD is
+    # the subject: each asset names its digest, extension and byte length.
     for record in asset_records:
-        path = urlsplit(record["url"]).path
-        response = client.get(path)
-        assert response.status_code == 200, path
-        assert response.headers["cache-control"].endswith("immutable")
-        assert response.headers["access-control-allow-origin"] == "*"
-        assert len(response.content) == record["byte_length"]
-
-    first_asset = asset_records[0]
-    digest = first_asset["digest"]
-    wrong_extension = "css" if first_asset["extension"] != "css" else "js"
-    assert client.get(f"/w/{workspace_id}/p-assets/{digest}.{wrong_extension}").status_code == 404
-    assert client.get(f"/w/{workspace_id}/p-assets/../../api.sqlite3").status_code == 404
-    assert client.get(f"/w/{workspace_id}/p-assets/not-a-digest.js").status_code == 404
+        assert re.fullmatch(r"[0-9a-f]{64}", record["digest"]), record
+        assert record["byte_length"] > 0
+        assert record["url"].endswith(f"{record['digest']}.{record['extension']}")
 
     exported = client.get(f"/documents/{document['id']}/web/export")
     assert exported.status_code == 200, exported.text
@@ -524,7 +513,7 @@ def test_publish_rejects_unresolved_tenant_pin_and_malicious_source(
     )
     assert rejected.status_code == 502
     assert "artifact_missing" in rejected.text
-    assert client.get(f"/w/{workspace_id}/p/tenant-attack").status_code == 404
+    assert not is_served(workspace_id, "tenant-attack")
 
     malicious = client.put(
         "/web/accounts/acc_publish/custom-components/unsafe-card/source",

@@ -19,6 +19,8 @@ test("the fixture repository starts unpublished", async () => {
   assert.equal(state.slug, null);
   assert.equal(state.url, null);
   assert.deepEqual(state.pageUrls, {});
+  assert.equal(state.customUrl, null);
+  assert.deepEqual(state.customPageUrls, {});
 });
 
 test("the fixture repository records the published slug and serves its url", async () => {
@@ -30,6 +32,8 @@ test("the fixture repository records the published slug and serves its url", asy
   assert.equal(result.slug, "acme");
   assert.equal(result.url, "https://fixture.pages.test/acme");
   assert.deepEqual(result.pageUrls, { "/": "https://fixture.pages.test/acme" });
+  assert.equal(result.customUrl, null);
+  assert.deepEqual(result.customPageUrls, {});
 
   const state = await repository.state("doc_1");
   assert.equal(state.published, true);
@@ -117,6 +121,63 @@ test("the http repository publishes to the server's own page urls when it sends 
     "/": "https://acme.pages.cluehq.ai/launch",
     "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
   });
+});
+
+test("the http repository carries the custom hostname's addresses through a publish", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(200, {
+      custom_origin: "https://go.acme.com",
+      custom_page_urls: {
+        "/": "https://go.acme.com/launch",
+        "/pricing": "https://go.acme.com/launch/pricing",
+      },
+      custom_url: "https://go.acme.com/launch",
+      page_urls: {
+        "/": "https://acme.pages.cluehq.ai/launch",
+        "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+      },
+      public_origin: "https://acme.pages.cluehq.ai",
+      routes: ["/", "/pricing"],
+      slug: "launch",
+      url: "https://acme.pages.cluehq.ai/launch",
+    });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+
+  const result = await repository.publish("doc_1", {
+    slug: "launch",
+    noindex: false,
+  });
+  assert.equal(result.url, "https://acme.pages.cluehq.ai/launch");
+  assert.equal(result.customUrl, "https://go.acme.com/launch");
+  assert.deepEqual(result.customPageUrls, {
+    "/": "https://go.acme.com/launch",
+    "/pricing": "https://go.acme.com/launch/pricing",
+  });
+});
+
+test("the http repository reports no custom addresses when the server sends none", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(200, {
+      custom_page_urls: {},
+      custom_url: null,
+      routes: ["/"],
+      slug: "launch",
+      url: "https://acme.pages.cluehq.ai/launch",
+    });
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl,
+  });
+
+  const result = await repository.publish("doc_1", {
+    slug: "launch",
+    noindex: false,
+  });
+  assert.equal(result.customUrl, null);
+  assert.deepEqual(result.customPageUrls, {});
 });
 
 test("the http repository reads the server's absolute page urls", async () => {

@@ -424,9 +424,11 @@ def test_the_discovery_launch_maps_the_ambient_context_and_returns_the_receipt()
         assert request.requested_by_user_id == "usr_founder"
         assert request.project_id == PROJECT
         assert request.target_count == 40 and request.relaxed_enabled is True
-        # The ICP, the gate set and the provider ask are NOT model-authored: they come from the
-        # project's pin and the deployment's settings.
-        assert request.criteria_gate_keys == () and request.strict_count is None
+        # The ICP and the gate set are NOT model-authored: they come from the project's pin.
+        assert request.criteria_gate_keys == ()
+        # The approving user action IS the ask's identity (ruling 2026-09-28): a new action is a
+        # new discovery, the same action retried is the same one.
+        assert request.request_key == "turn:arv2-launch-confirmed"
         assert result.references == {"run_id": str(RUN_ID), "replayed": True}
         assert result.replayed is True
 

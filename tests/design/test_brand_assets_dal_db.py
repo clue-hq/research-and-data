@@ -403,3 +403,62 @@ def test_count_assets_with_digest_is_workspace_isolated(require_design_db: None)
             await txn.rollback()
 
     run_async(_check())
+
+
+def test_the_brand_mark_is_the_favicon_default_only_when_unambiguous(
+    require_design_db: None,
+) -> None:
+    """The page origin's default `/favicon.ico` (2026-09-30): the approved kit's
+    `assets.logos.mark` — the icon website ingestion took from the client's own site — for a
+    one-brand workspace; None for a draft kit, a kit with no mark, or a second brand."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            brand_id = f"brd_{uuid4().hex[:12]}"
+            await conn.execute(
+                text("INSERT INTO brand (brand_id, workspace_id, name) VALUES (:b, :w, :n)"),
+                {"b": brand_id, "w": ws, "n": "Acme"},
+            )
+            digest = uuid4().hex + uuid4().hex
+            await design_assets.create_asset_record(
+                conn, workspace_id=ws, record=_asset_record("asset_mark", digest)
+            )
+            kit_id = f"kit_{uuid4().hex[:10]}"
+            kit = _kit(kit_id, 1, approval="draft")
+            kit["assets"] = {"logos": {"mark": {"variants": [{"asset_id": "asset_mark"}]}}}
+
+            async def _publish(payload: dict[str, Any]) -> None:
+                await design_brand.create_brand_kit(
+                    conn,
+                    workspace_id=ws,
+                    brand_kit=payload,
+                    brand_summary={},
+                    diagnostics=[],
+                    source="website",
+                    brand_id=brand_id,
+                )
+
+            await _publish(kit)
+            mark = design_brand.approved_brand_mark_sha256
+            assert await mark(conn, workspace_id=ws) is None, "a draft kit is not the brand yet"
+
+            await design_brand.update_brand_kit_approval(
+                conn, workspace_id=ws, brand_kit_id=kit_id, approval_status="approved"
+            )
+            assert await mark(conn, workspace_id=ws) == digest
+
+            unmarked = _kit(kit_id, 2, approval="approved")
+            await _publish(unmarked)
+            assert await mark(conn, workspace_id=ws) is None, "the newest approved kit has no mark"
+
+            await _publish({**kit, "version": 3, "approval_status": "approved"})
+            assert await mark(conn, workspace_id=ws) == digest
+            await conn.execute(
+                text("INSERT INTO brand (brand_id, workspace_id, name) VALUES (:b, :w, :n)"),
+                {"b": f"brd_{uuid4().hex[:12]}", "w": ws, "n": "Second brand"},
+            )
+            assert await mark(conn, workspace_id=ws) is None, "two brands: never a guess"
+            await txn.rollback()
+
+    run_async(_check())

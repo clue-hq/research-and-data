@@ -251,8 +251,9 @@ class ExaAgentRun:
     ``status`` is Exa's terminal status — ``completed``, ``failed``, ``cancelled`` — or the
     client's own ``timed_out`` when the run outlived ``timeout_s``. Only ``completed`` carries
     ``structured``/``output_text``/``grounding``. ``costs`` is every leg's :class:`CallCost` in
-    order (create, then each poll); ``cost`` is the settling leg's, which is the metered one on a
-    completed run. Nothing here raises for a provider-side failure: the driver's failure law
+    order (create, then each poll); ``cost`` is the last leg's, which is the one metered leg on a
+    run that reached a terminal status (every earlier leg is ``unpriced`` by design — one run,
+    one charge). Nothing here raises for a provider-side failure: the driver's failure law
     (ARV2-ONBOARDING-PLAN.md §3) records it on the step.
     """
 
@@ -579,8 +580,21 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
     Stateless on purpose: a reader reports what it read by returning it. A body that is not JSON,
     or carries no ``costDollars`` at all, yields an empty reading — "Exa did not tell us" is a
     real answer and the wrapper records it as such, never as zero.
+
+    The exception is a 4xx. Exa refused the request before doing any work — out of credits, a key
+    it does not accept, a body it could not validate — so nothing was sold, and the reading says
+    so with an explicit zero. Left empty, the wrapper would fall back to the estimate and record a
+    charge that never happened (seven refused Answer calls at a cent each on run ``ee79d837``).
+    A 5xx keeps the empty reading: whether a failed call did billable work is not something this
+    module can know.
     """
     body = _body_json(response)
+    if 400 <= response.status < 500:
+        request_id = body.get("requestId")
+        return CostReading(
+            cost_usd=Decimal(0),
+            provider_request_id=request_id if isinstance(request_id, str) else None,
+        )
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     request_id = body.get("requestId")
@@ -592,21 +606,45 @@ def exa_cost_reader(response: HttpResponse) -> CostReading:
 
 
 def exa_agent_cost_reader(response: HttpResponse) -> CostReading:
-    """Read an Agent run body: ``costDollars.total`` and ``usage`` appear only on the completed
-    run, so a queued/running poll yields a reading with the run id and no cost — "Exa has not
-    told us yet", recorded as such, never as zero."""
+    """Read an Agent run body. Only a **terminal** body settles money.
+
+    Exa quotes ``costDollars`` (the effort's fixed price, with a projected ``usage``) on the
+    create response and on every queued/running poll, long before the run has done anything —
+    the live ledger of 2026-09-29 proved it: 208 poll rows each re-booked the same $0.10 / $0.50
+    and a $1.30 onboarding read as $39.50. One run is one charge, so this reader settles it once,
+    on the body whose ``status`` is terminal (``completed`` / ``failed`` / ``cancelled``): that is
+    Exa's final word, and the only one that is right for ``auto`` effort or a run that stopped
+    early. Every non-terminal body yields a reading that declares itself ``usd_unpriced`` — the
+    row keeps the run id and the quote (as ``quoted_cost_breakdown``) but carries NULL USD, so
+    the projection neither sums it nor mistakes it for a measured zero. The create leg's
+    reservation still lives on its pre-wire *estimate* row (law 2), which is where the ceiling
+    check reads it.
+
+    Residual: a run the client gives up on (``timed_out``) never sees a terminal body, so its
+    charge is not on the ledger — the step's ``failure_code`` says ``timeout`` and the quote is on
+    every leg's row for a hand reconciliation.
+    """
     body = _body_json(response)
     costs = body.get("costDollars")
     costs = costs if isinstance(costs, dict) else {}
     usage = body.get("usage")
     run_id = body.get("id")
     extras: dict[str, object] = {}
-    if costs:
-        extras["cost_breakdown"] = costs
     if isinstance(usage, dict):
         extras["usage"] = usage
+    if _agent_status(body) in AGENT_TERMINAL_STATUSES:
+        if costs:
+            extras["cost_breakdown"] = costs
+        return CostReading(
+            cost_usd=_decimal(costs.get("total")),
+            provider_request_id=run_id if isinstance(run_id, str) else None,
+            extras=extras,
+        )
+    extras["usd_unpriced"] = True
+    extras["settles_on"] = "terminal_poll"
+    if costs:
+        extras["quoted_cost_breakdown"] = costs
     return CostReading(
-        cost_usd=_decimal(costs.get("total")),
         provider_request_id=run_id if isinstance(run_id, str) else None,
         extras=extras,
     )
@@ -1117,8 +1155,10 @@ class ExaClient:
 
         Blocking by design (R2 composition constraint): the driver calls this through
         ``asyncio.to_thread``. Each leg is one wrapped call with its own raw record and ledger
-        row; the create leg reserves the effort's fixed price, the polls reserve nothing, and the
-        completed body's ``costDollars`` settles the last row as metered.
+        row; the create leg reserves the effort's fixed price on its pre-wire estimate row, and
+        the run's one charge is settled as metered on the terminal body alone — the create and
+        every running poll settle ``usd_unpriced`` (see :func:`exa_agent_cost_reader`), so the
+        legs of one run never sum to more than the run.
         """
         body = agent_run_body(
             query=query, output_schema=output_schema, effort=effort, system_prompt=system_prompt

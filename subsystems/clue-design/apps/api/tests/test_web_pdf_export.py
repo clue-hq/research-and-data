@@ -280,3 +280,44 @@ def test_web_pdf_export_prints_the_page_images(client: TestClient) -> None:
         # the only answer the icon cannot fake.
         sizes = [(image[2], image[3]) for image in pdf[0].get_images()]
     assert IMAGE_SIZE in sizes, sizes
+
+
+# --- custom components travel inside the PDF's html ----------------------------
+
+
+def test_web_pdf_embeds_custom_component_runtimes(client: TestClient, monkeypatch) -> None:
+    """A published page loads its custom-component runtime from `/p-assets/<digest>.<ext>` on
+    the hostname that served it. A PDF has no origin (`set_content`), so a root-relative
+    `/p-assets` reference resolves nowhere and the component would print as its bare fallback.
+    The PDF build embeds those runtime assets instead (reconciliation 2026-09-28, fix round 1).
+    No browser needed: the html handed to the renderer is what this pins."""
+    from lumen_api import web_pdf
+
+    from test_custom_component_publish import (
+        INTERACTIVE_SOURCE,
+        attach_component,
+        compile_source,
+        create_account,
+        create_dialog_document,
+    )
+
+    create_account(client)
+    artifact = compile_source(
+        client, slug="interactive-counter", source=INTERACTIVE_SOURCE, expected_version=0
+    )
+    document = create_dialog_document(client, "doc_pdf_custom_component")
+    attach_component(client, document["id"], artifact)
+
+    handed: list[str] = []
+
+    def capture(htmls, *, runtime=None):
+        handed.extend(htmls)
+        return b"%PDF-1.4 captured"
+
+    monkeypatch.setattr(web_pdf, "render_pages_pdf", capture)
+    response = client.get(f"/documents/{document['id']}/web/export.pdf")
+    assert response.status_code == 200, response.text
+    assert handed, "the renderer was never handed a page"
+    for html in handed:
+        assert "srcdoc=" in html  # the component's runtime frame is on the page
+        assert "/p-assets/" not in html

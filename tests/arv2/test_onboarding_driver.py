@@ -554,6 +554,74 @@ def test_the_background_fan_out_respects_the_concurrency_cap() -> None:
     assert exa.peak <= 3  # 2 background + at most one lingering fast call
 
 
+def test_two_lineup_entries_resolving_to_one_product_open_one_product_research_step() -> None:
+    """The 2026-09-29 onboarding: 10 lineup entries, 7 products (three ``model_reused``). One
+    product-research step is keyed on ``(run, kind, product_id)``, so launching one per ENTRY
+    opened the Inbox step twice, the store refused the second, and a run whose every real step
+    had completed was marked failed. The fan-out is per product, in lineup order."""
+    products = [
+        {"name": name, "short_description": "d", "offering_kind": "product"}
+        for name in ("Inbox", "Workflows", "Inbox again", "Operator", "Workflows again")
+    ]
+    exa = FakeExa(
+        {
+            "overview": _agent(OVERVIEW),
+            "reviews": _agent(REVIEWS),
+            "product_research": _agent(PRODUCT),
+        },
+        _deep(products),
+    )
+    store = FakeStore()
+
+    async def fake_sync(conn: Any, **kw: Any) -> tuple[ProductLink, ...]:
+        del conn, kw
+        return (
+            ProductLink("prd_inbox", "Inbox", "created", 0, uuid4()),
+            ProductLink("prd_workflows", "Workflows", "created", 0, uuid4()),
+            ProductLink("prd_inbox", "Inbox again", "model_reused", 0, uuid4()),
+            ProductLink(None, "Unresolved", "unresolved", 0, uuid4()),
+            ProductLink("prd_operator", "Operator", "created", 0, uuid4()),
+            ProductLink("prd_workflows", "Workflows again", "model_reused", 0, uuid4()),
+        )
+
+    handler = _handler(exa, store, links=fake_sync)
+
+    result = asyncio.run(handler.handle(_context(uuid4())))
+
+    assert result.outcome == "completed"
+    opened = [subject for kind, subject in store.opened.values() if kind == "product_research"]
+    assert opened == ["prd_inbox", "prd_workflows", "prd_operator"]
+    assert len([call for call in exa.calls if call.startswith("product_research")]) == 3
+    assert any(event[0] == "finish_run" for event in store.events)
+    assert not any(event[0] == "fail_run" for event in store.events)
+
+
+def test_a_step_the_store_refuses_to_open_costs_that_step_and_never_the_run() -> None:
+    """The open is inside the step's containment: a refused ``start_step`` (the database saying
+    a duplicate out loud) is logged and skipped — no provider call, no row — and the run still
+    finishes on the steps that did open."""
+
+    class RefusingStore(FakeStore):
+        async def start_step(self, conn: Any, **kw: Any) -> None:
+            if kw["kind"] == "reviews":
+                raise RuntimeError(
+                    'duplicate key value violates unique constraint "onboarding_step_pkey"'
+                )
+            await super().start_step(conn, **kw)
+
+    exa = FakeExa({"overview": _agent(OVERVIEW), "reviews": _agent(REVIEWS)}, _deep([]))
+    store = RefusingStore()
+    handler = _handler(exa, store)
+
+    result = asyncio.run(handler.handle(_context(uuid4())))
+
+    assert result.outcome == "completed"
+    assert not any(call.startswith("reviews") for call in exa.calls)
+    assert store.landed("overview")["status"] == "completed"
+    assert any(event[0] == "finish_run" for event in store.events)
+    assert not any(event[0] == "fail_run" for event in store.events)
+
+
 def test_an_unexpected_exception_is_contained_and_fails_the_run_row() -> None:
     """A defect in the driver's OWN machinery — not a provider outcome — still lands the run.
 

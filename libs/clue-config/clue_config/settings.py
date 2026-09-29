@@ -413,6 +413,20 @@ class Settings(BaseSettings):
     # three rounds before the end and then finalizes ``awaiting_input`` ("reply continue").
     # Env: ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``.
     head_of_abm_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Conversation compaction for every governed agent (founder ruling 2026-09-29). The model's
+    # context window comes from OpenRouter's catalogue unless overridden; compaction starts at
+    # TRIGGER_FRACTION of it and keeps the newest KEEP_FRACTION whole. With no known window the
+    # fixed pair applies. Env: ``CLUE_AGENT_CONTEXT_WINDOW_TOKENS``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_FRACTION``, ``CLUE_AGENT_COMPACT_KEEP_FRACTION``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_TOKENS``, ``CLUE_AGENT_COMPACT_KEEP_MESSAGES``.
+    agent_context_window_tokens: int | None = Field(default=None, ge=1)
+    agent_compact_trigger_fraction: float = Field(default=0.90, gt=0, lt=1)
+    agent_compact_keep_fraction: float = Field(default=0.10, gt=0, lt=1)
+    agent_compact_trigger_tokens: int = Field(default=170_000, ge=1)
+    agent_compact_keep_messages: int = Field(default=6, ge=1)
+    # Head-of-ABM chat turns resume the thread's last completed turn (append-only prompt).
+    # Env: ``CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED``.
+    head_of_abm_continuation_enabled: bool = True
     # Wall clock per Head-of-ABM chat turn, seconds; 0 means no timeout. When set, the agent is
     # told to wrap up about three minutes before it. Env: ``CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S``.
     head_of_abm_turn_timeout_s: float = Field(default=0.0, ge=0)
@@ -432,9 +446,9 @@ class Settings(BaseSettings):
     # Off by default: a worker composes the discovery handler only when this is on AND
     # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
     arv2_discovery_enabled: bool = False
-    #: The strict pass's Websets ask (ruling 4: 35 for a target of 20 while precision is measured).
-    arv2_discovery_strict_count: int = Field(default=35, ge=1)
-    #: Run the relaxed pass automatically when the strict pass falls short (ruling, rev 5).
+    #: Allow the relaxed search when the strict searches fall short, for a run whose caller did not
+    #: say (the agent's tool always says). There is no provider-ask setting: the first search asks
+    #: Exa for exactly the number the human wants (founder ruling 2026-09-28).
     arv2_discovery_relaxed_auto: bool = True
     #: Operator override only — empty by default (founder ruling 2026-09-11: no deployment-wide
     #: default gate set; every ICP decides its own). Empty means the pinned ICP document chooses
@@ -447,7 +461,8 @@ class Settings(BaseSettings):
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).
     arv2_discovery_poll_interval_s: float = Field(default=15.0, gt=0)
-    #: Wall clock for one discovery run, seconds (spec §3).
+    #: Wall clock for one discovery SEARCH, seconds — a run makes up to three, one after another
+    #: (founder ruling 2026-09-28).
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
@@ -516,9 +531,10 @@ class Settings(BaseSettings):
     sensitivity_floor_enabled: bool = True
 
     # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
-    # OpenRouter model id for the section writer. The control test (2026-09-04) rejected every
-    # cheaper model on the two non-negotiables. Env: ``CLUE_ARV2_DISPLAY_MODEL``.
-    arv2_display_model: str = "openai/gpt-5.6-luna"
+    # OpenRouter model id for focused account reconciliation and the legacy section writer. Grok
+    # 4.6 since 2026-09-29 (founder request; Muse Spark 1.3 from 2026-09-28, Luna before). Env:
+    # ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "x-ai/grok-4.6"
     # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
     # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
     arv2_display_timeout_s: float = 240.0
@@ -581,6 +597,16 @@ class Settings(BaseSettings):
     # unconfigured and does nothing, which is a posture, not an error. Env:
     # ``CLUE_DESIGN_API_BASE_URL``.
     design_api_base_url: str | None = None
+    # Onboarding also offers ONE ad-assets harvest for the company's own LinkedIn ads, beside the
+    # website ingestion and through the same trigger (auto ad ingestion, 2026-09-28): the most
+    # recent static ads, up to ``brand_ad_assets_auto_max_creatives``, reading at most
+    # ``brand_ad_assets_auto_max_pages`` ad-library pages (~25 ads and ~1 vendor credit each).
+    # The design API must also run the ad lane (``LUMEN_BRAND_AD_ASSETS``); when it does not, the
+    # route 404s and the offer is a logged, fail-soft skip. Env:
+    # ``CLUE_BRAND_AD_ASSETS_AUTO_ONBOARD`` / ``_AUTO_MAX_CREATIVES`` / ``_AUTO_MAX_PAGES``.
+    brand_ad_assets_auto_onboard: bool = True
+    brand_ad_assets_auto_max_creatives: int = Field(default=50, ge=1)
+    brand_ad_assets_auto_max_pages: int = Field(default=8, ge=1)
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
@@ -659,13 +685,14 @@ class Settings(BaseSettings):
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
     # Authenticated, user-initiated professional-email acquisition for the Contacts table. This is
     # intentionally distinct from ``contact_channel_enrichment_enabled``: that switch owns C5's
-    # stricter independently-validated delivery workflow, while this one exposes provider-observed
-    # Exa + Sumble results without promoting ``contact_entity.verified_email``. Missing provider
-    # credentials remain an honest per-provider unavailable outcome. Budget controls do not stop
-    # this explicit user action; realized provider units/cost are still recorded durably.
+    # stricter independently-validated delivery workflow, while this one exposes the AI Ark export
+    # (founder ruling 2026-09-29: on by default, the same AI Ark path the research agents use)
+    # without promoting ``contact_entity.verified_email``. A missing AI Ark key remains an honest
+    # unavailable outcome. Budget controls do not stop this explicit user action; realized provider
+    # units/cost are still recorded durably.
     # Env: ``CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED`` /
     # ``CLUE_FRONTEND_CONTACT_EMAIL_POLL_AFTER_S``.
-    frontend_contact_email_lookup_enabled: bool = False
+    frontend_contact_email_lookup_enabled: bool = True
     frontend_contact_email_poll_after_s: int = Field(default=5, ge=1, le=300)
 
     # --- FI Lane D production chat surface --------------------------------------------------
@@ -812,7 +839,35 @@ class Settings(BaseSettings):
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
-    self_serve_provisioning_enabled: bool = False
+    self_serve_provisioning_enabled: bool = True
+
+    # --- Public pages: hostnames and delivery (custom-domain publishing spec 2026-09-17 §9) ---
+    # The suffix every workspace's permanent system hostname ends in (`<label>.<suffix>`). The
+    # registry rows are written under it, so it must match the rows a database holds; the page
+    # origin and the backfill warn loudly when they do not. Dev stack: `pages.localhost`.
+    # Env: ``CLUE_PAGES_SYSTEM_SUFFIX``.
+    pages_system_suffix: str = "pages.cluehq.ai"
+    # Scheme and optional port for public page URLs the design API mints (og:image, publish `url`).
+    # Production: https and no port; dev stack: http + 8040. Env: ``CLUE_PAGES_PUBLIC_SCHEME`` /
+    # ``CLUE_PAGES_PUBLIC_PORT`` (empty string = unset).
+    pages_public_scheme: Literal["http", "https"] = "https"
+    pages_public_port: int | None = None
+    # Local development only: the page origin skips the edge-secret gate and reads the public
+    # hostname from the Host header. The origin refuses to start with this on while
+    # CLUE_PAGES_EDGE_SECRET is set, so the two can never both be live in a deployment.
+    # Env: ``CLUE_PAGES_TRUST_HOST_HEADER``.
+    pages_trust_host_header: bool = False
+    # The port `python -m clue_page_origin.main` listens on when Railway's PORT is absent.
+    # Env: ``CLUE_PAGES_ORIGIN_PORT``.
+    pages_origin_port: int = Field(default=8040, gt=0, lt=65536)
+    # The CNAME value a customer points their subdomain at (spec §3 item 4, §7.2). Normally the
+    # Cloudflare for SaaS fallback-origin record in our zone. Env: ``CLUE_PAGES_CNAME_TARGET``.
+    pages_cname_target: str = "pages.cluehq.ai"
+    # The Cloudflare zone that holds our DNS and the SaaS custom hostnames (spec §7.7). None = the
+    # custom-domain control plane is not configured (connect answers 503).
+    # Env: ``CLUE_CLOUDFLARE_ZONE_ID``.
+    cloudflare_zone_id: str | None = None
+
     # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
     # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
     # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
@@ -969,6 +1024,16 @@ class Settings(BaseSettings):
     # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
     design_run_event_retention_s: float = 2_592_000.0  # 30d
 
+    @field_validator("agent_context_window_tokens", mode="before")
+    @classmethod
+    def _blank_context_window_is_unknown(cls, value: Any) -> Any:
+        """``CLUE_AGENT_CONTEXT_WINDOW_TOKENS=`` (blank, the documented default) means "use the
+        model catalogue" — ``None`` — rather than an unparsable integer (env-parity rule)."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("stage0_crawl_max_depth", mode="before")
     @classmethod
     def _coerce_stage0_crawl_max_depth(cls, value: Any) -> Any:
@@ -998,6 +1063,11 @@ class Settings(BaseSettings):
             for field, value in INTEGRATION_PILOT_OVERLAY.items():
                 data.setdefault(field, value)
         return data
+
+    @field_validator("pages_public_port", mode="before")
+    @classmethod
+    def _empty_port_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and value.strip() == "" else value
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod

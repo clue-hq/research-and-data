@@ -766,13 +766,10 @@ def test_the_insights_page_considers_five_owned_sections_and_shares_the_other_tw
             )
             assert result.generated == ("buying-signals", "money-and-momentum", "miscellaneous")
             assert "context-only" not in transport.sections[written_before:]
-            assert "contact-insights" not in transport.sections[written_before:]
+            assert not any(s["key"] == "contact-insights" for s in result.display_block["sections"])
             block = result.display_block
             context = next(s for s in block["sections"] if s["key"] == "context-only")
             watch = _cited_in(await _stored_overview(conn, seeded), "watch-outs")
             assert _cited_in(block, "context-only") == watch and not context["empty"]
-            insights = next(s for s in block["sections"] if s["key"] == "contact-insights")
-            assert not insights["empty"]
-            assert _cited_in(block, "contact-insights") <= set(result.cited_claim_ids)
 
     run_async(_run())

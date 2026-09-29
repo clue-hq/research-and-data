@@ -30,6 +30,7 @@ from clue_agents.contracts import (
     ContextBundleManifest,
     ContextLayer,
     ContextLayerManifest,
+    ContinuationRef,
     DomainObjectRef,
 )
 from clue_agents.ports import (
@@ -69,6 +70,17 @@ __all__ = [
 log = get_logger("clue_agents.context")
 
 _ORDER = tuple(ContextLayer)
+#: A continued turn appends to a saved conversation that already opens with the system prompt, so
+#: its additions are the gap messages first, then this turn's cards, then the user's message.
+_CONTINUATION_ORDER = (
+    ContextLayer.L1_IDENTITY,
+    ContextLayer.L6_CONVERSATION,
+    ContextLayer.L2_WORKSPACE_PRODUCT,
+    ContextLayer.L3_PROJECT,
+    ContextLayer.L4_MEMORY,
+    ContextLayer.L5_FOCUS,
+    ContextLayer.L7_TURN,
+)
 
 #: What one image on a turn is *reported* to cost against its layer budget (spec 2026-09-18).
 #:
@@ -867,7 +879,14 @@ class DeterministicAgentContextAssembler:
         request: AgentTurnRequest,
         profile: AgentProfile,
         history: Sequence[HistoryMessageRef],
+        continuation: ContinuationRef | None = None,
     ) -> AssembledAgentContext:
+        """The turn's opening messages and their receipt.
+
+        With ``continuation``, ``history`` is the gap since the resumed turn, the system prompt is
+        not re-sent (the resumed state opens with it; its manifest still records it), and the
+        messages are ordered gap, cards, message — appended to the saved conversation.
+        """
         manifests: list[ContextLayerManifest] = []
         receipt_refs: list[ContextReceiptRef] = []
         messages: list[BaseMessage] = []
@@ -877,7 +896,8 @@ class DeterministicAgentContextAssembler:
         # Image bytes, keyed by ``artifact_key`` and read exactly once for the whole turn.
         images: dict[str, bytes] = {}
 
-        for layer in _ORDER:
+        for layer in _ORDER if continuation is None else _CONTINUATION_ORDER:
+            emit = continuation is None or layer is not ContextLayer.L1_IDENTITY
             candidates = sorted(
                 await self._sources[layer].load(
                     request=request,
@@ -938,9 +958,10 @@ class DeterministicAgentContextAssembler:
                 if candidate.origin == "current_user_instruction":
                     current_instructions.append(candidate)
                 hashes.append(digest)
-                if candidate.interrupted:
-                    messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
-                messages.append(_message(candidate, images))
+                if emit:
+                    if candidate.interrupted:
+                        messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
+                    messages.append(_message(candidate, images))
                 receipt_refs.append(
                     ContextReceiptRef(
                         layer=layer,
@@ -975,6 +996,9 @@ class DeterministicAgentContextAssembler:
                 )
             )
 
+        # Receipts keep the canonical L1-L7 order whatever order the messages were built in.
+        manifests.sort(key=lambda item: _ORDER.index(item.layer))
+        receipt_refs.sort(key=lambda item: _ORDER.index(item.layer))
         if len(current_instructions) != 1:
             raise ValueError("opening context requires exactly one current user instruction")
         current_instruction = current_instructions[0]
@@ -1007,6 +1031,8 @@ class DeterministicAgentContextAssembler:
             "token_counter_version": self._policy.token_counter_version,
             "layers": [item.model_dump(mode="json") for item in manifests],
         }
+        if continuation is not None:
+            aggregate_payload["continuation"] = continuation.model_dump(mode="json")
         aggregate = hashlib.sha256(
             json.dumps(
                 aggregate_payload,
@@ -1036,4 +1062,5 @@ class DeterministicAgentContextAssembler:
             manifest=manifest,
             messages=tuple(messages),
             materializations=tuple(materializations),
+            continuation=continuation,
         )

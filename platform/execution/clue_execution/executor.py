@@ -899,7 +899,15 @@ class RecipeExecutor:
                 )
                 continue
             recovered = await self._event_node_keys(execution_id, "node.recovered")
-            settled = completed | recovered
+            # A blocked INTERACTION child is answered, not pending: the agent called the tool
+            # mid-turn, received the refusal as its answer (ruling T2-1) and moved on, and the
+            # journal already holds ``node.blocked`` as that node's terminal outcome. Treating it
+            # as unsettled re-dispatched it on every pass of this loop — a replay the journal
+            # can only refuse — so the turn that made the call could never finish (incident
+            # 2026-09-29). A blocked recipe-declared node keeps its meaning: awaiting input.
+            settled = (
+                completed | recovered | await self._answered_interaction_keys(execution_id, nodes)
+            )
             if len(settled) == len(nodes):
                 await self._append(
                     runtime,
@@ -955,6 +963,7 @@ class RecipeExecutor:
             envelope = await self._effective_envelope(runtime)
             limit = min(envelope.max_fanout, self._max_concurrency)
             batch = ready[:limit]
+            before = cursor.state_version
             await asyncio.gather(
                 *(
                     self._execute_node(
@@ -969,6 +978,20 @@ class RecipeExecutor:
                     for node in batch
                 )
             )
+            # Every real dispatch writes at least one durable event (a start, a gate opening, a
+            # terminal outcome). A pass that wrote none will be dispatched identically next pass,
+            # forever, with nothing in any log: fail the execution loudly instead.
+            if (await self._cursor(execution_id)).state_version == before:
+                await self._append(
+                    runtime,
+                    event_type=ExecutionEventType.EXECUTION_FAILED,
+                    payload={
+                        "reason_code": "node_dispatch_made_no_progress",
+                        "node_keys": sorted(node.spec.node_key for node in batch),
+                    },
+                    worker_id=worker_id,
+                    lease_generation=lease_generation,
+                )
 
     async def append_interaction_tool(
         self,
@@ -1605,6 +1628,7 @@ class RecipeExecutor:
             cast(dict[str, object], durable),
             ToolContext(
                 workspace_id=runtime.workspace_id,
+                project_id=runtime.project_id,
                 actor="human" if node.actor == "human" else "agent",
                 conn_factory=self._conn_factory,
                 operation_id=node.operation_id,
@@ -1958,6 +1982,7 @@ class RecipeExecutor:
                     body,
                     ToolContext(
                         workspace_id=runtime.workspace_id,
+                        project_id=runtime.project_id,
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
@@ -2015,6 +2040,7 @@ class RecipeExecutor:
                     parameters=body,
                     context=ToolContext(
                         workspace_id=runtime.workspace_id,
+                        project_id=runtime.project_id,
                         actor="human" if node.actor == "human" else "agent",
                         conn_factory=self._conn_factory,
                         operation_id=node.operation_id,
@@ -2549,6 +2575,20 @@ class RecipeExecutor:
 
     async def _completed_keys(self, execution_id: ExecutionId) -> set[str]:
         return await self._event_node_keys(execution_id, "node.completed")
+
+    async def _answered_interaction_keys(
+        self, execution_id: ExecutionId, nodes: Sequence[_Node]
+    ) -> set[str]:
+        """Interaction children (an agent's tool calls through a gate slot) that ended blocked."""
+        gates = {node.spec.node_key for node in nodes if isinstance(node.spec, GateNode)}
+        children = {
+            node.spec.node_key
+            for node in nodes
+            if isinstance(node.spec, ToolNode) and node.compatibility_node_key in gates
+        }
+        if not children:
+            return set()
+        return children & await self._event_node_keys(execution_id, "node.blocked")
 
     async def _failed_keys(self, execution_id: ExecutionId) -> set[str]:
         failed = await self._event_node_keys(execution_id, "node.failed")

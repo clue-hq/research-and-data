@@ -750,7 +750,6 @@ def _bodies() -> dict[str, dict[str, object]]:
         "synthesize_value_narrative": {"job_id": _UUID()},
         "design_publish_web": {
             "document_id": "doc_matrix",
-            "public_base": "https://design.example",
             "slug": "matrix-page",
         },
         "design_unpublish_web": {"slug": "matrix-page"},

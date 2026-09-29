@@ -302,19 +302,6 @@ class WebPublishRequest(BaseModel):
     noindex: bool = False
 
 
-class SetWorkspaceHandleRequest(BaseModel):
-    """Choose the workspace handle — the DNS label published sites hang off (ruling R-F5-5).
-
-    REQUIRED and un-defaulted: the handle is the host segment of every public URL this workspace
-    will ever serve, so a body that merely forgets the field must be a 422, never a silent
-    re-derivation from the workspace name. Shape and reserved-word validation live in the DAL
-    (one contract, mirrored by the ``design_workspace_handle_shape`` CHECK) rather than here, so
-    the endpoint and the agent path refuse identically.
-    """
-
-    handle: str
-
-
 class SetAgentInstructionsRequest(BaseModel):
     instructions: Optional[str] = None
 
@@ -522,13 +509,21 @@ class OnboardAdAssetsRequest(BaseModel):
     and neither, because guessing which one a caller meant would spend a vendor credit on a
     question nobody asked.
 
-    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. It is required
-    because the ad-DNA card pins the kit version it was distilled against: a card that cannot
-    say which brand it describes is a card no turn can safely be conditioned on.
+    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. A ``full`` job
+    requires them because the ad-DNA card pins the kit version it was distilled against: a card
+    that cannot say which brand it describes is a card no turn can safely be conditioned on.
+
+    ``phase`` (auto ad ingestion, 2026-09-28) splits the job so onboarding can start before any
+    kit exists: ``harvest`` custodies and describes the ads with no kit, and ``card`` distils and
+    pre-generates from a finished harvest's stored ads once a kit exists. ``card`` jobs are
+    offered by the worker that finishes second (``ad_library.auto_card``), never by this route.
     """
 
-    brand_kit_id: str
-    brand_kit_version: int
+    phase: Literal["full", "harvest", "card"] = "full"
+    brand_kit_id: Optional[str] = None
+    brand_kit_version: Optional[int] = None
+    #: The harvest a ``card`` job distils from.
+    harvest_job_id: Optional[str] = None
     company_domain: Optional[str] = None
     #: THE OPERATOR'S EXPLICIT OVERRIDE (W5/R3-A), and the strongest selector there is.
     #:

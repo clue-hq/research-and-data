@@ -16,7 +16,9 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import text
 
+from clue_config import Settings
 from clue_db import create_engine, database_url
 
 # Alembic Config object (values from alembic.ini).
@@ -69,6 +71,17 @@ async def _run_async_migrations() -> None:
     engine = create_engine()
     try:
         async with engine.connect() as connection:
+            # Session settings migrations read via ``current_setting`` (never a value baked into
+            # a revision): ``clue.pages_system_suffix`` is the suffix system hostnames are written
+            # under (``770bf20802e1`` turns F5 handles into ``<handle>.<suffix>`` rows). Session
+            # scope (``is_local`` false) so it outlives the commit below; the commit ends the
+            # autobegun transaction, so alembic's ``begin_transaction()`` still owns — and
+            # commits — the DDL rather than finding a transaction already open.
+            await connection.execute(
+                text("SELECT set_config('clue.pages_system_suffix', :suffix, false)"),
+                {"suffix": Settings().pages_system_suffix},
+            )
+            await connection.commit()
             await connection.run_sync(_do_run_migrations)
     finally:
         await engine.dispose()

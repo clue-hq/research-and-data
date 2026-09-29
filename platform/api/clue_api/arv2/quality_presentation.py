@@ -1,7 +1,13 @@
-"""Complete research findings alongside the agent's narrative; uncertainty never hides text."""
+"""Research findings no narrative section cites, served as plain Miscellaneous items.
 
-import json
+Founder ruling 2026-09-29: the pages show only their designed sections. There is no separate "All
+research findings" section and no per-sentence verification tags. A ``*.research_finding`` the
+narrative did not cite lands in the page's Miscellaneous section; typed fields (``core.*``, fit
+scores, committee selection) are never rendered as text items.
+"""
+
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -9,56 +15,56 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_page_inputs import PageInputs
 
-
-def annotate_sentences(body: dict[str, Any], claims: dict[Any, dict[str, Any]]) -> None:
-    """Retain narrative text while showing changes/uncertainty in its cited findings."""
-    by_id = {str(id): claim for id, claim in claims.items()}
-    sentences = [*body.get("intro", [])]
-    for item in body.get("items", []):
-        sentences.extend(item.get("body", []))
-        if item.get("sendLine"):
-            sentences.append(item["sendLine"])
-    for sentence in sentences:
-        notes = list(sentence.get("qualifications", []))
-        for id in sentence.get("claimIds", []):
-            claim = by_id.get(str(id))
-            if claim is None:
-                notes.append("The cited finding is unavailable; this statement needs review.")
-                continue
-            notes.extend((claim.get("write_markers") or {}).get("qualifications", []))
-            if claim.get("quality") in ("qualified", "unresolved", "invalid"):
-                notes.append("Supporting finding: " + claim["quality"] + ".")
-            if claim.get("superseded_by"):
-                notes.append("An updated supporting finding is available.")
-        if notes:
-            sentence["kind"] = "qualified"
-            sentence["qualifications"] = list(dict.fromkeys(notes))
+_UNCOVERED_FINDINGS = text(
+    """
+    SELECT c.id, c.value_json
+    FROM claim c LEFT JOIN claim_quality_current q ON q.claim_id=c.id
+    LEFT JOIN artifact a ON a.storage_key=c.artifact_key AND a.workspace_id=c.workspace_id
+    WHERE c.workspace_id=:ws AND c.entity_id=:subject
+      AND c.field_key LIKE '%.research_finding'
+      AND c.superseded_by IS NULL
+      AND COALESCE(q.conclusion, '') <> 'invalid'
+      AND NOT (c.id::text = ANY(:cited))
+      AND (c.write_markers->>'context_id' IS NULL OR c.write_markers->>'context_id'=:context)
+      AND (c.artifact_key IS NULL OR (a.erased_at IS NULL AND NOT a.privacy_erased
+           AND (a.expires_at IS NULL OR a.expires_at>now())))
+      AND NOT EXISTS(SELECT 1 FROM claim_quality_support s JOIN artifact sa
+        ON sa.storage_key=s.artifact_key WHERE s.assessment_id=q.assessment_id
+        AND (sa.erased_at IS NOT NULL OR sa.privacy_erased OR sa.expires_at<=now()))
+    ORDER BY c.collected_at, c.id
+    """
+)
 
 
-async def finding_section(
-    conn: AsyncConnection, scope: JobScope, inputs: PageInputs
-) -> tuple[dict[str, Any], tuple[str, ...]]:
+def _plain_text(finding: object) -> str:
+    """A finding as reader text: the string itself, or an object's text values as sentences."""
+    if isinstance(finding, str):
+        return finding.strip()
+    if isinstance(finding, dict):
+        parts = [
+            v.strip().rstrip(".") for v in finding.values() if isinstance(v, str) and v.strip()
+        ]
+        return ". ".join(parts) + "." if parts else ""
+    return ""
+
+
+async def uncovered_findings(
+    conn: AsyncConnection,
+    scope: JobScope,
+    inputs: PageInputs,
+    *,
+    subject_id: UUID,
+    cited: set[str],
+) -> list[dict[str, Any]]:
+    """The subject's research findings no section cites, as plain served items."""
     rows = (
         (
             await conn.execute(
-                text("""
-        SELECT c.id,c.field_key,c.value_json,c.write_markers,c.superseded_by,
-               q.conclusion,c.source_url,c.evidence_span
-        FROM claim c LEFT JOIN claim_quality_current q ON q.claim_id=c.id
-        LEFT JOIN artifact a ON a.storage_key=c.artifact_key AND a.workspace_id=c.workspace_id
-        WHERE c.workspace_id=:ws AND c.entity_id=ANY(:subjects)
-          AND (c.write_markers->>'context_id' IS NULL
-               OR c.write_markers->>'context_id'=:context)
-          AND (c.artifact_key IS NULL OR (a.erased_at IS NULL AND NOT a.privacy_erased
-               AND (a.expires_at IS NULL OR a.expires_at>now())))
-          AND NOT EXISTS(SELECT 1 FROM claim_quality_support s JOIN artifact sa
-            ON sa.storage_key=s.artifact_key WHERE s.assessment_id=q.assessment_id
-            AND (sa.erased_at IS NOT NULL OR sa.privacy_erased OR sa.expires_at<=now()))
-        ORDER BY c.collected_at,c.id
-    """),
+                _UNCOVERED_FINDINGS,
                 {
                     "ws": scope.workspace_id,
-                    "subjects": list(inputs.subjects),
+                    "subject": subject_id,
+                    "cited": sorted(cited),
                     "context": str(inputs.generation.context_id),
                 },
             )
@@ -66,59 +72,20 @@ async def finding_section(
         .mappings()
         .all()
     )
-    items = []
+    items: list[dict[str, Any]] = []
     for row in rows:
         value = row["value_json"]
-        is_finding = row["field_key"].endswith(".research_finding") and isinstance(value, dict)
-        title = str(value.get("topic", "Research finding")) if is_finding else row["field_key"]
-        content = value.get("finding") if is_finding else value
-        body = (
-            content
-            if isinstance(content, str)
-            else json.dumps(content, ensure_ascii=False, indent=2)
-        )
-        notes = list((row["write_markers"] or {}).get("qualifications", []))
-        if is_finding:
-            notes.extend(value.get("notes") or [])
-        if row["conclusion"] in ("qualified", "unresolved", "invalid"):
-            notes.append(
-                {
-                    "qualified": "Qualification recorded",
-                    "unresolved": "Unresolved finding",
-                    "invalid": "Disputed or withdrawn finding; retained for review",
-                }[row["conclusion"]]
-            )
-        if row["superseded_by"]:
-            notes.append("An updated finding is also available; this is the earlier observation.")
-        if notes:
-            body += "\n\nNotes: " + " ".join(dict.fromkeys(str(n) for n in notes))
+        finding = _plain_text(value.get("finding") if isinstance(value, dict) else None)
+        if not finding:
+            continue
         items.append(
             {
-                "id": str(row["id"]),
-                "h2": title,
-                "body": [
-                    {
-                        "text": body,
-                        "claimIds": [str(row["id"])],
-                        "kind": "qualified" if notes else "fact",
-                        "qualifications": notes,
-                    }
-                ],
-                "priority": 2,
+                "id": f"miscellaneous-finding-{row['id']}",
+                "h2": str(value.get("topic") or "Research finding"),
+                "body": [{"text": finding, "claimIds": [str(row["id"])]}],
+                "priority": 3,
                 "newSinceLastVisit": False,
                 "contactRefs": [],
             }
         )
-    return (
-        {
-            "key": "research-findings",
-            "h1": "All research findings",
-            "intro": [],
-            "items": items,
-            "empty": not items,
-            "restricted": False,
-            "pending": False,
-            "gaps": [],
-        },
-        tuple(str(row["id"]) for row in rows),
-    )
+    return items

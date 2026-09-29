@@ -1,7 +1,6 @@
 "use client";
 import motion from "./account-motion.module.css";
 
-import { ResearchQualityNotice } from "./research-quality-notice";
 import { AccountDetailsList } from "./account-detail-primitives";
 import { DesignIcon } from "@/components/ui/design-icon";
 import {
@@ -111,7 +110,6 @@ export function AccountContactsScreen({
               </div>
             </div>
           </div>
-          <ResearchQualityNotice quality={account.overviewDisplay?.researchQuality} path={`/accounts/${account.id}/contacts`} />
           <div className="min-h-0 flex-1 overflow-auto">
             <div
               aria-label="Account contacts"

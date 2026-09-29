@@ -2,18 +2,19 @@
 
 This is the only door into the discovery lane, and the run row it writes is the authorization
 record — the exact ICP document version the long list is built from, how many companies were
-asked for, how many the provider was asked for, and which of the document's hard gates become
-webset criteria. Everything the driver later spends is spent against that row, so a run whose
-pinned bytes have moved is a different request and gets a different run.
+asked for, and which of the document's hard gates become webset criteria. Everything the driver
+later spends is spent against that row, so a run whose pinned bytes have moved is a different
+request and gets a different run.
 
 The three properties R2's launch pins, pinned again here because they are the same three:
 
 * **Every refusal is typed** (:class:`Arv2DiscoveryRefused` with a stable ``code``), never a stack
   trace. The toolbelt tool turns each straight into a
   :class:`~clue_toolbelt.PreconditionFailed`, so the human is told which prerequisite is missing.
-* **The run id is the digest of the request.** Asking the same thing twice is one run, one webset
-  and one bill — a human who clicked twice, or a turn that replayed, does not buy a second long
-  list.
+* **The run id is the digest of the request, and the request includes the human's ask.** Every
+  time a human asks for accounts is a new run — "find me 10 more" is never answered by replaying
+  a finished run (founder ruling 2026-09-28) — while the same ask retried (a turn that replayed, a
+  task redelivered) is the same run, one set of websets and one bill.
 * **Rows first, offer second.** The launch takes no queue and cannot reach one; the caller offers
   the task through :func:`enqueue_discovery_run` once the transaction has committed. See
   :class:`Arv2DiscoveryReceipt` for why that ordering is the safety property.
@@ -38,12 +39,12 @@ from pydantic import Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.discovery_brief import BriefError, compile_brief
 from clue_api.arv2.discovery_store import (
     DiscoveryRunRow,
     create_discovery_run,
     read_discovery_run,
-    request_relaxed,
 )
 from clue_api.arv2.errors import Arv2Error
 from clue_api.arv2.fleet_task import (
@@ -98,7 +99,6 @@ __all__ = [
     "launch_arv2_discovery",
     "read_icp_document",
     "read_pinned_icp",
-    "request_relaxed_pass",
 ]
 
 #: The document kind and status a discovery run will build a long list from. Anything else is a
@@ -139,13 +139,15 @@ class Arv2DiscoveryRequest:
     workspace_id: str
     project_id: str
     requested_by_user_id: str
+    #: The human's ask this run answers — the captured user action for a tool call, a key the
+    #: operator chooses for the CLI. It is part of the run id, so every new ask is a new run and
+    #: the same ask retried is the same run.
+    request_key: str
     #: The ``turn-action:`` ref of the turn a fleet-driven launch acts for; when set, the human
     #: who submitted that turn becomes the run's requester (and every discovered account's
     #: creator and owner) in place of the service principal that invoked the tool.
     launching_turn_ref: str | None = None
     target_count: int = 20
-    #: How many the provider is asked for. ``None`` → ``settings.arv2_discovery_strict_count``.
-    strict_count: int | None = None
     #: ``None`` → ``settings.arv2_discovery_relaxed_auto``.
     relaxed_enabled: bool | None = None
     #: Which hard gates become webset criteria. ``()`` → the settings' comma-separated list.
@@ -159,7 +161,6 @@ class Arv2DiscoveryRefused(Arv2Error):
     Codes: ``lane_disabled``, ``target_count_invalid``, ``project_not_found``,
     ``project_icp_not_pinned``, ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``,
     ``icp_digest_mismatch``, ``icp_front_matter_invalid``, ``unknown_criteria_gate_key``.
-    :func:`request_relaxed_pass` adds ``run_not_found`` and ``run_not_finished``.
 
     The ICP codes are deliberately spelled the same as the account launch's: they are the same
     prerequisite failing on the same document, and a human who has learned what
@@ -182,7 +183,7 @@ class Arv2DiscoveryReceipt:
     second (the O3 rule, ``onboarding_routes``).
 
     It is ``True`` only while the run is ``not_started``: a run another worker is already driving
-    has its task, and a finished one is not re-offered until a human asks for the relaxed pass.
+    has its task, and a finished one is never re-offered — asking for more is a new run.
     """
 
     run_id: UUID
@@ -427,23 +428,22 @@ def _request_sha256(
     request: Arv2DiscoveryRequest,
     *,
     icp_artifact_sha256: str,
-    strict_count: int,
     relaxed_enabled: bool,
     criteria_gate_keys: tuple[str, ...],
 ) -> str:
     """The digest of what was asked for — and therefore the run's identity.
 
-    Every field is what the human approved: a different target, a different provider ask, a
-    different gate set or a moved ICP is a different question, so it is a different run rather
-    than a quiet reuse of one that answered something else. The gate keys keep their **order**,
-    because the order is the order the criteria are sent in.
+    Every field is what the human approved: a different ask, a different target, a different gate
+    set or a moved ICP is a different question, so it is a different run rather than a quiet reuse
+    of one that answered something else. The gate keys keep their **order**, because the order is
+    the order the criteria are sent in.
     """
     payload = {
         "workspace_id": request.workspace_id,
         "project_id": request.project_id,
+        "request_key": request.request_key,
         "icp_artifact_sha256": icp_artifact_sha256,
         "target_count": request.target_count,
-        "strict_count": strict_count,
         "relaxed_enabled": relaxed_enabled,
         "criteria_gate_keys": list(criteria_gate_keys),
     }
@@ -506,11 +506,6 @@ async def launch_arv2_discovery(
         raise Arv2DiscoveryRefused("unknown_criteria_gate_key", str(unusable)) from unusable
     criteria_gate_keys = brief.criteria_gate_keys
 
-    strict_count = (
-        request.strict_count
-        if request.strict_count is not None
-        else settings.arv2_discovery_strict_count
-    )
     relaxed_enabled = (
         request.relaxed_enabled
         if request.relaxed_enabled is not None
@@ -536,7 +531,6 @@ async def launch_arv2_discovery(
     request_sha = _request_sha256(
         request,
         icp_artifact_sha256=icp.artifact_sha256,
-        strict_count=strict_count,
         relaxed_enabled=relaxed_enabled,
         criteria_gate_keys=criteria_gate_keys,
     )
@@ -556,7 +550,6 @@ async def launch_arv2_discovery(
             requested_by_user_id=requested_by,
             request_sha256=request_sha,
             target_count=request.target_count,
-            strict_count=strict_count,
             relaxed_enabled=relaxed_enabled,
             criteria_gate_keys=criteria_gate_keys,
             created_at=now(),
@@ -591,39 +584,6 @@ async def launch_arv2_discovery(
     )
 
 
-async def request_relaxed_pass(
-    conn: AsyncConnection, *, workspace_id: str, run_id: UUID
-) -> Arv2DiscoveryReceipt:
-    """Reopen a finished run for the §4 relaxed pass, on the human's word. **It queues nothing.**
-
-    A short list is information, never padded automatically after the fact: the run landed with
-    its counters, the human read them, and *asking for the relaxed pass is their decision*. The
-    caller offers the reopened task through :func:`enqueue_discovery_run` once this transaction
-    has committed, exactly as a launch does.
-    """
-    run = await read_discovery_run(conn, run_id=run_id)
-    if run is None or run.workspace_id != workspace_id:
-        # A run of another workspace is *absent*, not forbidden: the caller learns nothing about a
-        # tenant it may not see.
-        raise Arv2DiscoveryRefused(
-            "run_not_found", f"no ARV2 discovery run {run_id} in workspace {workspace_id!r}"
-        )
-    if not await request_relaxed(conn, run_id=run_id):
-        raise Arv2DiscoveryRefused(
-            "run_not_finished",
-            f"discovery run {run_id} is {run.status!r}; the relaxed pass is asked for once the "
-            "strict pass has landed and its counts have been read",
-        )
-    log.info("arv2.discovery_relaxed_requested", run_id=str(run_id), workspace_id=workspace_id)
-    return Arv2DiscoveryReceipt(
-        run_id=run_id,
-        replayed=True,
-        project_run_id=run.project_run_id,
-        workspace_id=run.workspace_id,
-        to_enqueue=True,
-    )
-
-
 async def enqueue_discovery_run(queue: WorkQueue, receipt: Arv2DiscoveryReceipt) -> bool:
     """Offer a committed run to the fleet; returns whether the queue accepted the offer.
 
@@ -631,9 +591,9 @@ async def enqueue_discovery_run(queue: WorkQueue, receipt: Arv2DiscoveryReceipt)
     (``to_enqueue`` false — the run is already being driven, or finished and nobody asked for the
     relaxed pass) offers nothing and returns ``False``.
 
-    ``reopen_terminal`` is ``True`` because the relaxed pass re-offers the task of a run whose
-    first pass already finished; the dedup key still makes re-offering a *live* task a no-op, so a
-    relaunch is how a run whose offer was lost after the commit is repaired.
+    ``reopen_terminal`` stays ``True`` so a relaunch of a run whose offer was lost after the
+    commit re-offers it; the dedup key still makes re-offering a *live* task a no-op, and a
+    finished run is never offered at all (``to_enqueue`` is false).
     """
     if not receipt.to_enqueue:
         log.info("arv2.discovery_enqueue_skipped", run_id=str(receipt.run_id))
@@ -748,14 +708,15 @@ class LaunchArv2DiscoveryTool(Tool):
     name = "launch_arv2_discovery"
     version = "1"
     model_description = (
-        "Launch (or exactly replay) ARV2 verified account discovery for one project: a long list "
-        "built from the confirmed ICP document version the project pinned, then verified company "
-        "by company against that document's hard gates. Call only when the current user action "
-        "explicitly approves searching for new accounts for this project. The ICP, the gates and "
-        "the provider ask all come from the pinned document and the deployment's settings — never "
-        "from this call — and a successful result means the run was created or replayed, never "
-        "that companies have been found or approved. It approves nothing and researches nothing. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#launch_arv2_discovery"
+        "Launch ARV2 verified account discovery for one project: search for exactly target_count "
+        "companies that match the confirmed ICP document version the project pinned, verify each "
+        "one against that document's hard gates, and add it to this project's accounts. Every "
+        "call a human's action approves is a new discovery, and it never finds a company this "
+        "project's earlier discoveries found; the same action retried replays its own run. Call "
+        "only when the current user action explicitly approves searching for new accounts for "
+        "this project. The ICP and the gates come from the pinned document, never from this call, "
+        "and a successful result means the run was created or replayed, never that companies "
+        "have been found. It researches nothing. " + tool_manual_link("launch_arv2_discovery")
     )
     input_model = LaunchArv2DiscoveryInput
     output_model = LaunchArv2DiscoveryOutput
@@ -763,8 +724,8 @@ class LaunchArv2DiscoveryTool(Tool):
     replay = ReplaySafety(
         policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
         durable_identity=(
-            "workspace + project + pinned ICP digest + target count + provider ask + criteria "
-            "gate keys"
+            "workspace + project + the approving user action + pinned ICP digest + target count "
+            "+ relaxed flag + criteria gate keys"
         ),
         external_boundary=ExternalReplayBoundary.NONE,
     )
@@ -810,6 +771,9 @@ class LaunchArv2DiscoveryTool(Tool):
             # invoker is a *service* principal (``svc_execution_worker``), which is nobody's owner
             # (ruling 10′: creator is owner) — the launch resolves the turn's human from this.
             launching_turn_ref=ctx.action_ref if ctx.principal_kind == "service" else None,
+            # The approving user action is this ask's identity: a new action is a new discovery,
+            # the same action retried is the same one (the precondition guarantees it is set).
+            request_key=ctx.action_ref,
             target_count=inputs.target_count,
             relaxed_enabled=inputs.relaxed_enabled,
         )

@@ -128,8 +128,11 @@ tools:
   - name: design_publish_web
     version: "1"
     # output digest re-pinned 2026-09-03 (F5 multi-page publish): WebPublishRef gained
-    # page_count + routes; input schema unchanged.
-    input_schema_sha256: 26449497cc96f0168aeed9aaf54b8eaa0847a407466110ca28e03f97fce7ac35
+    # page_count + routes. Input digest re-pinned 2026-09-29 (custom-domain publishing): the
+    # `public_base` input is gone — the publish address comes from the hostname registry, never
+    # from the request (spec 2026-09-17 §6.1); the tool's identity, version and replay policy are
+    # unchanged, so the pin moves in place exactly as the 2026-09-03 output re-pin did.
+    input_schema_sha256: c228782776eb5fe32e7a02ad0c1cd36b8e5b746faf6a621771df46fad428c7ad
     output_schema_sha256: 22ffc62459078972870b20971c1cbbd799e77aff80ad749686159b678e50c9bb
   - name: design_record_diagnostics
     version: "1"

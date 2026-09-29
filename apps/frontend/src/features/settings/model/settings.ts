@@ -37,20 +37,6 @@ export const StaticSettingsSchema = z.object({
     remainingCredits: z.number().int().nonnegative(),
     totalCredits: z.number().int().positive(),
   }),
-  pages: z.object({
-    customDomain: z.string(),
-    fallbackUrl: z.string(),
-    pageTitle: z.string(),
-    pageDescription: z.string(),
-    faviconPath: z.string().nullable(),
-    socialPreviewPath: z.string().nullable(),
-    allowIndexing: z.boolean(),
-    allowFollowing: z.boolean(),
-    headHtml: z.string(),
-    bodyHtml: z.string(),
-    llmsText: z.string(),
-    autoGenerateLlmsText: z.boolean(),
-  }),
 });
 
 export type StaticSettings = z.infer<typeof StaticSettingsSchema>;

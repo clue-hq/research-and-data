@@ -41,6 +41,7 @@ from pydantic import Field, JsonValue, StringConstraints
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.agent_gate import (
     KIND_PRODUCT_SET_SELECTION,
     insert_gate,
@@ -153,7 +154,7 @@ class OpenProductSetSelectionGateTool(Tool):
         "derives the candidates from the brand's own product rows and the current product catalog; "
         "you may pass the icp_key you are working from to pre-check its products. This call "
         "confirms nothing. End the turn awaiting input with the returned gate_ref. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#open_product_set_selection_gate"
+        + tool_manual_link("open_product_set_selection_gate")
     )
     input_model: ClassVar[type[ToolInput]] = OpenProductSetSelectionGateInput
     output_model: ClassVar[type[ToolOutput]] = OpenProductSetSelectionGateOutput

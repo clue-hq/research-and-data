@@ -58,8 +58,8 @@ from clue_agents.turns import (
 )
 from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
+from clue_api.conversation_continuation import thread_message_refs
 from clue_api.thread_store import ensure_platform_thread
-from clue_api.turn_attachments import turn_image_refs
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_execution.run_events import emit_design_run_event
@@ -1386,46 +1386,7 @@ class DbAgentHistoryStore(AgentHistoryStore):
 
     async def load(self, *, workspace_id: str, thread_id: str) -> Sequence[HistoryMessageRef]:
         async with self._conn_factory() as conn:
-            result = await conn.execute(
-                text(
-                    "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                    "m.body_sha256, a.media_type, a.size_bytes, "
-                    "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
-                    "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
-                    "FROM agent_thread_message m "
-                    "JOIN artifact a ON a.storage_key=m.body_artifact_key "
-                    "WHERE m.workspace_id=:workspace AND m.thread_id=:thread "
-                    "ORDER BY m.sequence"
-                ),
-                {"workspace": workspace_id, "thread": thread_id},
-            )
-            rows = result.mappings().all()
-            # One query for the whole page, not one per message: the images a past turn carried
-            # ride its messages again (ruling 2, spec 2026-09-18), and the conversation layer caps
-            # how many of them the thread can afford.
-            images = await turn_image_refs(
-                conn,
-                workspace_id=workspace_id,
-                turn_ids=[row["turn_id"] for row in rows],
-            )
-            return tuple(
-                HistoryMessageRef(
-                    message_id=row["id"],
-                    turn_id=row["turn_id"],
-                    sequence=int(row["sequence"]),
-                    role=row["role"],
-                    interrupted=bool(row["interrupted"]),
-                    body_ref=ArtifactRef(
-                        workspace_id=workspace_id,
-                        artifact_key=row["body_artifact_key"],
-                        sha256=row["body_sha256"],
-                        media_type=row["media_type"],
-                        byte_count=int(row["size_bytes"]),
-                    ),
-                    attachment_refs=images.get(row["turn_id"], ()),
-                )
-                for row in rows
-            )
+            return await thread_message_refs(conn, workspace_id=workspace_id, thread_id=thread_id)
 
     async def append(
         self,

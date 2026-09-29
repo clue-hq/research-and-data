@@ -120,15 +120,19 @@ export function ContactRow({
         </span>
       </div>
       <div className="flex items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4">
-        <span
-          className={`${readability.pillMedium} ${components.badge} ${
-            contact.influence === "High"
-              ? components.badgePositive
-              : components.badgeNeutral
-          }`}
-        >
-          {contact.influence ?? "Unverified"}
-        </span>
+        {contact.influence ? (
+          <span
+            className={`${readability.pillMedium} ${components.badge} ${
+              contact.influence === "High"
+                ? components.badgePositive
+                : components.badgeNeutral
+            }`}
+          >
+            {contact.influence}
+          </span>
+        ) : (
+          "—"
+        )}
       </div>
       <div className="flex min-w-0 items-center border-r-[0.5px] border-[var(--clue-border-table)] px-4 text-[var(--clue-content-subtle)]">
         {shownContact.emailLabel ? (

@@ -11,20 +11,23 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.discovery_store import (
     CandidateRow,
     DiscoveryRunRow,
+    SearchRow,
     begin_discovery_run,
     create_discovery_run,
+    create_search,
     find_discovery_run,
     finish_discovery_run,
+    finish_search,
     list_candidates,
+    list_searches,
     mark_candidates_approved,
+    project_found_domains,
+    project_webset_ids,
     read_discovery_run,
     record_discovery_progress,
-    record_relaxed_search,
+    record_search_webset,
     record_verdicts,
-    record_webset,
-    request_relaxed,
     suspend_discovery_run,
-    unapproved_domains,
     upsert_candidate,
 )
 from clue_core import ProjectPhase, ProjectRunId
@@ -77,7 +80,6 @@ def _run(project: Project, *, request_sha256: str = "a" * 64, target: int = 20) 
         requested_by_user_id="user-1",
         request_sha256=request_sha256,
         target_count=target,
-        strict_count=35,
         relaxed_enabled=True,
         criteria_gate_keys=("geography", "stage"),
     )
@@ -98,12 +100,9 @@ def test_run_create_is_idempotent_and_replay_finds_it_by_request_sha() -> None:
             assert found.status == "not_started"
             assert found.criteria_gate_keys == ("geography", "stage")
             assert found.relaxed_enabled is True
-            # A launched run has bought nothing yet: no webset, and neither of its searches.
-            assert (found.webset_id, found.strict_search_id, found.relaxed_search_id) == (
-                None,
-                None,
-                None,
-            )
+            # A launched run has bought nothing yet: not a single search.
+            assert await list_searches(conn, run_id=row.run_id) == ()
+            assert found.asked is None
 
     run_async(scenario())
 
@@ -119,20 +118,35 @@ def test_begin_claims_only_not_started_or_suspended_and_finish_records_counts() 
             assert begun.status == "in_progress"
             assert begun.started_at is not None
             assert await begin_discovery_run(conn, run_id=row.run_id) is None
-            await record_webset(
-                conn,
+            first = SearchRow(
                 run_id=row.run_id,
-                webset_id="ws_123",
-                asked=35,
-                recall_estimate=210,
-                strict_search_id="srch_strict",
+                ordinal=1,
+                kind="strict",
+                external_id=f"arv2-discovery:{row.run_id}:1",
+                asked=20,
+                criteria=("US", "Series A"),
             )
-            mid = await read_discovery_run(conn, run_id=row.run_id)
-            assert mid is not None
-            # The strict search is durable from the create, and no widening has been bought yet.
-            assert mid.strict_search_id == "srch_strict"
-            assert mid.relaxed_search_id is None
-            await record_relaxed_search(conn, run_id=row.run_id, relaxed_search_id="srch_relaxed")
+            held = await create_search(conn, first)
+            # Written before anything is bought: no webset yet, and the run's ask is its sum.
+            assert held.webset_id is None and held.criteria == ("US", "Series A")
+            # A second attempt that re-records the same search gets the row it already wrote.
+            assert await create_search(conn, dataclasses.replace(first, asked=99)) == held
+            await record_search_webset(
+                conn, run_id=row.run_id, ordinal=1, webset_id="ws_123", recall_estimate=210
+            )
+            await finish_search(
+                conn, run_id=row.run_id, ordinal=1, found=15, analyzed=333, recall_estimate=None
+            )
+            topup = SearchRow(
+                run_id=row.run_id,
+                ordinal=2,
+                kind="strict_topup",
+                external_id=f"arv2-discovery:{row.run_id}:2",
+                asked=5,
+                criteria=("US", "Series A"),
+                exclude_webset_ids=("ws_123",),
+            )
+            await create_search(conn, topup)
             await finish_discovery_run(
                 conn,
                 run_id=row.run_id,
@@ -140,25 +154,26 @@ def test_begin_claims_only_not_started_or_suspended_and_finish_records_counts() 
                 found_strict=15,
                 found_relaxed=0,
                 analyzed=333,
-                receipt={"asked": 35},
+                receipt={"asked": 25},
             )
             done = await read_discovery_run(conn, run_id=row.run_id)
             assert done is not None
             assert done.status == "completed"
             assert done.found_strict == 15
-            assert done.receipt == {"asked": 35}
-            assert done.webset_id == "ws_123"
-            assert done.asked == 35
-            assert done.recall_estimate == 210
-            # Both searches survive the finish, so a reopened relaxed request never buys a second.
-            assert done.strict_search_id == "srch_strict"
-            assert done.relaxed_search_id == "srch_relaxed"
+            assert done.receipt == {"asked": 25}
+            assert done.asked == 25  # both searches' asks, each counted once
+            assert done.recall_estimate == 210  # search 1's estimate is the run's
             assert done.finished_at is not None
-            assert await request_relaxed(conn, run_id=row.run_id) is True
-            reopened = await read_discovery_run(conn, run_id=row.run_id)
-            assert reopened is not None
-            assert reopened.status == "not_started"
-            assert reopened.relaxed_requested is True
+            one, two = await list_searches(conn, run_id=row.run_id)
+            assert (one.webset_id, one.found, one.analyzed) == ("ws_123", 15, 333)
+            assert one.finished_at is not None and one.recall_estimate == 210
+            assert (two.kind, two.webset_id, two.exclude_webset_ids) == (
+                "strict_topup",
+                None,
+                ("ws_123",),
+            )
+            # A finished run is never reclaimed: asking for more is a new run.
+            assert await begin_discovery_run(conn, run_id=row.run_id) is None
 
     run_async(scenario())
 
@@ -181,7 +196,9 @@ def test_suspend_parks_a_running_run_and_begin_reclaims_it() -> None:
     run_async(scenario())
 
 
-def test_candidates_upsert_by_domain_record_verdicts_and_remember_the_unapproved() -> None:
+def test_candidates_upsert_by_domain_and_a_later_run_remembers_everything_earlier_ones_found() -> (
+    None
+):
     async def scenario() -> None:
         async with rollback_conn() as conn:
             project = await _seed(conn)
@@ -221,12 +238,22 @@ def test_candidates_upsert_by_domain_record_verdicts_and_remember_the_unapproved
             assert row.pass_ == "strict"
             second = _run(project, request_sha256="2" * 64)
             await create_discovery_run(conn, second)
-            assert await unapproved_domains(
+            assert await project_found_domains(
                 conn,
                 workspace_id=first.workspace_id,
                 project_id=first.project_id,
                 before_run_id=second.run_id,
             ) == frozenset({"probook.ai"})
+            # A run never hides its own candidates from itself.
+            assert (
+                await project_found_domains(
+                    conn,
+                    workspace_id=first.workspace_id,
+                    project_id=first.project_id,
+                    before_run_id=first.run_id,
+                )
+                == frozenset()
+            )
             account = await insert_account_entity(
                 conn,
                 canonical_name="Probook",
@@ -251,15 +278,13 @@ def test_candidates_upsert_by_domain_record_verdicts_and_remember_the_unapproved
                 )
                 == 1
             )
-            assert (
-                await unapproved_domains(
-                    conn,
-                    workspace_id=first.workspace_id,
-                    project_id=first.project_id,
-                    before_run_id=second.run_id,
-                )
-                == frozenset()
-            )
+            # An approval changes nothing about what was found: the company stays found.
+            assert await project_found_domains(
+                conn,
+                workspace_id=first.workspace_id,
+                project_id=first.project_id,
+                before_run_id=second.run_id,
+            ) == frozenset({"probook.ai"})
             (approved,) = await list_candidates(conn, run_id=first.run_id)
             assert approved.decision == "approved"
             assert approved.decided_by_user_id == "user-1"
@@ -299,5 +324,52 @@ def test_progress_updates_counters_without_landing_the_run() -> None:
             stale = await read_discovery_run(conn, run_id=row.run_id)
             assert stale is not None
             assert (stale.found_strict, stale.found_relaxed, stale.analyzed) == (12, 3, 300)
+
+    run_async(scenario())
+
+
+def test_a_later_run_skips_every_webset_the_projects_earlier_runs_bought() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            earlier = _run(project, request_sha256="3" * 64)
+            later = _run(project, request_sha256="4" * 64)
+            await create_discovery_run(conn, earlier)
+            await create_discovery_run(conn, later)
+            for ordinal, webset_id in ((1, "ws_a"), (3, "ws_b")):
+                await create_search(
+                    conn,
+                    SearchRow(
+                        run_id=earlier.run_id,
+                        ordinal=ordinal,
+                        kind="strict" if ordinal == 1 else "relaxed",
+                        external_id=f"arv2-discovery:{earlier.run_id}:{ordinal}",
+                        asked=5,
+                        criteria=("US",),
+                    ),
+                )
+                await record_search_webset(
+                    conn,
+                    run_id=earlier.run_id,
+                    ordinal=ordinal,
+                    webset_id=webset_id,
+                    recall_estimate=None,
+                )
+            assert await project_webset_ids(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                before_run_id=later.run_id,
+            ) == ("ws_a", "ws_b")
+            # The earlier run's own view excludes itself.
+            assert (
+                await project_webset_ids(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    before_run_id=earlier.run_id,
+                )
+                == ()
+            )
 
     run_async(scenario())

@@ -57,6 +57,7 @@ export default async function ProtectedLayout({
     id: membership.workspace_id,
     name: membership.workspace_name,
     initials: workspaceInitials(membership.workspace_name),
+    logoUrl: membership.workspace_logo_url ?? null,
     role: roleLabel(membership.role_key),
   }));
   return (

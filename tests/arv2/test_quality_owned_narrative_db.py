@@ -130,10 +130,11 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
                 s for s in insight["display_block"]["sections"] if s["key"] == "context-only"
             )
             notes = next(
-                s for s in overview["display_block"]["sections"] if s["key"] == "research-notes"
+                s for s in overview["display_block"]["sections"] if s["key"] == "watch-outs"
             )
             assert shared["items"] == notes["items"]
-            assert "contact-insights" in insight["stale"]
+            assert shared["restricted"] and notes["restricted"]
+            assert "contact-insights" not in insight["stale"]
             op = OperationScope(child.workspace_id, child.run_id, child.job_id, child.account_id)
             eid = await execution(conn, op, child.project_id)
             await bind_execution(
@@ -173,11 +174,10 @@ def test_account_person_storage_replay_and_shared_owner_projection(tmp_path, mon
             assert opener["sendLine"]["channel"] == "email"
             assert opener["sendLine"]["text"] == "A proposed question, not a quote."
             insight = await read_page(conn, parent, context_id=cid, page="insights")
-            shared = next(
-                s for s in insight["display_block"]["sections"] if s["key"] == "contact-insights"
+            # The person's insights live on the contact page only (ruling 2026-09-29).
+            assert not any(
+                s["key"] == "contact-insights" for s in insight["display_block"]["sections"]
             )
-            assert not shared["pending"] and shared["items"][0]["body"] == sentences
-            assert shared["items"][0]["subject"]["contactId"] == str(child.contact_id)
             import os
             from pathlib import Path
 

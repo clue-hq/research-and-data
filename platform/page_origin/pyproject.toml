@@ -1,0 +1,35 @@
+[project]
+name = "clue-page-origin"
+version = "0.0.0"
+description = "Public page origin — serves published web pages by hostname behind the Cloudflare edge (custom-domain publishing S1)."
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "clue-core",
+    "clue-config",
+    "clue-db",
+    "clue-spine",
+    "clue-design",
+    "clue-storage",
+    "clue-obs",
+    "fastapi>=0.138.0",
+    "uvicorn>=0.35.0",
+    "pydantic>=2.7",
+    "sqlalchemy[asyncio]>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clue_page_origin"]
+
+[tool.uv.sources]
+clue-core = { workspace = true }
+clue-config = { workspace = true }
+clue-db = { workspace = true }
+clue-spine = { workspace = true }
+clue-design = { workspace = true }
+clue-storage = { workspace = true }
+clue-obs = { workspace = true }

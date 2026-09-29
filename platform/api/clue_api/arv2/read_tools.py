@@ -45,11 +45,13 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.arv2.discovery_store import (
     SHOWN_DISPOSITIONS,
     VERIFIED_PREDICATE,
     CandidateRow,
     list_candidates,
+    list_searches,
 )
 from clue_api.arv2.discovery_store import read_discovery_run as read_discovery_run_row
 from clue_api.arv2.display.blocks import live_blocks
@@ -471,16 +473,133 @@ async def _account_in_workspace(
     return account_uuid, str(row["canonical_name"])
 
 
+def _claim_ids_in(value: object) -> tuple[str, ...]:
+    """Every ``claimIds`` entry inside one served section body, in first-seen order."""
+    found: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            for key, item in node.items():
+                if key == "claimIds" and isinstance(item, list):
+                    found.extend(str(claim_id) for claim_id in item)
+                else:
+                    walk(item)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(value)
+    return tuple(dict.fromkeys(found))
+
+
+_PAGE_WRITTEN_AT = text(
+    """
+    SELECT updated_at FROM arv2_research_page_current
+    WHERE workspace_id = :ws AND context_id = :context AND subject_kind = 'account'
+      AND subject_id = :subject AND page = 'overview'
+    """
+)
+
+
+async def _current_lane_overview(
+    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID, project_id: str | None
+) -> list[AccountOverviewSection] | None:
+    """The overview the current research lane wrote for this account in this project, as the
+    account page serves it; ``None`` when the account has no current-lane research at all.
+
+    Incident 2026-09-29: this read used to consult only the legacy display lane (blocks with no
+    research context), so every overview the current lane wrote was invisible and the tool
+    answered ``overview_not_written`` for a page the marketer could open. The page is chosen
+    exactly as the account screen chooses it (``select_quality_context``): the calling turn's
+    project when the context names one, otherwise the account's only researched project.
+    """
+
+    from clue_api.arv2.quality_pages import read_page
+    from clue_api.arv2.quality_read import select_quality_context
+
+    selection = await select_quality_context(
+        conn, workspace_id=workspace_id, subject_id=account_uuid, project_id=project_id
+    )
+    if selection is None:
+        return None
+    if selection.scope is None or selection.context_id is None:
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account was researched in more than one project and this read names none of "
+            "them; read section='claims' or open the account in the app",
+        )
+    try:
+        page = await read_page(
+            conn, selection.scope, context_id=selection.context_id, page=_OVERVIEW_PAGE
+        )
+    except ValueError:
+        # A stopped or not-yet-started generation has no usable narrative (the account screen
+        # shows an empty page in the same case).
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account's overview has not been written yet; read section='claims' or open "
+            "the account in the app",
+        ) from None
+    written_at = (
+        await conn.execute(
+            _PAGE_WRITTEN_AT,
+            {"ws": workspace_id, "context": selection.context_id, "subject": account_uuid},
+        )
+    ).scalar_one_or_none()
+    sections: list[AccountOverviewSection] = []
+    for section in page["display_block"]["sections"]:
+        # A section with no words is not served; one whose refresh is merely due still is (the
+        # account screen shows it too, marked pending).
+        if not section.get("intro") and not section.get("items"):
+            continue
+        body = {
+            key: section[key]
+            for key in ("h1", "intro", "items", "restricted")
+            if key in section and section[key] not in (None, [])
+        }
+        body_text, body_truncated = _clip(
+            json.dumps(body, sort_keys=True, ensure_ascii=False), BODY_CHARS
+        )
+        sections.append(
+            AccountOverviewSection(
+                section_key=str(section["key"]),
+                body_text=body_text,
+                body_truncated=body_truncated,
+                cited_claim_ids=_claim_ids_in(body),
+                generated_at="" if written_at is None else written_at.isoformat(),
+            )
+        )
+    if not sections:
+        raise Arv2ReadRefused(
+            "overview_not_written",
+            "this account's overview has not been written yet; read section='claims' or open "
+            "the account in the app",
+        )
+    return sections
+
+
 async def _overview_sections(
-    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_uuid: UUID,
+    project_id: str | None = None,
 ) -> tuple[tuple[AccountOverviewSection, ...], bool]:
     """The account's written overview in the order the overview page itself serves it, bounded by
     the receipt's budget, plus whether anything was left out.
+
+    The current research lane's project-scoped page is read first; the legacy display lane's
+    unscoped blocks only when the account has no current-lane research.
 
     :data:`BODY_CHARS` bounds one section; nothing bounded the *page*, and a handful of capped
     sections is past the receipt on its own. What fits is served, and the cut is said out loud.
     """
 
+    current = await _current_lane_overview(
+        conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
+    )
+    if current is not None:
+        return _fit_overview(current)
     blocks = await live_blocks(
         conn,
         workspace_id=workspace_id,
@@ -504,14 +623,14 @@ async def _overview_sections(
         blocks.values(),
         key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
     )
-    sections: list[AccountOverviewSection] = []
+    legacy: list[AccountOverviewSection] = []
     for block in ordered:
         # ``sort_keys`` so two attempts of one turn serialize identical bytes, and
         # ``ensure_ascii=False`` so a quote the writer used stays the character the human typed.
         body_text, body_truncated = _clip(
             json.dumps(block.body_json, sort_keys=True, ensure_ascii=False), BODY_CHARS
         )
-        sections.append(
+        legacy.append(
             AccountOverviewSection(
                 section_key=block.section_key,
                 body_text=body_text,
@@ -520,6 +639,13 @@ async def _overview_sections(
                 generated_at=block.generated_at.isoformat(),
             )
         )
+    return _fit_overview(legacy)
+
+
+def _fit_overview(
+    sections: list[AccountOverviewSection],
+) -> tuple[tuple[AccountOverviewSection, ...], bool]:
+    """The sections that fit the receipt's byte budget, and whether any were cut."""
     fitted, cut = _take_within_budget(
         [section.model_dump() for section in sections], budget=READ_REFERENCES_BUDGET_BYTES
     )
@@ -725,6 +851,7 @@ async def read_account_research(
     field_prefix: str | None = None,
     offset: int = 0,
     limit: int = MAX_CLAIMS,
+    project_id: str | None = None,
 ) -> AccountResearch:
     """What research found about one account: its written overview, or its live claims.
 
@@ -755,7 +882,7 @@ async def read_account_research(
         if offset != 0:
             raise Arv2ReadRefused("offset_not_paged", "the overview is not paged; omit offset")
         overview, truncated = await _overview_sections(
-            conn, workspace_id=workspace_id, account_uuid=account_uuid
+            conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
         )
     else:
         claims, truncated, excluded, next_offset, prefixes = await _account_claims(
@@ -806,7 +933,7 @@ class DiscoveryCandidateView(BaseModel):
         serialization_alias="pass",
     )
     #: ``arv2_discovery_candidate.disposition``: ``pending`` until verified, then ``pass`` /
-    #: ``partial`` / ``unclear`` / ``duplicate_of_existing`` / ``not_chosen_before``.
+    #: ``partial`` / ``unclear`` / ``duplicate_of_existing`` / ``found_before``.
     disposition: str
     #: The human's approval — ``approved``, or nothing at all. There is no recorded rejection.
     decision: str | None
@@ -827,6 +954,9 @@ class DiscoveryRunView:
     verified: int
     shown: int
     approved: int
+    #: The run made the relaxed search — the strict searches came up short and the run allowed
+    #: it. The name predates 2026-09-28, when a human asked for the relaxed pass separately; the
+    #: field keeps it because the read's schema is pinned by every profile that grants it.
     relaxed_requested: bool
     started_at: str | None
     finished_at: str | None
@@ -860,7 +990,7 @@ _LATEST_DISCOVERY_RUN = text(
 #: worth looking at?", "how many did we take?". "Checked" is
 #: :data:`~clue_api.arv2.discovery_store.VERIFIED_PREDICATE` — a candidate with a verdict — shared
 #: with ``status.md`` and the Target-accounts poll, because the pre-spend dispositions
-#: (``duplicate_of_existing``, ``not_chosen_before``) are stamped before any gate is asked and
+#: (``duplicate_of_existing``, ``found_before``) are stamped before any gate is asked and
 #: counting them as verified made the agent say the platform had checked companies it had skipped.
 #: Every sub-select names the tenant: ``arv2_discovery_candidate.run_id`` is a single-column FK, so
 #: nothing in the schema forces a candidate's workspace to equal its run's.
@@ -980,7 +1110,9 @@ async def read_discovery_run(
         verified=int(counts["verified"]),
         shown=int(counts["shown"]),
         approved=int(counts["approved"]),
-        relaxed_requested=bool(run.relaxed_requested),
+        relaxed_requested=any(
+            search.kind == "relaxed" for search in await list_searches(conn, run_id=run_uuid)
+        ),
         started_at=None if run.started_at is None else run.started_at.isoformat(),
         finished_at=None if run.finished_at is None else run.finished_at.isoformat(),
         candidates=tuple(
@@ -1187,6 +1319,7 @@ class Arv2ReadService(Protocol):
         field_prefix: str | None,
         offset: int,
         limit: int,
+        project_id: str | None = None,
     ) -> AccountResearch: ...
 
     async def read_discovery_run(
@@ -1255,6 +1388,7 @@ class DbArv2ReadService:
         field_prefix: str | None,
         offset: int,
         limit: int,
+        project_id: str | None = None,
     ) -> AccountResearch:
         async with self._conn_factory() as conn:
             return await read_account_research(
@@ -1266,6 +1400,7 @@ class DbArv2ReadService:
                 settings=self._settings,
                 offset=offset,
                 limit=limit,
+                project_id=project_id,
             )
 
     async def read_discovery_run(
@@ -1358,7 +1493,7 @@ class ReadProjectAccountsTool(Tool):
         "by name or domain to find one account; page with limit and offset when total is larger "
         "than the page you received. Read this before saying how many accounts there are, which "
         "are researched, or before proposing more discovery. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_project_accounts"
+        + tool_manual_link("read_project_accounts")
     )
     input_model: ClassVar[type[ToolInput]] = ReadProjectAccountsInput
     output_model: ClassVar[type[ToolOutput]] = ReadProjectAccountsOutput
@@ -1452,7 +1587,7 @@ class ReadAccountResearchTool(Tool):
         "'prefixes' (e.g. 'account.resonance', 'core'). Sensitive, unverified tier-4 and "
         "outreach-unsafe claims are held back and counted in 'excluded'. Read this before "
         "saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
+        + tool_manual_link("read_account_research")
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchInput
     output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchOutput
@@ -1502,6 +1637,9 @@ class ReadAccountResearchTool(Tool):
                 field_prefix=inputs.field_prefix,
                 offset=inputs.offset,
                 limit=self._claims_limit(inputs),
+                # The project is AMBIENT too: the calling turn's (or design leg's) own project
+                # picks which project's overview is served.
+                project_id=ctx.project_id,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
@@ -1556,7 +1694,7 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
         "can come back shorter than limit and still name a next_offset. Sensitive, unverified "
         "tier-4 and outreach-unsafe claims are held back and counted in 'excluded'. Read this "
         "before saying anything specific about an account. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_account_research"
+        + tool_manual_link("read_account_research")
     )
     input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV2Input
     parameter_policy = JournalParameterPolicy(
@@ -1589,11 +1727,12 @@ class ReadDiscoveryRunOutput(ToolOutput):
     #: Strict plus relaxed — the companies the run actually brought back.
     found: int
     #: How many candidates the verifier actually judged against the ICP — the ones that carry a
-    #: verdict. Companies skipped before any gate (already an account, surfaced and not chosen
-    #: before) are NOT counted here; they are in ``candidate_total``.
+    #: verdict. Companies skipped before any gate (already in this project, found by an earlier
+    #: discovery) are NOT counted here; they are in ``candidate_total``.
     verified: int
     shown: int
     approved: int
+    #: The run made the relaxed search (the name predates 2026-09-28; see ``DiscoveryRunView``).
     relaxed_requested: bool
     started_at: str | None
     finished_at: str | None
@@ -1613,7 +1752,7 @@ class ReadDiscoveryRunTool(Tool):
         "found, how many candidates the verifier judged against the ICP, how many were shown and "
         "approved, and the top candidates with their verdict. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
+        + tool_manual_link("read_discovery_run")
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunInput
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunOutput
@@ -1720,7 +1859,7 @@ class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
         "(default 25) and follow next_offset until it is null to see every candidate; "
         "candidate_total is the whole run on every page. Read this before proposing another "
         "discovery, and to answer what discovery found. It approves nothing. Effect-free. "
-        "Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_discovery_run"
+        + tool_manual_link("read_discovery_run")
     )
     input_model: ClassVar[type[ToolInput]] = ReadDiscoveryRunV2Input
     output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV2Output
@@ -1817,7 +1956,7 @@ class ReadClaimsTool(Tool):
         "Query the live claims about one account or contact: by field family (field_prefix), "
         "source tier, verification status, or collected since a date; paged; the same display "
         "gate as the account pages. Use read_account_research for the written overview. "
-        "Effect-free. Manual: .deepagent/skills/manual-tools/v5/SKILL.md#read_claims"
+        "Effect-free. " + tool_manual_link("read_claims")
     )
     input_model: ClassVar[type[ToolInput]] = ReadClaimsInput
     output_model: ClassVar[type[ToolOutput]] = ReadClaimsOutput

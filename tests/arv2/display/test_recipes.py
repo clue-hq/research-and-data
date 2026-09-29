@@ -31,7 +31,6 @@ EXPECTED_H1S = {
         "Money & momentum",
         "Tools they already use",
         "How they sell, and who they win",
-        "Contact insights",
         "Context only",
         "Miscellaneous",
     ],
@@ -135,7 +134,6 @@ def test_the_sharing_set_leaves_the_insights_page_five_generated_recipes() -> No
     shared = {r.section_key: r.shared_from for r in insights if r.shared_from is not None}
     assert shared == {
         "context-only": ("overview", "watch-outs"),
-        "contact-insights": ("contact", "why-this-person"),
     }
     assert [r.section_key for r in insights if r.shared_from is None] == [
         "buying-signals",
@@ -165,7 +163,6 @@ def test_shared_from_round_trips_through_the_recipe_table() -> None:
             rows = await read_recipes(conn, "insights", workspace_id="ws_any")
             assert {r.section_key: r.shared_from for r in rows if r.shared_from} == {
                 "context-only": ("overview", "watch-outs"),
-                "contact-insights": ("contact", "why-this-person"),
             }
 
     run_async(_run())

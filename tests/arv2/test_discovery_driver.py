@@ -7,10 +7,13 @@ driver's own module names. What is asserted is therefore the driver's own contra
 
 * **every candidate is verified before it is written**, and the verdicts the guards produced are
   what the fit is computed from;
-* **no money is spent on a company we already have or already showed** — a duplicate and a
-  ``not_chosen_before`` cost the one website answer that identified them and not a single gate;
-* **the relaxed pass runs only when the run is short** and it drops the criterion the strict
-  search proved was starving it;
+* **the first search asks for exactly the target**, a top-up asks only for the shortfall, and
+  every search is a webset of its own that excludes the websets before it (rulings 2026-09-28);
+* **no money is spent on a company this project already has or already found** — a duplicate and
+  a ``found_before`` cost the one website answer that identified them and not a single gate — while
+  an account of ANOTHER project is verified against this ICP and joins this project on its own row;
+* **the relaxed search runs only when the run is still short** and it drops the criterion the
+  strict search proved was starving it;
 * **``handle`` never raises**: a wall-clock overrun and a provider that refuses to sell both land
   the run ``needs_review`` with a named reason, and the ledger is drained either way.
 """
@@ -39,7 +42,7 @@ from clue_api.arv2.discovery_driver import (
     build_arv2_discovery_handler,
 )
 from clue_api.arv2.discovery_launch import Arv2DiscoveryRefused, PinnedIcpDocument
-from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow
+from clue_api.arv2.discovery_store import CandidateRow, DiscoveryRunRow, SearchRow
 from clue_api.arv2.errors import ProviderHalted
 from clue_api.arv2.exa_client import ExaAnswerResult, ExaCitation
 from clue_api.arv2.exa_websets_client import (
@@ -110,7 +113,6 @@ def _run_row(**overrides: Any) -> DiscoveryRunRow:
         "requested_by_user_id": "usr-1",
         "request_sha256": "c" * 64,
         "target_count": 20,
-        "strict_count": 35,
         "relaxed_enabled": False,
         "criteria_gate_keys": ("geography", "stage"),
         "status": "in_progress",
@@ -126,12 +128,16 @@ class _Store:
         self,
         run: DiscoveryRunRow | None,
         *,
-        unapproved: frozenset[str] = frozenset(),
+        found_before: frozenset[str] = frozenset(),
+        prior_websets: Sequence[str] = (),
         candidates: Sequence[CandidateRow] = (),
+        searches: Sequence[SearchRow] = (),
     ) -> None:
         self.run = run
-        self.unapproved = unapproved
+        self.found_before = found_before
+        self.prior_websets = tuple(prior_websets)
         self.candidates = list(candidates)
+        self.searches = {search.ordinal: search for search in searches}
         self.events: list[tuple[str, dict[str, Any]]] = []
 
     async def begin_discovery_run(self, conn: Any, *, run_id: UUID) -> DiscoveryRunRow | None:
@@ -148,13 +154,26 @@ class _Store:
         del conn
         self.events.append(("suspend_discovery_run", {"run_id": run_id}))
 
-    async def record_webset(self, conn: Any, **kwargs: Any) -> None:
+    async def create_search(self, conn: Any, row: SearchRow) -> SearchRow:
         del conn
-        self.events.append(("record_webset", kwargs))
+        self.events.append(("create_search", {"row": row}))
+        return self.searches.setdefault(row.ordinal, row)
 
-    async def record_relaxed_search(self, conn: Any, **kwargs: Any) -> None:
+    async def record_search_webset(self, conn: Any, **kwargs: Any) -> None:
         del conn
-        self.events.append(("record_relaxed_search", kwargs))
+        self.events.append(("record_search_webset", kwargs))
+        held = self.searches[kwargs["ordinal"]]
+        self.searches[held.ordinal] = replace(held, webset_id=kwargs["webset_id"])
+
+    async def finish_search(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("finish_search", kwargs))
+        held = self.searches[kwargs["ordinal"]]
+        self.searches[held.ordinal] = replace(held, found=kwargs["found"], finished_at=NOW)
+
+    async def list_searches(self, conn: Any, *, run_id: UUID) -> tuple[SearchRow, ...]:
+        del conn
+        return tuple(search for _, search in sorted(self.searches.items()))
 
     async def record_discovery_progress(self, conn: Any, **kwargs: Any) -> None:
         del conn
@@ -179,13 +198,13 @@ class _Store:
         self.events.append(("list_candidates", {"run_id": run_id}))
         return tuple(row for row in self.candidates if row.run_id == run_id)
 
-    async def unapproved_domains(
+    async def project_found_domains(
         self, conn: Any, *, workspace_id: str, project_id: str, before_run_id: UUID
     ) -> frozenset[str]:
         del conn
         self.events.append(
             (
-                "unapproved_domains",
+                "project_found_domains",
                 {
                     "workspace_id": workspace_id,
                     "project_id": project_id,
@@ -193,7 +212,13 @@ class _Store:
                 },
             )
         )
-        return self.unapproved
+        return self.found_before
+
+    async def project_webset_ids(
+        self, conn: Any, *, workspace_id: str, project_id: str, before_run_id: UUID
+    ) -> tuple[str, ...]:
+        del conn, workspace_id, project_id, before_run_id
+        return self.prior_websets
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for event, payload in self.events if event == name]
@@ -207,24 +232,37 @@ class _Rows(list):
 
 
 class _Conn:
-    """A connection that answers two queries: the workspace's existing account domains, and
-    "is this requester a platform user" (yes for ``usr-*`` ids, no for a service principal)."""
+    """A connection that answers the driver's three account reads: the workspace's accounts by
+    domain, this project's account domains, and "is this requester a platform user" (yes for
+    ``usr-*`` ids, no for a service principal)."""
 
-    def __init__(self, domains: Sequence[str] = ()) -> None:
-        self.domains = list(domains)
+    def __init__(
+        self, project_domains: Sequence[str] = (), workspace_accounts: Mapping[str, UUID] = {}
+    ) -> None:
+        self.project_domains = list(project_domains)
+        # A project's accounts are accounts of the workspace too.
+        self.workspace_accounts = {
+            **{domain: uuid4() for domain in project_domains},
+            **dict(workspace_accounts),
+        }
         self.statements: list[str] = []
 
     async def execute(self, statement: Any, parameters: Any = None) -> Any:
-        self.statements.append(str(statement))
-        if "platform_user" in str(statement):
+        sql = str(statement)
+        self.statements.append(sql)
+        if "platform_user" in sql:
             user_id = str((parameters or {}).get("user_id", ""))
             return _Rows([(1,)] if user_id.startswith("usr") else [])
-        return _Rows([(domain,) for domain in self.domains])
+        if "project_account" in sql:
+            return _Rows([(domain,) for domain in self.project_domains])
+        return _Rows(list(self.workspace_accounts.items()))
 
 
 class _ConnFactory:
-    def __init__(self, domains: Sequence[str] = ()) -> None:
-        self.conn = _Conn(domains)
+    def __init__(
+        self, project_domains: Sequence[str] = (), workspace_accounts: Mapping[str, UUID] = {}
+    ) -> None:
+        self.conn = _Conn(project_domains, workspace_accounts)
         self.opened = 0
 
     def __call__(self) -> Any:
@@ -359,7 +397,12 @@ def _repriced(result: WebsetItemsResult, already: frozenset[str]) -> WebsetItems
 
 
 class _FakeWebsets:
-    """Scripted ``create``/``get``/``items``/``add_search``, each recording what it was asked."""
+    """Scripted ``find``/``create``/``get``/``items``/``cancel``, each recording what it was asked.
+
+    One webset by default (``ws-1``): ``get_views`` and ``items_results`` script it, the last entry
+    repeating. A test with several searches scripts one webset per search in ``websets`` — the
+    create views are handed out in order, and each webset id has its own views and items.
+    """
 
     def __init__(
         self,
@@ -367,30 +410,54 @@ class _FakeWebsets:
         create_view: WebsetView | None = None,
         get_views: Sequence[WebsetView] = (),
         items_results: Sequence[WebsetItemsResult] = (),
-        add_search_view: WebsetView | None = None,
         create_error: Exception | None = None,
+        items_after_cancel: WebsetItemsResult | None = None,
+        websets: Mapping[str, tuple[Sequence[WebsetView], Sequence[WebsetItemsResult]]] = {},
+        found: Mapping[str, WebsetView] = {},
     ) -> None:
-        self._create_view = create_view or _view(status="running")
-        self._get_views = list(get_views) or [_view()]
-        self._items = list(items_results) or [_items()]
-        self._add_search_view = add_search_view
+        self._create_views = (
+            [_view(webset_id=webset_id, status="running") for webset_id in websets]
+            if websets
+            else [create_view or _view(status="running")]
+        )
+        self._get_views = {"": list(get_views) or [_view()]}
+        self._items = {"": list(items_results) or [_items()]}
+        for webset_id, (views, items) in websets.items():
+            self._get_views[webset_id] = list(views) or [_view(webset_id=webset_id)]
+            self._items[webset_id] = list(items) or [_items()]
+        self._found = dict(found)
         self._create_error = create_error
+        #: What Exa holds once the webset is cancelled — the rows it found after the run stopped
+        #: reading, which only the read after the cancel can put on the ledger.
+        self._items_after_cancel = items_after_cancel
         self.calls: list[tuple[str, dict[str, Any]]] = []
         #: What each ``items`` read actually priced, in order — the fake's money trail.
         self.returned_items: list[WebsetItemsResult] = []
+
+    @staticmethod
+    def _next(scripted: dict[str, list[Any]], webset_id: str) -> Any:
+        queue = scripted.get(webset_id) or scripted[""]
+        value = queue[0]
+        if len(queue) > 1:
+            queue.pop(0)
+        return value
+
+    def find(self, external_id: str) -> WebsetView | None:
+        self.calls.append(("find", {"external_id": external_id}))
+        return self._found.get(external_id)
 
     def create(self, **kwargs: Any) -> WebsetView:
         self.calls.append(("create", kwargs))
         if self._create_error is not None:
             raise self._create_error
-        return self._create_view
+        view = self._create_views[0]
+        if len(self._create_views) > 1:
+            self._create_views.pop(0)
+        return view
 
     def get(self, webset_id: str) -> WebsetView:
         self.calls.append(("get", {"webset_id": webset_id}))
-        view = self._get_views[0]
-        if len(self._get_views) > 1:
-            self._get_views.pop(0)
-        return view
+        return self._next(self._get_views, webset_id)
 
     def items(
         self, webset_id: str, *, priced_item_ids: frozenset[str] = frozenset()
@@ -398,18 +465,17 @@ class _FakeWebsets:
         self.calls.append(
             ("items", {"webset_id": webset_id, "priced_item_ids": frozenset(priced_item_ids)})
         )
-        result = self._items[0]
-        if len(self._items) > 1:
-            self._items.pop(0)
+        if self._items_after_cancel is not None and self.named("cancel"):
+            result = self._items_after_cancel
+        else:
+            result = self._next(self._items, webset_id)
         repriced = _repriced(result, frozenset(priced_item_ids))
         self.returned_items.append(repriced)
         return repriced
 
-    def add_search(self, webset_id: str, **kwargs: Any) -> WebsetView:
-        self.calls.append(("add_search", {"webset_id": webset_id, **kwargs}))
-        if self._add_search_view is None:
-            raise AssertionError("add_search was not scripted for this test")
-        return self._add_search_view
+    def cancel(self, webset_id: str) -> WebsetView:
+        self.calls.append(("cancel", {"webset_id": webset_id}))
+        return _view(webset_id=webset_id, status="idle")
 
     def named(self, name: str) -> list[dict[str, Any]]:
         return [payload for call, payload in self.calls if call == name]
@@ -597,12 +663,13 @@ def _handler(
     exa: _FakeExa,
     websets: _FakeWebsets,
     monkeypatch: pytest.MonkeyPatch,
-    domains: Sequence[str] = (),
+    project_domains: Sequence[str] = (),
+    workspace_accounts: Mapping[str, UUID] = {},
     settings: Settings | None = None,
     clock: Callable[[], datetime] | None = None,
     account_writes_fail_on: frozenset[str] = frozenset(),
 ) -> tuple[Arv2DiscoveryWorkHandler, _ConnFactory, _Writer, _DrainRecorder, _Accounts]:
-    conn_factory = _ConnFactory(domains)
+    conn_factory = _ConnFactory(project_domains, workspace_accounts)
     writer = _Writer()
     drain = _DrainRecorder()
     accounts = _Accounts(account_writes_fail_on)
@@ -716,15 +783,23 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert result.outcome == "completed"
     assert result.references == {"run_id": str(run.run_id)}
 
-    # The long list was asked for exactly what the run was launched with.
+    # The first search asked Exa for exactly the number the human wanted (ruling 2026-09-28).
+    assert websets.named("find") == [{"external_id": f"arv2-discovery:{run.run_id}:1"}]
     created = websets.named("create")[0]
-    assert created["count"] == 35
+    assert created["count"] == 20
     assert created["criteria"] == (GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE)
-    assert created["external_id"] == f"arv2-discovery:{run.run_id}"
-    assert store.named("record_webset")[0]["asked"] == 35
-    assert store.named("record_webset")[0]["recall_estimate"] == 180
-    # The strict search is durable from the first write, so no later attempt has to guess it.
-    assert store.named("record_webset")[0]["strict_search_id"] == "srch-strict"
+    assert created["external_id"] == f"arv2-discovery:{run.run_id}:1"
+    assert created["exclude_webset_ids"] == ()
+    assert created["recall"] is True
+    # The search row was written before the webset was bought, then given its webset.
+    order = [name for name, _ in store.events]
+    assert order.index("create_search") < order.index("record_search_webset")
+    assert store.named("create_search")[0]["row"].asked == 20
+    assert store.named("record_search_webset")[0]["webset_id"] == "ws-1"
+    assert store.named("finish_search")[0]["found"] == 2
+    # Exa found 2 of the 20 it was asked for — it ran out — so no top-up was bought, and the
+    # relaxed search is off for this run: one search, one webset.
+    assert len(websets.named("create")) == 1
     # And the document the run was pinned to is the one it verified against.
     assert handler.icp_reads == [  # type: ignore[attr-defined]
         {"artifact_key": run.icp_artifact_key, "artifact_sha256": run.icp_artifact_sha256}
@@ -776,15 +851,17 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert finished["found_relaxed"] == 0
     assert finished["analyzed"] == 300
     receipt = finished["receipt"]
-    assert receipt["asked"] == 35
+    assert receipt["asked"] == 20
     assert receipt["recall_estimate"] == 180
     assert receipt["shown"] == 2
     assert receipt["target_count"] == 20
     assert receipt["criteria"] == [GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE]
-    assert receipt["criteria_relaxed"] is None
+    searches = [(row["kind"], row["asked"], row["found"]) for row in receipt["searches"]]
+    assert searches == [("strict", 20, 2)]
     assert receipt["guards"] == {"ok": 8}
     assert receipt["duplicates"] == 0
-    assert receipt["not_chosen_before"] == 0
+    assert receipt["found_before"] == 0
+    assert receipt["from_other_projects"] == 0
     assert receipt["unresolvable_domain"] == 0
     # Every hop's money landed under this run's own stamp.
     assert receipt["cost_usd"] == str(drain.cost_usd * len(drain.stamps))
@@ -792,7 +869,7 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert {stamp.project_id for stamp in drain.stamps} == {PROJECT}
 
 
-def test_a_candidate_matching_an_existing_account_is_a_duplicate_with_no_spend(
+def test_a_company_already_in_this_project_is_a_duplicate_with_no_spend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run = _run_row()
@@ -806,8 +883,8 @@ def test_a_candidate_matching_an_existing_account_is_a_duplicate_with_no_spend(
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        # The workspace already owns the *verified* domain, which the long list did not give.
-        domains=["probook.ai"],
+        # This project already holds the *verified* domain, which the long list did not give.
+        project_domains=["probook.ai"],
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -827,11 +904,13 @@ def test_a_candidate_matching_an_existing_account_is_a_duplicate_with_no_spend(
     assert finished["receipt"]["shown"] == 0
 
 
-def test_an_earlier_unapproved_candidate_of_the_project_is_not_chosen_before_and_not_re_verified(
+def test_a_company_an_earlier_discovery_of_the_project_found_is_found_before_and_not_re_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Even when the human has since removed it from the project: discovery never brings back a
+    company the project's own discoveries already found (ruling 2026-09-28)."""
     run = _run_row()
-    store = _Store(run, unapproved=frozenset({"probook.ai"}))
+    store = _Store(run, found_before=frozenset({"probook.ai"}))
     exa = _FakeExa(
         _responder({"Probook": _company_answers("Probook", "probook.ai", {"geography": "pass"})})
     )
@@ -843,173 +922,269 @@ def test_an_earlier_unapproved_candidate_of_the_project_is_not_chosen_before_and
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    assert store.named("unapproved_domains")[0]["before_run_id"] == run.run_id
+    assert store.named("project_found_domains")[0]["before_run_id"] == run.run_id
     assert exa.gate_queries() == []
     candidate = store.named("upsert_candidate")[0]["row"]
-    assert candidate.disposition == "not_chosen_before"
+    assert candidate.disposition == "found_before"
     assert accounts.created == []
     assert writer.drafts == []
-    assert store.named("finish_discovery_run")[0]["receipt"]["not_chosen_before"] == 1
+    assert store.named("finish_discovery_run")[0]["receipt"]["found_before"] == 1
 
 
-def test_the_relaxed_pass_runs_when_short_and_drops_the_lowest_success_criterion(
+def test_an_account_of_another_project_is_verified_against_this_icp_and_joins_this_project(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run = _run_row(target_count=3, relaxed_enabled=True)
+    """Founder ruling 2026-09-28: a company the workspace already has in ANOTHER project is checked
+    against this project's gates and added here on its own account row — never a second account."""
+    run = _run_row()
     store = _Store(run)
     passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", passes)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    existing = uuid4()
+    handler, _, writer, _, accounts = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        workspace_accounts={"probook.ai": existing},
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    assert len(exa.gate_queries()) == 4
+    assert accounts.created == []
+    verdict = store.named("record_verdicts")[0]
+    assert verdict["account_entity_id"] == existing
+    assert verdict["disposition"] == "pass"
+    memberships = handler.memberships  # type: ignore[attr-defined]
+    assert memberships.added == [(WORKSPACE, PROJECT, (str(existing),), "discovered")]
+    fit = writer.by_field("account.scoring.fit")[0]
+    assert str(fit.entity_id) == str(existing)
+    receipt = store.named("finish_discovery_run")[0]["receipt"]
+    assert receipt["from_other_projects"] == 1
+    assert receipt["shown"] == 1
+
+
+_ALL_PASS = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
+
+
+def test_when_exa_runs_out_the_relaxed_search_is_a_new_webset_for_the_shortfall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exa found 1 of the 3 it was asked for, so the same search again would find nothing: the run
+    skips the strict top-up and goes straight to the relaxed search — a NEW webset, asking only for
+    the 2 still missing, with the criterion search 1 satisfied least often dropped, and told to
+    skip search 1's webset (ruling 2026-09-28)."""
+    run = _run_row(target_count=3, relaxed_enabled=True)
+    store = _Store(run)
     exa = _FakeExa(
         _responder(
             {
-                "Probook": _company_answers("Probook", "probook.ai", passes),
-                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
+                "Probook": _company_answers("Probook", "probook.ai", _ALL_PASS),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", _ALL_PASS),
             }
         )
     )
-    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120, rates=())
+    relaxed_view = _view(
+        webset_id="ws-3", searches=(_search("srch-3", found=1, analyzed=120, rates=()),)
+    )
     websets = _FakeWebsets(
-        items_results=[
-            _items(_item("Probook", "https://probook.com")),
-            _items(
-                _item("Probook", "https://probook.com"),
-                _item(
-                    "Patientdesk",
-                    "https://patientdesk.com",
-                    search_id="srch-relaxed",
-                ),
+        websets={
+            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Probook", "https://probook.com"))]),
+            "ws-3": (
+                [relaxed_view],
+                [_items(_item("Patientdesk", "https://patientdesk.com", search_id="srch-3"))],
             ),
-        ],
-        get_views=[
-            _view(),
-            _view(searches=(_search(rates=STRICT_RATES), relaxed_search)),
-        ],
-        add_search_view=_view(
-            status="running", searches=(_search(rates=STRICT_RATES), relaxed_search)
-        ),
+        }
     )
     handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    added = websets.named("add_search")[0]
-    assert added["count"] == 2  # the shortfall, never the whole target again
-    assert added["criteria"] == (GEOGRAPHY_RULE, BUYER_SENTENCE)  # the 12% criterion is gone
-    assert added["exclude_search_ids"] == ["srch-strict"]
+    strict, relaxed = websets.named("create")
+    assert strict["count"] == 3
+    assert relaxed["count"] == 2  # the shortfall, never the whole target again
+    assert relaxed["criteria"] == (GEOGRAPHY_RULE, BUYER_SENTENCE)  # the 12% criterion is gone
+    assert relaxed["exclude_webset_ids"] == ("ws-1",)
+    assert relaxed["external_id"] == f"arv2-discovery:{run.run_id}:3"
+    assert relaxed["recall"] is False  # the pool estimate is search 1's alone
+    assert [call["row"].kind for call in store.named("create_search")] == ["strict", "relaxed"]
 
     passes_by_domain = {
         row["row"].domain: row["row"].pass_ for row in store.named("upsert_candidate")
     }
     assert passes_by_domain == {"probook.ai": "strict", "patientdesk.com": "relaxed"}
-    # The strict item the second items page repeats is skipped, not re-verified or re-written.
     assert len(accounts.created) == 2
     finished = store.named("finish_discovery_run")[0]
     assert finished["found_strict"] == 1
     assert finished["found_relaxed"] == 1
     assert finished["analyzed"] == 420
-    assert finished["receipt"]["criteria_relaxed"] == [GEOGRAPHY_RULE, BUYER_SENTENCE]
+    assert finished["receipt"]["asked"] == 5
+    assert [search["kind"] for search in finished["receipt"]["searches"]] == ["strict", "relaxed"]
     assert finished["receipt"]["shown"] == 2
 
 
-def test_no_relaxed_pass_when_disabled_and_not_requested(
+def test_when_our_checks_removed_some_the_strict_top_up_asks_again_for_the_missing_number(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run = _run_row(target_count=3, relaxed_enabled=False)
+    """Exa filled search 1 (3 of 3), but one was a company this project already has. Search 2
+    asks the same criteria for the one missing, skipping search 1's webset — and once the run
+    holds its number, the relaxed search is never bought."""
+    run = _run_row(target_count=3, relaxed_enabled=True)
     store = _Store(run)
     exa = _FakeExa(
         _responder(
             {
-                "Probook": _company_answers(
-                    "Probook",
-                    "probook.ai",
-                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
-                )
+                "Probook": _company_answers("Probook", "probook.ai", _ALL_PASS),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", _ALL_PASS),
+                "Globex": _company_answers("Globex", "globex.com", _ALL_PASS),
+                "Initech": _company_answers("Initech", "initech.com", _ALL_PASS),
             }
         )
     )
+    websets = _FakeWebsets(
+        websets={
+            "ws-1": (
+                [_view(webset_id="ws-1")],
+                [
+                    _items(
+                        _item("Probook", "https://probook.com"),
+                        _item("Patientdesk", "https://patientdesk.com"),
+                        _item("Globex", "https://globex.com"),
+                    )
+                ],
+            ),
+            "ws-2": (
+                [_view(webset_id="ws-2", searches=(_search("srch-2", found=1),))],
+                [_items(_item("Initech", "https://initech.com", search_id="srch-2"))],
+            ),
+        }
+    )
+    handler, _, _, _, _ = _handler(
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch, project_domains=["globex.com"]
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    strict, topup = websets.named("create")
+    assert strict["count"] == 3
+    assert topup["count"] == 1
+    assert topup["criteria"] == (GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE)
+    assert topup["exclude_webset_ids"] == ("ws-1",)
+    assert [call["row"].kind for call in store.named("create_search")] == [
+        "strict",
+        "strict_topup",
+    ]
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["shown"] == 3
+    assert finished["receipt"]["duplicates"] == 1
+    assert finished["found_strict"] == 4
+    assert finished["found_relaxed"] == 0
+
+
+def test_no_relaxed_search_when_the_run_does_not_allow_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(target_count=3, relaxed_enabled=False)
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
     websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
     handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    assert websets.named("add_search") == []
+    assert len(websets.named("create")) == 1
     finished = store.named("finish_discovery_run")[0]
     assert finished["receipt"]["shown"] == 1  # short of 3, and honestly so
-    assert finished["receipt"]["criteria_relaxed"] is None
+    assert [search["kind"] for search in finished["receipt"]["searches"]] == ["strict"]
 
 
-def test_a_requested_relaxed_pass_on_a_finished_run_skips_the_strict_pass(
+def test_a_run_holding_its_number_after_the_first_search_buys_nothing_more(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run = _run_row(
-        target_count=3,
-        relaxed_enabled=False,
-        relaxed_requested=True,
-        webset_id="ws-1",
-        asked=35,
-        found_strict=1,
-        recall_estimate=180,
-    )
-    already = CandidateRow(
-        candidate_id=uuid4(),
+    run = _run_row(target_count=1, relaxed_enabled=True)
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert [call["count"] for call in websets.named("create")] == [1]
+    assert store.named("finish_discovery_run")[0]["receipt"]["shown"] == 1
+
+
+def test_find_more_skips_every_webset_the_projects_earlier_discoveries_bought(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ruling 2026-09-28: a new ask is a new run, and it never finds (or pays for) a company this
+    project's earlier discoveries found — Exa is told to skip their websets outright."""
+    run = _run_row(target_count=2)
+    store = _Store(run, prior_websets=("ws-old-1", "ws-old-2"))
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("create")[0]["exclude_webset_ids"] == ("ws-old-1", "ws-old-2")
+    assert store.named("create_search")[0]["row"].exclude_webset_ids == ("ws-old-1", "ws-old-2")
+
+
+def test_a_search_recorded_before_its_create_answered_is_found_by_external_id_not_bought_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An attempt died between asking Exa for the webset and recording its id. The next attempt
+    looks it up by the external id it sent and reads it — the webset is never bought twice."""
+    run = _run_row()
+    recorded = SearchRow(
         run_id=run.run_id,
-        workspace_id=WORKSPACE,
-        project_id=PROJECT,
-        pass_="strict",
-        domain="probook.ai",
-        websets_url="https://probook.com",
-        name="Probook",
-        provider_snapshot={"verified_domain": "probook.ai"},
-        fit=1.0,
-        disposition="pass",
+        ordinal=1,
+        kind="strict",
+        external_id=f"arv2-discovery:{run.run_id}:1",
+        asked=20,
+        criteria=(GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE),
     )
-    store = _Store(run, candidates=[already])
-    exa = _FakeExa(
-        _responder(
-            {
-                "Patientdesk": _company_answers(
-                    "Patientdesk",
-                    "patientdesk.com",
-                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
-                )
-            }
-        )
-    )
-    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120)
+    store = _Store(run, searches=[recorded])
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
     websets = _FakeWebsets(
-        get_views=[
-            _view(),
-            _view(searches=(_search(rates=STRICT_RATES), relaxed_search)),
-        ],
-        items_results=[
-            _items(_item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"))
-        ],
-        add_search_view=_view(
-            status="running", searches=(_search(rates=STRICT_RATES), relaxed_search)
-        ),
+        items_results=[_items(_item("Probook", "https://probook.com"))],
+        found={recorded.external_id: _view(status="running")},
     )
     handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    # No second long list was bought: the run reads the webset it already paid for.
     assert websets.named("create") == []
-    assert store.named("record_webset") == []
-    added = websets.named("add_search")[0]
-    assert added["webset_id"] == "ws-1"
-    assert added["count"] == 2
-    assert added["exclude_search_ids"] == ["srch-strict"]
-    # The widening was recorded before a single one of its rows was read.
-    assert store.named("record_relaxed_search")[0] == {
-        "run_id": run.run_id,
-        "relaxed_search_id": "srch-relaxed",
-    }
+    assert store.named("create_search") == []
+    assert store.named("record_search_webset")[0]["webset_id"] == "ws-1"
+    assert store.named("finish_discovery_run")[0]["receipt"]["shown"] == 1
+
+
+def test_a_refused_websets_call_lands_the_run_needs_review_under_its_own_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The old widening search was refused with a 400 on every run and read as "found nobody".
+    A refusal now ends the run by name."""
+    run = _run_row()
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    refused = replace(_view(), error="http 400: exclude.0.source: Invalid option")
+    websets = _FakeWebsets(create_view=refused)
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
     finished = store.named("finish_discovery_run")[0]
-    assert finished["found_strict"] == 1  # carried from the earlier attempt, not recounted
-    assert finished["found_relaxed"] == 1
-    assert finished["receipt"]["shown"] == 2
+    assert finished["receipt"]["failure"] == "websets_request_refused"
+    assert "Invalid option" in finished["receipt"]["message"]
 
 
 def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
@@ -1040,6 +1215,86 @@ def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
     assert finished["receipt"]["failure"] == "webset_wall_exceeded"
 
 
+def test_a_run_out_of_time_cancels_its_webset_and_prices_what_exa_had_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exa bills a company when it finds it, the ledger when the run reads it. A webset left
+    running after the run gave up would go on finding — and billing — companies nobody reads."""
+    run = _run_row()
+    store = _Store(run)
+    exa = _FakeExa(_responder({}))
+    websets = _FakeWebsets(
+        get_views=[_view(status="running")],
+        items_after_cancel=_items(
+            _item("Acme", "https://acme.com"), _item("Globex", "https://globex.com")
+        ),
+    )
+    handler, _, _, _, _ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_wall_s=60),
+        clock=_clock(step_s=45.0),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert websets.named("cancel") == [{"webset_id": "ws-1"}]
+    order = [name for name, _ in websets.calls]
+    assert order[-2:] == ["cancel", "items"]
+    # The read after the cancel is the one that put both rows on the ledger.
+    assert websets.returned_items[-1].priced_item_ids == ("itm-acme", "itm-globex")
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["failure"] == "webset_wall_exceeded"
+    assert finished["receipt"]["webset_stopped"] is True
+    assert finished["receipt"]["rows_priced_at_stop"] == 2
+    assert finished["found_strict"] == 2
+    # Found and paid for, never verified: no gate was asked about either company.
+    assert exa.gate_queries() == []
+
+
+def test_a_halt_while_the_webset_is_still_running_cancels_it_before_the_run_lands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run ``ee79d837``: Exa Answer ran out of credit after 7 companies and the webset went on to
+    find all 35. The halt now stops the webset, and the rows found after it reach the ledger."""
+    run = _run_row()
+    store = _Store(run)
+
+    def out_of_credit(query: str) -> ExaAnswerResult:
+        raise ProviderHalted("exa", "payment_required", http_status=402)
+
+    exa = _FakeExa(out_of_credit)
+    acme = _item("Acme", "https://acme.com")
+    websets = _FakeWebsets(
+        get_views=[_view(status="running")],
+        items_results=[_items(acme)],
+        items_after_cancel=_items(
+            acme, _item("Globex", "https://globex.com"), _item("Initech", "https://initech.com")
+        ),
+    )
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+    drain = _WatchingDrain(events=store.events)
+    monkeypatch.setattr(driver, "drain_provider_calls", drain)
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    assert len(websets.named("cancel")) == 1
+    finished = store.named("finish_discovery_run")[0]
+    assert finished["receipt"]["failure"] == "provider_halted"
+    assert finished["receipt"]["webset_stopped"] is True
+    # Acme was priced on the first read; Globex and Initech only by the read after the cancel.
+    assert finished["receipt"]["rows_priced_at_stop"] == 2
+    assert finished["found_strict"] == 3
+    # Every drain, the cancel and the last read included, lands before the receipt does.
+    order = [name for name, _ in store.events]
+    assert order.index("finish_discovery_run") > max(
+        index for index, name in enumerate(order) if name == "drain"
+    )
+
+
 def test_a_provider_failure_is_contained_as_needs_review_and_the_ledger_is_still_drained(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1059,7 +1314,9 @@ def test_a_provider_failure_is_contained_as_needs_review_and_the_ledger_is_still
     assert finished["receipt"]["failure"] == "provider_halted"
     assert "payment_required" in finished["receipt"]["message"]
     # The hop that failed still drained: a call that happened is money truth even when it halted.
-    assert len(drain.stamps) == 1
+    # (The first hop is the free lookup by external id that precedes every create.)
+    assert [name for name, _ in websets.calls] == ["find", "create"]
+    assert len(drain.stamps) == 2
 
 
 def test_a_redelivered_task_for_a_run_nobody_can_claim_completes_without_spending(
@@ -1290,13 +1547,23 @@ def test_a_resumed_run_reads_the_webset_it_already_bought_instead_of_creating_an
 ) -> None:
     """A stop, a lost lease or a restart must not buy the long list a second time.
 
-    The run row carries the webset it paid for, so the redelivered task polls and reads *that*
-    webset and verifies only the companies its earlier attempt never finished.
+    The run's search row carries the webset it paid for, so the redelivered task polls and reads
+    *that* webset and verifies only the companies its earlier attempt never finished.
     """
-    run = _run_row(webset_id="ws-1", asked=35, recall_estimate=180, relaxed_enabled=False)
+    run = _run_row(asked=20, recall_estimate=180, relaxed_enabled=False)
+    bought = SearchRow(
+        run_id=run.run_id,
+        ordinal=1,
+        kind="strict",
+        external_id=f"arv2-discovery:{run.run_id}:1",
+        asked=20,
+        criteria=(GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE),
+        webset_id="ws-1",
+    )
     store = _Store(
         run,
         candidates=[_verified_candidate(run, "Probook", "probook.ai", "https://probook.com")],
+        searches=[bought],
     )
     exa = _FakeExa(
         _responder(
@@ -1322,9 +1589,10 @@ def test_a_resumed_run_reads_the_webset_it_already_bought_instead_of_creating_an
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    # Not one cent of a second long list: no create, and the recorded webset is what is read.
+    # Not one cent of a second long list: no lookup, no create, the recorded webset is read.
+    assert websets.named("find") == []
     assert websets.named("create") == []
-    assert store.named("record_webset") == []
+    assert store.named("create_search") == []
     assert [call["webset_id"] for call in websets.named("get")] == ["ws-1"]
     assert [call["webset_id"] for call in websets.named("items")] == ["ws-1"]
     # Only the company the earlier attempt never finished is verified.
@@ -1466,189 +1734,26 @@ def test_a_run_whose_pinned_icp_bytes_moved_is_refused_before_a_provider_is_touc
     assert finished["receipt"]["failure"] == "icp_digest_mismatch"
 
 
-def test_a_resumed_relaxed_pass_reads_the_search_it_bought_instead_of_buying_a_second(
+def test_a_webset_row_is_priced_once_per_run_across_polls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The widening is bought once per run (final review I2, scenario A).
+    """Every poll re-reads the WHOLE webset; a row already paid for is not billed again (I4).
 
-    The first attempt added the relaxed search and died before it finished verifying its results.
-    ``relaxed_requested`` is still true, so this attempt runs the relaxed pass again — and must
-    poll and read the search that is already paid for. A second ``add_search`` would exclude only
-    the *strict* search, so Exa would re-find and re-charge for everything the first widening
-    returned, once per retry.
+    Without the already-priced set every row lands on ``provider_call_ledger`` — and in
+    ``receipt.cost_usd`` — once per poll. §8's exit gate divides by that number.
     """
-    run = _run_row(
-        target_count=3,
-        relaxed_enabled=False,
-        relaxed_requested=True,
-        webset_id="ws-1",
-        strict_search_id="srch-strict",
-        relaxed_search_id="srch-relaxed",
-        asked=35,
-        found_strict=1,
-        recall_estimate=180,
-    )
-    store = _Store(
-        run,
-        candidates=[_verified_candidate(run, "Probook", "probook.ai", "https://probook.com")],
-    )
+    run = _run_row(target_count=3)
+    store = _Store(run)
     exa = _FakeExa(
         _responder(
             {
-                "Patientdesk": _company_answers(
-                    "Patientdesk",
-                    "patientdesk.com",
-                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
-                )
+                "Probook": _company_answers("Probook", "probook.ai", _ALL_PASS),
+                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", _ALL_PASS),
             }
         )
     )
-    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120)
-    websets = _FakeWebsets(
-        get_views=[_view(searches=(_search(rates=STRICT_RATES), relaxed_search))],
-        items_results=[
-            _items(
-                _item("Probook", "https://probook.com"),
-                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
-            )
-        ],
-    )
-    handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
-
-    result = asyncio.run(handler.handle(_context(run.run_id)))
-
-    assert result.outcome == "completed"
-    # Not a second widening, and not a second webset: only the free read of what was bought.
-    assert websets.named("add_search") == []
-    assert websets.named("create") == []
-    assert store.named("record_relaxed_search") == []
-    receipt = store.named("finish_discovery_run")[0]["receipt"]
-    # This attempt sent no criteria, and says so — but it still names the widening that happened.
-    assert receipt["criteria_relaxed"] is None
-    assert receipt["relaxed_search_id"] == "srch-relaxed"
-    # Two free reads of the same webset — the relaxed resume's, then the poll's — and no third id.
-    assert [call["webset_id"] for call in websets.named("get")] == ["ws-1", "ws-1"]
-    assert [call["webset_id"] for call in websets.named("items")] == ["ws-1"]
-    # Only the company the earlier attempt never verified is verified, and as a relaxed one.
-    assert len(exa.gate_queries()) == 4
-    assert [created["primary_domain"] for created in accounts.created] == ["patientdesk.com"]
-    landed = store.named("upsert_candidate")
-    assert [(row["row"].domain, row["row"].pass_) for row in landed] == [
-        ("patientdesk.com", "relaxed")
-    ]
-
-
-def test_the_strict_search_is_found_by_id_even_when_the_relaxed_one_is_listed_first(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Array position is not a provider contract (final review I2, scenario B).
-
-    Exa returns this webset's searches newest-first. The run recorded which search is the strict
-    one, so the exclusion still names it, every strict item is still labelled ``strict``, and the
-    dropped criterion is still chosen from the *strict* search's success rates.
-    """
-    run = _run_row(
-        target_count=3,
-        relaxed_enabled=True,
-        webset_id="ws-1",
-        strict_search_id="srch-strict",
-        asked=35,
-        recall_estimate=180,
-    )
-    store = _Store(run)
-    passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
-    exa = _FakeExa(
-        _responder(
-            {
-                "Probook": _company_answers("Probook", "probook.ai", passes),
-                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
-            }
-        )
-    )
-    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120, rates=())
-    # The relaxed search is listed FIRST — ``searches[0]`` would be the wrong answer everywhere.
-    newest_first = _view(searches=(relaxed_search, _search(rates=STRICT_RATES)))
-    websets = _FakeWebsets(
-        get_views=[newest_first],
-        items_results=[
-            _items(_item("Probook", "https://probook.com")),
-            _items(
-                _item("Probook", "https://probook.com"),
-                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
-            ),
-        ],
-        add_search_view=newest_first,
-    )
-    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
-
-    result = asyncio.run(handler.handle(_context(run.run_id)))
-
-    assert result.outcome == "completed"
-    added = websets.named("add_search")[0]
-    assert added["exclude_search_ids"] == ["srch-strict"]
-    # The strict search's own rates chose the dropped criterion — the relaxed one reported none.
-    assert added["criteria"] == (GEOGRAPHY_RULE, BUYER_SENTENCE)
-    assert store.named("record_relaxed_search")[0]["relaxed_search_id"] == "srch-relaxed"
-    passes_by_domain = {
-        row["row"].domain: row["row"].pass_ for row in store.named("upsert_candidate")
-    }
-    assert passes_by_domain == {"probook.ai": "strict", "patientdesk.com": "relaxed"}
-
-
-def test_a_webset_with_two_searches_and_no_recorded_strict_id_refuses_rather_than_guesses(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The one case a guess would be silently wrong: refuse it by name."""
-    run = _run_row(webset_id="ws-1", asked=35, relaxed_enabled=False)
-    store = _Store(run)
-    websets = _FakeWebsets(
-        get_views=[_view(searches=(_search(search_id="srch-relaxed"), _search(rates=STRICT_RATES)))]
-    )
-    handler, _, _, _, _ = _handler(
-        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
-    )
-
-    result = asyncio.run(handler.handle(_context(run.run_id)))
-
-    assert result.outcome == "needs_review"
-    assert websets.named("items") == []  # nothing was read, so nothing was billed
-    finished = store.named("finish_discovery_run")[0]
-    assert finished["receipt"]["failure"] == "webset_search_ambiguous"
-
-
-def test_a_webset_row_is_priced_once_per_run_across_the_relaxed_re_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The relaxed pass re-reads the WHOLE webset; the strict rows are not billed again (I4).
-
-    Every ``items`` read returns every row, so without the already-priced set the strict pass's
-    rows land on ``provider_call_ledger`` — and in ``receipt.cost_usd`` — twice. §8's exit gate
-    divides by that number.
-    """
-    run = _run_row(target_count=3, relaxed_enabled=True)
-    store = _Store(run)
-    passes = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
-    exa = _FakeExa(
-        _responder(
-            {
-                "Probook": _company_answers("Probook", "probook.ai", passes),
-                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", passes),
-            }
-        )
-    )
-    relaxed_search = _search(search_id="srch-relaxed", found=1, analyzed=120, rates=())
-    websets = _FakeWebsets(
-        items_results=[
-            _items(_item("Probook", "https://probook.com")),
-            _items(
-                _item("Probook", "https://probook.com"),
-                _item("Patientdesk", "https://patientdesk.com", search_id="srch-relaxed"),
-            ),
-        ],
-        get_views=[_view(), _view(searches=(_search(rates=STRICT_RATES), relaxed_search))],
-        add_search_view=_view(
-            status="running", searches=(_search(rates=STRICT_RATES), relaxed_search)
-        ),
+    websets = _two_tick_websets(
+        _item("Probook", "https://probook.com"), _item("Patientdesk", "https://patientdesk.com")
     )
     handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
 
@@ -1656,18 +1761,17 @@ def test_a_webset_row_is_priced_once_per_run_across_the_relaxed_re_read(
 
     assert result.outcome == "completed"
     reads = websets.named("items")
-    # The first read pays for nothing before it; the second names the strict row it already paid.
+    # The first read pays for nothing before it; the second names the row it already paid.
     assert [call["priced_item_ids"] for call in reads] == [
         frozenset(),
         frozenset({"itm-probook"}),
     ]
-    # Both rows came back the second time; only the new one was billed.
     first, second = websets.returned_items
     assert first.priced_item_ids == ("itm-probook",)
     assert first.cost_usd == ITEM_COST
     assert [item.name for item in second.items] == ["Probook", "Patientdesk"]
     assert second.priced_item_ids == ("itm-patientdesk",)
-    assert second.cost_usd == ITEM_COST  # one row, not two — the strict row is not re-billed
+    assert second.cost_usd == ITEM_COST  # one row, not two — the first row is not re-billed
     assert store.named("finish_discovery_run")[0]["receipt"]["credits_priced_once"] is True
 
 
@@ -1679,7 +1783,16 @@ def test_a_resumed_run_does_not_re_price_the_rows_an_earlier_attempt_already_pai
     The item ids come off the candidate rows the earlier attempt wrote — the raw Websets record is
     kept whole on each snapshot — so "already paid for" survives a worker restart.
     """
-    run = _run_row(webset_id="ws-1", asked=35, recall_estimate=180, relaxed_enabled=False)
+    run = _run_row(asked=20, recall_estimate=180, relaxed_enabled=False)
+    bought = SearchRow(
+        run_id=run.run_id,
+        ordinal=1,
+        kind="strict",
+        external_id=f"arv2-discovery:{run.run_id}:1",
+        asked=20,
+        criteria=(GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE),
+        webset_id="ws-1",
+    )
     already = _verified_candidate(run, "Probook", "probook.ai", "https://probook.com")
     store = _Store(
         run,
@@ -1689,6 +1802,7 @@ def test_a_resumed_run_does_not_re_price_the_rows_an_earlier_attempt_already_pai
                 provider_snapshot={**already.provider_snapshot, "item": {"id": "itm-probook"}},
             )
         ],
+        searches=[bought],
     )
     exa = _FakeExa(
         _responder(
@@ -2008,6 +2122,9 @@ def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
     # — those five, plus the webset's create/poll/read — drained.
     assert len(exa.queries) == 5
     assert len(drain.stamps) == len(websets.calls) + len(exa.queries)
+    # The webset had already gone idle and its last read priced every row: nothing to cancel.
+    assert websets.named("cancel") == []
+    assert finished["receipt"]["webset_stopped"] is False
     # And every drain is recorded before the run is landed — no money arrives after the receipt.
     order = [name for name, _ in store.events]
     assert order.index("finish_discovery_run") > max(
@@ -2055,7 +2172,14 @@ def test_items_verify_as_they_arrive_and_a_relisted_item_is_never_verified_twice
     asyncio.run(handler.handle(_context(run.run_id)))
 
     # Items were read on BOTH ticks (the running one and the idle one), not only after idle.
-    assert [call for call, _ in websets.calls] == ["create", "get", "items", "get", "items"]
+    assert [call for call, _ in websets.calls] == [
+        "find",
+        "create",
+        "get",
+        "items",
+        "get",
+        "items",
+    ]
     # Acme was verified once although it was listed twice; Bolt once.
     assert [w["primary_domain"] for w in accounts.created] == ["acme.com", "bolt.com"]
     assert len(store.named("record_verdicts")) == 2

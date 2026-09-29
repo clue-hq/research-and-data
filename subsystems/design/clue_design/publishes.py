@@ -45,6 +45,7 @@ exactly, with ISO-string timestamps.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from sqlalchemy import text
@@ -443,6 +444,26 @@ async def set_web_publish_status(
     return await get_web_publish(conn, workspace_id=workspace_id, slug=slug)
 
 
+async def unpublish_other_slugs(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, keep_slug: str
+) -> list[str]:
+    """Unpublish every OTHER live slug of ``document_id`` and return them, sorted.
+
+    A document lives at one address: republishing it under a new slug is a MOVE, so the address
+    it moved from stops serving (the page origin serves only ``active`` rows, so it 404s). The
+    same status ``unpublish`` assigns; history and the revisions are untouched.
+    """
+    rows = await conn.execute(
+        text(
+            "UPDATE design_web_publish SET status = 'unpublished', updated_at = now()"
+            " WHERE workspace_id = :w AND document_id = :d AND slug <> :keep"
+            " AND status = 'active' RETURNING slug"
+        ),
+        {"w": workspace_id, "d": document_id, "keep": keep_slug},
+    )
+    return sorted(str(row[0]) for row in rows)
+
+
 async def rollback_web_publish(
     conn: AsyncConnection, *, workspace_id: str, slug: str
 ) -> JsonObject | str:
@@ -496,3 +517,51 @@ async def rollback_web_publish(
         conn, workspace_id=workspace_id, slug=slug, publish_id=swapped_in
     )
     return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)
+
+
+# --- delivery constants shared by the page origin and the design API's publish package -------
+# Custom-domain publishing (design 2026-09-17 §5.2, §6.2). One home so the served header and the
+# embedded meta can never drift: the origin sends DELIVERY_CSP_HEADER; build_publish_package
+# embeds DELIVERY_CSP_META (frame-ancestors is ignored inside a meta CSP by spec).
+
+DELIVERY_CSP_META = (
+    "default-src 'none'; script-src 'self' 'unsafe-inline' data:; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
+    "connect-src 'none'; object-src 'none'; worker-src 'none'; frame-src 'self' data: blob:; "
+    "base-uri 'none'; form-action 'none'"
+)
+DELIVERY_CSP_HEADER = DELIVERY_CSP_META + "; frame-ancestors 'self'"
+
+
+def delivery_csp(*, meta: bool = False) -> str:
+    return DELIVERY_CSP_META if meta else DELIVERY_CSP_HEADER
+
+
+PUBLISH_ASSET_EXTENSIONS: tuple[str, ...] = ("js", "css", "html")
+PUBLISH_ASSET_MEDIA_TYPES: dict[str, str] = {
+    "js": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+}
+
+
+class PublishAssetMismatch(ValueError):
+    """The bytes behind a publish-asset URL do not match what the URL promises."""
+
+
+def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension: str) -> str:
+    """Integrity-check one immutable publish asset; returns the media type to serve.
+
+    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row, and
+    the bytes must hash to the digest in the URL — so ``/{digest}.css`` can never serve JavaScript.
+    Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
+    import ``lumen_api``) and the design API share one rule.
+    """
+    expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
+    if expected is None:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise PublishAssetMismatch("publish asset failed its integrity check")
+    if media_type != expected:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    return expected

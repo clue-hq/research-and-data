@@ -56,6 +56,7 @@ from clue_obs import get_logger
 from clue_research.adapters import default_scrape_backend
 from clue_research.durable import BudgetEngine, DbBudgetStore
 from clue_research.resolvers import ScrapePolicy
+from clue_spine.hostnames import system_hostnames_off_suffix
 from clue_toolbelt import DbIdempotencyStore
 
 log = get_logger("clue_api.projections_main")
@@ -251,9 +252,8 @@ def build_application(
         )
     contact_email_lookup = (
         build_contact_email_lookup_service(
-            exa_api_key=resolved_secrets.exa_api_key,
-            sumble_api_key=resolved_secrets.sumble_api_key,
-            sumble_cents_per_credit=resolved.sumble_cents_per_credit,
+            ai_ark_api_key=resolved_secrets.ai_ark_api_key,
+            ai_ark_min_gap_s=resolved.arv2_ai_ark_min_gap_s,
             storage=storage,
             poll_after_s=resolved.frontend_contact_email_poll_after_s,
         )
@@ -293,6 +293,17 @@ def build_application(
         if resolved.chat_enabled and not resolved.auth_enabled
         else None
     )
+
+    async def _warn_on_hostname_suffix_drift() -> None:
+        async with transaction() as conn:
+            off = await system_hostnames_off_suffix(conn, resolved.pages_system_suffix)
+        if off:
+            log.warning(
+                "pages.system_hostnames_off_suffix",
+                suffix=resolved.pages_system_suffix,
+                count=len(off),
+                sample=off[:5],
+            )
 
     async def startup_check() -> None:
         if resolved.projections_auth_mode == "service":
@@ -371,6 +382,12 @@ def build_application(
             recheck=resolved.c7_recheck_enabled,
             canary_restricted=bool(resolved.c7_workspace_canary_ids),
         )
+        # Custom-domain publishing S1: every workspace's permanent system hostname is
+        # `<label>.<CLUE_PAGES_SYSTEM_SUFFIX>`, allocated at workspace creation. If the suffix
+        # setting is later changed, the rows already at rest keep the OLD suffix — their public
+        # URLs silently stop resolving through the new edge. That is a config error the operator
+        # must see, not a reason to refuse to serve the whole API, so it warns and lists a sample.
+        await _warn_on_hostname_suffix_drift()
 
     return create_projections_app(
         surface=build_observability_surface(budget=budget),

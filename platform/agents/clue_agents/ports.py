@@ -27,6 +27,7 @@ from clue_agents.contracts import (
     AgentTurnRequest,
     ArtifactRef,
     ContextBundleManifest,
+    ContinuationRef,
     DelegationRequest,
     DelegationResult,
     ValidatedPlan,
@@ -123,6 +124,8 @@ class AssembledAgentContext(PortValue):
     manifest: ContextBundleManifest
     messages: tuple[BaseMessage, ...]
     materializations: tuple[ContextMaterialization, ...] = ()
+    #: Set when the turn continues a saved conversation instead of opening a fresh one.
+    continuation: ContinuationRef | None = None
 
 
 class OperationFailure(PortValue):

@@ -33,7 +33,15 @@ from clue_auth.store import (
     update_platform_user_profile,
 )
 from clue_core.normalize import canonical_workspace_name
-from clue_spine import Brand, Workspace, create_brand, create_workspace, get_brand, get_workspace
+from clue_spine import (
+    DEFAULT_PAGES_SYSTEM_SUFFIX,
+    Brand,
+    Workspace,
+    create_brand,
+    create_workspace,
+    get_brand,
+    get_workspace,
+)
 
 
 class ProvisionedIdentity(BaseModel):
@@ -297,8 +305,14 @@ async def provision_workspace_owner(
     display_name: str | None = None,
     workspace_id: str | None = None,
     now: datetime | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> ProvisionedWorkspaceOwner:
-    """Create the Clue workspace and owner membership under one caller-owned transaction."""
+    """Create the Clue workspace and owner membership under one caller-owned transaction.
+
+    ``pages_system_suffix`` is handed to :func:`clue_spine.create_workspace`, which allocates the
+    workspace's system hostname in the same transaction. Composition roots pass
+    ``settings.pages_system_suffix``; the default is the production suffix.
+    """
     at = now or datetime.now(UTC)
     user, identity = await _resolve_or_create_user(
         conn,
@@ -306,7 +320,12 @@ async def provision_workspace_owner(
         provider_subject=provider_subject,
         display_name=display_name,
     )
-    workspace = await create_workspace(conn, name=workspace_name, workspace_id=workspace_id)
+    workspace = await create_workspace(
+        conn,
+        name=workspace_name,
+        workspace_id=workspace_id,
+        pages_system_suffix=pages_system_suffix,
+    )
     membership = await create_workspace_membership(
         conn,
         workspace_id=workspace.workspace_id,
@@ -348,11 +367,14 @@ async def provision_self_serve_workspace(
     job_role: str | None = None,
     company_website: str | None = None,
     now: datetime | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> ProvisionedSelfServeWorkspace:
     """The FI-4 D-2 operation: one replay-safe transaction from Clerk subject to owned workspace.
 
-    Links the external identity to a Clue user, creates the company workspace, creates its first
-    brand, makes the user the workspace owner, and saves the submitted profile. Idempotent on
+    Links the external identity to a Clue user, creates the company workspace (with its system
+    hostname under ``pages_system_suffix`` — composition roots pass
+    ``settings.pages_system_suffix``), creates its first brand, makes the user the workspace
+    owner, and saves the submitted profile. Idempotent on
     the ``self_serve_provisioning`` record keyed by the durable ``user_id`` (UNIQUE): a replay
     (browser retry, double-click, or a second linked identity of the same human) returns the
     workspace and brand recorded there — never a second workspace. A per-subject advisory
@@ -418,7 +440,7 @@ async def provision_self_serve_workspace(
             "self-serve provisioning only performs first-time setup"
         )
     savepoint = await conn.begin_nested()
-    workspace = await create_workspace(conn, name=name)
+    workspace = await create_workspace(conn, name=name, pages_system_suffix=pages_system_suffix)
     brand = await create_brand(conn, workspace_id=workspace.workspace_id, name=name)
     membership = await create_workspace_membership(
         conn,
