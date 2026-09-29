@@ -336,6 +336,118 @@ test issue, so the broader suite is not claimed green. Ruff adds no finding
 relative to HEAD (297 existing tool-file findings; five test-file findings),
 and whitespace checks pass. No live/provider generation or service change.
 
+## Interaction continuity: historical decision versus a separate runtime defect
+
+Follow-up at `905f8925`, still without a new generation or live-page mutation.
+The distinction below changes the implementation priority: fetching scripts or
+adding a motion instruction alone does not make a reusable working component.
+
+### What the two saved runs actually did
+
+1. The saved inspection of `frag_a0f5b8c49c2d5dce` reports four stateful controls,
+   three hidden candidates and `controller_not_retained`. It explicitly records
+   `basis: sanitized_html_snapshot`, `behavior_test: not_performed` and
+   `relationships: not_inferred`. This is evidence that the capture lacks a
+   retained controller, not evidence of tested source timing or image mapping.
+   Full saved result: `.deepagent-workspace/conversation_history/`
+   `dsess_2c2741c027db5344badce796469dcbd7.md:18242–18248`.
+2. S/revision built a native four-panel Tabs component. Its actual tool call is
+   `S/run_e1c…/log:261`; `trace:34–35` records the replacement and minted repair
+   `frag_22f91fef87c52cdc`. The returned repair remained **draft, not pinned**;
+   the page retained typed `abm_procedures` containing `cmp_9` (`tabs`). The saved
+   result at conversation-history lines 20189–20234 and `final_web_doc.json:741`
+   agree. The final report only observed default plus one additional state.
+3. The latest independent run explicitly changed its plan to **static** at
+   `L/log:587`. `L/log:730` supplies the static HTML/CSS; `L/trace:73,75` records
+   approval and insertion of `frag_741d2e1294428ddc`. It did not pin the earlier
+   native-tab repair. Its final tool call (`L/log:985`) acknowledges static output
+   while claiming a broad strict check.
+4. The latest log records explicit reads of planning, account, source, campaign,
+   copy, product and media skills (`L/log:44,57,91,158`), but no explicit read of
+   `web-motion-fidelity` or `repair-cloned-sections` before the static choice.
+   This does not prove their descriptions or other injected guidance were absent.
+   It does establish a missing explicit motion/reconstruction investigation in
+   the saved tool path. Current motion and repair guidance permits a compact
+   static fallback; requested interaction quality must remain unmet in that case.
+
+Thus the historical regression is a **fallback/continuity problem**: a partial
+native reconstruction existed on another page but was not a released reusable
+fragment, and the new run independently chose static output. Do not attribute
+that result to the runtime defect below.
+
+### Offline reproduction of the reusable-fragment defect
+
+Used the actual native author/repair tools, Rust helper render, static CSS
+compiler, sanitizer, slot detector and content-addressed artifact builder.
+Only registry/storage were replaced by the existing in-memory test fixture;
+release and pin operations affected that fixture, not any real workspace.
+Chromium blocked every browser network request. The fixture has four synthetic
+text panels and uses no customer assets or model calls.
+
+| Case | Approved platform JS present? | Observed click on second tab |
+| --- | --- | --- |
+| Authored typed section after repair | Yes | Selected state and visible panel both change correctly. |
+| Same repaired content, released and pinned as a fragment | No | Neither selection nor visible panel changes. |
+| Same pinned HTML, adding only the exact approved platform runtime for diagnosis | Yes | Selection and visible panel change correctly. |
+| Two pins, adding the same approved runtime for diagnosis | Yes | Clicking the second pin changes its selected tab but the **first pin's panel**; the second pin's panel stays unchanged. |
+
+The first defect is at serialization/render dependency boundaries:
+`repair_cloned_section` renders a page and extracts only the section subtree
+(`tools/web_substrate.py:7288–7330`). The runtime lives in the page head.
+`page_needs_runtime` considers typed components, not Fragment content
+(`crates/lumen-web/src/render.rs:209–236`). The reusable artifact therefore
+retains tab markup but has no declared runtime dependency.
+The saved render also loses the platform's tab base styles: authored HTML has
+`.lumen-tabs-list` rules, reused HTML does not (`styles.json`).
+`compile_section_css` compiles theme/utility styles, while the renderer emits
+platform component CSS only for recognized component nodes. Dependency retention
+must cover approved styling as well as behavior.
+
+The second defect is an instance-identity problem. Repeated pins retain the same
+internal IDs, while `initTabs` resolves panels with global
+`document.getElementById` (`crates/lumen-web/src/runtime/lumen-runtime.v2.js:79`).
+Adding a script to every fragment page would mask the first defect while leaving
+the second, so that is not a complete repair. Raw source-script replay is also
+not a supported remedy.
+
+The current state-observation code only receives native groups from typed nodes
+and additionally discovers CSS-radio groups. It does not discover native-tab
+markup hidden inside Fragment leaves. This coverage gap is established by code
+inspection (`web_interaction_capture.py:160–162`), not a separate browser receipt
+in this replay. The next regression must include it explicitly.
+
+Reproduction source, four rendered HTML cases, exact before/after browser
+observations and checksums are saved locally under repo-root
+`.local-setup/native-account-skills/trace-audit-20260928/interaction-reuse/`.
+`replay.py` uses no model/API/DB writes; `result.json` contains the observations.
+The initial fixture attempt used the wrong slot-manifest shape and was corrected.
+The first browser launch was sandbox-denied; the authorized offline retry passed.
+No product runtime or live page was modified by this audit.
+
+### Next bounded implementation and acceptance
+
+Before describing a reconstruction as reusable, preserve **declared approved
+behavior/style dependencies and per-instance identity** through the native component
+and fragment seam. Use the existing governed component representation where
+possible; do not infer executable authority from arbitrary source class names or
+accept foreign scripts. Verify fresh authoring, saved/reopened reuse, two copies,
+editor and delivery, all four states, keyboard controls and reduced motion. The
+existing observation tooling must include retained fragment behavior or report
+its explicit untested status.
+
+For this page's immediate design route, the existing typed native tabs can provide
+working behavior, but their horizontal layout does not preserve the source's
+two-left/two-right cards around a central image. That layout/mapping gap needs a
+bounded source-faithful reconstruction in the native platform and an offline
+comparison before another paid page. A static substitute remains incomplete for
+the user's requested interaction. Original source timing and control-to-media
+mapping must be observed or marked unresolved, never guessed from filenames.
+
+This follow-up confirms two runtime hazards and the historical fallback path.
+It does not establish a fixed component, recovered source JavaScript, improved
+visitor copy, or an accepted Hotel Equities page. The next generation remains
+on hold under the user's restriction.
+
 ## Evidence locations and run index
 
 All paths below are relative to `subsystems/clue-design/` unless stated otherwise. `log` means `logs/run.jsonl`; line numbers above are physical JSONL lines. `trace` means `trace.jsonl`. Read the logged `write_file`/`edit_file` payloads for the plan as it existed at that turn; the session's current `workspace/plan.md` can be overwritten by later turns.
