@@ -95,3 +95,26 @@ succeeded with 0 ads kept (`advertiser_mismatch`).
   name distribution is unverified; (3) `onboarding_run.cost_usd` ($1.561) omits the grok synthesis
   ($1.43) and the thin retries; (4) the design `brief` call (grok-4.5, 20.9k in / 4.4k out) is
   unpriced; (5) the ad job waited 16 min behind the website job (coordinator has 1 slot).
+
+## 2026-09-30 — merge, brief model, ad-harvest name fix
+- Merged `codex/ai-ark-committee-discovery-spec-v1` (16 commits: Head-of-ABM continuation,
+  compaction, prompt caching) as `774c4d852`; clean, no migrations; 6 new `CLUE_AGENT_COMPACT_*` /
+  `CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED` flags copied into `.env` at their defaults.
+- `bc156e5a2` founder ruling: the brand brief runs on `x-ai/grok-4.7` with its own
+  `LUMEN_INGESTION_BRIEF_REASONING=medium` (it had sent no reasoning field). Its $0 ledger row is a
+  separate defect: the gateway stamped `unpriced` and `lumen_api/spend.py:273` relabels that as
+  `estimate`; why OpenRouter's cost did not come through is untraced.
+- `e96f8ffc6` ad harvest: `select_creatives` now gets `resolution.resolved_name` instead of the
+  empty request field, so the filter stops taking the most frequent advertiser (Conduit's
+  executive "Cole Rubin") as the company. When nothing is kept, the advertiser check reads the
+  names dropped as thought-leader, so a stranger's page still reports `advertiser_mismatch`
+  (the fallback-path test pinned the weaker `empty`; updated). Ad suites: 105 passed, 2 failed —
+  the same 2 fail on the unchanged code (`partial` != `ok`), stack down.
+- Live re-run of Conduit's harvest (job `ingest_0daf8aa60ccb4bb59774ea916b001331`, full run,
+  card allowed by founder) FAILED: Adyntel returned `402 Insufficient tokens. Please top-up` on
+  page 2, twice (the job ran at 18:49 and again at 18:51 UTC). The real advertiser names are still
+  unknown. OWED: top up Adyntel, re-offer the same body, check `evidence.steps.harvest`.
+- Still open: the run cost total ignores `agent_model_call` and evidence retries
+  (`onboarding_synthesis_wiring.py:1494`, `exa_client.py` keeps one attempt's cost); evidence
+  searches always retry (6 results asked, thin rule <=9); design lane drops raw vendor bodies
+  (`lumen_api/spend.py:62`, `artifacts=None`).
