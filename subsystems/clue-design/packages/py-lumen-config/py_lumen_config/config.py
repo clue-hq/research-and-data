@@ -214,6 +214,13 @@ class Settings(BaseSettings):
     lumen_ingestion_describe: bool = True
     lumen_ingestion_describe_model: str = "deepseek/deepseek-v4.1-flash"
     lumen_ingestion_describe_concurrency: int = Field(default=40, ge=1, le=128)
+    # Output cap per described asset, sent as ``max_tokens`` (one describe call = one asset;
+    # a multi-asset call multiplies it, capped at 131072). Without it the model's own ceiling
+    # was the only stop: on 2026-09-29 a looping deepseek answer ran to 131072 tokens at $0.157
+    # a call, and 35 such runaways were $5.02 of a $6.46 describe bill. A finished analysis of
+    # that same site measured a median of ~4.5k output tokens and a p99 of ~15k, so 32768 is
+    # twice the p99 — generous for the largest legitimate answer, a quarter of a runaway.
+    lumen_ingestion_describe_max_tokens_per_asset: int = Field(default=32768, ge=1024, le=131072)
     lumen_ingestion_pool_workers: int = Field(default=4, ge=1, le=32)
     lumen_ingestion_worker_concurrency: int = Field(default=10, ge=1, le=32)
     lumen_ingestion_pool_idle_seconds: int = Field(default=60, ge=1)
