@@ -106,8 +106,8 @@ export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
                 <div className={styles.thumbnail}><Image alt="" className="object-cover" fill sizes="(max-width: 640px) 80vw, 300px" src={artifact.thumbnailPath} unoptimized /></div>
                 <div className={styles.cardBody}>
                   <div className={styles.cardTitle}><ArtifactTypeIcon type={artifact.type} /><span>{artifact.title}</span></div>
-                  <p>{artifactTypeLabels[artifact.type]}<span aria-hidden="true"> · </span><ArtifactUpdated artifact={artifact} /></p>
                   {artifact.projectName ? <p>{artifact.projectName}</p> : null}
+                  <p>{artifactTypeLabels[artifact.type]}<span aria-hidden="true"> · </span><ArtifactUpdated artifact={artifact} /></p>
                 </div>
               </button>
             ))}</div>
