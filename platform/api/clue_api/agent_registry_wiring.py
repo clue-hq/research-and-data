@@ -242,7 +242,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # `open_directive_confirmation_gate@1` (a directive nothing executes). `stage0-interview@v41`
     # only repoints its manual paths, and the manual re-mints at `manual-*@v14` (the siblings
     # chapter's "tools that lead nowhere" loses those bullets). Prompt v18 and the recipe stay.
-    AgentRole.HEAD_OF_ABM: "v68",
+    # v69 (founder rulings 2026-09-29, conversation compaction): v68's surface exactly, with
+    # `max_file_bytes` 1 MB -> 4 MB so one offloaded history section (~400k tokens on a 500k
+    # window, written under work/conversation_history/) fits. `compact_conversation` is a framework
+    # tool (runtime), so the re-minted `manual-*@v15` lists it; `stage0-interview@v42` only
+    # repoints its manual paths. Prompt v18 and the recipe stay.
+    AgentRole.HEAD_OF_ABM: "v69",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
