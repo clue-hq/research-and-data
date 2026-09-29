@@ -101,7 +101,9 @@ export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
           ) : (
             <div className={styles.artifactGrid}>{controller.visibleArtifacts.map((artifact) => (
               <button aria-label={`Preview ${artifact.title}`} className={styles.artifactCard} key={artifact.id} onClick={() => controller.openArtifact(artifact)} type="button">
-                <div className={styles.thumbnail}><Image alt="" className="object-cover" fill sizes="(max-width: 640px) 80vw, 300px" src={artifact.thumbnailPath} /></div>
+                {/* unoptimized, as in the gallery: the design thumbnail route is session-authenticated
+                    behind the BFF, and the image optimizer's server-side refetch would 401. */}
+                <div className={styles.thumbnail}><Image alt="" className="object-cover" fill sizes="(max-width: 640px) 80vw, 300px" src={artifact.thumbnailPath} unoptimized /></div>
                 <div className={styles.cardBody}>
                   <div className={styles.cardTitle}><ArtifactTypeIcon type={artifact.type} /><span>{artifact.title}</span></div>
                   <p>{artifactTypeLabels[artifact.type]}<span aria-hidden="true"> · </span><ArtifactUpdated artifact={artifact} /></p>
@@ -126,7 +128,7 @@ export function AccountArtifactsScreen({ account, workspace }: ScreenProps) {
                 <div><Dialog.Title className={styles.previewTitle}>{controller.selectedArtifact.title}</Dialog.Title><Dialog.Description className={styles.caption}>{artifactTypeLabels[controller.selectedArtifact.type]} · {account.name}</Dialog.Description></div>
                 <Dialog.Close aria-label="Close artifact preview" className={components.iconButton}><X aria-hidden="true" size={16} strokeWidth={1.5} /></Dialog.Close>
               </header>
-              <div className={styles.previewImage}><Image alt={`${controller.selectedArtifact.title} preview`} className="object-contain" fill sizes="90vw" src={controller.selectedArtifact.thumbnailPath} /></div>
+              <div className={styles.previewImage}><Image alt={`${controller.selectedArtifact.title} preview`} className="object-contain" fill sizes="90vw" src={controller.selectedArtifact.thumbnailPath} unoptimized /></div>
             </> : null}
           </Dialog.Popup>
         </Dialog.Portal>

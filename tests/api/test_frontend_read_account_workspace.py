@@ -341,6 +341,137 @@ def test_an_account_with_no_committee_and_no_blocks_is_an_all_empty_page() -> No
     run_async(scenario())
 
 
+def test_the_artifacts_tab_lists_the_design_documents_made_for_the_account() -> None:
+    """D0 ruling S9's later slice: every project's artifacts for this account, newest first.
+
+    A design document belongs to an account through its ``design_account`` row's
+    ``account_entity_id``. Every project's documents are listed (founder, 2026-09-30), labelled
+    with the project's name; archived ones and other accounts' are not. The thumbnail is the
+    gallery's own route.
+    """
+    from tests._identity import seed_principal
+    from tests._workspace import seed_project
+    from tests.api.test_design_artifact_feed_db import (  # noqa: PLC2701
+        USER_ID,
+        _seed_design_document,
+        _seed_leg,
+        _seed_thread,
+    )
+
+    async def document(
+        conn: AsyncConnection,
+        *,
+        project_id: str,
+        document_id: str,
+        title: str,
+        kind: str,
+        at: datetime,
+    ) -> None:
+        await _seed_design_document(
+            conn,
+            workspace_id=_WS,
+            document_id=document_id,
+            title=title,
+            doc_kind=kind,
+            updated_at=at,
+        )
+        thread_id = await _seed_thread(
+            conn, workspace_id=_WS, project_id=project_id, thread_id=f"thr_{document_id}"
+        )
+        await _seed_leg(
+            conn,
+            workspace_id=_WS,
+            project_id=project_id,
+            thread_id=thread_id,
+            document_id=document_id,
+        )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build(conn)
+            other = await _account(conn, name="Other Health", domain="other.example")
+            await seed_principal(conn, workspace_id=_WS, user_id=USER_ID)
+            first = await seed_project(conn, _WS, name="Albany outreach")
+            second = await seed_project(conn, _WS, name="Q4 campaign")
+            for account_id, entity in (("acc_zafran", fixture.zafran), ("acc_other", other)):
+                await conn.execute(
+                    text(
+                        "INSERT INTO design_account"
+                        " (account_id, workspace_id, name, account_entity_id)"
+                        " VALUES (:id, :ws, 'Account', :entity)"
+                    ),
+                    {"id": account_id, "ws": _WS, "entity": entity},
+                )
+            t0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
+            await document(
+                conn,
+                project_id=first.project_id,
+                document_id="doc_ad",
+                title="Zafran LinkedIn ad",
+                kind="scene",
+                at=t0 + timedelta(days=2),
+            )
+            await document(
+                conn,
+                project_id=second.project_id,
+                document_id="doc_web",
+                title="Zafran landing page",
+                kind="web",
+                at=t0 + timedelta(days=1),
+            )
+            await document(
+                conn,
+                project_id=first.project_id,
+                document_id="doc_old",
+                title="Archived ad",
+                kind="scene",
+                at=t0,
+            )
+            await document(
+                conn,
+                project_id=first.project_id,
+                document_id="doc_other",
+                title="Other ad",
+                kind="scene",
+                at=t0,
+            )
+            await conn.execute(
+                text(
+                    "UPDATE design_document SET account_id = 'acc_zafran'"
+                    " WHERE id IN ('doc_ad', 'doc_web', 'doc_old')"
+                )
+            )
+            await conn.execute(
+                text("UPDATE design_document SET account_id = 'acc_other' WHERE id = 'doc_other'")
+            )
+            await conn.execute(
+                text("UPDATE design_document SET archived_at = now() WHERE id = 'doc_old'")
+            )
+
+            data = (await _get(conn, fixture.zafran)).json()["data"]
+
+            assert [item["id"] for item in data["artifacts"]] == ["doc_ad", "doc_web"]
+            ad, web = data["artifacts"]
+            assert (ad["title"], ad["type"], ad["projectName"]) == (
+                "Zafran LinkedIn ad",
+                "ad",
+                "Albany outreach",
+            )
+            assert (web["type"], web["projectName"]) == ("web", "Q4 campaign")
+            assert ad["thumbnailPath"] == "/api/clue/design/documents/doc_ad/thumbnail?v=0"
+            assert ad["accountId"] == str(fixture.zafran)
+            assert ad["updatedAt"].startswith("2026-09-03")
+            assert ad["lastEditedLabel"].startswith("Last edited")
+            AccountWorkspaceResponseV1.model_validate({"data": data})
+            zod_validate(data, "AccountWorkspaceSchema")
+
+            # The other account sees only its own.
+            other_data = (await _get(conn, other)).json()["data"]
+            assert [item["id"] for item in other_data["artifacts"]] == ["doc_other"]
+
+    run_async(scenario())
+
+
 # --- resolution & refusal ---------------------------------------------------------------------
 
 

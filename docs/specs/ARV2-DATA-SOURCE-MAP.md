@@ -401,6 +401,14 @@ existing `empty` state ("no artifacts yet"). The account-scoped artifact project
 slice after the design leg writes a `(account_entity_id, design_document_id)` binding. Nothing is
 invented to fill the tab.
 
+**Landed 2026-09-30 (founder: every project's artifacts, labelled by project; the gallery's
+thumbnail).** The binding exists since the 2026-09-19 multi-artifact legs — an ad born for a tagged
+account carries `design_document.account_id` → `design_account.account_entity_id`. E3 serves the
+artifacts library's own rows (`workspace_design_documents(account_entity_id=…)`) narrowed to the
+account, from every project, `projectName` = the project's name, archived ones omitted, newest
+first, `thumbnailPath` = `/api/clue/design/documents/{id}/thumbnail?v={current_version}`. The
+activity feed's "{title} created" event (§3.8) is still not written.
+
 ### 3.8 Activity — the detail rail and `/accounts/{id}/activity` (E2 and E3 `activity[]`)
 
 The dummy's activity shape (`kind ∈ created\|contacts\|summary\|artifact\|updated`, `actor

@@ -726,8 +726,12 @@ async def workspace_design_documents(
     limit: int,
     cursor_updated_at: datetime | None = None,
     cursor_id: str | None = None,
+    account_entity_id: str | None = None,
 ) -> tuple[Mapping[str, Any], ...]:
     """Every design document any thread in the workspace worked on — the artifacts library.
+
+    ``account_entity_id`` narrows it to the documents made for one account (through their
+    ``design_account``): the account page's artifacts tab reads the library, not a second query.
 
     The workspace-wide form of :func:`project_design_documents`: the same leg-SET derivation
     (spec §3.2 — every document of every leg, latest leg wins as origin, one row per
@@ -771,6 +775,9 @@ async def workspace_design_documents(
                     " LEFT JOIN design_document_user_mark m"
                     "   ON m.document_id = d.id AND m.workspace_id = :ws AND m.user_id = :user"
                     " WHERE ("
+                    "   CAST(:account AS uuid) IS NULL"
+                    "   OR a.account_entity_id = CAST(:account AS uuid)"
+                    " ) AND ("
                     "   CAST(:cursor_updated_at AS timestamptz) IS NULL"
                     "   OR (d.updated_at, d.id) < (:cursor_updated_at, CAST(:cursor_id AS text))"
                     " )"
@@ -783,6 +790,7 @@ async def workspace_design_documents(
                     "cursor_updated_at": cursor_updated_at,
                     "cursor_id": cursor_id,
                     "limit": limit,
+                    "account": account_entity_id,
                 },
             )
         )
