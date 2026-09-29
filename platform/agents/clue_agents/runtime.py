@@ -43,7 +43,12 @@ from clue_obs import get_logger
 from clue_obs.langfuse import flag_trace
 from clue_obs.sentry import warn as sentry_warn
 
-__all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware", "TurnBudgetMiddleware"]
+__all__ = [
+    "ORDINARY_FINALIZE_REPAIRS",
+    "DeepAgentTurnRuntime",
+    "ExactAgentToolSurfaceMiddleware",
+    "TurnBudgetMiddleware",
+]
 
 log = get_logger("clue_agents.runtime")
 
@@ -81,6 +86,8 @@ _FINALIZE_TOOL_NAME = "finalize_turn"
 # incomplete feedback. Bound retries to prevent a loop;
 # exhausting this allowance is not evidence of model intent or of failed research.
 _MAX_FINALIZE_REPAIRS = 2
+#: The allowance an ordinary (non-research) turn gets, continued or not.
+ORDINARY_FINALIZE_REPAIRS = _MAX_FINALIZE_REPAIRS
 
 
 #: LangGraph supersteps one model round costs today: the turn-budget and tool-repair
@@ -506,6 +513,7 @@ class DeepAgentTurnRuntime:
         long_turn_alert_s: float | None = None,
         continuation_config: Mapping[str, Any] | None = None,
         compaction_for: Callable[[str], CompactionSettings] | None = None,
+        max_finalize_repairs: int | None = None,
     ) -> None:
         if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
@@ -516,6 +524,15 @@ class DeepAgentTurnRuntime:
         if long_turn_alert_s is not None and long_turn_alert_s <= 0:
             raise ValueError("a long-turn alert threshold must be positive (None disables it)")
         self._continuation_config = continuation_config
+        # A continued research conversation gets a wider finalize-repair allowance; a caller that
+        # continues an ordinary conversation (the Head of ABM) passes the ordinary one.
+        self._max_finalize_repairs = (
+            max_finalize_repairs
+            if max_finalize_repairs is not None
+            else 10
+            if continuation_config
+            else _MAX_FINALIZE_REPAIRS
+        )
         # Every agent compacts (founder ruling 2026-09-29), sized per run from the model it builds.
         self._compaction_for = compaction_for or _fallback_compaction
         self._models = models
@@ -586,6 +603,98 @@ class DeepAgentTurnRuntime:
             tags={key: str(value) for key, value in fields.items()},
         )
 
+    def _build_model(self, profile: Any) -> Any:
+        return self._models.build(
+            model_id=profile.model.model_id,
+            timeout_s=profile.model.timeout_s,
+            max_retries=profile.model.max_retries,
+            max_output_tokens=profile.model.max_output_tokens,
+            temperature=profile.model.temperature,
+            # Names the role on the governed call so the per-role
+            # ``<ROLE>_AGENT_MODEL_EFFORT`` environment override (and span/usage
+            # attribution) applies to this turn's model.
+            role=profile.role.value,
+        )
+
+    def _build_graph(
+        self,
+        *,
+        model: Any,
+        resolved_profile: ResolvedAgentProfile,
+        backend: object,
+        governed_tools: Sequence[BaseTool],
+        checkpointer: Any,
+    ) -> Any:
+        profile = resolved_profile.profile
+        summariser, compact_tool = build_compaction_middleware(
+            model, backend, self._compaction_for(profile.model.model_id)
+        )
+        return create_deep_agent(
+            model=model,
+            tools=list(governed_tools),
+            system_prompt=resolved_profile.prompt_body,
+            middleware=(
+                ToolRepairRoundsMiddleware(),
+                ExactAgentToolSurfaceMiddleware(
+                    profile=resolved_profile,
+                    # Some reviewed profile capabilities are constitution-dependent.  For
+                    # example, selected-product readers are intentionally omitted unless the
+                    # turn carries an exact Product-KB pin.  The factory has already applied
+                    # that trusted narrowing; the runtime must enforce the resulting surface,
+                    # not incorrectly require every capability listed by the reusable role
+                    # profile.
+                    effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
+                    max_finalize_repairs=self._max_finalize_repairs,
+                ),
+                # Inside the exact-surface check, which insists every granted tool is present:
+                # only after it may the last rounds be narrowed to finalize_turn.
+                TurnBudgetMiddleware(
+                    max_rounds=self._max_rounds,
+                    wrap_up_status=self._wrap_up_status,
+                    max_runtime_s=self._max_runtime_s,
+                ),
+                *self._middleware,
+                # Our summariser replaces deepagents' default (removed for governed models by
+                # the harness profile registered below), plus ``compact_conversation``.
+                summariser,
+                compact_tool,
+            ),
+            backend=backend,  # type: ignore[arg-type]
+            checkpointer=checkpointer,
+            state_schema=ClueDeepAgentState,
+            name=f"clue-{profile.role.value}",
+        )
+
+    async def saved_conversation_is_settled(
+        self,
+        *,
+        request: AgentTurnRequest,
+        resolved_profile: ResolvedAgentProfile,
+        backend: object,
+        governed_tools: Sequence[BaseTool],
+    ) -> bool:
+        """Whether ``continuation_config`` names a saved conversation this runtime can continue.
+
+        Read through the same graph a turn runs, so "settled" means exactly what the run checks:
+        the saved state has messages and no pending node. Nothing is written; a caller asks this
+        before it assembles a continued turn, because a turn cannot change its opening context
+        once assembled (one receipt per turn).
+        """
+        if self._continuation_config is None:
+            raise ValueError("no continuation to check")
+        async with self._execution.checkpointer(
+            execution_id=request.constitution.execution_id
+        ) as checkpointer:
+            graph = self._build_graph(
+                model=self._build_model(resolved_profile.profile),
+                resolved_profile=resolved_profile,
+                backend=backend,
+                governed_tools=governed_tools,
+                checkpointer=checkpointer,
+            )
+            previous = await graph.aget_state(cast(RunnableConfig, dict(self._continuation_config)))
+        return bool(previous.values.get("messages")) and not previous.next
+
     async def _run_turn(
         self,
         *,
@@ -603,59 +712,16 @@ class DeepAgentTurnRuntime:
         if context.manifest.execution_id != constitution.execution_id:
             raise ValueError("context bundle belongs to another execution")
 
-        model = self._models.build(
-            model_id=profile.model.model_id,
-            timeout_s=profile.model.timeout_s,
-            max_retries=profile.model.max_retries,
-            max_output_tokens=profile.model.max_output_tokens,
-            temperature=profile.model.temperature,
-            # Names the role on the governed call so the per-role
-            # ``<ROLE>_AGENT_MODEL_EFFORT`` environment override (and span/usage
-            # attribution) applies to this turn's model.
-            role=profile.role.value,
-        )
+        model = self._build_model(profile)
         async with self._execution.checkpointer(
             execution_id=constitution.execution_id
         ) as checkpointer:
-            summariser, compact_tool = build_compaction_middleware(
-                model, backend, self._compaction_for(profile.model.model_id)
-            )
-            graph = create_deep_agent(
+            graph = self._build_graph(
                 model=model,
-                tools=list(governed_tools),
-                system_prompt=resolved_profile.prompt_body,
-                middleware=(
-                    ToolRepairRoundsMiddleware(),
-                    ExactAgentToolSurfaceMiddleware(
-                        profile=resolved_profile,
-                        # Some reviewed profile capabilities are constitution-dependent.  For
-                        # example, selected-product readers are intentionally omitted unless the
-                        # turn carries an exact Product-KB pin.  The factory has already applied
-                        # that trusted narrowing; the runtime must enforce the resulting surface,
-                        # not incorrectly require every capability listed by the reusable role
-                        # profile.
-                        effective_governed_tool_names={_tool_name(tool) for tool in governed_tools},
-                        max_finalize_repairs=10
-                        if self._continuation_config
-                        else _MAX_FINALIZE_REPAIRS,
-                    ),
-                    # Inside the exact-surface check, which insists every granted tool is present:
-                    # only after it may the last rounds be narrowed to finalize_turn.
-                    TurnBudgetMiddleware(
-                        max_rounds=self._max_rounds,
-                        wrap_up_status=self._wrap_up_status,
-                        max_runtime_s=self._max_runtime_s,
-                    ),
-                    *self._middleware,
-                    # Our summariser replaces deepagents' default (removed for governed models by
-                    # the harness profile registered below), plus ``compact_conversation``.
-                    summariser,
-                    compact_tool,
-                ),
-                backend=backend,  # type: ignore[arg-type]
+                resolved_profile=resolved_profile,
+                backend=backend,
+                governed_tools=governed_tools,
                 checkpointer=checkpointer,
-                state_schema=ClueDeepAgentState,
-                name=f"clue-{profile.role.value}",
             )
             state: Any = {
                 "messages": cast(Any, list(context.messages)),
@@ -682,9 +748,7 @@ class DeepAgentTurnRuntime:
                         cast(RunnableConfig, dict(self._continuation_config))
                     )
                     if not previous.values.get("messages") or previous.next:
-                        raise ValueError(
-                            "Research continuation requires a settled saved conversation"
-                        )
+                        raise ValueError("Continuation requires a settled saved conversation")
                     saved_constitution = previous.values.get("constitution")
                     if isinstance(saved_constitution, BaseModel):
                         saved_constitution = saved_constitution.model_dump(warnings=False)

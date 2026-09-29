@@ -89,14 +89,18 @@ async def _turn(
             "at": _T0 + timedelta(minutes=minutes),
         },
     )
+    await _event(conn, ws, turn_id, status)
+    return turn_id, execution_id
+
+
+async def _event(conn: AsyncConnection, workspace_id: str, turn_id: UUID, status: str) -> None:
     await conn.execute(
         text(
             "INSERT INTO agent_turn_event (event_id, turn_id, workspace_id, status) "
             "VALUES (:e, :t, :ws, :s)"
         ),
-        {"e": uuid4(), "t": turn_id, "ws": ws, "s": status},
+        {"e": uuid4(), "t": turn_id, "ws": workspace_id, "s": status},
     )
-    return turn_id, execution_id
 
 
 async def _message(
@@ -146,7 +150,9 @@ def test_a_turn_resumes_the_last_completed_head_turn_and_gets_what_was_said_sinc
             b, _ = await _turn(conn, project, thread_id, minutes=5, status="cancelled")
             await _message(conn, project, thread_id, b, 3, "user")
             await _message(conn, project, thread_id, b, 4, "assistant")
-            # a design-leg exchange is the design agent's turn, never a Head-of-ABM resume point
+            # A design-leg exchange is the design agent's turn: never a resume point, and (as in a
+            # fresh turn's history) its transcript never reaches the Head of ABM — only a
+            # journaled exit summary would.
             leg, _ = await _turn(conn, project, thread_id, minutes=7, role="design")
             await _message(conn, project, thread_id, leg, 5, "user")
             await _message(conn, project, thread_id, leg, 6, "assistant")
@@ -165,12 +171,8 @@ def test_a_turn_resumes_the_last_completed_head_turn_and_gets_what_was_said_sinc
                 after_sequence=point.last_message_sequence,
                 current_turn_id=current,
             )
-            assert [(m.turn_id, m.sequence) for m in gap] == [
-                (b, 3),
-                (b, 4),
-                (leg, 5),
-                (leg, 6),
-            ]
+            assert [(m.turn_id, m.sequence) for m in gap] == [(b, 3), (b, 4)]
+            assert leg not in {m.turn_id for m in gap}
             assert continuation_config_for(point) == {
                 "configurable": {"thread_id": str(ea), "checkpoint_ns": ""}
             }
@@ -200,11 +202,37 @@ def test_a_changed_profile_or_no_completed_turn_means_no_resume_point() -> None:
             )
             failed, _ = await _turn(conn, project, thread_id, minutes=1, status="failed")
             await _message(conn, project, thread_id, failed, 2, "user")
+            erased, _ = await _turn(conn, project, thread_id, minutes=2, status="awaiting_input")
+            await _message(conn, project, thread_id, erased, 3, "user")
+            await _event(conn, ws, erased, "privacy_tombstoned")
             assert (
                 await find_resume_point(
                     conn, workspace_id=ws, thread_id=thread_id, current_turn_id=current, **_PROFILE
                 )
                 is None
+            )
+
+
+def test_a_turn_that_ended_on_a_question_is_a_resume_point() -> None:
+    """Most chat turns end ``awaiting_input``: they finished, and asked the human something."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project, thread_id = await _thread(conn, "question")
+            ws = project.workspace_id  # type: ignore[attr-defined]
+            asked, e_asked = await _turn(
+                conn, project, thread_id, minutes=0, status="awaiting_input"
+            )
+            await _message(conn, project, thread_id, asked, 1, "user")
+            await _message(conn, project, thread_id, asked, 2, "assistant")
+            point = await find_resume_point(
+                conn, workspace_id=ws, thread_id=thread_id, current_turn_id=uuid4(), **_PROFILE
+            )
+            assert point is not None
+            assert (point.turn_id, point.execution_id, point.last_message_sequence) == (
+                asked,
+                e_asked,
+                2,
             )
 
     run_async(scenario())

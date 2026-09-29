@@ -83,6 +83,7 @@ from clue_api.agent_turn_wiring import (
 from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
 from clue_api.chat.turn_events import TurnEventType, emit_turn_event
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.conversation_continuation import thread_message_refs
 from clue_api.design_memory import (
     DesignMemoryScopeError,
     freeze_design_memory,
@@ -94,7 +95,6 @@ from clue_api.design_turn_targets import (
     resolve_web_targets,
 )
 from clue_api.turn_action import derive_turn_action_ref
-from clue_api.turn_attachments import turn_image_refs
 from clue_core import ContextAssembly, EntityId, ExecutionId, ProjectRunId, operation_id_from_key
 from clue_db import ConnFactory, transaction
 from clue_design import accounts as design_accounts
@@ -534,51 +534,8 @@ async def load_head_of_abm_history(
     """
 
     async with conn_factory() as conn:
-        result = await conn.execute(
-            text(
-                "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                "m.body_sha256, a.media_type, a.size_bytes, "
-                "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
-                "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
-                "FROM agent_thread_message m "
-                "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
-                "JOIN artifact a ON a.storage_key = m.body_artifact_key "
-                "WHERE m.workspace_id = :workspace AND m.thread_id = :thread "
-                "AND (t.role <> 'design' OR m.id IN ("
-                "    SELECT CAST(j.summary_refs->>'summary_message_id' AS uuid) "
-                "    FROM design_leg_exit_journal j "
-                "    WHERE j.workspace_id = m.workspace_id "
-                "      AND j.summary_refs ? 'summary_message_id'"
-                ")) "
-                "ORDER BY m.sequence"
-            ),
-            {"workspace": workspace_id, "thread": thread_id},
-        )
-        rows = result.mappings().all()
-        # One query for the whole page: the images a past turn carried ride its messages again
-        # (ruling 2, spec 2026-09-18); the conversation layer caps how many the thread affords.
-        images = await turn_image_refs(
-            conn,
-            workspace_id=workspace_id,
-            turn_ids=[row["turn_id"] for row in rows],
-        )
-        return tuple(
-            HistoryMessageRef(
-                message_id=row["id"],
-                turn_id=row["turn_id"],
-                sequence=int(row["sequence"]),
-                role=row["role"],
-                interrupted=bool(row["interrupted"]),
-                body_ref=ArtifactRef(
-                    workspace_id=workspace_id,
-                    artifact_key=row["body_artifact_key"],
-                    sha256=row["body_sha256"],
-                    media_type=row["media_type"],
-                    byte_count=int(row["size_bytes"]),
-                ),
-                attachment_refs=images.get(row["turn_id"], ()),
-            )
-            for row in rows
+        return await thread_message_refs(
+            conn, workspace_id=workspace_id, thread_id=thread_id, head_of_abm_view=True
         )
 
 

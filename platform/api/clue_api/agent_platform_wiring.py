@@ -440,6 +440,8 @@ class AgentPlatformComponents:
     #: 2026-09-27), so changing one never mints a profile version. ``None`` = no timeout / no
     #: long-turn alert. The defaults mirror the shipped settings for builders with no Settings.
     head_of_abm_max_model_rounds: int = 350
+    #: Spec 2026-09-29 §3.1: continue the thread's saved conversation (the shipped default).
+    head_of_abm_continuation_enabled: bool = True
     head_of_abm_turn_timeout_s: float | None = None
     agent_long_turn_alert_s: float | None = 3600.0
     #: Where the code sandbox looks up a turn's host directories and its remaining run budget
@@ -502,6 +504,7 @@ def build_agent_platform_components(
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
         history_images_max=settings.chat_attachment_history_images_max,
         head_of_abm_max_model_rounds=settings.head_of_abm_max_model_rounds,
+        head_of_abm_continuation_enabled=settings.head_of_abm_continuation_enabled,
         head_of_abm_turn_timeout_s=settings.head_of_abm_turn_timeout_s or None,
         agent_long_turn_alert_s=settings.agent_long_turn_alert_s or None,
         sandbox_workspaces=sandbox_workspaces,

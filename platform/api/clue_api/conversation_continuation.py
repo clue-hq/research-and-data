@@ -51,11 +51,13 @@ async def find_resume_point(
     profile_sha256: str,
     resource_manifest_sha256: str,
 ) -> ResumePoint | None:
-    """The thread's latest completed Head-of-ABM turn under this exact profile, if any.
+    """The thread's latest finished Head-of-ABM turn under this exact profile, if any.
 
-    A stopped, failed or still-running turn is never a resume point: its state is not a settled
-    conversation. A turn under a different profile, prompt or tool surface is not either — its old
-    system prompt is baked into its saved state.
+    Finished = its finalization committed as ``completed`` or ``awaiting_input`` (a chat turn that
+    ends on a question to the human — most of them). A stopped, failed, abandoned, erased or
+    still-running turn is never a resume point: its state is not a settled conversation, or is no
+    longer one we may keep reading. A turn under a different profile, prompt or tool surface is
+    not either — its old system prompt is baked into its saved state.
     """
     row = (
         (
@@ -72,7 +74,11 @@ async def find_resume_point(
                     "AND t.profile_sha256=:profile_sha "
                     "AND t.resource_manifest_sha256=:manifest_sha "
                     "AND EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=t.id "
-                    " AND e.workspace_id=t.workspace_id AND e.status='completed') "
+                    " AND e.workspace_id=t.workspace_id "
+                    " AND e.status IN ('completed', 'awaiting_input')) "
+                    "AND NOT EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=t.id "
+                    " AND e.workspace_id=t.workspace_id AND e.status IN "
+                    " ('failed', 'cancelled', 'abandoned', 'privacy_tombstoned')) "
                     "AND EXISTS (SELECT 1 FROM agent_thread_message m "
                     " WHERE m.workspace_id=t.workspace_id AND m.thread_id=t.thread_id "
                     " AND m.turn_id=t.id) "
@@ -109,13 +115,18 @@ async def gap_history(
     after_sequence: int,
     current_turn_id: UUID,
 ) -> tuple[HistoryMessageRef, ...]:
-    """The thread's messages after the resume point, excluding the current turn's own."""
+    """The Head of ABM's view of the thread after the resume point, minus the current turn.
+
+    The same role-scoped view a fresh turn's history is (``load_head_of_abm_history``): a design
+    leg's transcript never enters, its journaled exit summary does.
+    """
     return await thread_message_refs(
         conn,
         workspace_id=workspace_id,
         thread_id=thread_id,
         after_sequence=after_sequence,
         exclude_turn_id=current_turn_id,
+        head_of_abm_view=True,
     )
 
 
@@ -135,8 +146,13 @@ async def thread_message_refs(
     thread_id: str,
     after_sequence: int | None = None,
     exclude_turn_id: UUID | None = None,
+    head_of_abm_view: bool = False,
 ) -> tuple[HistoryMessageRef, ...]:
-    """A thread's stored messages, in ``sequence`` order, as history references."""
+    """A thread's stored messages, in ``sequence`` order, as history references.
+
+    ``head_of_abm_view`` is PD-part3 §2.4's role scope: no design-turn message, except the exit
+    summary ``finish_design_leg`` journaled at a leg's close — a summary, never a transcript.
+    """
     result = await conn.execute(
         text(
             "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
@@ -144,8 +160,15 @@ async def thread_message_refs(
             "EXISTS (SELECT 1 FROM agent_turn_event e WHERE e.turn_id=m.turn_id "
             "AND e.workspace_id=m.workspace_id AND e.status='cancelled') AS interrupted "
             "FROM agent_thread_message m "
+            "JOIN agent_turn t ON t.id = m.turn_id AND t.workspace_id = m.workspace_id "
             "JOIN artifact a ON a.storage_key=m.body_artifact_key "
             "WHERE m.workspace_id=:workspace AND m.thread_id=:thread "
+            "AND (NOT CAST(:scoped AS boolean) OR t.role <> 'design' OR m.id IN ("
+            "    SELECT CAST(j.summary_refs->>'summary_message_id' AS uuid) "
+            "    FROM design_leg_exit_journal j "
+            "    WHERE j.workspace_id = m.workspace_id "
+            "      AND j.summary_refs ? 'summary_message_id'"
+            ")) "
             "AND (CAST(:after AS bigint) IS NULL OR m.sequence > :after) "
             "AND (CAST(:exclude AS uuid) IS NULL OR m.turn_id <> :exclude) "
             "ORDER BY m.sequence"
@@ -155,6 +178,7 @@ async def thread_message_refs(
             "thread": thread_id,
             "after": after_sequence,
             "exclude": exclude_turn_id,
+            "scoped": head_of_abm_view,
         },
     )
     rows = result.mappings().all()
