@@ -18,6 +18,11 @@ from langchain_core.tools import BaseTool
 from langgraph.types import Command
 from pydantic import BaseModel
 
+from clue_agents.compaction import (
+    CompactionSettings,
+    build_compaction_middleware,
+    register_governed_harness_profile,
+)
 from clue_agents.contracts import AgentConstitution, AgentTurnRequest
 from clue_agents.execution import (
     MAX_RUNTIME_MODEL_ROUNDS,
@@ -42,6 +47,15 @@ __all__ = ["DeepAgentTurnRuntime", "ExactAgentToolSurfaceMiddleware", "TurnBudge
 
 log = get_logger("clue_agents.runtime")
 
+register_governed_harness_profile()
+
+
+def _fallback_compaction(model_id: str) -> CompactionSettings:
+    """A runtime given no thresholds still compacts, at the fixed fallback (ruling 2026-09-29)."""
+    del model_id
+    return CompactionSettings.fallback()
+
+
 _FRAMEWORK_TOOL_NAMES = frozenset(
     {
         "write_todos",
@@ -51,6 +65,8 @@ _FRAMEWORK_TOOL_NAMES = frozenset(
         "edit_file",
         "glob",
         "grep",
+        # deepagents' manual compaction (founder ruling 2026-09-29): every agent may compact.
+        "compact_conversation",
     }
 )
 
@@ -489,6 +505,7 @@ class DeepAgentTurnRuntime:
         wrap_up_status: WrapUpStatus = "blocked",
         long_turn_alert_s: float | None = None,
         continuation_config: Mapping[str, Any] | None = None,
+        compaction_for: Callable[[str], CompactionSettings] | None = None,
     ) -> None:
         if max_runtime_s is not None and max_runtime_s <= 0:
             raise ValueError("agent runtime timeout must be positive")
@@ -499,6 +516,8 @@ class DeepAgentTurnRuntime:
         if long_turn_alert_s is not None and long_turn_alert_s <= 0:
             raise ValueError("a long-turn alert threshold must be positive (None disables it)")
         self._continuation_config = continuation_config
+        # Every agent compacts (founder ruling 2026-09-29), sized per run from the model it builds.
+        self._compaction_for = compaction_for or _fallback_compaction
         self._models = models
         self._middleware = tuple(middleware)
         self._execution = execution
@@ -598,6 +617,9 @@ class DeepAgentTurnRuntime:
         async with self._execution.checkpointer(
             execution_id=constitution.execution_id
         ) as checkpointer:
+            summariser, compact_tool = build_compaction_middleware(
+                model, backend, self._compaction_for(profile.model.model_id)
+            )
             graph = create_deep_agent(
                 model=model,
                 tools=list(governed_tools),
@@ -625,6 +647,10 @@ class DeepAgentTurnRuntime:
                         max_runtime_s=self._max_runtime_s,
                     ),
                     *self._middleware,
+                    # Our summariser replaces deepagents' default (removed for governed models by
+                    # the harness profile registered below), plus ``compact_conversation``.
+                    summariser,
+                    compact_tool,
                 ),
                 backend=backend,  # type: ignore[arg-type]
                 checkpointer=checkpointer,

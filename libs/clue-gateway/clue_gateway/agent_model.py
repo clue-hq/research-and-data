@@ -459,6 +459,14 @@ class GovernedAgentChatModel(BaseChatModel):
     def _llm_type(self) -> str:
         return "clue-openrouter-agent"
 
+    def _get_ls_params(self, stop: list[str] | None = None, **kwargs: Any) -> Any:
+        # deepagents resolves a harness profile by this provider name; the default derives it from
+        # the class name (a best-effort fallback, not a contract), so it is pinned here. It must
+        # equal ``clue_agents.compaction.GOVERNED_PROVIDER_KEY`` (tests/agents/test_compaction.py).
+        params = super()._get_ls_params(stop=stop, **kwargs)
+        params["ls_provider"] = "clue-openrouter-agent"
+        return params
+
     @property
     def _identifying_params(self) -> dict[str, Any]:
         return {

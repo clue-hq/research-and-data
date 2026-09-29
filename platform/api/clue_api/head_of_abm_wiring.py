@@ -18,6 +18,7 @@ from clue_agents import (
 )
 from clue_agents.ports import SpillSink
 from clue_agents.workspace import AgentWorkspaceLease
+from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     AgentExecutionCrashHook,
     C5AgentExecutionAdapter,
@@ -289,6 +290,7 @@ class HeadOfAbmStage0Runtime:
             stream=stream,
         ).build()
         runtime = DeepAgentTurnRuntime(
+            compaction_for=compaction_for,
             models=self._models,
             execution=execution,
             max_runtime_s=self._max_runtime_s,
