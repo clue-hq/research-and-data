@@ -9,6 +9,12 @@ Keep seller identity/capabilities, target identity, target facts, audience/task
 hypotheses, campaign intent and relationship evidence separate. A name and logo
 establish identity; they do not establish needs, stack, results or endorsement.
 
+First apply the bound-target prerequisite in the shared
+[source and format contract](../create-website/references/source-format-contract.md).
+Missing research for a correctly bound account and a missing account binding are
+different failures. The narrower invitation/proposed-use fallback below applies
+only to the first; it cannot repair a lost target at the handoff.
+
 Read [account argument](references/account-argument.md) before selecting sections or rewriting an account page.
 Continue any truncated reference read before applying the guide.
 It turns available evidence into a reader, message, relevant product mechanism,

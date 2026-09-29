@@ -468,10 +468,13 @@ async def _resolve_births(
     """Turn the requested artifacts into fully-resolved births (@5, spec §3.1/§3.6).
 
     Every id is derived from ``(leg, position)`` and every named account is verified here —
-    live, in this workspace, and ON THIS PROJECT, the same containment the composer's tag
-    validation applies — so ``invoke`` performs writes only and a bad account never reaches a
-    birth. A refusal happens before any document exists, which is why this runs inside
+    live, in this workspace, and ON THIS PROJECT — so ``invoke`` performs writes only and a
+    bad account never reaches a birth. A refusal happens before any document exists inside
     ``_resolve`` (the shared precondition/invoke path) rather than in the write loop.
+
+    A Home-composer account reference can be workspace-scoped without project membership.
+    Referencing an account is not approval to add it to a project's targets; an account-bound
+    birth must report that prerequisite rather than suggest silently dropping the binding.
     """
 
     entity_ids: list[UUID] = []
@@ -485,7 +488,8 @@ async def _resolve_births(
         except ValueError as exc:
             raise _LegRefused(
                 f"an artifact names account {item.account_id!r}, which is not an account id; "
-                "pass the account_entity id from the tagged reference, or no account at all",
+                "pass the account_entity id from the tagged reference. Preserve the requested "
+                "target; do not retry an account-specific artifact without its account_id",
                 reason_code="design_leg_account_not_found",
             ) from exc
         parsed.append(entity_id)
@@ -514,7 +518,11 @@ async def _resolve_births(
         if project_id not in memberships.get(entity_id, ()):
             raise _LegRefused(
                 f"an artifact names account {entity_id}, which this project does not target; "
-                "add it to the project first, or drop the account from the item",
+                "preserve this account_id and ask the user to add the account to this project's "
+                "Target accounts before retrying. Do not drop the account_id, substitute another "
+                "account, or open a generic artifact to bypass this prerequisite. No document "
+                "was created by this request. A workspace account mention alone does not add "
+                "project membership or approve a discovered account",
                 reason_code="design_leg_account_not_on_project",
             )
         resolved[entity_id] = (account.canonical_name, account.primary_domain)

@@ -15,6 +15,18 @@ or verified evidence. Fetch only missing relevant material; continue reported
 pagination rather than repeating searches that return the same IDs. An unavailable
 source remains a named gap, not permission to reconstruct it from memory.
 
+For a page requested for one specific account, verify the bound target with `view("account")`
+before composing or acquiring more material. A target named in the brief, a
+successful logo lookup or claims copied by another agent cannot replace that
+binding. If the requested account is missing or different, stop construction and
+report the unresolved account handoff. Keep the existing page unchanged. Do not
+relabel a generic artifact as a one-on-one page or silently substitute a proposed-use
+page; that is a change of scope for the user to choose. If a project-membership
+refusal preceded the handoff, adding a target belongs to the platform's authorized
+membership flow, not Design. A workspace account mention is a reference, not an
+approval to add a discovered account to a project.
+Generic pages and explicitly requested unbound templates do not require a target binding.
+
 ## Preserve the selected component
 
 Before assembly or composition, read `create-website`; before editing read
