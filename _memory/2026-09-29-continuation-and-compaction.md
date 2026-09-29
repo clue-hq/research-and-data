@@ -73,3 +73,22 @@ PASSED. Turn 1 (v69, fresh): first call 38,511 input / 0 cached; its last call 5
 Turn 2 (continued: receipt L6 = 0 items, i.e. no rebuilt history; L1 recorded, not re-sent): first
 call 64,060 input / **58,752 cached (92%)** — the whole of turn 1 (58,760) came from cache, vs the
 old flat 41,472. No `continuation_fallback` in worker logs. Compaction proof (part 2) still owed.
+
+## Live proof 2 — compaction (2026-09-29, same thread, temporary window override)
+
+- 100k window (turn a95c309a): compacted once — summary call 9,155 input, then 40,326 → 42,198
+  on the compacted conversation; offload 263 KB at `work/conversation_history/df3a81cb….md`.
+  FOUND: LangChain's `trim_tokens_to_summarize=4000` default meant the summary saw only the last
+  ~4k tokens of ~65k evicted. Fixed in `ffc517cfc` (`trim_tokens_to_summarize=None`; founder:
+  keep the shape — recent ~10% verbatim, older part summarised, full original offloaded).
+- 50k window, with the fix (turn 0d366136): each summary call's input (14.1k, 14.2k) now
+  covers its whole evicted part (~10k + ~8k tokens of offloaded text + the summary prompt).
+  It compacted TWICE in that one turn: an artifact of the tiny test window — ~30k of the 45k
+  trigger is the fixed system prompt + tools, leaving ~15k of room that one turn's tool work
+  refills. On Grok's 500k window the fixed part is ~6%.
+- Research-quality threads also compacted under the override (every agent compacts, as designed).
+- LangGraph warns "Deserializing unregistered type clue_agents.contracts.* … will be blocked in a
+  future version" on continuation reads → follow-up: register our types
+  (`allowed_msgpack_modules`) before a LangGraph upgrade, or continuation silently turns fresh.
+- `.env` restored to `CLUE_AGENT_CONTEXT_WINDOW_TOKENS=` (parity with .env.example); workers
+  restarted 22:59. One old worker (PID 962, 50k) was left draining a design-leg turn it had claimed.
