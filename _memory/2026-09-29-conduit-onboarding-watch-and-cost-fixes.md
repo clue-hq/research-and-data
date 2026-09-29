@@ -58,3 +58,14 @@ platform API, design API, fleet worker and ingestion-pool logs and the money tab
   is needed for the fixes to take effect and would interrupt the live ingestion job — founder's call.
 - Asset-description failures on this site (75 of 489 at 14:27): 6 originals unavailable, 5 image
   worker did not finish, the rest the model returning empty title/description/usage (validation).
+
+## Closing entry (14:40 UTC)
+- Founder ruling: delete the onboarding, stop everything. Stack brought down with
+  `dev_stack.sh down`; leftover ingestion-pool and `next dev` processes of this worktree stopped by
+  hand (the script does not own them once `up`'s trailing status hangs); all of 3021/8011/8022/
+  8031/8040 free; dubai's stack untouched.
+- **Lane DB `clue_addis-ababa` dropped and recreated empty, migrated to head `6eb27d45f570`**
+  (one head). The Conduit AI workspace, the suites' `ws_test_*` rows and any login mapping are gone;
+  `.artifacts` blobs of that workspace are orphans on disk. Sign in fresh before the next walk.
+- The next stack start runs the fixed code (`f6c2a41f0`, `e818a815b`, `40c4185e9`) — the
+  three defects above were never exercised live; the next onboarding is their live proof.
