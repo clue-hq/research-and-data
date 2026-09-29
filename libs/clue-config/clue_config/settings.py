@@ -671,13 +671,14 @@ class Settings(BaseSettings):
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
     # Authenticated, user-initiated professional-email acquisition for the Contacts table. This is
     # intentionally distinct from ``contact_channel_enrichment_enabled``: that switch owns C5's
-    # stricter independently-validated delivery workflow, while this one exposes provider-observed
-    # Exa + Sumble results without promoting ``contact_entity.verified_email``. Missing provider
-    # credentials remain an honest per-provider unavailable outcome. Budget controls do not stop
-    # this explicit user action; realized provider units/cost are still recorded durably.
+    # stricter independently-validated delivery workflow, while this one exposes the AI Ark export
+    # (founder ruling 2026-09-29: on by default, the same AI Ark path the research agents use)
+    # without promoting ``contact_entity.verified_email``. A missing AI Ark key remains an honest
+    # unavailable outcome. Budget controls do not stop this explicit user action; realized provider
+    # units/cost are still recorded durably.
     # Env: ``CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED`` /
     # ``CLUE_FRONTEND_CONTACT_EMAIL_POLL_AFTER_S``.
-    frontend_contact_email_lookup_enabled: bool = False
+    frontend_contact_email_lookup_enabled: bool = True
     frontend_contact_email_poll_after_s: int = Field(default=5, ge=1, le=300)
 
     # --- FI Lane D production chat surface --------------------------------------------------

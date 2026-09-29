@@ -304,7 +304,7 @@ def test_integration_pilot_overlay_resolves_the_required_capability_state() -> N
     assert s.budget_controls_enabled is False
     # Slice F/G extend the overlay; asserting the current phase honestly:
     assert s.contact_channel_enrichment_enabled is False
-    assert s.frontend_contact_email_lookup_enabled is False
+    assert s.frontend_contact_email_lookup_enabled is True
     assert s.c7_research_view_read_enabled is False
 
 

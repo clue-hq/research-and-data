@@ -251,9 +251,8 @@ def build_application(
         )
     contact_email_lookup = (
         build_contact_email_lookup_service(
-            exa_api_key=resolved_secrets.exa_api_key,
-            sumble_api_key=resolved_secrets.sumble_api_key,
-            sumble_cents_per_credit=resolved.sumble_cents_per_credit,
+            ai_ark_api_key=resolved_secrets.ai_ark_api_key,
+            ai_ark_min_gap_s=resolved.arv2_ai_ark_min_gap_s,
             storage=storage,
             poll_after_s=resolved.frontend_contact_email_poll_after_s,
         )
