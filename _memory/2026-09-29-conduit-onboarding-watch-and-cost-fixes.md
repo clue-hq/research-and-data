@@ -118,3 +118,18 @@ succeeded with 0 ads kept (`advertiser_mismatch`).
   (`onboarding_synthesis_wiring.py:1494`, `exa_client.py` keeps one attempt's cost); evidence
   searches always retry (6 results asked, thin rule <=9); design lane drops raw vendor bodies
   (`lumen_api/spend.py:62`, `artifacts=None`).
+
+## 2026-09-30 — custom-domain walk: republish under a new slug left the old one live
+- Founder's walk: republishing a page from `conduit-for-jw-marriot` to `conduit-jw-marriot` left
+  BOTH serving. Publishes are keyed `(workspace, slug)`; `publish_web_document` replaced only the
+  new slug's row. `4d9a5f469`: it now unpublishes the document's other live slugs
+  (`clue_design.publishes.unpublish_other_slugs`); founder ruling: the old address 404s, no
+  redirect. Test `test_republishing_under_a_new_slug_moves_the_site` (red without the fix).
+- Live-proven 2026-09-30 on the lane stack: after republishing under `jw-marriot` the two older
+  slugs are `unpublished` and 404 on the page origin; `jw-marriot` 200.
+- GOTCHA: `dev_stack.sh restart-api` restarts ONLY the platform API (8022/8031), not the design
+  API (8011). A design-API change needs the design API restarted by hand (kill its pid, relaunch
+  with the `up()` env: PLATFORM_ENV + LUMEN_EMBEDDED_FLEET_WORKER=1 + LUMEN_CORE_HELPER +
+  LUMEN_API_CORS_ORIGINS + PYTHONPATH, from `subsystems/clue-design`). The first "fix didn't
+  work" report was this.
+- Open: rolling back an unpublished slug re-activates it beside the live one (left as is).
