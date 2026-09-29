@@ -59,6 +59,7 @@ from .store import AdAssetsStore
 from .harvest import (
     DEFAULT_MAX_CREATIVES,
     DEFAULT_MAX_PAGES,
+    CreativeSelection,
     HarvestedCreative,
     ads_considered,
     creative_provenance,
@@ -252,14 +253,20 @@ def _onboard(
     observed_page_id = resolution.observed_page_id
     evidence["resolution"] = resolution.to_json()
 
+    # The filter is told the RESOLVED company name. Left to guess, it takes the most frequent
+    # advertiser on the page as the company — and a company that promotes one executive's posts
+    # more often than its own ads (Conduit, 2026-09-29: "Cole Rubin" outnumbered "conduit") gets
+    # the executive kept and its own ads dropped as thought-leader posts.
     selection = select_creatives(
-        pages, advertiser_name=advertiser_name, max_creatives=max_creatives
+        pages, advertiser_name=resolution.resolved_name, max_creatives=max_creatives
     )
     # THE UNIVERSAL GUARD. It runs on all three resolution paths — verified, fallback and
     # operator-asserted — because harvesting a stranger's creatives into a brand's reference
-    # library is worse than an empty lane on every one of them.
+    # library is worse than an empty lane on every one of them. When NO ad carried the company's
+    # name, the names the filter dropped for not carrying it are what the page actually serves,
+    # so those are checked: a stranger's page reads as a mismatch, never as an honest empty.
     advertiser_check = check_advertiser_names(
-        [ad.advertiser_name for ad in selection.kept],
+        [ad.advertiser_name for ad in (selection.kept or _dropped_for_name(pages, selection))],
         expected=resolution.resolved_name,
         resolution=resolution,
     )
@@ -636,6 +643,12 @@ def _stored_creatives(
             )
         )
     return creatives, missing
+
+
+def _dropped_for_name(pages: Any, selection: CreativeSelection) -> list[AdLibraryAd]:
+    """The ads the filter dropped only because their advertiser was not the company's name."""
+    dropped = {ad_id for ad_id, reason in selection.dropped if reason == "thought_leader"}
+    return [ad for page in pages for ad in page.ads if ad.ad_id in dropped]
 
 
 def _resolve_advertiser(
