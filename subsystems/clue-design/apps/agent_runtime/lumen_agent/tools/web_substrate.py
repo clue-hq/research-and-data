@@ -91,6 +91,7 @@ from lumen_api.fragments.render import (
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
 from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
 from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
+from .web_layout_capture import capture_layout, layout_targets
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -1103,6 +1104,7 @@ class LumenWebTools:
         self._review_iteration = 0
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
+        self._layout_by_width: dict[int, JsonObject] = {}
         self._preview_iteration: Optional[int] = None
         # Interactive STATE captures from the latest render (dialog-open,
         # accordion-expanded), reset each render; view("state:<n>") indexes here.
@@ -2589,6 +2591,7 @@ class LumenWebTools:
         # author works next, and the standing previews are of the old one.
         self.page_id = clean_id
         self._preview_by_width = {}
+        self._layout_by_width = {}
         self._state_captures = []
         self._state_capture_failures = []
         self._state_capture_limits = {}
@@ -2641,6 +2644,7 @@ class LumenWebTools:
             self.page_id = remaining[0] if remaining else HOME_PAGE_ID
             # The standing previews are pixels of a page that no longer exists.
             self._preview_by_width = {}
+            self._layout_by_width = {}
             self._state_captures = []
             self._state_capture_failures = []
             self._state_capture_limits = {}
@@ -2687,6 +2691,7 @@ class LumenWebTools:
         # to a page; and a switch is the start of a fresh page round, so the
         # between-renders edit budget opens again.
         self._preview_by_width = {}
+        self._layout_by_width = {}
         self._state_captures = []
         self._state_capture_failures = []
         self._state_capture_limits = {}
@@ -9821,6 +9826,7 @@ class LumenWebTools:
                     "diagnostics": [],
                     "unchanged": True,
                     "media_readiness": dict(self._preview_media_readiness),
+                    "layout_views": [f"layout:{width}" for width in self._layout_by_width],
                 },
                 indent=2,
             )
@@ -9898,6 +9904,7 @@ class LumenWebTools:
             "state_capture_failures": list(self._state_capture_failures),
             "diagnostics": diagnostics,
             "media_readiness": dict(self._preview_media_readiness),
+            "layout_views": [f"layout:{width}" for width in self._layout_by_width],
         }
         if tailwind_missing:
             preflight_unverified = any(
@@ -10028,6 +10035,8 @@ class LumenWebTools:
         self._state_capture_failures = []
         self._preview_media_ready = False
         self._preview_media_readiness = {}
+        self._layout_by_width = {}
+        targets = layout_targets(self.web_doc, self.page_id)
         for width in _PREVIEW_WIDTHS:
             page = browser.new_page(viewport={"width": width, "height": 1200})
             page.set_content(html, wait_until="load")
@@ -10045,6 +10054,16 @@ class LumenWebTools:
                 })
             dest = iter_dir / f"preview_{width}.png"
             page.screenshot(path=str(dest), full_page=True)
+            # Observe the same rendered page, not a separately recreated section.
+            # A failure remains explicit and does not erase a valid screenshot.
+            layout = capture_layout(page, targets)
+            layout.update(
+                document_id=self.web_doc.get("id"), page_id=self.page_id,
+                local_document_version=self._doc_version, iteration=self.iteration,
+                persisted_revision_checked=False, media_readiness=media,
+            )
+            self._layout_by_width[width] = layout
+            self._write_json(iter_dir / f"layout_{width}.json", layout)
             page.close()
             paths.append(str(dest))
             self._preview_by_width[width] = str(dest)
@@ -10280,6 +10299,98 @@ class LumenWebTools:
                 "child_ids": node.get("children") or [],
             })
 
+    def _view_layout(self, target: str, *, can_render: bool) -> list:
+        """Read bounded saved measurements; never render or change a document from view."""
+        with self.tool_lock:
+
+            def reply(payload: JsonObject) -> list:
+                encoded = json.dumps(payload, ensure_ascii=False)
+                if len(encoded.encode("utf-8")) > _WEB_NODE_VIEW_MAX_BYTES:
+                    encoded = json.dumps(
+                        {
+                            "status": "error",
+                            "code": "layout.too_large",
+                            "message": "Measurement exceeds the view limit; "
+                            "no partial node returned.",
+                        }
+                    )
+                self.record(
+                    "agent",
+                    "web_view_called",
+                    input_summary=target[:300],
+                    output_summary="layout_observation",
+                )
+                return [_text_block(encoded)]
+
+            match = re.fullmatch(r"layout:(1440|768|375)(?::node:(.+))?", target)
+            if not match:
+                return reply(
+                    {
+                        "status": "error",
+                        "code": "layout.bad_target",
+                        "message": "Use layout:<1440|768|375> or layout:<width>:node:<id>.",
+                    }
+                )
+            width, node_id = int(match[1]), match[2]
+            report = self._layout_by_width.get(width)
+            next_step = (
+                "Call render_web_preview() first."
+                if can_render
+                else "Measurements refresh between rounds; finish the current round "
+                "and return to the director."
+            )
+            if not report:
+                return reply({
+                    "status": "error", "code": "layout.not_captured", "message": next_step,
+                })
+            if (
+                report.get("page_id") != self.page_id
+                or report.get("document_id") != self.web_doc.get("id")
+                or report.get("local_document_version") != self._doc_version
+                or report.get("iteration") != self._preview_iteration
+                or self._preview_doc_version != self._doc_version
+            ):
+                return reply(
+                    {
+                        "status": "error",
+                        "code": "layout.stale",
+                        "message": "The document changed after measurement. " + next_step,
+                    }
+                )
+            payload = {key: copy.deepcopy(value) for key, value in report.items() if key != "nodes"}
+            if report.get("status") != "observed":
+                return reply(payload)
+            if node_id is not None:
+                matches = [row for row in report["nodes"] if row.get("node_id") == node_id]
+                if len(matches) != 1:
+                    return reply(
+                        {
+                            "status": "error",
+                            "code": "layout.node_not_measured",
+                            "message": "No unique measurement for this node; "
+                            "inspect the layout index and omissions.",
+                        }
+                    )
+                payload["node"] = copy.deepcopy(matches[0])
+            else:
+                payload["nodes"] = [
+                    {
+                        key: row.get(key)
+                        for key in (
+                            "node_id",
+                            "kind",
+                            "fragment_id",
+                            "status",
+                            "box",
+                            "complete",
+                            "omitted",
+                        )
+                    }
+                    | {"target": f"layout:{width}:node:{row['node_id']}"}
+                    for row in report["nodes"]
+                ]
+            return reply(payload)
+
     def _view_content(self, target: str, can_render: bool = True) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool.
 
@@ -10288,6 +10399,8 @@ class LumenWebTools:
         refusals must never instruct a role to call a tool it does not have —
         live failure 2026-07-29: an author churned blind for 14 minutes retrying
         stale views because the refusal said "call render_web_preview() first"."""
+        if target.startswith("layout:"):
+            return self._view_layout(target, can_render=can_render)
         if target == "review":
             report = self._review_evidence_report()
             self.record("agent", "web_review_evidence_viewed", payload=report)
@@ -10401,7 +10514,7 @@ class LumenWebTools:
         )
         return [
             _text_block(
-                f"view: unknown target {target!r}. Use \"preview:1440\", "
+                f"view: unknown target {target!r}. Use \"layout:1440\", \"preview:1440\", "
                 '"preview:768", "preview:375", "preview:<width>:tile:<n>", '
                 '"state:<n>", "state:<n>:tile:<index>", "review", "asset:<asset_id>", '
                 '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
@@ -10891,7 +11004,18 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
         "preview:<width>:tile:<n>" returns one readable strip of that saved
-        screenshot (zero-based n; 1200px high, 100px overlap). Use tile:0 then
+        screenshot (zero-based n; 1200px high, 100px overlap).
+        "layout:<1440|768|375>" returns a bounded section/fragment measurement index
+        from the same saved preview; "layout:<width>:node:<id>" returns one node's
+        computed typography, text/container boxes, image sizing/crop rules and three
+        ancestors' padding/backgrounds. Parent/ancestor container IDs resolve in
+        that node's containers map. It does not render again. Use it to diagnose
+        a type mismatch, tall empty container or hidden product before editing.
+        Bounds/omissions are explicit; rendered paths are NOT stored text-edit paths.
+        Computed font-family does not prove the actual glyph face; pixels and baked
+        image backgrounds are unclassified. Compare asset pixels and source evidence.
+        Stale/wrong-page measurements refuse, and none is an aesthetic verdict.
+        Use tile:0 then
         coverage.next_target to inspect tall/mobile pages. JSON reports source
         hash/dimensions/render version, crop, tile count and other tile ranges
         not shown by THIS call. "review" aggregates observations from this turn

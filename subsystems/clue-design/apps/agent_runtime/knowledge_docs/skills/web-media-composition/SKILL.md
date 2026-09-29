@@ -20,6 +20,11 @@ Preserve what the source image means and how the source stages it. A real asset 
 5. Choose existing source imagery, a justified generated derivative, or deliberate absence per band. Generation is optional and cannot recover a sharper original, real customer, product truth, or logo. Use only this web lane's actual tool parameters.
 6. Inspect final 1440/768/375 previews at the intended placement; compare the source where fidelity is requested. Check image meaning beside its copy, crop, sharpness, alpha edges, radius, stacking, logo completeness and surface contrast. An asset preview alone does not verify the composed page.
 
+For a hidden image, crop or doubled frame, use the cached
+[layout evidence](../web-source-readiness/references/layout-evidence.md) alongside
+asset pixels before changing the composition. Container styles alone cannot
+classify a baked background or transparent UI.
+
 ## Handoff
 
 Leave a compact media decision per affected band in the existing plan/review: role; selected id and origin; source/capture or derivative provenance; measured pixels and required pixels; crop/radius/alpha/layers; reuse/generate/none with reason; final preview evidence and remaining gap. Record unknowns explicitly. These are reasoning fields, not invented runtime API fields.

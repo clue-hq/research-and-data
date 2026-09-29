@@ -75,7 +75,7 @@ An account repair meant for the first Inbox product panel instead replaced the c
 - Full-page screenshots were often the only images viewed. A phone screenshot thousands of pixels tall is an overview, not legible inspection of every section.
 - The latest run inspected only desktop strips 0/9/11 and phone strip 0 on the first render. After mutation it inspected desktop strip 9 only, with no final phone/tablet strips. The source comparison was unavailable because the reference was 1920px and the comparison render 1440px; the previous clone review was stale after the last edit. Exact replay: `native-skill-repair-validation/review-observation-replay.json`.
 - Initial source tabs had zero state captures. Final HE Labs created state captures without viewing them in that turn. The contact CSS-radio switcher produced no state captures. The later simple revision saw only the default and one selected native-tab state, not all four at desktop and phone.
-- Current `_capture_states` clicks `tabs[1]` at 1440px, silently does nothing if absent, then records `tab-selected` without checking selected state. `_interactive_capture_plan` scans all pages although a render is for one active page. CSS-radio controls are not covered by this typed-component scanner. These are confirmed **current code gaps**, not just historical model mistakes.
+- At the audit baseline, `_capture_states` clicked `tabs[1]` at 1440px, silently did nothing if absent, then recorded `tab-selected` without checking selected state. `_interactive_capture_plan` scanned all pages although a render is for one active page. CSS-radio controls were not covered by this typed-component scanner. These were confirmed **runtime gaps**, not just historical model mistakes; the offline interaction checkpoint below subsequently changed them.
 
 Evidence: `tools/web_substrate.py` around **669,9991,10084–10115**; S/run_e1c…/log **368,439**; H/run_7a358…/trace **28–32**; B/run_139cec…/trace **25–29**; L/log **847,877,916,958,971,985**.
 
@@ -115,7 +115,36 @@ The historical failures above precede these local checkpoints:
 - `95c6101d`: version-bound review observation ledger, stale/unseen evidence and comparison limits. It records coverage; it does not judge design or prevent unsupported agent verdicts.
 - `ef7f02ec`: distinguishes agent-authored handoff choices from actual user requirements; aligns planning instructions. Offline probes did not establish a quantitative behavioral improvement.
 
-Those checkpoints have focused offline tests. None has yet demonstrated an improved native Hotel Equities page. All-state interaction verification/reconstruction, exact source typography/media contracts, compact evidence-to-copy planning, retrieval/continuity work and native visual acceptance remain open. No migration or standalone page implementation is needed to continue the next mechanical slice.
+Subsequent offline checkpoints under the same no-new-generation constraint:
+
+- `4d7ffdc0`: active-page, bounded interaction receipts assert actual activation,
+  selected panels/images and keyboard behavior, including eligible CSS-radio
+  implementations at desktop/phone. Failures and omitted states stay explicit.
+  This does not recover the original source controller or repair an existing page.
+- `e776dda4`: paged plain-text inventory and exact text variants keep captured
+  HTML/CSS/assets and existing pin state. Replayed all six eligible text targets
+  in the held large feature fragment without transcribing its 201k CSS.
+- Current layout checkpoint: the ordinary native preview caches text styles,
+  boxes, media visibility and image-container geometry at 1440/768/375.
+  `view("layout:<width>")` and per-node reads reuse that evidence and refuse stale
+  document/page/preview iterations. Shared containers are described once. The
+  source/media/product/review skills point to the same bounded diagnostic contract.
+
+Held-artifact browser replay independently reproduced the source 48px/400 versus
+authored 32px/500 desktop heading styles, authored image wrappers with 18px top /
+12px side padding plus a background, and the phone source Inbox with visible
+background but CSS-hidden product imagery. It served 20 existing local assets,
+used no network/provider and changed no workspace artifact. This is a replay of
+the saved fragments/compose call, not a current native-page acceptance test.
+The measurements deliberately leave actual glyph-font identity, image alpha /
+baked-composite classification, occlusion and aesthetic quality unverified.
+
+Those checkpoints have focused offline tests. None has yet demonstrated an
+improved native Hotel Equities page. Source controller reconstruction, actual
+font-origin/glyph verification, asset-pixel classification and framing repair,
+compact evidence-to-copy/CTA planning, retrieval/continuity and native visual
+acceptance remain open. No migration or standalone page implementation is needed
+to continue the next mechanical slice.
 
 ## Evidence locations and run index
 

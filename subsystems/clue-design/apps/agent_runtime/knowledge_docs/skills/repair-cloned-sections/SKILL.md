@@ -39,6 +39,9 @@ fallback and release consequences, read the
    Other raw repairs still need complete HTML/CSS. Never reconstruct unseen
    bytes or rebuild visuals to work around an unsupported edit.
 4. Inspect the current band between its neighbors at the failing width.
+   For type, whitespace or media defects, read cached
+   [layout evidence](../web-source-readiness/references/layout-evidence.md)
+   before guessing new styles. Measurements do not replace source or pixel review.
    Name the defect and evidence, or the requested structural adaptation.
    A root-unit/font-context defect, an inadequate source image and an
    unsupported interaction require different remedies. Do not hide a capture

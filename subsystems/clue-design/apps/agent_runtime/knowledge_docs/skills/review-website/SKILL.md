@@ -68,6 +68,9 @@ A successful operation, valid document or screenshot path proves none of these.
    requirements, previews/states and scope. If unavailable, identify self-review;
    never invent a delegation or change runtime configuration to obtain one.
 5. Report observed defects with page/node, viewport/state and smallest repair.
+   For type/media/spacing defects, use cached
+   [layout evidence](../web-source-readiness/references/layout-evidence.md)
+   to locate the constraint; computed styles are not proof of font or visual fidelity.
    After repair, judge new current evidence. For a small edit, certify only that
    change and its affected neighbors; do not re-plan or re-generate the entire page.
    Distinguish tool completion from request satisfaction. A saved draft can be

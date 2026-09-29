@@ -43,6 +43,8 @@ reason to flatten a good band or start repeated image generations.
 ## Keep hierarchy and behavior together
 
 - Measure the source heading/body family, weight, size, line-height and text width.
+  Use [layout evidence](../web-source-readiness/references/layout-evidence.md)
+  for current rendered nodes; resolve the actual source font separately.
   Carry the resolved font roles into new siblings. Judge the page hierarchy together:
   do not accidentally make its opening smaller than ordinary later section headings.
 - Preserve the strong visual wrapper when replacing a missing controller. Use
