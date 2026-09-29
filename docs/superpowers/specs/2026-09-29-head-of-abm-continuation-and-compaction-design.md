@@ -1,6 +1,6 @@
 # Head of ABM: continuation, prompt caching and compaction across turns
 
-Date: 2026-09-29 · Status: approved in conversation (founder), awaiting written-spec review
+Date: 2026-09-29 · Status: approved (founder); revised same day: compaction for every agent, harness profile never overrides
 Branch: `codex/ai-ark-committee-discovery-spec-v1`
 
 ## 1. Why
@@ -74,34 +74,43 @@ and the Stage-0 developer trial surface; changing what the cards contain.
   - `CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED=false`.
   Continuation resumes from the next turn after a rebuild.
 
-### 3.2 Compaction
+### 3.2 Compaction (every governed agent, by default)
 
-- deepagents' summarisation is configured explicitly for the Head of ABM, and its state
-  (`_summarization_event`) is carried across turns by continuation, so a thread compacts **once**
-  and later turns build on the summary until it grows past the threshold again.
+Founder rulings 2026-09-29: compaction is on **by default for every agent** built through
+`DeepAgentTurnRuntime` (Head of ABM, research, onboarding synthesis, specialists — the single
+`create_deep_agent` call in `platform/agents/clue_agents/runtime.py`), and **no deepagents harness
+profile may disable or replace this strategy at any point**.
+
+- **Our summariser, not the default.** The runtime adds `ClueSummarizationMiddleware` (a subclass
+  of deepagents' `SummarizationMiddleware`, distinct class) and `SummarizationToolMiddleware`
+  (`compact_conversation`) to every graph. deepagents' built-in instance is removed by one harness
+  profile registered for our governed model provider that excludes **by exact class**
+  (`_DeepAgentsSummarizationMiddleware`) — never by the name string "SummarizationMiddleware", which
+  would also match ours. A guard test builds each governed agent and fails unless its final stack
+  holds exactly one summariser (ours) and the `compact_conversation` tool.
+- **Carried across turns.** `_summarization_event` lives in graph state, so continuation (3.1)
+  carries it: a thread compacts **once** and later turns build on the summary.
 - **Model-aware threshold.** The model's context window is resolved at start-up from OpenRouter's
-  public model catalogue (`context_length` for the configured model id) and given to deepagents as
-  the model profile's `max_input_tokens`, so deepagents uses proportional thresholds:
-  - `CLUE_HEAD_OF_ABM_COMPACT_TRIGGER_FRACTION` = **0.90** (450k on Grok 4.6's 500k window);
-  - `CLUE_HEAD_OF_ABM_COMPACT_KEEP_FRACTION` = **0.10** (the most recent ~50k tokens kept whole);
-  - `CLUE_HEAD_OF_ABM_CONTEXT_WINDOW_TOKENS` overrides the catalogue (blank = use catalogue).
-  - Window unknown (no catalogue entry, no override): fixed fallback
-    `CLUE_HEAD_OF_ABM_COMPACT_TRIGGER_TOKENS` = **170,000** and
-    `CLUE_HEAD_OF_ABM_COMPACT_KEEP_MESSAGES` = **6**. It never runs without a limit.
-- **Evicted history** is written by deepagents to `conversation_history/<thread>.md` in the thread
-  folder; the summary names the path so the agent can re-open it.
-- **Overflow retry:** a provider "context too long" rejection compacts and retries (deepagents'
-  `ContextOverflowError` fallback).
-- **Manual compaction:** `SummarizationToolMiddleware` adds `compact_conversation`; it is added to
-  the exact tool surface as a framework tool (like the file tools). The user can ask the agent to
-  compact.
-- The summarisation model call goes through the same governed gateway (`models.build(...)`, role
-  `head_of_abm`), so it is metered in `agent_model_call` like every other call.
-- **Profile v69** (catalog version bump; recipe unchanged): `conversation_history` added to
-  `readable_prefixes` and `writable_prefixes`; the compaction tool surfaced; manual re-minted.
-  One eviction event writes roughly the trigger minus the kept part (~400k tokens ≈ 1.6 MB of
-  markdown on a 500k window), over today's 1 MB `max_file_bytes`, so v69 raises `max_file_bytes`
-  to **4 MB** (`max_total_bytes` stays 20 MB).
+  public model catalogue (`context_length` for the configured model id), with an override:
+  - `CLUE_AGENT_COMPACT_TRIGGER_FRACTION` = **0.90** (450k on Grok 4.6's 500k window);
+  - `CLUE_AGENT_COMPACT_KEEP_FRACTION` = **0.10** (the most recent ~50k tokens kept whole);
+  - `CLUE_AGENT_CONTEXT_WINDOW_TOKENS` overrides the catalogue for every agent (blank = catalogue).
+  - Window unknown: fixed fallback `CLUE_AGENT_COMPACT_TRIGGER_TOKENS` = **170,000**,
+    `CLUE_AGENT_COMPACT_KEEP_MESSAGES` = **6**. It never runs without a limit.
+- **Evicted history** goes to `work/conversation_history/<thread>.md` in the agent's workspace
+  (deepagents' fixed `/conversation_history/` path is remapped by a thin backend wrapper to the
+  already-writable `work/` prefix, so no role needs a new folder). The summary names the path so the
+  agent can re-open it. A role whose workspace cannot write `work/` (onboarding synthesis,
+  specialists) still compacts — deepagents treats a failed offload as non-fatal — it just keeps no
+  file.
+- **Overflow retry:** a provider "context too long" rejection compacts and retries.
+- **Manual compaction:** `compact_conversation` joins the runtime's framework tools (with the file
+  tools), so no profile needs to grant it.
+- The summarisation call uses the agent's own governed model, so it is metered in
+  `agent_model_call` like every other call.
+- **Head of ABM v69:** `max_file_bytes` 1 MB → **4 MB** (one eviction is ~400k tokens ≈ 1.6 MB on a
+  500k window); prompt, skills and tools otherwise unchanged; manual re-minted. Other roles keep
+  their limits (an oversized eviction file is skipped, non-fatally).
 
 ### 3.3 Receipts, replay, crashes and stops
 
@@ -127,11 +136,11 @@ and the Stage-0 developer trial surface; changing what the cards contain.
 | Setting | Default |
 |---|---|
 | `CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED` | `true` |
-| `CLUE_HEAD_OF_ABM_CONTEXT_WINDOW_TOKENS` | blank (catalogue) |
-| `CLUE_HEAD_OF_ABM_COMPACT_TRIGGER_FRACTION` | `0.90` |
-| `CLUE_HEAD_OF_ABM_COMPACT_KEEP_FRACTION` | `0.10` |
-| `CLUE_HEAD_OF_ABM_COMPACT_TRIGGER_TOKENS` | `170000` (window unknown) |
-| `CLUE_HEAD_OF_ABM_COMPACT_KEEP_MESSAGES` | `6` (window unknown) |
+| `CLUE_AGENT_CONTEXT_WINDOW_TOKENS` | blank (catalogue) |
+| `CLUE_AGENT_COMPACT_TRIGGER_FRACTION` | `0.90` |
+| `CLUE_AGENT_COMPACT_KEEP_FRACTION` | `0.10` |
+| `CLUE_AGENT_COMPACT_TRIGGER_TOKENS` | `170000` (window unknown) |
+| `CLUE_AGENT_COMPACT_KEEP_MESSAGES` | `6` (window unknown) |
 
 ## 4. Measurement and tests
 
