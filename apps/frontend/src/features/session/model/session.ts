@@ -24,6 +24,13 @@ export const SessionMembershipSchema = z.object({
   workspace_name: z.string().min(1),
   role_key: WorkspaceRoleSchema,
   permissions: z.array(z.string().min(1)),
+  // The company's logo for the workspace switcher: Brandfetch's embed-only Logo
+  // API mark for the website given at onboarding, or null (initials instead).
+  workspace_logo_url: z
+    .string()
+    .refine((value) => value.startsWith("https://cdn.brandfetch.io/"))
+    .nullable()
+    .optional(),
 }).strict();
 
 export const AuthenticatedSessionSchema = z.object({

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Menu } from "@base-ui/react/menu";
 import { Check, ChevronRight } from "lucide-react";
@@ -8,6 +9,12 @@ import styles from "./app-sidebar.module.css";
 import { workspaceInitials } from "@/features/accounts/model/workspace-profile";
 import { useWorkspaceProfile } from "./workspace-profile-context";
 import { useWorkspaceSwitcher } from "./workspace-switcher-context";
+
+/** The company's logo in the workspace avatar box, or its initials when it has none.
+ * unoptimized: Brandfetch's Logo API is embed-only, loaded by the browser itself. */
+function WorkspaceMark({ initials, logoUrl }: { initials: string; logoUrl?: string | null }) {
+  return logoUrl ? <Image alt="" height={16} src={logoUrl} unoptimized width={16} /> : <>{initials}</>;
+}
 
 export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
   const { activeWorkspace, selectWorkspace, workspaces } = useWorkspaceSwitcher();
@@ -63,7 +70,7 @@ export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
                   }
                 >
                   <span aria-hidden="true" className={styles.workspaceTriggerAvatar}>
-                    {workspaceMark}
+                    <WorkspaceMark initials={workspaceMark} logoUrl={activeWorkspace?.logoUrl} />
                   </span>
                   <span className={styles.workspaceTriggerName}>{workspaceName}</span>
                   <ChevronRight aria-hidden="true" className={styles.profileMenuChevron} size={13} />
@@ -86,7 +93,7 @@ export function SidebarProfileMenu({ collapsed }: { collapsed: boolean }) {
                               label={workspace.name}
                               value={workspace.id}
                             >
-                              <span aria-hidden="true" className={styles.workspaceAvatar}>{workspace.initials}</span>
+                              <span aria-hidden="true" className={styles.workspaceAvatar}><WorkspaceMark initials={workspace.initials} logoUrl={workspace.logoUrl} /></span>
                               <span className={styles.workspaceMenuDetails}>
                                 <span>{workspace.name}</span>
                                 <span className={styles.workspaceMenuRole}>{workspace.role}</span>
