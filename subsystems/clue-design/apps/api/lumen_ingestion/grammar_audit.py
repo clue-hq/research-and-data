@@ -50,7 +50,12 @@ from .colorspace import hex_alpha, hex_to_oklab, oklab_distance, relative_lumina
 from .evidence import BrandEvidence, SectionBackground, SurfaceShape
 from .normalizer.bands import DARK_LUMINANCE
 from .normalizer.cluster import MERGE_DISTANCE
-from .normalizer.typography import ANCHOR_LABELS, resolve_anchors
+from .normalizer.typography import (
+    TYPE_MEASUREMENT_FIELDS,
+    anchor_for_role,
+    measured_style_fields,
+    resolve_anchors,
+)
 
 #: The kit section version. Bump only with a migration story for stored audits.
 GRAMMAR_AUDIT_SCHEMA_VERSION = 1
@@ -205,24 +210,21 @@ def _type_treatment(evidence: BrandEvidence, brand_kit: dict[str, Any]) -> Gramm
         )
 
     anchors = resolve_anchors(evidence)
-    anchored: dict[str, str] = {}
-    for label, role in ANCHOR_LABELS.items():
-        sample = anchors.samples.get(label)
-        if sample is not None:
-            anchored.setdefault(f"type.{role}", label)
-
-    # The field's LAW leads; the role listing it applies to follows. The injected
-    # block drops a field's tail first, so a type-treatment section that keeps
-    # six role listings and loses "never restate the ramp" has kept the footnotes
-    # and dropped the instruction.
+    # Source authority leads so a truncated block cannot elevate derived ramp
+    # values over the measured responsive style of the selected component.
     rules: list[GrammarRule] = [
         GrammarRule(
             rule=(
-                "Headings and body land on the theme's type ramp with no classes of their "
-                "own. Never restate size, weight, leading or tracking on a heading: a raw "
-                "`text-5xl font-bold` replaces the treatment below with a generic one."
+                "For captured/adapted bands and equivalent new roles, preserve the measured source "
+                "typography and responsive CSS. The theme's type ramp is a fallback where source "
+                "measurements are unavailable; derived/substituted values are not observed facts. "
+                "Inspect and bind source roles before raw composition, rather than adding generic "
+                "size/weight utilities."
             ),
-            evidence="house rule: the kit's type roles compile into the theme base layer",
+            evidence=(
+                "house rule: measured component styles govern reuse; "
+                "kit roles supply fallback values"
+            ),
             basis="default",
         )
     ]
@@ -232,23 +234,28 @@ def _type_treatment(evidence: BrandEvidence, brand_kit: dict[str, Any]) -> Gramm
         style = _style_value(typography.get(role))
         if style is None:
             continue
-        label = anchored.get(role)
+        anchor = anchor_for_role(role.removeprefix("type."), anchors)
+        measured = measured_style_fields(anchors, role, style)
+        derived = TYPE_MEASUREMENT_FIELDS - measured
+        observation = (
+            f"measured {', '.join(sorted(measured))} at {_locator(anchor)[:100]}; "
+            if measured else ""
+        )
+        qualification = (
+            f"derived/substituted {', '.join(sorted(derived))}; these are not observed brand facts"
+            if derived else "all listed type properties match the selected sample"
+        )
         role_rules.append(
             GrammarRule(
                 # The `derived` basis is what says "computed, not observed", and
                 # the injected block renders it as a marker — saying it twice in
                 # one line spends characters on nothing.
                 rule=f"`{role}` ({where}) is {_style_text(style)}.",
-                evidence=(
-                    f"measured off the site's own {label} ({_locator(anchors.samples[label])})"
-                    if label
-                    else "nothing on the site anchored this role; the engine's ramp computed it "
-                    "from the measured body and headline sizes"
-                ),
-                basis="measured" if label else "derived",
+                evidence=observation + qualification,
+                basis="derived" if derived else "measured",
             )
         )
-        if role == "type.headline" and label:
+        if role == "type.headline" and "font_weight" in measured:
             weight = style.get("font_weight")
             if isinstance(weight, int):
                 heading_weight = weight

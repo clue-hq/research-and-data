@@ -84,6 +84,41 @@ in context is not proof that its required operation happened. The existing
 typography gate only checks explicitly declared references; undeclared roles
 remain unverified.
 
+#### Follow-up: ingestion caused the incorrect typography authority
+
+A read-only trace through the approved kit and its saved ingestion evidence
+identified an upstream cause as well. The capture already contained rendered
+headings: h1 56/400 and h2 48/400, both with line-height 1 and tracking -0.03em.
+Earlier stylesheet samples named an unresolved CSS family variable and lacked
+the numeric properties. `resolve_anchors` kept the first sample for each label,
+discarding the later complete rendered sample. It therefore used the 32px/700
+fallback, then font custody selected 500 from the available 400/500 faces.
+The derived title became 23px/500. The source fragments retained their own CSS.
+
+The normalizer stamped derived roles as evidence merely because some type
+samples existed. The grammar audit likewise called them measured and instructed
+the agent never to restate the theme ramp. The native brand view delivered those
+incorrect values. Newly composed styles matched them, while captured sections
+retained the correct original typography. Loaded Regular and Medium glyphs rule
+out font download/cache failure for this case.
+
+The local fix selects complete rendered samples ahead of incomplete/conflicting
+stylesheet declarations, retains deterministic source order for equal evidence,
+and does not choose by largest size. Provenance now distinguishes measured fields
+from defaults and custody substitutions. The generated grammar puts measured
+source component typography and responsive CSS ahead of the fallback kit ramp,
+consistent with the existing shared source-format contract.
+
+Verification: the regression first failed on the original first-sample behavior.
+The final focused offline matrix passed 76 checks (six database-dependent cases
+excluded). Reviewed golden changes affect provenance/confidence, not fixture token
+values. Replaying this exact ingestion in memory over a read-only connection now
+produces h1 56/400 and h2 48/400 with the rendered sample locators. No providers,
+kit publication, page generation, service reload or database writes were used.
+The already-approved kit and generated page remain unchanged. This is a producer
+fix, not live quality qualification; required reference coverage, kit refresh and
+native visual acceptance remain outstanding.
+
 ### 3. Interactive source was flattened before evaluating the available route
 
 The agent inspected the procedures component, received

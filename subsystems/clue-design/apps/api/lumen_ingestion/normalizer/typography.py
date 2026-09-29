@@ -9,6 +9,7 @@ fonts[] role hints), falling back to a single family used for both.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from ..evidence import BrandEvidence, FontEvidence, TypeSample
@@ -52,7 +53,7 @@ def _family_from(samples: list[TypeSample], labels: set[str], fonts: list[FontEv
     counts: dict[str, int] = {}
     order: list[str] = []
     for sample in samples:
-        if sample.label in labels and sample.family:
+        if sample.label in labels and _resolved_family(sample.family):
             if sample.family not in counts:
                 order.append(sample.family)
             counts[sample.family] = counts.get(sample.family, 0) + 1
@@ -64,14 +65,41 @@ def _family_from(samples: list[TypeSample], labels: set[str], fonts: list[FontEv
     return None
 
 
+def _resolved_family(family: str | None) -> bool:
+    return bool(family and family.strip() and "var(" not in family.lower())
+
+
+def _positive(value: float | int | None) -> bool:
+    return value is not None and math.isfinite(value) and value > 0
+
+
+def _sample_rank(sample: TypeSample) -> tuple[bool, bool, bool, int]:
+    """Prefer a complete rendered style, never CSS encounter order or largest type.
+
+    Keep each sample intact: combining an unrelated rule's size with a rendered
+    face can invent a style the site never uses. Ties retain source order.
+    """
+    complete = (
+        _resolved_family(sample.family) and _positive(sample.size_px) and _positive(sample.weight)
+    )
+    rendered = sample.pointer.locator.startswith("rendered ::")
+    fields = sum((
+        _resolved_family(sample.family), _positive(sample.size_px), _positive(sample.weight),
+    ))
+    return rendered and complete, complete, rendered, fields
+
+
 def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     samples = evidence.type_samples
     by_label: dict[str, TypeSample] = {}
     for sample in samples:
-        by_label.setdefault(sample.label, sample)
+        prior = by_label.get(sample.label)
+        if prior is None or _sample_rank(sample) > _sample_rank(prior):
+            by_label[sample.label] = sample
 
-    heading_family = _family_from(samples, _HEADING_LABELS, evidence.fonts, "heading")
-    body_family = _family_from(samples, _BODY_LABELS, evidence.fonts, "body")
+    selected = list(by_label.values())
+    heading_family = _family_from(selected, _HEADING_LABELS, evidence.fonts, "heading")
+    body_family = _family_from(selected, _BODY_LABELS, evidence.fonts, "body")
 
     # PDF-shaped labels
     if heading_family is None:
@@ -92,14 +120,20 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     headline_sample = by_label.get("h1") or by_label.get("pdf-heading")
     body_sample = by_label.get("body") or by_label.get("p") or by_label.get("pdf-body")
 
-    headline_size = (
-        headline_sample.size_px if headline_sample and headline_sample.size_px else _DEFAULT_HEADLINE
-    )
-    body_size = body_sample.size_px if body_sample and body_sample.size_px else _DEFAULT_BODY
-    heading_weight = (
-        headline_sample.weight if headline_sample and headline_sample.weight else _DEFAULT_HEADING_WEIGHT
-    )
-    body_weight = body_sample.weight if body_sample and body_sample.weight else _DEFAULT_BODY_WEIGHT
+    headline_size = _DEFAULT_HEADLINE
+    heading_weight = _DEFAULT_HEADING_WEIGHT
+    body_size = _DEFAULT_BODY
+    body_weight = _DEFAULT_BODY_WEIGHT
+    if headline_sample:
+        if _positive(headline_sample.size_px):
+            headline_size = headline_sample.size_px
+        if _positive(headline_sample.weight):
+            heading_weight = headline_sample.weight
+    if body_sample:
+        if _positive(body_sample.size_px):
+            body_size = body_sample.size_px
+        if _positive(body_sample.weight):
+            body_weight = body_sample.weight
 
     return TypeAnchors(
         heading_family=heading_family,
@@ -226,15 +260,15 @@ def build_type_styles(
     styles: dict[str, dict] = {}
     diagnostics: list[dict] = []
     for role, size, weight, line_height, color, letter_spacing in spec:
-        anchor = _anchor_for(role, anchors)
+        anchor = anchor_for_role(role, anchors)
         final_size = size
         final_weight = weight
         final_lh = line_height
         final_ls = letter_spacing
         if anchor is not None:
-            if anchor.size_px:
+            if _positive(anchor.size_px):
                 final_size = anchor.size_px
-            if anchor.weight:
+            if _positive(anchor.weight):
                 final_weight = anchor.weight
             if anchor.line_height:
                 lo, hi = LINE_HEIGHT_RATIO_RANGE
@@ -276,8 +310,39 @@ def build_type_styles(
     return styles, diagnostics
 
 
-def _anchor_for(role: str, anchors: TypeAnchors) -> TypeSample | None:
+def anchor_for_role(role: str, anchors: TypeAnchors) -> TypeSample | None:
     for label, mapped in ANCHOR_LABELS.items():
         if mapped == role and label in anchors.samples:
             return anchors.samples[label]
     return None
+
+
+TYPE_MEASUREMENT_FIELDS = frozenset({
+    "font_family", "font_size", "font_weight", "line_height", "letter_spacing",
+})
+
+
+def measured_style_fields(anchors: TypeAnchors, role: str, style: dict) -> frozenset[str]:
+    """Fields actually supported by the selected sample, after normalization.
+
+    A sample's existence is not evidence for its empty fields. Font custody
+    substitution and derived defaults must not be recited as observed style.
+    """
+    anchor = anchor_for_role(role.removeprefix("type."), anchors)
+    if anchor is None:
+        return frozenset()
+    observed = {}
+    if _resolved_family(anchor.family):
+        observed["font_family"] = anchor.family
+    if _positive(anchor.size_px):
+        observed["font_size"] = _round_half(anchor.size_px)
+    if _positive(anchor.weight):
+        observed["font_weight"] = int(anchor.weight)
+    if (
+        anchor.line_height is not None
+        and LINE_HEIGHT_RATIO_RANGE[0] <= anchor.line_height <= LINE_HEIGHT_RATIO_RANGE[1]
+    ):
+        observed["line_height"] = round(anchor.line_height, 4)
+    if anchor.letter_spacing is not None and abs(anchor.letter_spacing) <= LETTER_SPACING_EM_LIMIT:
+        observed["letter_spacing"] = round(anchor.letter_spacing, 4)
+    return frozenset(key for key, value in observed.items() if style.get(key) == value)

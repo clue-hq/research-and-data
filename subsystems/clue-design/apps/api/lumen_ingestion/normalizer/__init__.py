@@ -18,19 +18,26 @@ from ..colorspace import (
     with_lightness,
 )
 from ..evidence import BrandEvidence
+from .bands import build_band_surfaces
 from .cluster import cluster_colors
 from .emit import KitBuilder, build_constraints
+from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
+from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .ramps import derive_ramp, neutral_hue
 from .roles import (
     RoleAssignment,
     assign_light_roles,
     build_dark_colorway,
 )
-from .bands import build_band_surfaces
-from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
-from .geometry import MEASURED_CONFIDENCE, build_shadows
 from .scales import build_opacity, build_radii, build_spacing, build_strokes
-from .typography import build_type_styles, custodied_weights, resolve_anchors
+from .typography import (
+    TYPE_MEASUREMENT_FIELDS,
+    anchor_for_role,
+    build_type_styles,
+    custodied_weights,
+    measured_style_fields,
+    resolve_anchors,
+)
 
 _CONTRAST_MIN = 4.5
 
@@ -155,9 +162,19 @@ def normalize_evidence(
         anchors, cta_color=cta_color, custodied=custodied_weights(evidence)
     )
     diagnostics.extend(type_diags)
-    type_pointer = _type_pointer(evidence)
-    type_basis = "evidence" if evidence.type_samples or evidence.fonts else "default"
     for path, style in styles.items():
+        anchor = anchor_for_role(path.removeprefix("type."), anchors)
+        measured = measured_style_fields(anchors, path, style)
+        if measured == TYPE_MEASUREMENT_FIELDS and anchor is not None:
+            type_basis = "evidence"
+            type_pointer = f"{anchor.pointer.source}:{anchor.pointer.locator}"
+        else:
+            type_basis = "derived" if evidence.type_samples or evidence.fonts else "default"
+            type_pointer = "default:type-scale"
+            if type_basis == "derived":
+                type_pointer = f"derived:{path}; measured=" + (",".join(sorted(measured)) or "none")
+                if anchor is not None and measured:
+                    type_pointer += f" @ {anchor.pointer.source}:{anchor.pointer.locator}"
         builder.add_typography(path, style, type_basis, type_pointer)
 
     # Number scales. Measured geometry (design-brief slice 2) claims the steps
@@ -327,16 +344,6 @@ def _family_in_evidence(evidence: BrandEvidence, family: str) -> bool:
     if any(f.family == family for f in evidence.fonts):
         return True
     return any(s.family == family for s in evidence.type_samples)
-
-
-def _type_pointer(evidence: BrandEvidence) -> str:
-    if evidence.type_samples:
-        p = evidence.type_samples[0].pointer
-        return f"{p.source}:{p.locator}"
-    if evidence.fonts:
-        p = evidence.fonts[0].pointer
-        return f"{p.source}:{p.locator}"
-    return "default:type-scale"
 
 
 def _emit_fonts(builder: KitBuilder, anchors) -> None:
