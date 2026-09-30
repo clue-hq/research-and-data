@@ -42,7 +42,13 @@ class DiscoveryBrief2(BaseModel):
 
 def verifier_gates(brief: DiscoveryBrief2) -> tuple[Gate, ...]:
     return tuple(
-        Gate(key=g.key, rule=g.rule, test=g.test, window_months=parse_window_months(g.rule, g.test))
+        Gate(
+            key=g.key,
+            rule=g.rule,
+            test=g.test,
+            window_months=parse_window_months(g.rule, g.test),
+            main_business=g.role == "must_not",
+        )
         for g in brief.gates
     )
 

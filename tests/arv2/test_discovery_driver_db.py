@@ -51,6 +51,7 @@ from clue_api.arv2.discovery_store import (
     list_searches,
     read_discovery_run,
 )
+from clue_api.arv2.discovery_verifier import MAIN_BUSINESS_CLAUSE
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.exa_websets_client import ExaWebsetsClient
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
@@ -1136,6 +1137,19 @@ def test_the_search_source_skips_known_domains_without_sending_excludes(tmp_path
             candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
             # The project's own account was skipped, not verified again.
             assert "probook.ai" not in candidates
+            # The must_not gate — and only it — is asked about the main business: one such
+            # question per verified company (founder ruling 2026-10-01).
+            answer_queries = [
+                json.loads(request.body)["query"]
+                for request in transport.sent
+                if str(request.url).endswith("/answer")
+            ]
+            asked_main = [q for q in answer_queries if MAIN_BUSINESS_CLAUSE in q]
+            assert len(asked_main) == 2
+            assert {q.split(" (website")[0] for q in asked_main} == {
+                "Company: Alpha",
+                "Company: Hotelco",
+            }
             assert candidates["alpha.com"].disposition == "pass"
             assert candidates["hotelco.com"].disposition == "excluded"
             run = await read_discovery_run(conn, run_id=run_id)

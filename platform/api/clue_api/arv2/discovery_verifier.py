@@ -35,6 +35,7 @@ from clue_api.arv2.discovery_brief import Gate
 
 __all__ = [
     "GUARDS",
+    "MAIN_BUSINESS_CLAUSE",
     "OUTPUT_SCHEMA",
     "VERDICTS",
     "WEBSITE_SCHEMA",
@@ -127,13 +128,27 @@ def system_prompt(today: date) -> str:
     )
 
 
+#: Added to the question of a gate that excludes when it passes (founder ruling 2026-10-01). Asked
+#: "does it do this?", the verifier excluded hotel operators for a side business (a software
+#: subsidiary, a rentals line) and on a look-alike company's site; asked about the main business,
+#: it kept all five and still excluded every real vendor (replay 2026-10-01, 15 of 15).
+MAIN_BUSINESS_CLAUSE = (
+    "This is an exclusion test. Answer pass only if this is the company's main business: what its "
+    "own website presents it as, and what most of its revenue comes from. A side business, a "
+    "subsidiary, one product line or a service it also offers does not make it pass; when the "
+    "company's main business is something else, answer fail. "
+)
+
+
 def gate_question(company_name: str, url: str, gate: Gate) -> str:
     """The gate, asked in the document's own words — nothing here paraphrases the ICP."""
     return (
         f"Company: {company_name} (website {url}). "
         f"Test to verify: {gate.rule}. "
         f"How it is tested: {gate.test} "
-        "Decide pass, fail or unclear for THIS company today, citing the freshest relevant source."
+        + (MAIN_BUSINESS_CLAUSE if gate.main_business else "")
+        + "Decide pass, fail or unclear for THIS company today, "
+        "citing the freshest relevant source."
     )
 
 

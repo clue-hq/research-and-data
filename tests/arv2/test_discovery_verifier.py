@@ -14,6 +14,7 @@ from datetime import date
 
 from clue_api.arv2.discovery_brief import Gate
 from clue_api.arv2.discovery_verifier import (
+    MAIN_BUSINESS_CLAUSE,
     GateVerdict,
     apply_guards,
     disposition,
@@ -118,6 +119,18 @@ def test_fit_and_disposition_follow_the_spec_table() -> None:
         fit_score([v("pass"), v("fail"), v("fail"), v("fail")]) == 0.25
         and disposition([v("pass"), v("fail"), v("fail"), v("fail")]) == "partial"
     )
+
+
+def test_an_exclusion_gate_asks_about_the_main_business_and_no_other_gate_does() -> None:
+    plain = gate_question("Avoca", "https://avoca.ai", STAGE)
+    assert "main business" not in plain
+    exclusion = Gate(
+        "sells_product", "The company sells X.", "Its site sells X.", None, main_business=True
+    )
+    q = gate_question("Avoca", "https://avoca.ai", exclusion)
+    assert MAIN_BUSINESS_CLAUSE in q and exclusion.rule in q and exclusion.test in q
+    # The clause sits before the closing instruction, so the question still ends the same way.
+    assert q.endswith("citing the freshest relevant source.")
 
 
 def test_the_question_is_the_gates_own_words() -> None:

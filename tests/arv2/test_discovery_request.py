@@ -66,6 +66,16 @@ def test_verifier_gates_carry_the_window():
     assert gates[2].window_months == 24
 
 
+def test_only_a_must_not_gate_is_asked_about_the_main_business():
+    """Founder ruling 2026-10-01: a gate that excludes on a pass asks about the main business."""
+    gates = verifier_gates(_brief())
+    assert [(g.key, g.main_business) for g in gates] == [
+        ("is_buyer", False),
+        ("sells_product", True),
+        ("uses_stack", False),
+    ]
+
+
 def test_a_failed_must_excludes():
     out = apply_roles(
         _brief(),
