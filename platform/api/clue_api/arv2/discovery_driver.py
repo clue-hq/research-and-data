@@ -699,8 +699,14 @@ class Arv2DiscoveryWorkHandler:
             raise _SearchRefused(f"exa search refused round {search.ordinal}: http {result.status}")
         items = [_item_from_hit(hit) for hit in result.results if hit.url]
         state.found_by_search[search.ordinal] = len(items)
+        # Verification is the spend, so a round verifies at most twice its shortfall. The padding
+        # above only makes room for the known domains Exa still returns; without this bound a
+        # three-company ask verified all 42 new results live (2026-10-01) and added 31.
+        budget = 2 * search.asked
         tasks: set[asyncio.Task[None]] = set()
         for item in items:
+            if len(tasks) >= budget:
+                break
             domain = registrable_domain(item.url) or ""
             if not domain or domain in known or domain in state.seen:
                 continue

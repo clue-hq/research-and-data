@@ -1145,6 +1145,46 @@ def test_the_search_source_skips_known_domains_without_sending_excludes(tmp_path
     run_async(scenario())
 
 
+def test_a_search_round_verifies_at_most_twice_its_shortfall(tmp_path: Any) -> None:
+    """The search is padded for the known domains, so it can return far more new companies than
+    were asked for; only twice the shortfall are verified (live 2026-10-01: an ask for three
+    verified 42 and added 31). The rest are never asked about."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=1, source="search")
+            transport = _RoutedTransport(
+                [
+                    _search_round(
+                        ("Alpha", "alpha.com"),
+                        ("Beta", "beta.com"),
+                        ("Gamma", "gamma.com"),
+                        ("Delta", "delta.com"),
+                    ),
+                    *_company_routes("Alpha", "alpha.com"),
+                    *_company_routes("Beta", "beta.com"),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport)
+
+            await handler.handle(_work(run_id, fixture))
+
+            assert transport.remaining == 0
+            assert not any(
+                "gamma" in request.body.decode() or "delta" in request.body.decode()
+                for request in transport.sent
+                if not str(request.url).endswith("/search")
+            )
+            candidates = {row.domain for row in await list_candidates(conn, run_id=run_id)}
+            assert candidates == {"alpha.com", "beta.com"}
+
+    run_async(scenario())
+
+
 def test_stop_cancels_the_webset_and_keeps_what_was_verified(tmp_path: Any) -> None:
     """The human presses Stop once Acme is verified, while the webset is still running: the webset
     is cancelled and read once more (Globex reaches the ledger, unverified), Acme is kept, and the
