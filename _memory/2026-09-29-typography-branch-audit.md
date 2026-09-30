@@ -22,3 +22,22 @@
   typography-ingestion-audit-and-plan-2026-09-29.md. Local diagnostic receipts are
   ignored under `.local-setup/typography-branch-audit-20260929/`. No source-code
   changes made; typography correction remains incomplete pending implementation.
+
+## AWS and Google native trace follow-up
+
+- Read-only audit followed each historical page's actual kit pin, saved ingestion
+  evidence, brand tool response, component inspect/write calls, review output,
+  worker logs and saved screenshots. Confirmed the shared selection defect
+  reached both agents. No new generation, runtime restart or live-data write.
+- AWS authored CSS carried the wrong kit typography plus a responsive override;
+  original hero inspection truncated its very large CSS. Google consumed an older
+  approved kit while newer ingestion remained draft, then reused prior composed
+  fragments with a separate type scale. Later Google repair notes also expose
+  stale fragment CSS scoping that enlarged images.
+- Both original reviews lacked source comparison and finalized with warnings;
+  worker success was execution success, not fidelity proof. These runs predate
+  the newer typography-reference check. Actual glyph fonts were not remeasured.
+- Evidence and fix implications recorded in design docs as
+  aws-google-typography-trace-2026-09-29.md. Raw scoped receipts remain ignored in
+  the existing typography audit directory. Only documentation changed; excluded
+  seller-context tests remain untouched. No runtime tests needed for this audit.
