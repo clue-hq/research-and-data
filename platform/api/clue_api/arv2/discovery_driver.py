@@ -1239,9 +1239,6 @@ class Arv2DiscoveryWorkHandler:
             apply_guards(
                 gate=gate,
                 answer=result.answer,
-                citations=result.citations,
-                company_domain=verified,
-                company_name=company_name,
                 today=state.today,
             )
             for gate, result in zip(state.brief.gates, answers, strict=True)

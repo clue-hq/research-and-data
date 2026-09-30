@@ -1580,22 +1580,25 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
    raw sinks are drained under the run's `LedgerStamp` in a `finally` — costs are always recorded and
    **never a gate** (ruling 3).
 
-### The three guards
+### The guard
 
-One guard per error kind the proof of concept actually produced, and nothing else. Each turns a
-verdict the model got wrong into one a human can trust, and every overturn is recorded on the row
-(`guard`, beside the model's own `model_verdict`):
+The verifier trusts the model's own sourced verdict, with one arithmetic check in code; an
+overturn is recorded on the row (`guard`, beside the model's own `model_verdict`):
 
 | guard | what it catches |
 | --- | --- |
-| `quote_not_on_page` | `evidence_quote` must appear verbatim — NFKC-folded, typography and case normalised — in the text of a citation Exa actually returned; otherwise `unclear` |
-| `wrong_company` | the citation carrying the quote must be on the company's verified domain, or name the company in its text on a word boundary (character containment would let a posting from same-name `infinIT` clear the guard for `INFI`); otherwise `unclear` |
 | `outside_window` | when a gate names a window, the arithmetic is **code's**: `evidence_date` is checked against it (the model called a 2023 round "within 24 months"), and a pass outside the window becomes `fail` |
 
 Plus two rules that are not guards: `no_source` (an empty quote or URL on a pass/fail is `unclear`),
 and `malformed` (an answer that is not a mapping, or a verdict word the schema forbids, is `unclear`
-with the model's word kept). Every one of them errs toward `unclear`, never toward a `fail` the
-evidence does not support.
+with the model's word kept). Both err toward `unclear`, never toward a `fail` the evidence does not
+support.
+
+**Removed 2026-10-01 (founder ruling):** the `quote_not_on_page` guard (the quote had to appear in
+a page Exa returned) and the `wrong_company` guard (the page had to be the company's own domain or
+name it exactly). On the live hotel-operators run they turned correct verdicts to `unclear` — a
+renamed company's LinkedIn page, a job board, a news article that shortened the company's name.
+Rows written before then may still carry those two values in `guard`.
 
 **Fit** is `(passes + ½ × unclears) / gates`, banded by the accounts list's own thresholds
 (`CLUE_ARV2_FIT_HIGH_THRESHOLD` / `CLUE_ARV2_FIT_MEDIUM_THRESHOLD`) — a full match reads High 100,

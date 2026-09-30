@@ -505,9 +505,6 @@ def _verify(
             apply_guards(
                 gate=gate,
                 answer=result.answer,
-                citations=result.citations,
-                company_domain=verified,
-                company_name=candidate.name,
                 today=today,
             )
         )
