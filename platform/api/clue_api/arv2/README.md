@@ -1594,6 +1594,11 @@ and `malformed` (an answer that is not a mapping, or a verdict word the schema f
 with the model's word kept). Both err toward `unclear`, never toward a `fail` the evidence does not
 support.
 
+**`must_not` questions ask about the main business (founder ruling 2026-10-01).** A gate that
+excludes when it passes gets `MAIN_BUSINESS_CLAUSE` in its question: it passes only on what the
+company's own site presents it as and what most of its revenue comes from — a side business, a
+subsidiary or one product line does not count. `must` and `prefer` questions are unchanged.
+
 **Removed 2026-10-01 (founder ruling):** the `quote_not_on_page` guard (the quote had to appear in
 a page Exa returned) and the `wrong_company` guard (the page had to be the company's own domain or
 name it exactly). On the live hotel-operators run they turned correct verdicts to `unclear` — a

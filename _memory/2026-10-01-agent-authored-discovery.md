@@ -35,12 +35,12 @@ live-walk table in `docs/superpowers/drafts/2026-09-30-target-discovery-trial/RE
 - Wake message keeps `failed (provider_halted)`; no provider-neutral wording now; the "never name a
   provider" rule is not made global — a proper error registry comes later.
 - Verifier guards: remove quote-on-page and right-company only.
+- `must_not` gates ask about the company's MAIN business (`9f3d3f67d`); a company whose main
+  business is the competitor's stays excluded even if it also operates. Own-site evidence rule not
+  adopted. Replay: 15/15 correct.
+- Transcript order: keep today's (a held message's answer sits under it, above the wake reports).
 
 ## Open (owed)
-- `must_not` false exclusions: Accor, Concord, Marriott (side businesses) and Vesta Hospitality,
-  HMP Properties (evidence from another company's software site — what the removed guard caught).
-  Needs a ruling on how must_not is asked / evidenced.
-- Held-message display order (answer shows above the wake reports it followed).
 - "N messages queued" line does not show during a discovery hold; composer hint line (spec §7) not
   built — both await a design ruling.
 - Pre-existing failures, not this branch: test_c8_trial_surface (5, stale

@@ -139,16 +139,15 @@ What the walk found and fixed on the branch:
   removed by founder ruling (`8c4ece872`).
 
 Still open:
-- **`must_not` gates exclude real targets.** Five hotel operators were excluded: Accor, Concord and
-  Marriott for a side business (D-EDGE, IT services, Homes & Villas); Vesta Hospitality and HMP
-  Properties on evidence from a *different* company's software site (vestaos.ai, hmpmaster.com) —
-  exactly what the removed right-company guard used to catch. A decision is owed on how a
-  `must_not` gate is asked ("is this the company's main business?") and whether a `must_not` pass
-  needs evidence on the company's own site.
+- ~~**`must_not` gates exclude real targets.**~~ **Resolved (`9f3d3f67d`, founder ruling
+  2026-10-01):** a `must_not` question now asks whether it is the company's *main* business.
+  Replayed against Exa: Accor, Concord, Marriott, Vesta and HMP all kept (Vesta and HMP now cited
+  their own sites); Dana.AI, withQ, nTouch and Cloudbeds still excluded; Hotel Equities and Ovolo
+  kept — 15 of 15, one call each, $0.08. The own-site evidence rule was not adopted.
 - The agent in another thread read the running discovery and declined on its own, so the tool's
   `discovery_in_progress` refusal was not re-exercised in this walk (it was exercised live on
   2026-09-30 at 18:07:38, and is covered by the DB tests).
 - A held message runs after the wake turns but the transcript orders turns by submission, so its
-  answer shows above the reports it followed (display order: founder ruling owed).
+  answer shows above the reports it followed — founder ruling 2026-10-01: keep this order.
 - `/search` returned junk rows (`instagram.com`, an `exa.ai` page); the `must` gate excluded them,
   at a verification's cost each.
