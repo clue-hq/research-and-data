@@ -532,6 +532,54 @@ def test_a_wake_queued_while_the_launching_turn_runs_follows_it(tmp_path: Path) 
     run_async(scenario())
 
 
+@pytest.mark.parametrize("wake_status", [FleetTaskStatus.DONE, FleetTaskStatus.FAILED])
+def test_dispatch_repairs_a_release_the_wake_handler_never_made(
+    tmp_path: Path, wake_status: FleetTaskStatus
+) -> None:
+    """The wake's task finished but its handler never released the run (a crash in between):
+    the next dispatch releases it and offers the held message, instead of holding forever."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            workspace = f"ws-wake-repair-{wake_status.value}"
+            project, thread_id, project_run_id = await _seed(conn, workspace, name="Repair")
+            async with _client(_app(conn, storage=FsStorage(tmp_path / "artifacts"))) as client:
+                launching = await _submit(client, project, thread_id, key="launch")
+                await _finish_offered(conn, workspace_id=project.workspace_id, thread_id=thread_id)
+                run = await _launch(
+                    conn,
+                    project,
+                    project_run_id=project_run_id,
+                    thread_id=thread_id,
+                    launching_turn_id=launching,
+                )
+                held = await _submit(client, project, thread_id, key="held-1")
+            wake_turn = await _wake(conn, tmp_path, run)
+            assert wake_turn is not None
+            # The wake's task reaches its terminal state without the handler's post-terminal path.
+            claimed = await _claim(conn, workspace_id=project.workspace_id, thread_id=thread_id)
+            assert UUID(str(claimed.payload["turn_id"])) == wake_turn
+            assert await finish_task(
+                conn, task_id=claimed.task_id, worker_id="worker-1", status=wake_status
+            )
+            stored = await read_discovery_run(conn, run_id=run.run_id)
+            assert stored is not None and stored.released_at is None
+
+            offered = await dispatch_next_thread_turn(
+                conn, workspace_id=project.workspace_id, thread_id=thread_id
+            )
+            assert offered == held
+            stored = await read_discovery_run(conn, run_id=run.run_id)
+            assert stored is not None and stored.released_at is not None
+            assert await _tasks(conn, workspace_id=project.workspace_id, thread_id=thread_id) == [
+                (agent_turn_dedup_key(launching), FleetTaskStatus.DONE.value),
+                (agent_turn_dedup_key(wake_turn), wake_status.value),
+                (agent_turn_dedup_key(held), FleetTaskStatus.QUEUED.value),
+            ]
+
+    run_async(scenario())
+
+
 # --- the running badge ----------------------------------------------------------------------------
 
 

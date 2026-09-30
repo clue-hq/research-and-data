@@ -49,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_agents import ArtifactRef, DomainObjectRef
 from clue_core import OnboardingInputId, ProjectRunId, UtcDatetime
 from clue_fleet import FleetTaskKind, WorkId, enqueue_task
+from clue_obs import get_logger
 from clue_obs.otel import bind_and_annotate
 
 if TYPE_CHECKING:  # pragma: no cover - the chat package imports this module, so the edge is typed
@@ -80,6 +81,8 @@ __all__ = [
 #: One task per turn, named by the turn (the brief's contract). ``work_id`` carries the thread, so
 #: the pair ``(work_id, dedup_key)`` reads as "this thread, this turn".
 AGENT_TURN_DEDUP_PREFIX = "agent-turn:"
+
+log = get_logger(__name__)
 
 _TURN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-submission")
 _THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
@@ -646,8 +649,20 @@ _THREAD_DISCOVERY_SQL = text(
     "AND launched_thread_id = :t AND released_at IS NULL LIMIT 1"
 )
 
+# Whether the wake turn's task has reached a terminal state.
+_WAKE_TASK_TERMINAL_SQL = text(
+    "SELECT EXISTS (SELECT 1 FROM fleet_task WHERE kind = CAST('agent_turn' AS fleet_task_kind) "
+    "AND work_id = :work_id AND dedup_key = :dedup_key AND status IN ('done', 'failed'))"
+)
+
+# Release the run whose wake has already run (the repair path in dispatch_next_thread_turn).
+_RELEASE_FINISHED_WAKE_SQL = text(
+    "UPDATE arv2_discovery_run SET released_at = now() WHERE workspace_id = :w "
+    "AND wake_turn_id = :t AND released_at IS NULL RETURNING run_id"
+)
+
 # The wake turn, while its task is not terminal. Once it is, the handler that finished it releases
-# the run, and nothing else is offered until then.
+# the run (or, failing that, dispatch repairs the release itself).
 _WAKE_PENDING_SQL = text(
     """
     SELECT s.turn_id, s.project_id
@@ -726,10 +741,30 @@ async def dispatch_next_thread_turn(
         "work_id": work_id,
         "prefix": AGENT_TURN_DEDUP_PREFIX,
     }
+    statement = _NEXT_PENDING_SQL
     if discovery is not None:
-        statement, params = _WAKE_PENDING_SQL, {**params, "wake_turn_id": discovery[0]}
-    else:
-        statement = _NEXT_PENDING_SQL
+        wake_turn_id = discovery[0]
+        wake_finished = await conn.scalar(
+            _WAKE_TASK_TERMINAL_SQL,
+            {"work_id": work_id, "dedup_key": agent_turn_dedup_key(UUID(str(wake_turn_id)))},
+        )
+        if wake_finished:
+            # The repair path. The AGENT_TURN handler normally releases the run when the wake's task
+            # finishes; if it never got there (a crash between finishing the task and its release,
+            # say) the thread and its project would stay held forever. The wake has run, so the
+            # run is released here and the queue moves on to the first held message.
+            released = await conn.scalar(
+                _RELEASE_FINISHED_WAKE_SQL, {"w": workspace_id, "t": wake_turn_id}
+            )
+            log.warning(
+                "discovery.wake_release_repaired",
+                run_id=None if released is None else str(released),
+                workspace_id=workspace_id,
+                thread_id=thread_id,
+                wake_turn_id=str(wake_turn_id),
+            )
+        else:
+            statement, params = _WAKE_PENDING_SQL, {**params, "wake_turn_id": wake_turn_id}
     row = (await conn.execute(statement, params)).mappings().one_or_none()
     if row is None:
         return None
