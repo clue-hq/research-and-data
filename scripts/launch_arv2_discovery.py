@@ -3,31 +3,31 @@
 
     set -a; source .env; set +a
     uv run python scripts/launch_arv2_discovery.py \
-        --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
+        --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 \
+        --brief brief.json
 
     # replay (or re-offer) the run a key already made, instead of starting a new one
     uv run python scripts/launch_arv2_discovery.py \
-        --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 --request-key k1
+        --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 \
+        --brief brief.json --request-key k1
 
     # what did it find?
     uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
         --report 3f1c…-uuid
 
-Everything the run asks comes from the confirmed ICP document version the project pinned — the
-long-list query, the criteria the provider filters on, the gates every candidate is verified
-against. This command names none of them: it says *which project* and *how many companies*, and
-the document is the program (spec §2). A project that has pinned no ICP is a refusal, not a
-fallback to somebody else's audience.
-
-``--criteria-gates`` overrides which of the document's hard gates become provider criteria (at most
-three, and each must be a key the document defines); leaving it alone uses
-``CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS``. Every gate is verified afterwards either way.
+The search the run makes is the brief in ``--brief``: a JSON file holding exactly what the Head of
+ABM writes when it launches discovery from a project chat (spec 2026-09-30 §3) — ``source``
+(``websets`` or ``search``), the ``query``, one to five ``criteria``, and two to eight ``gates``,
+each a ``key``, ``rule``, ``test`` and ``role`` (``must``, ``must_not`` or ``prefer``). It is
+validated as ``DiscoveryBrief2``; a launch without one, or with one that does not validate, is a
+refusal. The project must still have pinned a confirmed ICP document: the run records that pin, and
+a project that has pinned no ICP is a refusal, not a fallback to somebody else's audience.
 
 Every launch is a new run (founder ruling 2026-09-28: asking for more is a new discovery, which
 skips every company this project's earlier discoveries found). ``--request-key`` names the ask:
 repeating a key replays that run and re-offers its task if the offer went missing; leaving it out
-makes a fresh key, so the command starts a new run. The relaxed search runs inside a run when the
-strict searches fall short, unless ``--no-relaxed`` is given.
+makes a fresh key, so the command starts a new run. A run that is short tops up with the same
+brief, up to ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS`` more searches.
 
 The database is the one ``CLUE_DATABASE_URL`` names unless ``--database-url`` overrides it, and the
 blob store is this deployment's configured storage unless ``--storage-root`` overrides it.
@@ -43,6 +43,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
+
 from clue_api.arv2.answer_key_loader import ANSWER_KEY_USER_ID
 from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRefused,
@@ -50,6 +52,7 @@ from clue_api.arv2.discovery_launch import (
     enqueue_discovery_run,
     launch_arv2_discovery,
 )
+from clue_api.arv2.discovery_request import DiscoveryBrief2
 from clue_api.arv2.discovery_store import (
     CandidateRow,
     list_candidates,
@@ -91,16 +94,13 @@ def _args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--no-relaxed",
-        action="store_true",
-        help="Do not run the relaxed search when the strict searches fall short.",
-    )
-    parser.add_argument(
-        "--criteria-gates",
+        "--brief",
         default=None,
+        type=Path,
+        metavar="PATH",
         help=(
-            "Comma-separated ICP hard-gate keys to use as provider criteria (at most three). "
-            "Defaults to CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS. Every gate is verified either way."
+            "JSON file holding the discovery brief (source, query, criteria, gates with roles), "
+            "validated as DiscoveryBrief2. Required to launch."
         ),
     )
     parser.add_argument(
@@ -125,6 +125,23 @@ def _args() -> argparse.Namespace:
         help="Filesystem root holding the ICP artifact. Defaults to the configured storage.",
     )
     return parser.parse_args()
+
+
+def _read_brief(path: Path | None) -> DiscoveryBrief2:
+    """The brief file, validated — or a one-line refusal naming what is wrong with it."""
+    if path is None:
+        raise Refused(
+            "--brief names the JSON file holding the discovery brief (source, query, criteria, "
+            "gates); a launch has no search without one"
+        )
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise Refused(f"cannot read the brief file {str(path)!r}: {error}") from error
+    try:
+        return DiscoveryBrief2.model_validate_json(raw)
+    except ValidationError as bad:
+        raise Refused(f"brief_invalid: {path} is not a valid discovery brief: {bad}") from bad
 
 
 def _gate_letters(verdicts: Sequence[Mapping[str, Any]], legend: tuple[str, ...]) -> str:
@@ -179,6 +196,8 @@ async def _report(args: argparse.Namespace) -> dict[str, Any]:
         "run_id": str(run.run_id),
         "project_id": run.project_id,
         "status": run.status,
+        "source": run.source,
+        "end_reason": run.end_reason,
         "icp": f"{run.icp_key}@{run.icp_version}",
         "criteria_gate_keys": list(run.criteria_gate_keys),
         "target_count": run.target_count,
@@ -208,12 +227,12 @@ async def _report(args: argparse.Namespace) -> dict[str, Any]:
 async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any]:
     if args.project is None:
         raise Refused("--project names the project whose pinned ICP the search runs against")
+    brief = _read_brief(args.brief)
     storage: StorageBackend = (
         FsStorage(Path(args.storage_root))
         if args.storage_root is not None
         else build_storage_backend(settings)
     )
-    gates = tuple(key.strip() for key in str(args.criteria_gates or "").split(",") if key.strip())
     request_key = args.request_key or f"cli:{uuid4()}"
 
     async with db_lifespan(args.database_url) as engine:
@@ -233,8 +252,7 @@ async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any
                     requested_by_user_id=args.requested_by,
                     request_key=request_key,
                     target_count=args.target,
-                    relaxed_enabled=False if args.no_relaxed else None,
-                    criteria_gate_keys=gates,
+                    brief=brief,
                 ),
                 settings=settings,
                 storage=storage,
@@ -260,7 +278,8 @@ async def _launch(args: argparse.Namespace, settings: Settings) -> dict[str, Any
         "request_key": request_key,
         "enqueued": enqueued,
         "target_count": args.target,
-        "criteria_gate_keys": list(gates),
+        "source": brief.source,
+        "gates": {gate.key: gate.role for gate in brief.gates},
     }
 
 
@@ -278,7 +297,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> None:
     # The launch's own refusals are prerequisites the operator has to fix — a project with no
-    # pinned ICP, a criteria gate the document does not define — so
+    # pinned ICP, a digest that moved under the pin — so
     # they print as the same one-line refusal this script's own checks do, not as a traceback.
     try:
         receipt = asyncio.run(_run(_args()))

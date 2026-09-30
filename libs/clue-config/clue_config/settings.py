@@ -446,23 +446,12 @@ class Settings(BaseSettings):
     # Off by default: a worker composes the discovery handler only when this is on AND
     # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
     arv2_discovery_enabled: bool = False
-    #: Allow the relaxed search when the strict searches fall short, for a run whose caller did not
-    #: say (the agent's tool always says). There is no provider-ask setting: the first search asks
-    #: Exa for exactly the number the human wants (founder ruling 2026-09-28).
-    arv2_discovery_relaxed_auto: bool = True
-    #: Operator override only — empty by default (founder ruling 2026-09-11: no deployment-wide
-    #: default gate set; every ICP decides its own). Empty means the pinned ICP document chooses
-    #: its Websets criteria: the gates it marks ``criterion: true``, else its first three gates in
-    #: document order. A comma-separated list of the document's hard-gate keys (≤ 3) forces those
-    #: instead, and is validated against the document at launch. The ICP body's buyer sentence
-    #: fills any slot left over.
-    arv2_discovery_criteria_gate_keys: str = ""
     #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).
     arv2_discovery_poll_interval_s: float = Field(default=15.0, gt=0)
-    #: Wall clock for one discovery SEARCH, seconds — a run makes up to three, one after another
-    #: (founder ruling 2026-09-28).
+    #: Wall clock for one discovery SEARCH, seconds — a run makes its first search and then up to
+    #: ``arv2_discovery_max_topups`` more, one after another.
     arv2_discovery_wall_s: int = Field(default=1800, ge=60)
     #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
     arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)

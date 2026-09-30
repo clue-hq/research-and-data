@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from clue_config import (
     DEFAULT_SYNTHESIS_MODEL,
+    Settings,
     get_config,
     load_settings,
 )
@@ -331,3 +332,17 @@ def test_a_blank_context_window_line_loads_as_unknown() -> None:
         load_settings(_env_file=None, agent_context_window_tokens="").agent_context_window_tokens
         is None
     )
+
+
+def test_discovery_top_ups_default_and_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CLUE_ARV2_DISCOVERY_MAX_TOPUPS", raising=False)
+    assert load_settings(_env_file=None).arv2_discovery_max_topups == 3  # type: ignore[call-arg]
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_MAX_TOPUPS", "16")
+    with pytest.raises(ValidationError):
+        load_settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_the_retired_discovery_settings_are_gone() -> None:
+    fields = Settings.model_fields
+    assert "arv2_discovery_criteria_gate_keys" not in fields
+    assert "arv2_discovery_relaxed_auto" not in fields

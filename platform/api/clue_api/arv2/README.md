@@ -1657,39 +1657,36 @@ existing `launch_arv2_account_research`; there is no research button and no new 
 
 ### Configuration (R4's additions)
 
-Eight keys, all in `.env.example` at parity:
+The live keys, all in `.env.example` at parity:
 
 - `CLUE_ARV2_DISCOVERY_ENABLED` (default `false`) — composes the handler and the launch service, and
   only when `CLUE_EXA_API_KEY` is configured too (otherwise the composition warns
   `arv2.discovery_handler_not_composed` and stays `None`). The tool registers on every deployment
   and refuses `arv2_discovery_not_composed` where the lane is off.
 - ~~`CLUE_ARV2_DISCOVERY_STRICT_COUNT`~~ — removed 2026-09-28: search 1 asks for exactly the target.
-- `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — allow the relaxed search when the caller did
-  not say (the agent's tool always says).
-- `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default **empty**) — operator override only. Empty means
-  the pinned ICP decides its own webset criteria (below); a comma-separated list of that document's
-  hard-gate keys forces those instead. At most three either way; a fourth is refused, not dropped.
-  There is no deployment-wide default gate set (founder ruling 2026-09-11): the first Insight Health
-  launch was refused `unknown_criteria_gate_key 'geography'` because the shipped default named the
-  Clue ICP's keys and a synthesised ICP names its own.
+- ~~`CLUE_ARV2_DISCOVERY_RELAXED_AUTO`~~ and ~~`CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS`~~ — removed
+  2026-09-30: the Head of ABM writes the whole brief (source, query, criteria, gates with roles),
+  so there is no compiled brief left for an operator switch to shape.
 - `CLUE_ARV2_DISCOVERY_ANSWER_MODEL` (default `exa`) — the Answer model the verifier asks.
 - `CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S` (default `15`) / `CLUE_ARV2_DISCOVERY_WALL_S` (default
   `1800`) — the webset poll cadence and each search's wall clock.
 - `CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT` (default `0.00449`) — Websets bill 10 credits per
   all-green result; this is the plan's dollar rate for the pre-spend estimate and the ledger.
+- `CLUE_ARV2_DISCOVERY_MAX_TOPUPS` (default `3`, `0`–`15`) — top-up searches a run may make after
+  its first, each with the same brief, while it has shown fewer companies than asked.
 
 ### Starting one
 
 ```bash
 set -a; source .env; set +a
 
-# the operator path
+# the operator path: brief.json is a DiscoveryBrief2 (source, query, criteria, gates with roles)
 uv run python scripts/launch_arv2_discovery.py \
-    --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
+    --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 --brief brief.json
 
 # replaying an ask (a repeated --request-key), and reading what a run found
 uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
-    --project prj_arv2_answer_key --target 20 --request-key <key>
+    --project prj_arv2_answer_key --target 20 --brief brief.json --request-key <key>
 uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --report <run-id>
 ```
 
