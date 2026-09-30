@@ -993,7 +993,7 @@ class DiscoveryRunView:
     #: The companies a gate excluded, when the read asked for them apart (``excluded_apart``):
     #: then they are not among ``candidates`` and not in ``candidate_total``. Grouped by gate, then
     #: by name, and bounded like the candidate list. Empty when the read listed them inline.
-    excluded: tuple[DiscoveryCandidateView, ...] = ()
+    excluded: tuple[DiscoveryCandidateV3View, ...] = ()
     #: Every excluded company of the run when read apart, so a bounded list never reads as all.
     excluded_total: int = 0
 
@@ -1172,17 +1172,14 @@ async def read_discovery_run(
         source=run.source,
         end_reason=run.end_reason,
         summary=run.summary,
-        excluded=tuple(
-            _candidate_view(candidate, with_gate=True) for candidate in excluded[:MAX_CANDIDATES]
-        ),
+        excluded=tuple(_candidate_v3_view(candidate) for candidate in excluded[:MAX_CANDIDATES]),
         excluded_total=len(excluded),
     )
 
 
-def _candidate_view(candidate: CandidateRow, *, with_gate: bool) -> DiscoveryCandidateView:
-    """One candidate in ``@3``'s shape (with its excluding gate) or ``@1``/``@2``'s."""
-
-    fields: dict[str, Any] = {
+def _candidate_fields(candidate: CandidateRow) -> dict[str, Any]:
+    """The fields every candidate view carries, mapped once."""
+    return {
         "name": candidate.name,
         "domain": candidate.domain,
         "pass_": str(candidate.pass_),
@@ -1190,9 +1187,20 @@ def _candidate_view(candidate: CandidateRow, *, with_gate: bool) -> DiscoveryCan
         "decision": candidate.decision,
         "fit": None if candidate.fit is None else float(candidate.fit),
     }
+
+
+def _candidate_v3_view(candidate: CandidateRow) -> DiscoveryCandidateV3View:
+    """One candidate in ``@3``'s shape, with the gate that excluded it."""
+    return DiscoveryCandidateV3View(
+        **_candidate_fields(candidate), excluded_by_gate=candidate.excluded_by_gate
+    )
+
+
+def _candidate_view(candidate: CandidateRow, *, with_gate: bool) -> DiscoveryCandidateView:
+    """One candidate in ``@3``'s shape (with its excluding gate) or ``@1``/``@2``'s."""
     if with_gate:
-        return DiscoveryCandidateV3View(**fields, excluded_by_gate=candidate.excluded_by_gate)
-    return DiscoveryCandidateView(**fields)
+        return _candidate_v3_view(candidate)
+    return DiscoveryCandidateView(**_candidate_fields(candidate))
 
 
 # =================================================================================================

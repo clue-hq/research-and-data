@@ -35,7 +35,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import Field, ValidationError
@@ -791,7 +791,7 @@ class LaunchArv2DiscoveryTool(Tool):
         "and a successful result means the run was created or replayed, never that companies "
         "have been found. It researches nothing. " + tool_manual_link("launch_arv2_discovery")
     )
-    input_model = LaunchArv2DiscoveryInput
+    input_model: ClassVar[type[ToolInput]] = LaunchArv2DiscoveryInput
     output_model = LaunchArv2DiscoveryOutput
     effect_class = ToolEffectClass.SPEND
     replay = ReplaySafety(
@@ -857,7 +857,7 @@ class LaunchArv2DiscoveryV2Tool(LaunchArv2DiscoveryTool):
         "found; this conversation stays busy until the run ends and you get a turn with its "
         "summary. " + tool_manual_link("launch_arv2_discovery")
     )
-    input_model = LaunchArv2DiscoveryV2Input
+    input_model: ClassVar[type[ToolInput]] = LaunchArv2DiscoveryV2Input
     replay = ReplaySafety(
         policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
         durable_identity=(
