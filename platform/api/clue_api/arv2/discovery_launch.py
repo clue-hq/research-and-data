@@ -50,6 +50,7 @@ from clue_api.arv2.discovery_store import (
     active_discovery_for_project,
     create_discovery_run,
     read_discovery_run,
+    release_discovery_for_turn,
 )
 from clue_api.arv2.errors import Arv2Error
 from clue_api.arv2.fleet_task import (
@@ -538,7 +539,17 @@ async def launch_arv2_discovery(
     active = await active_discovery_for_project(
         conn, workspace_id=request.workspace_id, project_id=request.project_id
     )
-    if active is not None and active.request_sha256 != request_sha:
+    # The one exception is the run's own wake turn: it holds the lock until it finishes, and it is
+    # the only turn that may search again on the agent's own judgement (Ruling 11). Its launch
+    # takes the lock over — the ended run is released inside the insert's savepoint below, so the
+    # thread passes straight from the old run to the new one and nothing else can get in between.
+    takes_over = (
+        active is not None
+        and active.request_sha256 != request_sha
+        and launching_turn_id is not None
+        and active.wake_turn_id == launching_turn_id
+    )
+    if active is not None and active.request_sha256 != request_sha and not takes_over:
         raise _in_progress(active)
 
     project_run_id = request.project_run_id or uuid5(
@@ -585,6 +596,16 @@ async def launch_arv2_discovery(
         # uncommitted row) meet at the partial unique index, and only one of them holds the
         # project.
         async with conn.begin_nested():
+            if takes_over and active is not None and launching_turn_id is not None:
+                await release_discovery_for_turn(
+                    conn, workspace_id=request.workspace_id, turn_id=launching_turn_id
+                )
+                log.info(
+                    "arv2.discovery_lock_taken_over",
+                    released_run_id=str(active.run_id),
+                    run_id=str(run_id),
+                    turn_id=str(launching_turn_id),
+                )
             inserted = await create_discovery_run(conn, row)
     except IntegrityError as collided:
         if "arv2_discovery_run_project_active" not in str(collided):

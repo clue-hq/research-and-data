@@ -32,7 +32,12 @@ from clue_api.arv2.discovery_launch import (
     read_pinned_icp,
 )
 from clue_api.arv2.discovery_request import DiscoveryBrief2
-from clue_api.arv2.discovery_store import end_discovery_run, read_discovery_run
+from clue_api.arv2.discovery_store import (
+    end_discovery_run,
+    read_discovery_run,
+    record_wake_turn,
+    release_discovery_for_turn,
+)
 from clue_db import db_lifespan
 from clue_fleet import FleetTaskKind
 from clue_research.claimstore import load_core_pack
@@ -80,11 +85,14 @@ def _request(fixture: IcpFixture, **overrides: Any) -> Arv2DiscoveryRequest:
     return Arv2DiscoveryRequest(**payload)
 
 
-async def _seed_turn(conn: AsyncConnection, fixture: IcpFixture, thread_id: str) -> UUID:
+async def _seed_turn(
+    conn: AsyncConnection, fixture: IcpFixture, thread_id: str, *, thread_exists: bool = False
+) -> UUID:
     """One ``agent_turn_submission`` on ``thread_id``, submitted by the fixture's user.
 
     Direct SQL (the ``test_chat_upload_tables_db`` shape): the launch reads only the turn's thread
     and submitter, so the smallest chain that satisfies the submission's foreign keys wins.
+    ``thread_exists`` adds a later turn to a thread an earlier call seeded.
     """
     ws = fixture.workspace_id
     sha = uuid4().hex + uuid4().hex
@@ -104,18 +112,30 @@ async def _seed_turn(conn: AsyncConnection, fixture: IcpFixture, thread_id: str)
         ),
         {"id": onboarding_input_id, "ws": ws, "brand": fixture.brand_id, "key": key, "sha": sha},
     )
-    await conn.execute(
-        text("INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :p)"),
-        {"id": thread_id, "ws": ws, "p": fixture.project_id},
-    )
-    membership_id = f"member_{uuid4().hex[:12]}"
-    await conn.execute(
-        text(
-            "INSERT INTO workspace_membership (membership_id, workspace_id, user_id, role_key, "
-            "status, activated_at) VALUES (:m, :ws, :user, 'owner', 'active', now())"
-        ),
-        {"m": membership_id, "ws": ws, "user": USER_ID},
-    )
+    if not thread_exists:
+        await conn.execute(
+            text("INSERT INTO agent_thread (id, workspace_id, project_id) VALUES (:id, :ws, :p)"),
+            {"id": thread_id, "ws": ws, "p": fixture.project_id},
+        )
+    # One membership per user and workspace: a later turn reuses the first turn's.
+    membership_id = (
+        await conn.execute(
+            text(
+                "SELECT membership_id FROM workspace_membership "
+                "WHERE workspace_id = :ws AND user_id = :user"
+            ),
+            {"ws": ws, "user": USER_ID},
+        )
+    ).scalar_one_or_none()
+    if membership_id is None:
+        membership_id = f"member_{uuid4().hex[:12]}"
+        await conn.execute(
+            text(
+                "INSERT INTO workspace_membership (membership_id, workspace_id, user_id, "
+                "role_key, status, activated_at) VALUES (:m, :ws, :user, 'owner', 'active', now())"
+            ),
+            {"m": membership_id, "ws": ws, "user": USER_ID},
+        )
     turn_id = uuid4()
     await conn.execute(
         text(
@@ -445,6 +465,107 @@ def test_a_second_ask_while_one_runs_is_refused_by_name(tmp_path: Any) -> None:
             assert refused.value.code == "discovery_in_progress"
             assert str(first.run_id) in str(refused.value)
             assert thread_id in str(refused.value)
+
+    run_async(scenario())
+
+
+async def _ended_run_and_its_wake(
+    conn: AsyncConnection, fixture: IcpFixture, storage: FsStorage
+) -> tuple[str, UUID, UUID]:
+    """A run launched from a turn, ended, and woken — the lock still held by the wake turn.
+
+    Returns ``(thread_id, run_id, wake_turn_id)``.
+    """
+    thread_id = f"thr_1_{uuid4().hex[:8]}"
+    launching = await _seed_turn(conn, fixture, thread_id)
+    first = await launch_arv2_discovery(
+        conn,
+        _request(
+            fixture,
+            request_key=f"turn-action:{launching}",
+            launching_turn_ref=f"turn-action:{launching}",
+        ),
+        settings=_settings(),
+        storage=storage,
+    )
+    await end_discovery_run(
+        conn,
+        run_id=first.run_id,
+        status="needs_review",
+        end_reason="failed",
+        summary={},
+        release=False,
+    )
+    wake = await _seed_turn(conn, fixture, thread_id, thread_exists=True)
+    await record_wake_turn(conn, run_id=first.run_id, wake_turn_id=wake)
+    return thread_id, first.run_id, wake
+
+
+def test_the_runs_own_wake_turn_takes_the_lock_over_to_relaunch(tmp_path: Any) -> None:
+    """The agent may search again once, from the turn that reports the run (Ruling 11). That turn
+    holds the lock, so its launch hands the lock from the ended run to the new one in one step:
+    the old run is released and the new run holds the same thread."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            thread_id, old_run_id, wake = await _ended_run_and_its_wake(conn, fixture, storage)
+
+            relaunch = await launch_arv2_discovery(
+                conn,
+                _request(
+                    fixture,
+                    request_key=f"turn-action:{wake}",
+                    launching_turn_ref=f"turn-action:{wake}",
+                ),
+                settings=_settings(),
+                storage=storage,
+            )
+
+            assert relaunch.run_id != old_run_id
+            assert relaunch.replayed is False and relaunch.to_enqueue is True
+            old = await read_discovery_run(conn, run_id=old_run_id)
+            new = await read_discovery_run(conn, run_id=relaunch.run_id)
+            assert old is not None and old.released_at is not None
+            assert new is not None and new.released_at is None
+            assert new.launched_thread_id == thread_id
+            assert new.launching_turn_id == wake
+            # The wake turn finishing later releases nothing: the new run is not its to release.
+            assert (
+                await release_discovery_for_turn(
+                    conn, workspace_id=fixture.workspace_id, turn_id=wake
+                )
+                is None
+            )
+
+    run_async(scenario())
+
+
+def test_only_the_runs_own_wake_turn_can_take_the_lock_over(tmp_path: Any) -> None:
+    """Any other turn — another thread, or a stale one — is still refused while the wake runs."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            fixture = await seed_icp_fixture(conn, storage)
+            _, old_run_id, _ = await _ended_run_and_its_wake(conn, fixture, storage)
+            other = await _seed_turn(conn, fixture, f"thr_2_{uuid4().hex[:8]}")
+
+            with pytest.raises(Arv2DiscoveryRefused) as refused:
+                await launch_arv2_discovery(
+                    conn,
+                    _request(
+                        fixture,
+                        request_key=f"turn-action:{other}",
+                        launching_turn_ref=f"turn-action:{other}",
+                    ),
+                    settings=_settings(),
+                    storage=storage,
+                )
+            assert refused.value.code == "discovery_in_progress"
+            old = await read_discovery_run(conn, run_id=old_run_id)
+            assert old is not None and old.released_at is None
 
     run_async(scenario())
 
