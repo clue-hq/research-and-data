@@ -674,10 +674,19 @@ def _bodies() -> dict[str, dict[str, object]]:
             "project_id": "prj_matrix",
             "contact_entity_ids": (_UUID(),),
         },
-        # ARV2 R4: the workspace and the requesting human are AMBIENT here too, and the ICP,
-        # the gates and the provider ask come from the project's pin and the deployment's
-        # settings — so the body is only the project and how many companies were asked for.
-        "launch_arv2_discovery": {"project_id": "prj_matrix", "target_count": 20},
+        # ARV2 R4: the workspace and the requesting human are AMBIENT here too. The name-only
+        # alias is `@2` (2026-09-30), whose body carries the brief the Head of ABM wrote.
+        "launch_arv2_discovery": {
+            "project_id": "prj_matrix",
+            "target_count": 20,
+            "source": "websets",
+            "query": "Companies of <kind> that run <activity>.",
+            "criteria": ["The company runs <activity>."],
+            "gates": [
+                {"key": "is_buyer", "rule": "Runs it.", "test": "Its site.", "role": "must"},
+                {"key": "sells_it", "rule": "Sells it.", "test": "Its pages.", "role": "must_not"},
+            ],
+        },
         "author_icp_document": {
             "icp_key": "matrix",
             "document": "---\nkind: icp-definition\nicp_key: matrix\n---\n\nBody.\n",
@@ -1501,7 +1510,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 166
+    # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
+    # `@1`, which stays for replay: one more address, no new name (166 -> 167).
+    assert len(registry) == 167
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1574,7 +1585,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The project directory adds four human-only tools: create_project,
     # update_project_details, set_project_pinned and set_project_archived.
     # Together these additions yield 141 names and 161 versioned addresses.
-    assert len(registry) == 166
+    # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
+    # `@1`, which stays for replay: one more address, no new name (166 -> 167).
+    assert len(registry) == 167
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

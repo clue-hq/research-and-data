@@ -857,6 +857,12 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # profile still pins @1. Registration must not implicitly grant every new version.
     if name in {"design_register_asset_record", "design_set_asset_description"}:
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
+    # Agent-authored discovery (2026-09-30) registered `launch_arv2_discovery@2`, which takes the
+    # brief the Head of ABM writes; `@1` stays registered only to refuse `discovery_tool_retired`.
+    # The grant follows the version the active profile pins: `head-of-abm@v69` still pins `@1`,
+    # and the v70 bump that pins `@2` moves this fence to `@2` (plan task 8).
+    if name == "launch_arv2_discovery":
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

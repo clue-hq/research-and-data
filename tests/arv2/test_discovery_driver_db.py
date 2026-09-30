@@ -61,6 +61,7 @@ from tests.arv2.test_discovery_driver import (
     _clock,
     _no_sleep,
 )
+from tests.arv2.test_discovery_request import _brief
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -296,8 +297,7 @@ async def _launch(conn: AsyncConnection, storage: FsStorage, fixture: IcpFixture
             requested_by_user_id=USER_ID,
             request_key="turn-action:db-ask",
             target_count=2,
-            # The relaxed pass is its own scenario; this one is the strict pass end to end.
-            relaxed_enabled=False,
+            brief=_brief(),
         ),
         settings=settings_for(arv2_discovery_enabled=True),
         storage=storage,

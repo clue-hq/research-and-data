@@ -40,6 +40,8 @@ from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRequest,
     LaunchArv2DiscoveryInput,
     LaunchArv2DiscoveryTool,
+    LaunchArv2DiscoveryV2Input,
+    LaunchArv2DiscoveryV2Tool,
     build_arv2_discovery_tools,
 )
 from clue_core import new_operation_id
@@ -378,10 +380,22 @@ class _FakeDiscoveryService:
         return self.receipt
 
 
-def _discovery_inputs(**overrides: object) -> LaunchArv2DiscoveryInput:
-    payload: dict[str, object] = {"project_id": PROJECT, "target_count": 20}
+#: The brief the Head of ABM writes (spec 2026-09-30 §3), as the tool's inputs carry it.
+_BRIEF: dict[str, object] = {
+    "source": "websets",
+    "query": "Companies of <kind> that run <activity>.",
+    "criteria": ["The company runs <activity>."],
+    "gates": [
+        {"key": "is_buyer", "rule": "Runs <activity>.", "test": "Its site.", "role": "must"},
+        {"key": "sells_it", "rule": "Sells <product>.", "test": "Its pages.", "role": "must_not"},
+    ],
+}
+
+
+def _discovery_inputs(**overrides: object) -> LaunchArv2DiscoveryV2Input:
+    payload: dict[str, object] = {"project_id": PROJECT, "target_count": 20, **_BRIEF}
     payload.update(overrides)
-    return LaunchArv2DiscoveryInput.model_validate(payload)
+    return LaunchArv2DiscoveryV2Input.model_validate(payload)
 
 
 def _discovery_receipt(*, replayed: bool = False) -> Arv2DiscoveryReceipt:
@@ -394,14 +408,32 @@ def _discovery_receipt(*, replayed: bool = False) -> Arv2DiscoveryReceipt:
     )
 
 
+def test_the_retired_discovery_launch_refuses_every_call_toward_v2() -> None:
+    """``@1`` stays registered for replay and refuses by name, composed or not."""
+
+    async def scenario() -> None:
+        service = _FakeDiscoveryService(receipt=_discovery_receipt())
+        v1_inputs = LaunchArv2DiscoveryInput.model_validate({"project_id": PROJECT})
+        for tool in (LaunchArv2DiscoveryTool(None), LaunchArv2DiscoveryTool(service)):
+            failures = await tool.preconditions(v1_inputs, _context())
+            assert [failure.reason_code for failure in failures] == ["discovery_tool_retired"]
+            assert "launch_arv2_discovery@2" in failures[0].message
+        with pytest.raises(PreconditionFailed) as refused:
+            await LaunchArv2DiscoveryTool(service).invoke(v1_inputs, _context())
+        assert refused.value.reason_codes == ("discovery_tool_retired",)
+        assert service.requests == []
+
+    run_async(scenario())
+
+
 def test_the_discovery_launch_refuses_uncomposed_and_unwitnessed_before_anything() -> None:
     async def scenario() -> None:
-        uncomposed = LaunchArv2DiscoveryTool(None)
+        uncomposed = LaunchArv2DiscoveryV2Tool(None)
         failures = await uncomposed.preconditions(_discovery_inputs(), _context())
         assert [failure.reason_code for failure in failures] == ["arv2_discovery_not_composed"]
 
         service = _FakeDiscoveryService(receipt=_discovery_receipt())
-        composed = LaunchArv2DiscoveryTool(service)
+        composed = LaunchArv2DiscoveryV2Tool(service)
         assert await composed.preconditions(_discovery_inputs(), _context()) == ()
         unwitnessed = await composed.preconditions(_discovery_inputs(), _context(action_ref=None))
         assert [failure.reason_code for failure in unwitnessed] == ["launch_action_ref_missing"]
@@ -414,7 +446,7 @@ def test_the_discovery_launch_refuses_uncomposed_and_unwitnessed_before_anything
 def test_the_discovery_launch_maps_the_ambient_context_and_returns_the_receipt() -> None:
     async def scenario() -> None:
         service = _FakeDiscoveryService(receipt=_discovery_receipt(replayed=True))
-        tool = LaunchArv2DiscoveryTool(service)
+        tool = LaunchArv2DiscoveryV2Tool(service)
 
         result = await tool.invoke(_discovery_inputs(target_count=40), _context())
 
@@ -423,14 +455,30 @@ def test_the_discovery_launch_maps_the_ambient_context_and_returns_the_receipt()
         assert request.workspace_id == WORKSPACE
         assert request.requested_by_user_id == "usr_founder"
         assert request.project_id == PROJECT
-        assert request.target_count == 40 and request.relaxed_enabled is True
-        # The ICP and the gate set are NOT model-authored: they come from the project's pin.
-        assert request.criteria_gate_keys == ()
+        assert request.target_count == 40
+        # The search IS model-authored: the brief the Head of ABM wrote rides the request whole.
+        assert request.brief is not None
+        assert request.brief.model_dump(mode="json") == _BRIEF
         # The approving user action IS the ask's identity (ruling 2026-09-28): a new action is a
         # new discovery, the same action retried is the same one.
         assert request.request_key == "turn:arv2-launch-confirmed"
+        assert result.version == "2"
         assert result.references == {"run_id": str(RUN_ID), "replayed": True}
         assert result.replayed is True
+
+    run_async(scenario())
+
+
+def test_a_brief_that_breaks_the_structure_is_refused_by_name_before_the_launch() -> None:
+    async def scenario() -> None:
+        service = _FakeDiscoveryService(receipt=_discovery_receipt())
+        tool = LaunchArv2DiscoveryV2Tool(service)
+        gate = _BRIEF["gates"][0]  # type: ignore[index]
+        with pytest.raises(PreconditionFailed) as refused:
+            await tool.invoke(_discovery_inputs(gates=[gate, gate]), _context())
+        assert refused.value.reason_codes == ("brief_invalid",)
+        assert "unique" in refused.value.failures[0].message
+        assert service.requests == []
 
     run_async(scenario())
 
@@ -439,37 +487,41 @@ def test_a_discovery_refusal_arrives_as_a_typed_precondition_failure() -> None:
     async def scenario() -> None:
         service = _FakeDiscoveryService(
             refusal=Arv2DiscoveryRefused(
-                "unknown_criteria_gate_key", "unknown criteria gate key 'vertical'"
+                "discovery_in_progress", "discovery run r is already running in conversation thr_1"
             )
         )
-        tool = LaunchArv2DiscoveryTool(service)
+        tool = LaunchArv2DiscoveryV2Tool(service)
 
         with pytest.raises(PreconditionFailed) as refused:
             await tool.invoke(_discovery_inputs(), _context())
 
-        assert refused.value.reason_codes == ("unknown_criteria_gate_key",)
-        assert "vertical" in refused.value.failures[0].message
+        assert refused.value.reason_codes == ("discovery_in_progress",)
+        assert "thr_1" in refused.value.failures[0].message
 
     run_async(scenario())
 
 
 def test_the_discovery_tool_declares_the_effect_and_replay_classes_the_registry_admits() -> None:
-    (launch,) = build_arv2_discovery_tools(_FakeDiscoveryService())
+    retired, launch = build_arv2_discovery_tools(_FakeDiscoveryService())
 
-    assert launch.name == "launch_arv2_discovery" and launch.version == "1"
-    assert launch.effect_class is ToolEffectClass.SPEND
-    assert launch.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
-    # ``project`` is the spine row the execution is bound to — a replay identity, not a Stage-0
-    # pin (standing rule item 5) — and the recipe-safety audit refuses a standing address with
-    # no pin at all.
-    assert launch.pin_requirements == ("project",)
-    assert launch.descriptor.recipe_safe
+    assert (retired.name, retired.version) == ("launch_arv2_discovery", "1")
+    assert launch.name == "launch_arv2_discovery" and launch.version == "2"
+    for tool in (retired, launch):
+        assert tool.effect_class is ToolEffectClass.SPEND
+        assert tool.replay.policy is ReplayPolicy.DOMAIN_IDEMPOTENT
+        # ``project`` is the spine row the execution is bound to — a replay identity, not a
+        # Stage-0 pin (standing rule item 5) — and the recipe-safety audit refuses a standing
+        # address with no pin at all.
+        assert tool.pin_requirements == ("project",)
+        assert tool.descriptor.recipe_safe
     # The input model bounds the ask; the launch refuses `target_count_invalid` for callers with
     # no model in front of them (the CLI, a direct call).
     with pytest.raises(ValidationError):
         _discovery_inputs(target_count=0)
     with pytest.raises(ValidationError):
         _discovery_inputs(target_count=501)
+    with pytest.raises(ValidationError):
+        _discovery_inputs(source="google")
 
 
 # -- the operator's CLI (R2-close task 5) ---------------------------------------------------------

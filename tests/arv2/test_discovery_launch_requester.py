@@ -8,7 +8,11 @@ import asyncio
 from typing import Any
 from uuid import uuid4
 
-from clue_api.arv2.discovery_launch import Arv2DiscoveryRequest, _requesting_human
+from clue_api.arv2.discovery_launch import (
+    Arv2DiscoveryRequest,
+    _launching_turn,
+    _requesting_human,
+)
 
 
 class _Conn:
@@ -67,3 +71,32 @@ def test_an_unresolvable_or_unknown_ref_leaves_the_invokers_id_standing() -> Non
             asyncio.run(_requesting_human(conn, request))  # type: ignore[arg-type]
             == "svc_execution_worker"
         )
+
+
+# -------------------------------------------------------------------------------------------------
+# the launching turn and the conversation it holds (the tools are pinned in test_arv2_launch_tools)
+# -------------------------------------------------------------------------------------------------
+
+
+class _ThreadConn:
+    """Answers the launching-turn thread query for one known turn and nothing for any other."""
+
+    def __init__(self, known: dict[str, str]) -> None:
+        self.known = known
+
+    async def scalar(self, statement: Any, parameters: dict[str, Any]) -> str | None:
+        del statement
+        return self.known.get(str(parameters["turn_id"]))
+
+
+def test_the_launching_turn_and_its_thread_resolve_from_the_ref() -> None:
+    turn_id = uuid4()
+    conn = _ThreadConn({str(turn_id): "thr_1"})
+    request = _request(launching_turn_ref=f"turn-action:{turn_id}")
+    assert asyncio.run(_launching_turn(conn, request)) == (turn_id, "thr_1")  # type: ignore[arg-type]
+    # A human invoker's ask is its own turn's action ref.
+    request = _request(request_key=f"turn-action:{turn_id}")
+    assert asyncio.run(_launching_turn(conn, request)) == (turn_id, "thr_1")  # type: ignore[arg-type]
+    for ref in ("not-a-ref", "turn-action:not-a-uuid", f"turn-action:{uuid4()}"):
+        request = _request(request_key=ref)
+        assert asyncio.run(_launching_turn(conn, request)) == (None, None)  # type: ignore[arg-type]

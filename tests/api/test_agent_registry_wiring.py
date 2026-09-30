@@ -205,12 +205,15 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
                 == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             )
             assert resolved.profile.model.model_id == PROJECT_CONVERSATION_MODEL_ID
+        # Two names are granted at an address other than their name-only default:
+        # `research_account_gaps@2`, and `launch_arv2_discovery@1`, which `head-of-abm@v69` still
+        # pins while the default has moved to the agent-authored `@2` (the v70 bump moves it).
+        pinned_away_from_default = {
+            "research_account_gaps": "research_account_gaps@2",
+            "launch_arv2_discovery": "launch_arv2_discovery@1",
+        }
         expected_tools = {
-            (
-                "research_account_gaps@2"
-                if name == "research_account_gaps"
-                else f"{name}@{toolbelt.descriptor(name).version}"
-            )
+            pinned_away_from_default.get(name, f"{name}@{toolbelt.descriptor(name).version}")
             for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
             if role in roles
         }
@@ -298,7 +301,10 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
-    assert len(by_address) == 166
+    # Agent-authored discovery (2026-09-30) installs `launch_arv2_discovery@2` beside the retired
+    # `@1` (166 -> 167); v69 still pins `@1`, so `@2` is role-unavailable until v70 pins it.
+    assert len(by_address) == 167
+    assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
@@ -414,7 +420,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
-    assert len(by_address) == 166
+    # launch_arv2_discovery@2 (2026-09-30), ungranted until v70 (166 -> 167).
+    assert len(by_address) == 167
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
