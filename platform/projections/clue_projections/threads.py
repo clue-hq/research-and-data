@@ -499,6 +499,12 @@ _THREADS_RUNNING = text(
       AND u.stop_acknowledged_at IS NULL
       AND (u.task_status IS NULL OR u.task_status NOT IN ('done', 'failed'))
     GROUP BY u.thread_id
+    UNION
+    SELECT launched_thread_id
+    FROM arv2_discovery_run
+    WHERE workspace_id = :workspace_id
+      AND launched_thread_id = ANY(CAST(:thread_ids AS text[]))
+      AND released_at IS NULL
     """
 )
 
@@ -626,7 +632,8 @@ async def threads_running(
 
     One statement for a whole page of threads. "Queued" counts as running on purpose: from the
     user's side a turn they submitted thirty seconds ago that has not been claimed yet is the
-    conversation working, not the conversation idle.
+    conversation working, not the conversation idle. A thread whose discovery run is unreleased is
+    running too (spec 2026-09-30 §5): it holds every message until the run's wake turn finishes.
     """
 
     if not thread_ids:

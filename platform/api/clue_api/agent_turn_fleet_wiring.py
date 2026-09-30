@@ -81,6 +81,7 @@ from clue_api.agent_turn_submission import (
     submission_attachment_refs,
     submission_context_refs,
 )
+from clue_api.arv2.discovery_store import release_discovery_for_turn
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.brand_knowledge_context import (
     BRAND_KNOWLEDGE_INDEX_CARD_MEDIA_TYPE,
@@ -1574,6 +1575,10 @@ class AgentTurnWorkHandler:
             )
             return WorkResult(outcome="fenced_out", references=references, task_finalized=True)
         async with self._conn_factory() as conn:
+            # Spec 2026-09-30 §4: if this was a discovery run's wake turn, the run holding this
+            # thread (and its project) is released now — in the dispatch's own transaction, so the
+            # dispatch below already sees the thread free and offers the first held message.
+            await release_discovery_for_turn(conn, workspace_id=workspace_id, turn_id=turn_id)
             await dispatch_next_thread_turn(
                 conn,
                 workspace_id=workspace_id,

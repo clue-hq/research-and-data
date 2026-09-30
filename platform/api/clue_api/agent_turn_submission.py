@@ -58,6 +58,7 @@ __all__ = [
     "AGENT_TURN_DEDUP_PREFIX",
     "DERIVATION_DESIGN_LEG_FIRST_TURN",
     "DERIVATION_DESIGN_LEG_REDELIVERY",
+    "DERIVATION_DISCOVERY_FINISHED",
     "AgentTurnSubmissionRow",
     "SubmissionAttachmentRow",
     "SubmissionContextRefRow",
@@ -88,6 +89,9 @@ _THREAD_WORK_NAMESPACE = uuid5(NAMESPACE_URL, "clue-agent-turn-thread-work")
 #: second user bubble.
 DERIVATION_DESIGN_LEG_REDELIVERY = "design_leg_redelivery"
 DERIVATION_DESIGN_LEG_FIRST_TURN = "design_leg_first_turn"
+#: Spec 2026-09-30 §4 "The wake": the Head of ABM's turn at the end of a discovery run, in the
+#: thread that launched it. Its message is the run's summary, which the platform wrote.
+DERIVATION_DISCOVERY_FINISHED = "discovery_finished"
 
 _COLUMNS = (
     "turn_id, workspace_id, project_id, thread_id, submitted_by_user_id, "
@@ -634,6 +638,33 @@ _NEXT_PENDING_SQL = text(
     """
 )
 
+# The unreleased discovery run this thread launched, if any, and its wake turn (NULL while the run
+# is still going). Raw SQL rather than the ARV2 store: ``clue_api.arv2`` must never import this
+# module, and reading the one table keeps the edge one-way.
+_THREAD_DISCOVERY_SQL = text(
+    "SELECT wake_turn_id FROM arv2_discovery_run WHERE workspace_id = :w "
+    "AND launched_thread_id = :t AND released_at IS NULL LIMIT 1"
+)
+
+# The wake turn, while its task is not terminal. Once it is, the handler that finished it releases
+# the run, and nothing else is offered until then.
+_WAKE_PENDING_SQL = text(
+    """
+    SELECT s.turn_id, s.project_id
+    FROM agent_turn_submission s
+    WHERE s.workspace_id = :workspace_id
+      AND s.thread_id = :thread_id
+      AND s.turn_id = :wake_turn_id
+      AND NOT EXISTS (
+            SELECT 1 FROM fleet_task f
+            WHERE f.kind = CAST('agent_turn' AS fleet_task_kind)
+              AND f.work_id = :work_id
+              AND f.dedup_key = :prefix || s.turn_id::text
+              AND f.status IN ('done', 'failed')
+          )
+    """
+)
+
 
 def _thread_lock_scope(workspace_id: str, thread_id: str) -> str:
     framed = _framed(workspace_id, thread_id).encode()
@@ -677,24 +708,29 @@ async def dispatch_next_thread_turn(
     )
     if held is not None:
         return None
+    # Spec 2026-09-30 §5: a thread whose discovery run is unreleased is busy. Until the run's wake
+    # turn exists nothing is offered — user messages are accepted and held, never refused — and
+    # once it exists the wake goes first, ahead of messages accepted earlier. The run is released
+    # when the wake's task finishes (the AGENT_TURN handler), and the queue then moves on.
+    discovery = (
+        await conn.execute(_THREAD_DISCOVERY_SQL, {"w": workspace_id, "t": thread_id})
+    ).first()
+    if discovery is not None and discovery[0] is None:
+        return None
     in_flight = (await conn.execute(_THREAD_INFLIGHT_SQL, {"work_id": work_id})).first()
     if in_flight is not None:
         return None
-    row = (
-        (
-            await conn.execute(
-                _NEXT_PENDING_SQL,
-                {
-                    "workspace_id": workspace_id,
-                    "thread_id": thread_id,
-                    "work_id": work_id,
-                    "prefix": AGENT_TURN_DEDUP_PREFIX,
-                },
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
+    params: dict[str, object] = {
+        "workspace_id": workspace_id,
+        "thread_id": thread_id,
+        "work_id": work_id,
+        "prefix": AGENT_TURN_DEDUP_PREFIX,
+    }
+    if discovery is not None:
+        statement, params = _WAKE_PENDING_SQL, {**params, "wake_turn_id": discovery[0]}
+    else:
+        statement = _NEXT_PENDING_SQL
+    row = (await conn.execute(statement, params)).mappings().one_or_none()
     if row is None:
         return None
     turn_id = UUID(str(row["turn_id"]))
