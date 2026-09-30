@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime
@@ -53,6 +53,7 @@ from clue_api.arv2.exa_client import ANSWER_ESTIMATE_USD, SEARCH_ESTIMATE_USD, E
 from clue_api.arv2.exa_websets_client import CREDITS_PER_MATCH, ExaWebsetsClient
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
 from clue_research.identity.normalize import registrable_domain
+from clue_spend.errors import ProviderTransportError
 from clue_spend.ledger import BufferedLedger, BufferedRawSink
 from clue_spend.transport import HttpxTransport
 
@@ -289,26 +290,46 @@ class Providers:
         return ExaClient(self._caller(), api_key=self.exa_key)
 
 
+def _retrying[T](providers: Providers, call: Callable[[], T], attempts: int = 8) -> T:
+    """A free read retried across a network drop (the 2026-09-30 run lost DNS mid-poll)."""
+    for attempt in range(attempts):
+        try:
+            result = call()
+            providers.flush()
+            return result
+        except ProviderTransportError:
+            providers.flush()
+            if attempt == attempts - 1:
+                raise
+            time.sleep(POLL_INTERVAL_S)
+    raise AssertionError("unreachable")
+
+
 def _long_list_websets(
     providers: Providers, arm: str, brief: DiscoveryBrief, count: int, run_name: str
 ) -> list[Candidate]:
-    worst = Decimal(count * CREDITS_PER_MATCH) * providers.usd_per_credit
-    providers.budget.check(worst)
-    view = providers.websets().create(
-        query=brief.query,
-        count=count,
-        criteria=brief.criteria,
-        external_id=f"trial-target-discovery:{run_name}:{arm}",
-        title=f"trial target discovery {run_name} arm {arm}",
-        recall=False,
-    )
-    providers.flush()
+    external_id = f"trial-target-discovery:{run_name}:{arm}"
+    # A resumed run reads the webset it already bought (Exa keys it by externalId) rather than
+    # buying a second one — a webset keeps finding, and billing, whether or not anyone reads it.
+    view = _retrying(providers, lambda: providers.websets().find(external_id))
+    if view is None:
+        worst = Decimal(count * CREDITS_PER_MATCH) * providers.usd_per_credit
+        providers.budget.check(worst)
+        view = providers.websets().create(
+            query=brief.query,
+            count=count,
+            criteria=brief.criteria,
+            external_id=external_id,
+            title=f"trial target discovery {run_name} arm {arm}",
+            recall=False,
+        )
+        providers.flush()
     if view.error:
         raise TrialError(f"arm {arm}: websets refused the create: {view.error}")
     started = time.monotonic()
     while True:
-        view = providers.websets().get(view.webset_id)
-        providers.flush()
+        webset_id = view.webset_id
+        view = _retrying(providers, lambda wid=webset_id: providers.websets().get(wid))
         if view.status == "idle":
             break
         if time.monotonic() - started > WEBSET_WALL_S:
@@ -316,7 +337,8 @@ def _long_list_websets(
             providers.flush()
             break
         time.sleep(POLL_INTERVAL_S)
-    items = providers.websets().items(view.webset_id)
+    final_id = view.webset_id
+    items = _retrying(providers, lambda: providers.websets().items(final_id))
     providers.flush()
     searches = [asdict(s) for s in view.searches]
     providers.run_dir.write_json(
