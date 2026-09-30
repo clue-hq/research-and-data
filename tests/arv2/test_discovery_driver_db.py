@@ -1078,10 +1078,11 @@ def test_a_round_with_nothing_new_ends_dry(tmp_path: Any) -> None:
     run_async(scenario())
 
 
-def test_the_search_source_excludes_seen_domains(tmp_path: Any) -> None:
+def test_the_search_source_skips_known_domains_without_sending_excludes(tmp_path: Any) -> None:
     """Source ``search``: each round is one Exa ``/search`` for companies, asking for twice the
-    shortfall, excluding every domain already seen — this project's accounts, and every company an
-    earlier round found, the excluded ones included."""
+    shortfall plus one result per domain already known — this project's accounts, and every
+    company an earlier round found, the excluded ones included — and skipping those in code. No
+    ``excludeDomains``: with the company category Exa answers any at all with zero results."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1101,8 +1102,12 @@ def test_the_search_source_excludes_seen_domains(tmp_path: Any) -> None:
             )
             transport = _RoutedTransport(
                 [
-                    _search_round(("Alpha", "alpha.com"), ("Hotelco", "hotelco.com")),
-                    _search_round(),
+                    _search_round(
+                        ("Probook", "probook.ai"),
+                        ("Alpha", "alpha.com"),
+                        ("Hotelco", "hotelco.com"),
+                    ),
+                    _search_round(("Alpha", "alpha.com")),
                     *_company_routes("Alpha", "alpha.com", _NO_INTENT),
                     *_company_routes("Hotelco", "hotelco.com"),
                 ]
@@ -1118,17 +1123,19 @@ def test_the_search_source_excludes_seen_domains(tmp_path: Any) -> None:
                 if str(request.url).endswith("/search")
             ]
             assert [body["category"] for body in bodies] == ["company", "company"]
-            assert [body["numResults"] for body in bodies] == [4, 2]
-            assert bodies[0]["excludeDomains"] == ["probook.ai"]
-            assert bodies[1]["excludeDomains"] == ["alpha.com", "hotelco.com", "probook.ai"]
+            # 2 × shortfall + known: round 1 knows probook.ai; round 2 knows it, alpha and hotelco.
+            assert [body["numResults"] for body in bodies] == [5, 5]
+            assert not any("excludeDomains" in body for body in bodies)
             assert not any("/websets/" in str(request.url) for request in transport.sent)
 
             searches = await list_searches(conn, run_id=run_id)
             assert [(s.kind, s.source, s.found, s.webset_id) for s in searches] == [
-                ("round", "search", 2, None),
-                ("round", "search", 0, None),
+                ("round", "search", 3, None),
+                ("round", "search", 1, None),
             ]
             candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
+            # The project's own account was skipped, not verified again.
+            assert "probook.ai" not in candidates
             assert candidates["alpha.com"].disposition == "pass"
             assert candidates["hotelco.com"].disposition == "excluded"
             run = await read_discovery_run(conn, run_id=run_id)

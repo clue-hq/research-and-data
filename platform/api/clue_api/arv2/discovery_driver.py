@@ -13,11 +13,12 @@ design.md``) executed once per ``arv2_discovery`` task:
 3. **Rounds with the same brief.** Round 1 asks the brief's source for ``target_count``
    companies; while the run has shown fewer than asked, the next round asks again with the SAME
    brief for the shortfall, excluding every company seen so far — a webset excludes the websets
-   before it (this run's and every earlier discovery run's of the project), a ``/search`` sends
-   every domain already seen as ``exclude_domains``. The run ends on the first of *filled*, *dry*
-   (a round found nothing new), *round cap* (``1 + arv2_discovery_max_topups`` searches), *wall
-   clock* (per search) and *stopped* (a human pressed Stop: the current webset is cancelled and
-   read once more, and every company already verified is kept).
+   before it (this run's and every earlier discovery run's of the project), a ``/search`` asks
+   for one more result per domain already known and skips those in code. The run ends on the
+   first of *filled*, *dry* (a round found nothing new), *round cap*
+   (``1 + arv2_discovery_max_topups`` searches), *wall clock* (per search) and *stopped* (a
+   human pressed Stop: the current webset is cancelled and read once more, and every company
+   already verified is kept).
 4. **The verifier, per candidate** — first the company's own website (Websets gave ``probook.com``
    for a company whose site is ``probook.ai``, and everything downstream keys on the verified
    domain), then one Answer call per gate of the brief, each graded by
@@ -675,20 +676,22 @@ class Arv2DiscoveryWorkHandler:
         """One ``/search`` round: ask Exa for companies with the brief's query, verify the new ones.
 
         It asks for twice the shortfall (a search result is a page, not a company, and some do not
-        survive the verifier) and sends every domain already seen — this run's, this project's
-        accounts, and every company an earlier discovery of the project found — as
-        ``exclude_domains``, so a round never pays to re-find a company.
+        survive the verifier) plus one result for every domain already known — this run's, this
+        project's accounts, and every company an earlier discovery of the project found — and
+        skips the known ones here. It does not send them as ``excludeDomains``: with the company
+        category, Exa answers any ``excludeDomains`` at all with zero results (live 2026-10-01 —
+        even a list holding only ``example.com``), which ended every search round dry. Asking for
+        more instead also moves a later round past the same query's earlier answers.
         """
         run = state.run
-        exclude = sorted(state.seen | state.project_domains | state.found_before)
+        known = state.seen | state.project_domains | state.found_before
         query = state.brief.query
         result = await self._hop(
             state,
             lambda caller: self._clients.exa(caller).search(
                 query,
                 category="company",
-                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked),
-                exclude_domains=exclude or None,
+                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + len(known)),
                 label=f"discovery-search-{search.ordinal}",
             ),
         )
@@ -699,7 +702,7 @@ class Arv2DiscoveryWorkHandler:
         tasks: set[asyncio.Task[None]] = set()
         for item in items:
             domain = registrable_domain(item.url) or ""
-            if not domain or domain in state.seen:
+            if not domain or domain in known or domain in state.seen:
                 continue
             state.seen.add(domain)
             tasks.add(asyncio.create_task(self._verify_contained(state, item, pass_="strict")))
