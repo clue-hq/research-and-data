@@ -103,3 +103,52 @@ What round 3 adds:
 - **Websets is weaker on the Clue ICP whatever the brief** (A 4/10, D 7/10, G 5/10), while Exa
   `/search` with the company category scored 10/10 there. The Clue brief had almost no chat to work
   from; the real Head of ABM would have had the user's conversation.
+
+## Round 4 — the production change, walked live (2026-09-30 / 2026-10-01)
+
+The agent-authored brief shipped on `discovery/target-discovery-trial` (spec
+`docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-design.md`) and was walked
+in the app on the Conduit hotel-operators project. Every brief below was written by the Head of
+ABM itself.
+
+| Run | Ask | Source | Result | Spend |
+|---|---|---|---|---|
+| a1e002a3 (founder) | 5 | websets | 4 pass + 2 unclear added; Accor, Concord, Marriott wrongly excluded (side businesses read as "must not") | $0.70 |
+| 36dba57d (founder) | 3 | websets | Exa Answer 402 (out of credits), 0 added; the wake turn's relaunch was refused by our own lock | $0.16 |
+| 8e9f72db | 3 | websets | the tail of the same 402 | $0.16 |
+| 46c7a9cd | 3 | search | the wake turn's own relaunch (lock taken over); ended dry — Exa `/search` answers any `excludeDomains` with zero results | $0.03 |
+| 7a970d61 | 5 | websets | 5/5 hotel operators | $0.37 |
+| d6b44e04 | 15 | websets | 15/15 hotel operators; Duane Street (closed) rightly excluded, Vesta Hospitality wrongly | $1.21 |
+| b2d6a226 | 10 | websets | 10/10 hotel operators | $0.72 |
+| 29fb39b3 | 20 | websets | Stop pressed after the reply: `stopped`, released, wake reported, 0 added | $0.29 |
+| 2b76317d | 3 | search | after the excludes fix: 31 added (overfill), all hotel operators; HMP Properties wrongly excluded | $0.86 |
+| 6a9f2ca3 | 2 | search | after the verification cap: 4 added, 4/4 hotel operators | $0.17 |
+
+Graded by name and domain: **65 of 65 companies added after the Exa top-up are hotel operators or
+hotel-management companies; no vendor reached the table.**
+
+What the walk found and fixed on the branch:
+- **The wake turn could never relaunch** (the lock was held until it finished) — `ab9d4bc8e`, a
+  launch from the run's own wake turn takes the lock over; proven live at 19:59:34.
+- **`/search` with `category: company` returns nothing when `excludeDomains` is sent** (reproduced
+  with only `example.com` excluded) — `9f4d04cc2` pads the ask by the known domains and skips them
+  in code; `e05ce5f8b` caps verification at twice the shortfall after the pad let an ask for 3
+  verify 42.
+- **The quote-on-page and right-company guards** turned correct verdicts to `unclear` (HHM's
+  renamed LinkedIn, a job board for Zachry, "Concord Hospitality" vs "…Enterprises") and were
+  removed by founder ruling (`8c4ece872`).
+
+Still open:
+- **`must_not` gates exclude real targets.** Five hotel operators were excluded: Accor, Concord and
+  Marriott for a side business (D-EDGE, IT services, Homes & Villas); Vesta Hospitality and HMP
+  Properties on evidence from a *different* company's software site (vestaos.ai, hmpmaster.com) —
+  exactly what the removed right-company guard used to catch. A decision is owed on how a
+  `must_not` gate is asked ("is this the company's main business?") and whether a `must_not` pass
+  needs evidence on the company's own site.
+- The agent in another thread read the running discovery and declined on its own, so the tool's
+  `discovery_in_progress` refusal was not re-exercised in this walk (it was exercised live on
+  2026-09-30 at 18:07:38, and is covered by the DB tests).
+- A held message runs after the wake turns but the transcript orders turns by submission, so its
+  answer shows above the reports it followed (display order: founder ruling owed).
+- `/search` returned junk rows (`instagram.com`, an `exa.ai` page); the `must` gate excluded them,
+  at a verification's cost each.
