@@ -126,6 +126,40 @@ test("new chat creation carries the transfer act's idempotency key", async () =>
   }
 });
 
+test("stopping a discovery posts to its run's stop route and reads the receipt", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: { url: string; method: string | undefined; body: unknown }[] = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), method: init?.method, body: init?.body });
+    return Response.json({ data: { run_id: "run 7", stop_requested: true } });
+  };
+  try {
+    const repositories = createChatRepositories({ mode: "http", prefix: "/api/clue" });
+    const receipt = await repositories.discoveries.stop({
+      projectId: "project 1",
+      runId: "run 7",
+    });
+    assert.deepEqual(receipt, { runId: "run 7", stopRequested: true });
+    assert.deepEqual(requests, [
+      {
+        url: "/api/clue/api/v1/projects/project%201/discovery-runs/run%207/stop",
+        method: "POST",
+        body: undefined,
+      },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("the fixture discovery stop resolves without a network", async () => {
+  const repositories = createChatRepositories();
+  assert.deepEqual(
+    await repositories.discoveries.stop({ projectId: FIXTURE_PROJECT_ID, runId: "run-1" }),
+    { runId: "run-1", stopRequested: true },
+  );
+});
+
 test("the fixture repositories serve a whole conversation", async () => {
   const repositories = createChatRepositories();
   const threads = await repositories.threads.list({ projectId: FIXTURE_PROJECT_ID });

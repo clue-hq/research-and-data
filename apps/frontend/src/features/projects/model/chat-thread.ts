@@ -120,6 +120,24 @@ function toThreadDesignLeg(raw: unknown): ThreadDesignLegWire | null {
   };
 }
 
+/**
+ * The discovery run a thread is holding (`chat/schemas.py::ThreadDiscoveryWire`).
+ *
+ * While it is present the thread is busy: the backend holds every message sent
+ * to it until the run's wake turn ends. It is served only by the thread LIST
+ * read; every other thread projection sends `null`.
+ */
+export const ThreadDiscoverySchema = z.object({
+  run_id: z.string(),
+  stoppable: z.boolean(),
+});
+
+export interface ThreadDiscovery {
+  runId: string;
+  /** `false` once the run has ended: Stop has nothing left to stop. */
+  stoppable: boolean;
+}
+
 const ThreadWireSchema = z.object({
   id: z.string().min(1),
   title: z.string().nullable().default(null),
@@ -132,6 +150,7 @@ const ThreadWireSchema = z.object({
   // `unknown` on purpose: the shape is validated in `toThreadDesignLeg`, where
   // a failure degrades this one field instead of the read.
   speaker: z.unknown().optional(),
+  discovery: ThreadDiscoverySchema.nullable().optional(),
 });
 
 export interface ChatThread {
@@ -154,6 +173,8 @@ export interface ChatThread {
    * frames and this is the only thing that knows about it.
    */
   designLeg: ThreadDesignLegWire | null;
+  /** The discovery run holding this thread busy, or `null` when none is. */
+  discovery: ThreadDiscovery | null;
 }
 
 export type ProjectThreadRouteResolution =
@@ -197,6 +218,9 @@ function toThread(wire: z.infer<typeof ThreadWireSchema>): ChatThread {
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,
     designLeg: toThreadDesignLeg(wire.speaker),
+    discovery: wire.discovery
+      ? { runId: wire.discovery.run_id, stoppable: wire.discovery.stoppable }
+      : null,
   };
 }
 
