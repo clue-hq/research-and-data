@@ -52,9 +52,12 @@ __all__ = [
     "Pass",
     "SearchKind",
     "SearchRow",
+    "active_discoveries_for_threads",
+    "active_discovery_for_project",
     "begin_discovery_run",
     "create_discovery_run",
     "create_search",
+    "end_discovery_run",
     "find_discovery_run",
     "finish_discovery_run",
     "finish_search",
@@ -67,25 +70,36 @@ __all__ = [
     "record_discovery_progress",
     "record_search_webset",
     "record_verdicts",
+    "record_wake_turn",
+    "release_discovery_for_turn",
+    "request_discovery_stop",
+    "stop_requested",
     "suspend_discovery_run",
     "upsert_candidate",
 ]
 
-#: The seam-1 states, verbatim — the same vocabulary the R2 runs and jobs carry.
-DiscoveryStatus = Literal["not_started", "in_progress", "needs_review", "completed", "suspended"]
+#: The seam-1 states, verbatim — the same vocabulary the R2 runs and jobs carry — plus
+#: ``stopped``: a human pressed Stop and the run ended early with what it had already verified.
+DiscoveryStatus = Literal[
+    "not_started", "in_progress", "needs_review", "completed", "suspended", "stopped"
+]
 
 #: Which §4 pass a candidate came from: the full criteria (the strict search and its top-up), or
 #: the relaxed search.
 Pass = Literal["strict", "relaxed"]
 
-#: The three searches a run may make, in the order it makes them.
-SearchKind = Literal["strict", "strict_topup", "relaxed"]
+#: The searches a run may make. ``strict``/``strict_topup``/``relaxed`` are the three searches of a
+#: run launched from a compiled brief (``launch_arv2_discovery@1``); ``round`` is one round of a run
+#: launched from the brief the agent wrote (``@2``): round 1, then top-ups with the same brief.
+SearchKind = Literal["strict", "strict_topup", "relaxed", "round"]
 
 #: What a verified candidate *is*, never what it was refused for. ``duplicate_of_existing`` is a
 #: company already among this project's accounts; ``found_before`` is one an earlier discovery run
-#: of this project already found. Both are stamped before any gate is asked.
+#: of this project already found. Both are stamped before any gate is asked. ``excluded`` is a
+#: company a ``must`` gate failed or a ``must_not`` gate passed: kept on the run with the gate that
+#: excluded it (``excluded_by_gate``), never added to the project's accounts and never shown.
 Disposition = Literal[
-    "pending", "pass", "partial", "unclear", "duplicate_of_existing", "found_before"
+    "pending", "pass", "partial", "unclear", "duplicate_of_existing", "found_before", "excluded"
 ]
 
 #: The dispositions that mean the human was shown this company — §4's *shown*, and equally the
@@ -118,18 +132,20 @@ _RUN_COLUMNS = (
     "run_id, workspace_id, project_id, brand_id, project_run_id, icp_artifact_key, "
     "icp_artifact_sha256, icp_key, icp_version, requested_by_user_id, request_sha256, "
     "target_count, relaxed_enabled, criteria_gate_keys, status, asked, found_strict, "
-    "found_relaxed, analyzed, recall_estimate, receipt_json, created_at, started_at, finished_at"
+    "found_relaxed, analyzed, recall_estimate, receipt_json, created_at, started_at, finished_at, "
+    "source, brief_json, launched_thread_id, launching_turn_id, end_reason, summary_json, "
+    "stop_requested_at, wake_turn_id, released_at"
 )
 
 _SEARCH_COLUMNS = (
     "run_id, ordinal, kind, external_id, webset_id, asked, criteria, exclude_webset_ids, found, "
-    "analyzed, recall_estimate, finished_at"
+    "analyzed, recall_estimate, finished_at, source"
 )
 
 _CANDIDATE_COLUMNS = (
     "candidate_id, run_id, workspace_id, project_id, pass, domain, websets_url, name, "
     "provider_snapshot_json, verdicts_json, fit, disposition, decision, decided_by_user_id, "
-    "decided_at, account_entity_id"
+    "decided_at, account_entity_id, excluded_by_gate"
 )
 
 
@@ -141,6 +157,12 @@ class DiscoveryRunRow:
     a run replayable against exactly the document a human asked against. ``criteria_gate_keys`` is
     the gate set the verifier must answer for every candidate, recorded at launch so a run that
     resumes after a restart grades on the same gates it started on.
+
+    ``brief`` is the whole brief the Head of ABM wrote (query, criteria, gates) and ``source`` the
+    search it chose. The lock and wake fields: a run is *active* — holding its project and its
+    launching thread — until ``released_at`` is set. It ends (``finished_at``, ``end_reason``,
+    ``summary``) and is then released either at once or, when a wake turn was queued in the
+    launching thread (``wake_turn_id``), when that turn finishes.
     """
 
     run_id: UUID
@@ -168,6 +190,15 @@ class DiscoveryRunRow:
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    source: str = "websets"
+    brief: Mapping[str, Any] | None = None
+    launched_thread_id: str | None = None
+    launching_turn_id: UUID | None = None
+    end_reason: str | None = None
+    summary: Mapping[str, Any] | None = None
+    stop_requested_at: datetime | None = None
+    wake_turn_id: UUID | None = None
+    released_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -192,6 +223,7 @@ class SearchRow:
     analyzed: int | None = None
     recall_estimate: int | None = None
     finished_at: datetime | None = None
+    source: str = "websets"
 
 
 @dataclass(frozen=True)
@@ -221,6 +253,7 @@ class CandidateRow:
     decided_by_user_id: str | None = None
     decided_at: datetime | None = None
     account_entity_id: UUID | None = None
+    excluded_by_gate: str | None = None
 
 
 async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> bool:
@@ -237,7 +270,10 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             " :request_sha256, :target_count, :relaxed_enabled, "
             " CAST(:criteria_gate_keys AS jsonb), :status, "
             " :asked, :found_strict, :found_relaxed, :analyzed, :recall_estimate, "
-            " CAST(:receipt AS jsonb), COALESCE(:created_at, now()), :started_at, :finished_at) "
+            " CAST(:receipt AS jsonb), COALESCE(:created_at, now()), :started_at, :finished_at, "
+            " :source, CAST(:brief AS jsonb), :launched_thread_id, :launching_turn_id, "
+            " :end_reason, CAST(:summary AS jsonb), :stop_requested_at, :wake_turn_id, "
+            " :released_at) "
             "ON CONFLICT (run_id) DO NOTHING"
         ),
         {
@@ -265,6 +301,15 @@ async def create_discovery_run(conn: AsyncConnection, row: DiscoveryRunRow) -> b
             "created_at": row.created_at,
             "started_at": row.started_at,
             "finished_at": row.finished_at,
+            "source": row.source,
+            "brief": _dump_json(row.brief) if row.brief is not None else None,
+            "launched_thread_id": row.launched_thread_id,
+            "launching_turn_id": row.launching_turn_id,
+            "end_reason": row.end_reason,
+            "summary": _dump_json(row.summary) if row.summary is not None else None,
+            "stop_requested_at": row.stop_requested_at,
+            "wake_turn_id": row.wake_turn_id,
+            "released_at": row.released_at,
         },
     )
     return result.rowcount == 1
@@ -354,8 +399,8 @@ async def create_search(conn: AsyncConnection, row: SearchRow) -> SearchRow:
     await conn.execute(
         text(
             "INSERT INTO arv2_discovery_search (run_id, ordinal, kind, external_id, asked, "
-            " criteria, exclude_webset_ids) VALUES (:run_id, :ordinal, :kind, :external_id, "
-            " :asked, CAST(:criteria AS jsonb), CAST(:exclude AS jsonb)) "
+            " criteria, exclude_webset_ids, source) VALUES (:run_id, :ordinal, :kind, "
+            " :external_id, :asked, CAST(:criteria AS jsonb), CAST(:exclude AS jsonb), :source) "
             "ON CONFLICT (run_id, ordinal) DO NOTHING"
         ),
         {
@@ -366,6 +411,7 @@ async def create_search(conn: AsyncConnection, row: SearchRow) -> SearchRow:
             "asked": int(row.asked),
             "criteria": json.dumps(list(row.criteria)),
             "exclude": json.dumps(list(row.exclude_webset_ids)),
+            "source": row.source,
         },
     )
     await conn.execute(
@@ -561,6 +607,132 @@ async def finish_discovery_run(
     )
 
 
+#: A run holds its project and its launching thread until it is released (spec 2026-09-30 §5).
+#: The partial unique index ``arv2_discovery_run_project_active`` is keyed on this same predicate,
+#: so two simultaneous launches in one project cannot both insert.
+_ACTIVE = "released_at IS NULL"
+
+
+async def active_discovery_for_project(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str
+) -> DiscoveryRunRow | None:
+    """The project's unreleased discovery run, if any — the one a new launch is refused over."""
+    row = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_RUN_COLUMNS} FROM arv2_discovery_run "
+                    f"WHERE workspace_id = :w AND project_id = :p AND {_ACTIVE}"
+                ),
+                {"w": workspace_id, "p": project_id},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    return None if row is None else _run(row)
+
+
+async def active_discoveries_for_threads(
+    conn: AsyncConnection, *, workspace_id: str, thread_ids: Sequence[str]
+) -> dict[str, DiscoveryRunRow]:
+    """The unreleased discovery run each of these threads launched, keyed by thread id.
+
+    A thread in this map is busy: a turn submitted to it is held until the run's wake turn ends.
+    """
+    if not thread_ids:
+        return {}
+    rows = (
+        await conn.execute(
+            text(
+                f"SELECT {_RUN_COLUMNS} FROM arv2_discovery_run WHERE workspace_id = :w "
+                f"AND launched_thread_id = ANY(:t) AND {_ACTIVE}"
+            ),
+            {"w": workspace_id, "t": list(thread_ids)},
+        )
+    ).mappings()
+    return {str(r["launched_thread_id"]): _run(r) for r in rows}
+
+
+async def request_discovery_stop(
+    conn: AsyncConnection, *, workspace_id: str, project_id: str, run_id: UUID
+) -> DiscoveryRunRow | None:
+    """Record a human's Stop on an active run; the driver reads it and ends the run ``stopped``.
+
+    The first request's time is kept (``COALESCE``), so a second press changes nothing. ``None``
+    when the run is not this project's.
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run SET stop_requested_at = COALESCE(stop_requested_at, now()) "
+            f"WHERE run_id = :r AND workspace_id = :w AND project_id = :p AND {_ACTIVE}"
+        ),
+        {"r": run_id, "w": workspace_id, "p": project_id},
+    )
+    run = await read_discovery_run(conn, run_id=run_id)
+    if run is None or run.workspace_id != workspace_id or run.project_id != project_id:
+        return None
+    return run
+
+
+async def stop_requested(conn: AsyncConnection, *, run_id: UUID) -> bool:
+    """Whether a human asked this run to stop — the check the driver makes between steps."""
+    value = await conn.scalar(
+        text("SELECT stop_requested_at IS NOT NULL FROM arv2_discovery_run WHERE run_id = :r"),
+        {"r": run_id},
+    )
+    return bool(value)
+
+
+async def end_discovery_run(
+    conn: AsyncConnection,
+    *,
+    run_id: UUID,
+    status: DiscoveryStatus,
+    end_reason: str,
+    summary: Mapping[str, Any],
+    release: bool,
+) -> None:
+    """End a run with why it ended and its summary; release its locks now when ``release``.
+
+    A run that queued a wake turn in its launching thread ends with ``release=False``: the project
+    and the thread stay held until that turn finishes (:func:`release_discovery_for_turn`).
+    """
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_run SET status = :s, end_reason = :e, "
+            "summary_json = CAST(:j AS jsonb), finished_at = COALESCE(finished_at, now()), "
+            "released_at = CASE WHEN :rel THEN now() ELSE released_at END WHERE run_id = :r"
+        ),
+        {"s": status, "e": end_reason, "j": _dump_json(summary), "rel": release, "r": run_id},
+    )
+
+
+async def record_wake_turn(conn: AsyncConnection, *, run_id: UUID, wake_turn_id: UUID) -> None:
+    """Record the derived turn that tells the launching thread the run ended."""
+    await conn.execute(
+        text("UPDATE arv2_discovery_run SET wake_turn_id = :t WHERE run_id = :r"),
+        {"t": wake_turn_id, "r": run_id},
+    )
+
+
+async def release_discovery_for_turn(
+    conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
+) -> UUID | None:
+    """Release the run whose wake turn this is, now that the turn has finished.
+
+    Returns the released run's id, or ``None`` when this turn woke no active run.
+    """
+    released = await conn.scalar(
+        text(
+            "UPDATE arv2_discovery_run SET released_at = now() WHERE workspace_id = :w "
+            f"AND wake_turn_id = :t AND {_ACTIVE} RETURNING run_id"
+        ),
+        {"w": workspace_id, "t": turn_id},
+    )
+    return None if released is None else UUID(str(released))
+
+
 async def upsert_candidate(conn: AsyncConnection, row: CandidateRow) -> UUID:
     """Record one company of the long list; returns the candidate id that now holds that domain.
 
@@ -577,7 +749,8 @@ async def upsert_candidate(conn: AsyncConnection, row: CandidateRow) -> UUID:
             f"INSERT INTO arv2_discovery_candidate ({_CANDIDATE_COLUMNS}) VALUES ("
             " :candidate_id, :run_id, :workspace_id, :project_id, :pass, :domain, :websets_url, "
             " :name, CAST(:provider_snapshot AS jsonb), CAST(:verdicts AS jsonb), :fit, "
-            " :disposition, :decision, :decided_by_user_id, :decided_at, :account_entity_id) "
+            " :disposition, :decision, :decided_by_user_id, :decided_at, :account_entity_id, "
+            " :excluded_by_gate) "
             "ON CONFLICT (run_id, domain) DO UPDATE SET "
             " provider_snapshot_json = EXCLUDED.provider_snapshot_json, name = EXCLUDED.name, "
             " websets_url = EXCLUDED.websets_url "
@@ -600,6 +773,7 @@ async def upsert_candidate(conn: AsyncConnection, row: CandidateRow) -> UUID:
             "decided_by_user_id": row.decided_by_user_id,
             "decided_at": row.decided_at,
             "account_entity_id": row.account_entity_id,
+            "excluded_by_gate": row.excluded_by_gate,
         },
     )
     return UUID(str(result.scalar_one()))
@@ -739,6 +913,15 @@ def _run(row: RowMapping) -> DiscoveryRunRow:
         created_at=row["created_at"],
         started_at=row["started_at"],
         finished_at=row["finished_at"],
+        source=row["source"],
+        brief=decode_jsonb(row["brief_json"]),
+        launched_thread_id=row["launched_thread_id"],
+        launching_turn_id=row["launching_turn_id"],
+        end_reason=row["end_reason"],
+        summary=decode_jsonb(row["summary_json"]),
+        stop_requested_at=row["stop_requested_at"],
+        wake_turn_id=row["wake_turn_id"],
+        released_at=row["released_at"],
     )
 
 
@@ -758,6 +941,7 @@ def _search(row: RowMapping) -> SearchRow:
         analyzed=row["analyzed"],
         recall_estimate=row["recall_estimate"],
         finished_at=row["finished_at"],
+        source=row["source"],
     )
 
 
@@ -782,4 +966,5 @@ def _candidate(row: RowMapping) -> CandidateRow:
         decided_by_user_id=row["decided_by_user_id"],
         decided_at=row["decided_at"],
         account_entity_id=row["account_entity_id"],
+        excluded_by_gate=row["excluded_by_gate"],
     )

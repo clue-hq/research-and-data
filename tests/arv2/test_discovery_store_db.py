@@ -6,15 +6,19 @@ import dataclasses
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.discovery_store import (
     CandidateRow,
     DiscoveryRunRow,
     SearchRow,
+    active_discoveries_for_threads,
+    active_discovery_for_project,
     begin_discovery_run,
     create_discovery_run,
     create_search,
+    end_discovery_run,
     find_discovery_run,
     finish_discovery_run,
     finish_search,
@@ -27,6 +31,10 @@ from clue_api.arv2.discovery_store import (
     record_discovery_progress,
     record_search_webset,
     record_verdicts,
+    record_wake_turn,
+    release_discovery_for_turn,
+    request_discovery_stop,
+    stop_requested,
     suspend_discovery_run,
     upsert_candidate,
 )
@@ -66,7 +74,13 @@ async def _seed(conn: AsyncConnection) -> Project:
     return project
 
 
-def _run(project: Project, *, request_sha256: str = "a" * 64, target: int = 20) -> DiscoveryRunRow:
+def _run(
+    project: Project,
+    *,
+    request_sha256: str = "a" * 64,
+    target: int = 20,
+    launched_thread_id: str | None = None,
+) -> DiscoveryRunRow:
     return DiscoveryRunRow(
         run_id=uuid4(),
         workspace_id=project.workspace_id,
@@ -82,6 +96,14 @@ def _run(project: Project, *, request_sha256: str = "a" * 64, target: int = 20) 
         target_count=target,
         relaxed_enabled=True,
         criteria_gate_keys=("geography", "stage"),
+        launched_thread_id=launched_thread_id,
+    )
+
+
+async def _release(conn: AsyncConnection, run: DiscoveryRunRow) -> None:
+    """End a run and free its project, so the same project may launch another."""
+    await end_discovery_run(
+        conn, run_id=run.run_id, status="completed", end_reason="filled", summary={}, release=True
     )
 
 
@@ -236,6 +258,8 @@ def test_candidates_upsert_by_domain_and_a_later_run_remembers_everything_earlie
             assert row.disposition == "pass"
             assert row.verdicts[0]["gate_key"] == "stage"
             assert row.pass_ == "strict"
+            # One unreleased discovery per project: the first must end before "find more".
+            await _release(conn, first)
             second = _run(project, request_sha256="2" * 64)
             await create_discovery_run(conn, second)
             assert await project_found_domains(
@@ -335,7 +359,6 @@ def test_a_later_run_skips_every_webset_the_projects_earlier_runs_bought() -> No
             earlier = _run(project, request_sha256="3" * 64)
             later = _run(project, request_sha256="4" * 64)
             await create_discovery_run(conn, earlier)
-            await create_discovery_run(conn, later)
             for ordinal, webset_id in ((1, "ws_a"), (3, "ws_b")):
                 await create_search(
                     conn,
@@ -355,6 +378,8 @@ def test_a_later_run_skips_every_webset_the_projects_earlier_runs_bought() -> No
                     webset_id=webset_id,
                     recall_estimate=None,
                 )
+            await _release(conn, earlier)
+            await create_discovery_run(conn, later)
             assert await project_webset_ids(
                 conn,
                 workspace_id=project.workspace_id,
@@ -371,5 +396,207 @@ def test_a_later_run_skips_every_webset_the_projects_earlier_runs_bought() -> No
                 )
                 == ()
             )
+
+    run_async(scenario())
+
+
+def _candidate(
+    run: DiscoveryRunRow,
+    *,
+    domain: str,
+    disposition: str = "pending",
+    excluded_by_gate: str | None = None,
+) -> CandidateRow:
+    return CandidateRow(
+        candidate_id=uuid4(),
+        run_id=run.run_id,
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        pass_="strict",
+        domain=domain,
+        websets_url=None,
+        name=domain,
+        provider_snapshot={},
+        disposition=disposition,  # type: ignore[arg-type]
+        excluded_by_gate=excluded_by_gate,
+    )
+
+
+def test_the_brief_and_source_round_trip_with_the_launching_thread() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            brief = {"query": "Hotel operators in Spain.", "gates": [{"key": "hotels"}]}
+            launching_turn = uuid4()
+            row = dataclasses.replace(
+                _run(project, launched_thread_id="thr_brief"),
+                source="search",
+                brief=brief,
+                launching_turn_id=launching_turn,
+            )
+            await create_discovery_run(conn, row)
+            held = await read_discovery_run(conn, run_id=row.run_id)
+            assert held is not None
+            assert (held.source, held.brief, held.launched_thread_id) == (
+                "search",
+                brief,
+                "thr_brief",
+            )
+            assert held.launching_turn_id == launching_turn
+            assert held.released_at is None and held.stop_requested_at is None
+            assert held.end_reason is None and held.summary is None
+
+    run_async(scenario())
+
+
+def test_only_one_unreleased_run_per_project() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            first = _run(project, request_sha256="a" * 64, launched_thread_id="thr_a")
+            second = _run(project, request_sha256="b" * 64, launched_thread_id="thr_b")
+            assert await create_discovery_run(conn, first)
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await create_discovery_run(conn, second)
+            active = await active_discovery_for_project(
+                conn, workspace_id=first.workspace_id, project_id=first.project_id
+            )
+            assert active is not None and active.run_id == first.run_id
+            assert active.launched_thread_id == "thr_a"
+
+    run_async(scenario())
+
+
+def test_end_with_release_frees_the_project() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="c" * 64)
+            await create_discovery_run(conn, row)
+            await end_discovery_run(
+                conn,
+                run_id=row.run_id,
+                status="completed",
+                end_reason="filled",
+                summary={"asked": 3},
+                release=True,
+            )
+            assert (
+                await active_discovery_for_project(
+                    conn, workspace_id=row.workspace_id, project_id=row.project_id
+                )
+                is None
+            )
+            ended = await read_discovery_run(conn, run_id=row.run_id)
+            assert ended is not None
+            assert (ended.status, ended.end_reason, ended.summary) == (
+                "completed",
+                "filled",
+                {"asked": 3},
+            )
+            assert ended.finished_at is not None and ended.released_at is not None
+
+    run_async(scenario())
+
+
+def test_the_wake_turn_releases_its_run() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="d" * 64, launched_thread_id="thr_w")
+            await create_discovery_run(conn, row)
+            await end_discovery_run(
+                conn,
+                run_id=row.run_id,
+                status="completed",
+                end_reason="dry",
+                summary={},
+                release=False,
+            )
+            # Ended but not released: the project stays locked until the wake turn finishes.
+            assert (
+                await active_discovery_for_project(
+                    conn, workspace_id=row.workspace_id, project_id=row.project_id
+                )
+                is not None
+            )
+            wake = uuid4()
+            await record_wake_turn(conn, run_id=row.run_id, wake_turn_id=wake)
+            by_thread = await active_discoveries_for_threads(
+                conn, workspace_id=row.workspace_id, thread_ids=["thr_w", "thr_other"]
+            )
+            assert set(by_thread) == {"thr_w"}
+            assert by_thread["thr_w"].wake_turn_id == wake
+            # Another turn id releases nothing.
+            assert (
+                await release_discovery_for_turn(
+                    conn, workspace_id=row.workspace_id, turn_id=uuid4()
+                )
+                is None
+            )
+            released = await release_discovery_for_turn(
+                conn, workspace_id=row.workspace_id, turn_id=wake
+            )
+            assert released == row.run_id
+            assert (
+                await active_discoveries_for_threads(
+                    conn, workspace_id=row.workspace_id, thread_ids=["thr_w"]
+                )
+                == {}
+            )
+            assert (
+                await active_discoveries_for_threads(
+                    conn, workspace_id=row.workspace_id, thread_ids=[]
+                )
+                == {}
+            )
+
+    run_async(scenario())
+
+
+def test_stop_is_recorded_once_and_read_back() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="e" * 64, launched_thread_id="thr_s")
+            await create_discovery_run(conn, row)
+            assert not await stop_requested(conn, run_id=row.run_id)
+            stopped = await request_discovery_stop(
+                conn, workspace_id=row.workspace_id, project_id=row.project_id, run_id=row.run_id
+            )
+            assert stopped is not None and stopped.stop_requested_at is not None
+            assert await stop_requested(conn, run_id=row.run_id)
+            again = await request_discovery_stop(
+                conn, workspace_id=row.workspace_id, project_id=row.project_id, run_id=row.run_id
+            )
+            assert again is not None and again.stop_requested_at == stopped.stop_requested_at
+            # A stop addressed through another project reaches nothing.
+            assert (
+                await request_discovery_stop(
+                    conn, workspace_id=row.workspace_id, project_id="prj_other", run_id=row.run_id
+                )
+                is None
+            )
+
+    run_async(scenario())
+
+
+def test_an_excluded_candidate_must_name_its_gate() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="f" * 64)
+            await create_discovery_run(conn, row)
+            bad = _candidate(row, domain="x.com", disposition="excluded", excluded_by_gate=None)
+            with pytest.raises(IntegrityError):
+                async with conn.begin_nested():
+                    await upsert_candidate(conn, bad)
+            good = _candidate(
+                row, domain="y.com", disposition="excluded", excluded_by_gate="hotels"
+            )
+            await upsert_candidate(conn, good)
+            (held,) = await list_candidates(conn, run_id=row.run_id)
+            assert (held.disposition, held.excluded_by_gate) == ("excluded", "hotels")
 
     run_async(scenario())

@@ -29,7 +29,7 @@ from clue_api.arv2.discovery_launch import (
     launch_arv2_discovery,
     read_pinned_icp,
 )
-from clue_api.arv2.discovery_store import read_discovery_run
+from clue_api.arv2.discovery_store import end_discovery_run, read_discovery_run
 from clue_fleet import FleetTaskKind
 from clue_storage.fs import FsStorage
 from tests._workspace import seed_project
@@ -157,11 +157,28 @@ def test_the_same_ask_replays_to_the_same_run_and_a_new_ask_is_a_new_run(tmp_pat
             ).scalar_one()
             assert count == 1
 
+            # One unreleased discovery per project: each run ends before the next ask launches.
+            await end_discovery_run(
+                conn,
+                run_id=first.run_id,
+                status="completed",
+                end_reason="filled",
+                summary={},
+                release=True,
+            )
             # A different target is a different run — it is part of what was approved.
             other = await launch_arv2_discovery(
                 conn, _request(fixture, target_count=40), settings=_settings(), storage=storage
             )
             assert other.run_id != first.run_id
+            await end_discovery_run(
+                conn,
+                run_id=other.run_id,
+                status="completed",
+                end_reason="filled",
+                summary={},
+                release=True,
+            )
 
             # And asking again for the very same number, in a new action, is a new run too.
             again = await launch_arv2_discovery(

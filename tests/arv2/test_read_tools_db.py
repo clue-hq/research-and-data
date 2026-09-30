@@ -1861,11 +1861,13 @@ async def _seed_discovery_run(
             "project_run_id, icp_artifact_key, icp_artifact_sha256, icp_key, icp_version, "
             "requested_by_user_id, request_sha256, target_count, relaxed_enabled, "
             "criteria_gate_keys, status, asked, found_strict, found_relaxed, "
-            "created_at, started_at, finished_at) "
+            "created_at, started_at, finished_at, released_at) "
             "VALUES (:run, :ws, :project, :brand, :project_run, :key, :sha, 'gi-groups', 1, "
             ":user, :request_sha, 20, true, CAST(:gates AS jsonb), "
             ":status, :asked, :found_strict, :found_relaxed, CAST(:created_at AS timestamptz), "
             "CAST(:created_at AS timestamptz), "
+            "CASE WHEN :status = 'completed' THEN CAST(:created_at AS timestamptz) END, "
+            # A finished run has released its project (the one-active-discovery lock).
             "CASE WHEN :status = 'completed' THEN CAST(:created_at AS timestamptz) END)"
         ),
         {
