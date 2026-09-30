@@ -77,3 +77,29 @@ Spend: $5.85 of the $10 approved.
 - Sample sizes are small (≤19 per arm per ICP); one grader (Claude), to be spot-checked by the founder.
 - Arm F (AI Ark industry-filtered company search) not built.
 - Production changes are a separate, designed change.
+
+## Round 3 — arm G: the brief written by an agent (founder ruling 2026-09-30)
+
+One model call (Grok 4.6, the Head of ABM's model) given the pinned ICP, the persona document and
+the user's chat messages writes the whole brief — query, 2–5 criteria, gates each flagged
+`disqualifying` or not — under `agent-brief-prompt.md` (trial-only; examples use dental clinics so
+nothing about hotels is leaked). A company failing a disqualifying gate is marked excluded.
+~$0.035 per brief. Spend $2.26; trial total $8.11 of $10.
+
+| ICP | G long list | after the agent's disqualifying gates |
+|---|---|---|
+| hotel operators, count 10 + three count-3 | **19/19** real operators | 17 kept; **2 real hotels wrongly excluded** (Concord Hospitality, Nomada Hotel Group) by a false `fail` on the negatively-worded gate "The company is not a software … vendor" |
+| Clue control, count 10 ("Find target accounts for this project." as the only chat) | 5/10 (OpenAI, Seismic, EasyPost, CereTax, Vartana are horizontal) | 4 kept (Tread, Lassie, Sirona, CereTax); Seismic and OpenAI correctly excluded as GTM/non-vertical; brightwheel wrongly excluded by the same negative gate |
+
+What round 3 adds:
+
+- **An agent-written brief fixes the hotel case on its own** (19/19, same as the hand-written D),
+  unprompted: it wrote a company-type query and a "not a hotel-tech vendor" criterion itself, and
+  restored the comma-truncated gate text by reading the document.
+- **Negatively worded gates confuse the Answer verifier.** "The company is NOT a vendor …" produced
+  false `fail`s on three real targets. Gates should be phrased positively ("The company sells
+  software to hotels") with the disqualification carried by the flag, or the verifier must be told
+  the polarity.
+- **Websets is weaker on the Clue ICP whatever the brief** (A 4/10, D 7/10, G 5/10), while Exa
+  `/search` with the company category scored 10/10 there. The Clue brief had almost no chat to work
+  from; the real Head of ABM would have had the user's conversation.
