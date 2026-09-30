@@ -382,7 +382,7 @@ async def suspend_discovery_run(conn: AsyncConnection, *, run_id: UUID) -> None:
     await conn.execute(
         text(
             "UPDATE arv2_discovery_run SET status = 'suspended' "
-            "WHERE run_id = :run_id AND status NOT IN ('completed', 'needs_review')"
+            "WHERE run_id = :run_id AND status NOT IN ('completed', 'needs_review', 'stopped')"
         ),
         {"run_id": run_id},
     )
@@ -787,13 +787,20 @@ async def record_verdicts(
     fit: float | None,
     disposition: Disposition,
     account_entity_id: UUID | None,
+    excluded_by_gate: str | None = None,
 ) -> None:
     """Store one candidate's per-gate verdicts, the fit derived from them, and what it turned out
-    to be — plus the account it became, once the writer has made one."""
+    to be — plus the account it became, once the writer has made one.
+
+    An ``excluded`` candidate is recorded here too, with the gate that excluded it and no account:
+    the row already exists ``pending`` by the time its gates are answered, and
+    :func:`upsert_candidate` deliberately leaves an existing row's disposition alone.
+    """
     await conn.execute(
         text(
             "UPDATE arv2_discovery_candidate SET verdicts_json = CAST(:verdicts AS jsonb), "
-            " fit = :fit, disposition = :disposition, account_entity_id = :account_entity_id "
+            " fit = :fit, disposition = :disposition, account_entity_id = :account_entity_id, "
+            " excluded_by_gate = :excluded_by_gate "
             "WHERE candidate_id = :candidate_id"
         ),
         {
@@ -801,6 +808,7 @@ async def record_verdicts(
             "fit": fit,
             "disposition": disposition,
             "account_entity_id": account_entity_id,
+            "excluded_by_gate": excluded_by_gate,
             "candidate_id": candidate_id,
         },
     )

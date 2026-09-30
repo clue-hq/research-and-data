@@ -600,3 +600,62 @@ def test_an_excluded_candidate_must_name_its_gate() -> None:
             assert (held.disposition, held.excluded_by_gate) == ("excluded", "hotels")
 
     run_async(scenario())
+
+
+def test_a_pending_candidate_is_excluded_through_record_verdicts() -> None:
+    """The driver writes the candidate ``pending`` before its gates are asked, and a repeated
+    upsert only refreshes the snapshot — so the exclusion is recorded by ``record_verdicts``, with
+    the gate that excluded it, the verdicts behind it, and no account."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="e" * 64)
+            await create_discovery_run(conn, row)
+            candidate_id = await upsert_candidate(conn, _candidate(row, domain="hotel.com"))
+            verdicts = [{"gate_key": "sells_rooms", "verdict": "pass", "guard": "ok"}]
+            await record_verdicts(
+                conn,
+                candidate_id=candidate_id,
+                verdicts=verdicts,
+                fit=None,
+                disposition="excluded",
+                excluded_by_gate="sells_rooms",
+                account_entity_id=None,
+            )
+            (held,) = await list_candidates(conn, run_id=row.run_id)
+            assert (held.disposition, held.excluded_by_gate, held.account_entity_id) == (
+                "excluded",
+                "sells_rooms",
+                None,
+            )
+            assert held.fit is None
+            assert [dict(v) for v in held.verdicts] == verdicts
+
+    run_async(scenario())
+
+
+def test_a_stopped_run_is_never_walked_back_into_the_queue() -> None:
+    """A run a human stopped is finished: a late fleet stop signal must not suspend it, or the
+    next delivery would claim it again."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn)
+            row = _run(project, request_sha256="d" * 64)
+            await create_discovery_run(conn, row)
+            await begin_discovery_run(conn, run_id=row.run_id)
+            await end_discovery_run(
+                conn,
+                run_id=row.run_id,
+                status="stopped",
+                end_reason="stopped",
+                summary={},
+                release=True,
+            )
+            await suspend_discovery_run(conn, run_id=row.run_id)
+            held = await read_discovery_run(conn, run_id=row.run_id)
+            assert held is not None and held.status == "stopped"
+            assert await begin_discovery_run(conn, run_id=row.run_id) is None
+
+    run_async(scenario())
