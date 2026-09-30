@@ -94,7 +94,7 @@ from lumen_api.fragments.href_repair import validate_href_replacements, validate
 from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
 from .web_layout_capture import capture_layout, layout_targets
 from .web_typography_reference import (
-    TypographyReferenceError, TypographyReferences, typography_inventory,
+    TypographyReferenceError, TypographyReferences, typography_coverage, typography_inventory,
 )
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
@@ -10744,6 +10744,15 @@ class LumenWebTools:
             "preview_version": self._preview_doc_version,
         }
 
+    def _typography_report(self) -> JsonObject:
+        identity = self._typography_identity()
+        report = self._typography_references.report(self._layout_by_width, identity)
+        report["coverage"] = typography_coverage(
+            self._layout_by_width, identity, layout_targets(self.web_doc, self.page_id),
+            self._cloned_section_seen, report["bindings"],
+        )
+        return report
+
     def set_web_typography_reference(self, bindings_json: str) -> str:
         """Pin selected source text roles and check a draft against them without rendering.
 
@@ -10768,7 +10777,14 @@ class LumenWebTools:
         then render and check view("review"). Missing/stale evidence stays incomplete.
         Finalize cannot report accepted with a declared mismatch or incomplete measurement.
 
-        This checks ONLY the declared text roles. It does not establish full component structure,
+        Review requires a captured fragment reference for each distinct text style in a composed
+        fragment. Select the source fragment's node ID, not an outer section wrapper. One mapped
+        representative covers identical text styles within that target node at all three widths;
+        it cannot cover a different style or another band. Check view("review") for missing roles.
+        Composed self-references cannot satisfy coverage. Unknown fragment provenance requires
+        search_cloned_sections for that ID; image-only bands need no text mapping.
+
+        Comparisons check the declared text roles. They do not establish full component structure,
         content fit or page quality, and a wrong chosen reference is not made correct by a match.
         To retain a selected component's structure, use its real pin with slot/exact text edits;
         this tool cannot make a raw reconstruction structurally equivalent. References do not
@@ -10781,9 +10797,7 @@ class LumenWebTools:
                 )
             except TypographyReferenceError as error:
                 return self._tool_error(error.code, str(error))
-            report = self._typography_references.report(
-                self._layout_by_width, self._typography_identity(),
-            )
+            report = self._typography_report()
             self._write_json(
                 self.turn_dir / "typography_references.json",
                 {
@@ -10843,11 +10857,11 @@ class LumenWebTools:
                 gaps.append({"code": "review.state_capture_incomplete"})
         else:
             limits = {}
-        typography = self._typography_references.report(
-            self._layout_by_width, self._typography_identity(),
-        )
+        typography = self._typography_report()
         if typography["status"] not in {"matched", "not_declared"}:
             gaps.append({"code": "review.typography_reference_" + typography["status"]})
+        if typography["coverage"]["status"] == "incomplete":
+            gaps.append({"code": "review.typography_coverage_incomplete"})
         return {
             "schema_version": 1, "scope": "active_page_current_turn",
             "page_id": self.page_id, "document_id": self.web_doc.get("id"),
@@ -11102,8 +11116,9 @@ class LumenWebTools:
         omit). When present, it is recorded to final.json AND emitted as a
         dedicated `ladder_gap` trace event so the demand for new components is
         measurable across runs. Leave it None when the catalogue sufficed.
-        An accepted outcome is downgraded to completed_with_warnings when declared
-        typography references mismatch or lack current measurements. The draft is still
+        An accepted outcome is downgraded to completed_with_warnings when authored text lacks
+        captured-role coverage or declared typography references mismatch/lack current measurements.
+        Inspect view("review") for exact missing nodes/roles. The draft is still
         saved; this never launches a repair or provider call automatically."""
         valid = {"accepted", "completed_with_warnings", "failed"}
         if outcome not in valid:
@@ -11120,6 +11135,13 @@ class LumenWebTools:
             summary = (
                 f"{summary.rstrip()} Typography reference checks remain {typography_status}; "
                 "the selected type roles are not verified."
+            ).strip()
+        if review_evidence["typography_references"]["coverage"]["status"] == "incomplete":
+            if outcome == "accepted":
+                outcome = "completed_with_warnings"
+            summary = (
+                f"{summary.rstrip()} Authored typography coverage is incomplete; "
+                "some text roles or fragment provenance remain unverified."
             ).strip()
         # The turn is ending on every valid outcome — release the kept-alive
         # browser so no Playwright process outlives the run, then retire the

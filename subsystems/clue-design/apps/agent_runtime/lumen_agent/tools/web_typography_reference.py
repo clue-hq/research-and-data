@@ -185,6 +185,147 @@ def typography_inventory(
     }
 
 
+def typography_coverage(
+    layouts: dict[int, dict[str, Any]],
+    identity: dict[str, Any],
+    targets: list[dict[str, Any]],
+    provenance: dict[str, dict[str, Any]],
+    bindings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Require source mappings for each observed style in an authored fragment.
+
+    Identical styles may share a representative within one node, across ALL
+    widths. A bound heading never covers an unbound body style or another node.
+    Only current reachable pins count; unknown provenance is not a captured pin.
+    This does not judge whether the chosen source role is semantically suitable.
+    """
+    fragments = [target for target in targets if target.get("kind") == "fragment"]
+    captured = {
+        target["node_id"] for target in fragments
+        if "composed" in provenance.get(target.get("fragment_id"), {})
+        and not provenance[target["fragment_id"]]["composed"]
+    }
+    reports = []
+    gaps = []
+    required_count = uncovered_count = 0
+    for target in fragments:
+        node_id, fragment_id = target["node_id"], target.get("fragment_id")
+        meta = provenance.get(fragment_id, {})
+        if "composed" not in meta:
+            gaps.append({
+                "node_id": node_id, "code": "fragment_provenance_unavailable",
+                "next_step": f"search_cloned_sections(q={fragment_id!r}) to inspect its provenance",
+            })
+            continue
+        if not meta["composed"]:
+            continue
+        node_gaps = []
+        rows_by_width = {}
+        for width in WIDTHS:
+            layout = layouts.get(width)
+            nodes = [n for n in (layout or {}).get("nodes", []) if n.get("node_id") == node_id]
+            if (
+                not _current(layout, identity, width) or len(nodes) != 1
+                or nodes[0].get("status") != "measured"
+            ):
+                node_gaps.append({"width": width, "code": "current_measurement_missing"})
+                continue
+            node = nodes[0]
+            omitted = node.get("omitted") or {}
+            if (
+                node.get("complete") is not True
+                and not all(
+                    key in omitted and omitted[key] == 0 for key in ("texts", "descendants")
+                )
+            ):
+                node_gaps.append({"width": width, "code": "text_inventory_incomplete"})
+            rows = {}
+            for text in node.get("texts", []):
+                path = text.get("rendered_path")
+                if not isinstance(path, str) or _PATH.fullmatch(path) is None or path in rows:
+                    node_gaps.append({"width": width, "code": "text_path_invalid_or_ambiguous"})
+                    continue
+                rows[path] = text
+            rows_by_width[width] = rows
+        paths = list(dict.fromkeys(path for rows in rows_by_width.values() for path in rows))
+        groups = {}
+        glyphs = {}
+        for path in paths:
+            samples = {}
+            visible = False
+            path_gaps = []
+            for width in WIDTHS:
+                text = rows_by_width.get(width, {}).get(path)
+                observed, missing = _sample(text)
+                visible = visible or observed.get("css_visible") is True
+                glyphs[(path, width)] = observed.pop("glyph_faces", None)
+                samples[str(width)] = {**observed, "role": (text or {}).get("role")}
+                # Coverage compares every CSS role; bounded glyph probes compare
+                # representatives through the frozen reference tool separately.
+                path_gaps.extend(
+                    {"width": width, "code": gap} for gap in missing
+                    if gap != "glyph_faces_unmeasured"
+                )
+            if path_gaps:
+                node_gaps.append({
+                    "path": path, "code": "text_measurement_incomplete", "gaps": path_gaps,
+                })
+                continue
+            if not visible:
+                continue
+            signature = json.dumps(samples, sort_keys=True)
+            groups.setdefault(signature, []).append(path)
+        roles = []
+        for paths in groups.values():
+            declared = [b for b in bindings if (
+                b.get("page_id") == identity["page_id"]
+                and b["target_node_id"] == node_id and b["target_path"] in paths
+            )]
+            valid = [b for b in declared if b["reference_node_id"] in captured]
+            variation = []
+            for width in WIDTHS:
+                compared = [glyphs.get((b["target_path"], width)) for b in valid]
+                variation.extend(
+                    {"path": path, "width": width} for path in paths
+                    if valid and glyphs.get((path, width))
+                    and glyphs[(path, width)] not in compared
+                )
+            covered = bool(valid) and not variation
+            required_count += 1
+            uncovered_count += not covered
+            unmeasured = [path for path in paths if any(
+                rows_by_width[w][path].get("css_visible") is True and not glyphs.get((path, w))
+                for w in WIDTHS
+            )]
+            roles.append({
+                "representative_path": next((p for p in paths if p not in unmeasured), paths[0]),
+                "equivalent_paths": paths, "glyph_unmeasured_paths": unmeasured,
+                "unmapped_glyph_variations": variation,
+                "status": "covered" if covered else "unmapped",
+                "gap": None if covered else "glyph_variation_unmapped" if variation
+                else "captured_reference_required" if declared
+                else "reference_not_declared",
+            })
+        reports.append({
+            "node_id": node_id, "fragment_id": fragment_id, "roles": roles,
+            "gaps": node_gaps, "inspect_target": f"typography:node:{node_id}",
+        })
+    incomplete = bool(gaps or uncovered_count or any(row["gaps"] for row in reports))
+    return {
+        "status": "incomplete" if incomplete else "covered" if reports else "not_applicable",
+        "scope": "reachable_authored_fragment_text_current_page",
+        "required_role_count": required_count, "uncovered_role_count": uncovered_count,
+        "nodes": reports, "gaps": gaps,
+        "note": "Map each distinct authored CSS text style to a captured fragment role. "
+        "One representative covers only identical styles within that same node at all widths. "
+        "Use a fragment node as the source; a composed draft cannot verify itself. "
+        "Covered means mapped, not matched: inspect the reference comparison separately. "
+        "Glyphs are checked on mapped representatives; unsampled glyph paths remain listed, "
+        "not certified. Any observed font variation needs its own mapping. "
+        "This does not qualify copy, structure, reference choice or aesthetic quality.",
+    }
+
+
 class TypographyReferences:
     def __init__(self) -> None:
         self.bindings: list[dict[str, Any]] = []
