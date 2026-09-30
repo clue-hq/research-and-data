@@ -211,6 +211,8 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         pinned_away_from_default = {
             "research_account_gaps": "research_account_gaps@2",
             "launch_arv2_discovery": "launch_arv2_discovery@1",
+            # `read_discovery_run@3` holds the default; v69 still pins `@2` (v70 moves it).
+            "read_discovery_run": "read_discovery_run@2",
         }
         expected_tools = {
             pinned_away_from_default.get(name, f"{name}@{toolbelt.descriptor(name).version}")
@@ -303,8 +305,12 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
     # Agent-authored discovery (2026-09-30) installs `launch_arv2_discovery@2` beside the retired
     # `@1` (166 -> 167); v69 still pins `@1`, so `@2` is role-unavailable until v70 pins it.
-    assert len(by_address) == 167
+    # `read_discovery_run@3` (summary, end reason, exclusions) installs beside `@2` (167 -> 168);
+    # v69 still pins `@2`, so `@3` is role-unavailable until v70 pins it.
+    assert len(by_address) == 168
     assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["read_discovery_run@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
@@ -420,8 +426,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
-    # launch_arv2_discovery@2 (2026-09-30), ungranted until v70 (166 -> 167).
-    assert len(by_address) == 167
+    # launch_arv2_discovery@2 (2026-09-30), ungranted until v70 (166 -> 167), and
+    # read_discovery_run@3 on the same terms (167 -> 168).
+    assert len(by_address) == 168
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",

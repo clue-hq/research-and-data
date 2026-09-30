@@ -60,7 +60,7 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
-from clue_api.arv2.discovery_store import request_discovery_stop
+from clue_api.arv2.discovery_store import active_discoveries_for_threads, request_discovery_stop
 from clue_api.arv2.icp_confirmation import (
     IcpConfirmationStale,
     confirm_icp_document,
@@ -162,6 +162,7 @@ from clue_api.chat.schemas import (
     gate_wire,
     message_list_response,
     research_task_wire,
+    thread_discovery_wire,
     thread_href,
     thread_speaker_wire,
     thread_wire,
@@ -1688,6 +1689,12 @@ def build_chat_router(
             workspace_id=who.workspace_id,
             thread_ids=thread_ids,
         )
+        # The fourth: the discovery holding a thread (spec 2026-09-30 §5), so the composer can say
+        # why the thread is busy and offer Stop while the run still searches.
+        async with conn_factory() as conn:
+            discoveries = await active_discoveries_for_threads(
+                conn, workspace_id=who.workspace_id, thread_ids=thread_ids
+            )
         return ThreadListResponse(
             data=tuple(
                 thread_wire(
@@ -1695,6 +1702,7 @@ def build_chat_router(
                     open_gate_kinds=open_gates.get(item.thread_id, ()),
                     running=item.thread_id in busy,
                     speaker=thread_speaker_wire(open_legs.get(item.thread_id)),
+                    discovery=thread_discovery_wire(discoveries.get(item.thread_id)),
                 )
                 for item in page.items
             ),

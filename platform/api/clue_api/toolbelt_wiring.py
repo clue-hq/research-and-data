@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_launch import (
 from clue_api.arv2.icp_authoring import IcpAuthoringService
 from clue_api.arv2.read_tools import (
     Arv2ReadService,
+    ReadDiscoveryRunV3Tool,
     build_arv2_paged_read_tools,
     build_arv2_read_tools,
 )
@@ -2853,7 +2854,11 @@ def build_toolbelt(
     # resolves the address it planned; it is simply no longer the version an unversioned caller
     # gets — the reasoning `open_icp_confirmation_gate` already established, in this direction.
     for tool in build_arv2_paged_read_tools(arv2_reads):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=tool.descriptor.name != "read_discovery_run")
+    # Agent-authored discovery (2026-09-30): `read_discovery_run@3` adds the run's end reason, its
+    # summary and the companies its gates excluded (listed apart). It owns the name-only default;
+    # `@2` stays registered and granted while `head-of-abm@v69` pins it (plan task 8 moves the pin).
+    registry.register(ReadDiscoveryRunV3Tool(arv2_reads), make_default=True)
     # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
     # design documents and the legs that bind them to a project exist wherever there is a database,
     # so the ambient ``conn_factory`` is its whole composition. Granted at `head-of-abm@v56`,

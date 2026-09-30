@@ -626,6 +626,61 @@ def test_a_running_discovery_marks_its_thread_running(tmp_path: Path) -> None:
     run_async(scenario())
 
 
+def test_the_thread_list_names_the_discovery_a_thread_is_holding(tmp_path: Path) -> None:
+    """The chat thread wire says which discovery holds the thread, and whether Stop still means
+    anything: ``stoppable`` while the run searches, not once it has ended and only its wake turn is
+    pending, and no ``discovery`` at all once the run is released. The brief never rides it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project, thread_id, project_run_id = await _seed(conn, "ws-wake-wire", name="Wire")
+            headers = {"X-Workspace-Id": project.workspace_id}
+            path = f"/api/v1/projects/{project.project_id}/threads"
+            async with _client(_app(conn, storage=FsStorage(tmp_path / "artifacts"))) as client:
+
+                async def listed() -> dict[str, Any]:
+                    response = await client.get(path, headers=headers)
+                    assert response.status_code == 200, response.text
+                    (thread,) = response.json()["data"]
+                    assert thread["id"] == thread_id
+                    return thread
+
+                assert (await listed())["discovery"] is None
+
+                run = await _launch(
+                    conn,
+                    project,
+                    project_run_id=project_run_id,
+                    thread_id=thread_id,
+                    launching_turn_id=None,
+                )
+                searching = await listed()
+                assert searching["discovery"] == {"run_id": str(run.run_id), "stoppable": True}
+                assert searching["status"] == "running"
+                assert "brief" not in str(searching)
+
+                # Ended, its wake turn still pending: the thread is held, but there is nothing
+                # left to stop.
+                await end_discovery_run(
+                    conn,
+                    run_id=run.run_id,
+                    status="completed",
+                    end_reason="filled",
+                    summary={},
+                    release=False,
+                )
+                ended = await listed()
+                assert ended["discovery"] == {"run_id": str(run.run_id), "stoppable": False}
+
+                await conn.execute(
+                    text("UPDATE arv2_discovery_run SET released_at = now() WHERE run_id = :r"),
+                    {"r": run.run_id},
+                )
+                assert (await listed())["discovery"] is None
+
+    run_async(scenario())
+
+
 # --- Stop -----------------------------------------------------------------------------------------
 
 

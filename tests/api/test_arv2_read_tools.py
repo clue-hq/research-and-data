@@ -23,6 +23,7 @@ from clue_api.arv2.read_tools import (
     AccountResearch,
     Arv2ReadRefused,
     ClaimsQueryPage,
+    DiscoveryCandidateV3View,
     DiscoveryCandidateView,
     DiscoveryRunView,
     ProjectAccountsPage,
@@ -41,6 +42,9 @@ from clue_api.arv2.read_tools import (
     ReadDiscoveryRunV2Input,
     ReadDiscoveryRunV2Output,
     ReadDiscoveryRunV2Tool,
+    ReadDiscoveryRunV3Input,
+    ReadDiscoveryRunV3Output,
+    ReadDiscoveryRunV3Tool,
     ReadProjectAccountsInput,
     ReadProjectAccountsTool,
     build_arv2_paged_read_tools,
@@ -111,6 +115,8 @@ class _FakeService:
     research_reads: list[tuple[str, str, str, str | None, int, int]] = field(default_factory=list)
     #: ``(workspace, project, run, offset, limit)``, for the same reason.
     discovery_reads: list[tuple[str, str, str | None, int, int]] = field(default_factory=list)
+    #: Whether each discovery read asked for the excluded companies apart (``@3``) or inline.
+    discovery_excluded_apart: list[bool] = field(default_factory=list)
     claims: ClaimsQueryPage | None = None
     #: ``(workspace, entity, prefix, tier, status, since, offset, limit)`` — the filters are the
     #: whole point of this read, so the fake records every one of them.
@@ -161,8 +167,10 @@ class _FakeService:
         run_id: str | None,
         offset: int,
         limit: int,
+        excluded_apart: bool,
     ) -> DiscoveryRunView:
         self.discovery_reads.append((workspace_id, project_id, run_id, offset, limit))
+        self.discovery_excluded_apart.append(excluded_apart)
         if self.refusal is not None:
             raise self.refusal
         assert self.discovery is not None
@@ -799,6 +807,148 @@ def test_the_two_discovery_read_versions_are_two_addresses_of_one_read() -> None
     # ``@1``'s sentences survive: a read approves nothing, and "verified" keeps its meaning.
     assert "approves nothing" in second.model_description
     assert "the verifier judged" in second.model_description
+
+
+def _discovery_v3() -> DiscoveryRunView:
+    """A run launched from the agent's brief, ended short, with two companies a gate excluded."""
+
+    summary = {
+        "asked": 20,
+        "added": 1,
+        "excluded": 2,
+        "unclear": 0,
+        "excluded_by": [{"gate": "sells_it", "role": "must_not", "count": 2, "example": "Rival"}],
+        "criteria_rates": [],
+        "searches": 4,
+        "end_reason": "round_cap",
+        "spend_usd": "1.25",
+    }
+    return DiscoveryRunView(
+        run_id=DISCOVERY_RUN_ID,
+        status="completed",
+        icp_key="gi-groups",
+        icp_version=1,
+        target_count=20,
+        asked=40,
+        found=3,
+        verified=3,
+        shown=1,
+        approved=0,
+        relaxed_requested=False,
+        started_at="2026-09-30T12:00:00+00:00",
+        finished_at="2026-09-30T12:30:00+00:00",
+        candidates=(
+            DiscoveryCandidateV3View(
+                name="Alpha Health",
+                domain="alpha.example",
+                pass_="round",
+                disposition="pass",
+                decision=None,
+                fit=0.9,
+                excluded_by_gate=None,
+            ),
+        ),
+        candidate_total=1,
+        offset=0,
+        next_offset=None,
+        source="search",
+        end_reason="round_cap",
+        summary=summary,
+        excluded=(
+            DiscoveryCandidateV3View(
+                name="Rival",
+                domain="rival.example",
+                pass_="round",
+                disposition="excluded",
+                decision=None,
+                fit=None,
+                excluded_by_gate="sells_it",
+            ),
+            DiscoveryCandidateV3View(
+                name="Rival Two",
+                domain="rival-two.example",
+                pass_="round",
+                disposition="excluded",
+                decision=None,
+                fit=None,
+                excluded_by_gate="sells_it",
+            ),
+        ),
+        excluded_total=2,
+    )
+
+
+def test_the_brief_discovery_read_serves_the_summary_the_end_and_the_exclusions_apart() -> None:
+    """``@3``: the run's summary and why it ended, and the companies a gate excluded in their own
+    list — never among the candidates, which stay the companies the human may be shown."""
+
+    async def scenario() -> None:
+        service = _FakeService(discovery=_discovery_v3())
+        tool = ReadDiscoveryRunV3Tool(service)
+
+        result = await tool.invoke(
+            ReadDiscoveryRunV3Input(project_id=PROJECT, run_id=DISCOVERY_RUN_ID, limit=25),
+            _context(),
+        )
+
+        assert service.discovery_reads == [(WORKSPACE, PROJECT, DISCOVERY_RUN_ID, 0, 25)]
+        # ``@3`` asks the substrate for the exclusions apart; nothing else does.
+        assert service.discovery_excluded_apart == [True]
+        refs = result.references
+        assert (refs["source"], refs["end_reason"]) == ("search", "round_cap")
+        assert refs["summary"]["excluded_by"][0]["gate"] == "sells_it"
+        assert refs["summary"]["spend_usd"] == "1.25"
+        assert [c["name"] for c in refs["candidates"]] == ["Alpha Health"]
+        assert refs["candidates"][0]["excluded_by_gate"] is None
+        assert [(c["name"], c["excluded_by_gate"]) for c in refs["excluded"]] == [
+            ("Rival", "sells_it"),
+            ("Rival Two", "sells_it"),
+        ]
+        assert refs["excluded_total"] == 2
+        # ``pass`` stays the schema's word in both lists.
+        assert refs["excluded"][0]["pass"] == "round"
+        # The brief the agent wrote is its own input, not something the read serves back.
+        assert "brief" not in refs and "brief_json" not in refs
+        canonical = validate_tool_output_references(ReadDiscoveryRunV3Output, refs)
+        assert canonical["excluded"][1]["excluded_by_gate"] == "sells_it"
+
+    run_async(scenario())
+
+
+def test_the_frozen_discovery_reads_still_ask_for_the_exclusions_inline() -> None:
+    """``@1``/``@2`` keep their pinned contract: excluded companies are listed where they always
+    were (with their disposition), because their output schema has nowhere else to put them."""
+
+    async def scenario() -> None:
+        service = _FakeService(discovery=_discovery())
+        await ReadDiscoveryRunTool(service).invoke(
+            ReadDiscoveryRunInput(project_id=PROJECT), _context()
+        )
+        await ReadDiscoveryRunV2Tool(service).invoke(
+            ReadDiscoveryRunV2Input(project_id=PROJECT), _context()
+        )
+        assert service.discovery_excluded_apart == [False, False]
+
+    run_async(scenario())
+
+
+def test_the_brief_discovery_read_is_a_third_address_of_the_same_read() -> None:
+    second = ReadDiscoveryRunV2Tool(_FakeService())
+    third = ReadDiscoveryRunV3Tool(_FakeService())
+
+    assert (third.name, third.version) == ("read_discovery_run", "3")
+    assert third.effect_class is second.effect_class
+    assert third.replay == second.replay
+    assert third.pin_requirements == second.pin_requirements
+    assert third.descriptor.recipe_safe
+    # Same paging input; a new output — which is why it is a new address.
+    assert third.descriptor.input_schema_sha256 == second.descriptor.input_schema_sha256
+    assert third.descriptor.output_schema_sha256 != second.descriptor.output_schema_sha256
+    # ``@2``'s pinned output schema did not move underneath the profile that pins it.
+    assert "excluded_by_gate" not in DiscoveryCandidateView.model_fields
+    assert "excluded" not in ReadDiscoveryRunV2Output.model_fields
+    assert "approves nothing" in third.model_description
+    assert "excluded" in third.model_description
 
 
 def test_the_discovery_read_declares_the_effect_and_replay_classes_the_registry_admits() -> None:

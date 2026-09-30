@@ -27,6 +27,7 @@ from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
     BODY_CHARS,
     EVIDENCE_CHARS,
+    MAX_CANDIDATES,
     READ_REFERENCES_BUDGET_BYTES,
     Arv2ReadRefused,
     list_project_accounts,
@@ -2315,5 +2316,110 @@ def test_another_project_s_run_and_a_project_without_discovery_refuse_by_name() 
                     limit=25,
                 )
             assert not_ours.value.code == "project_not_found"
+
+    run_async(scenario())
+
+
+async def _exclude(conn: AsyncConnection, run_id: UUID, name: str, *, gate: str) -> None:
+    """Turn one seeded candidate into a company a gate excluded (the pair the CHECK ties)."""
+
+    await conn.execute(
+        text(
+            "UPDATE arv2_discovery_candidate SET disposition = 'excluded', "
+            "excluded_by_gate = :gate WHERE run_id = :run AND name = :name"
+        ),
+        {"run": run_id, "name": name, "gate": gate},
+    )
+
+
+def test_a_brief_run_is_read_with_its_summary_its_end_and_its_exclusions_apart() -> None:
+    """``@3``'s substrate: the run's source, why it ended and its summary, and the companies a gate
+    excluded listed apart from the candidates — which stay the ones the human may be shown."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            summary = {"asked": 20, "added": 1, "excluded": 2, "end_reason": "dry"}
+            await conn.execute(
+                text(
+                    "UPDATE arv2_discovery_run SET source = 'search', end_reason = 'dry', "
+                    "summary_json = CAST(:summary AS jsonb) WHERE run_id = :run"
+                ),
+                {"run": run_id, "summary": json.dumps(summary)},
+            )
+            await _seed_candidate(
+                conn, project, run_id, "Alpha Health", disposition="pass", fit=0.9
+            )
+            await _seed_candidate(conn, project, run_id, "Rival B", disposition="pending")
+            await _seed_candidate(conn, project, run_id, "Rival A", disposition="pending")
+            await _seed_candidate(conn, project, run_id, "Seller", disposition="pending")
+            await _exclude(conn, run_id, "Rival B", gate="sells_it")
+            await _exclude(conn, run_id, "Rival A", gate="sells_it")
+            await _exclude(conn, run_id, "Seller", gate="is_buyer")
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=str(run_id),
+                limit=25,
+                excluded_apart=True,
+            )
+
+            assert (run.source, run.end_reason) == ("search", "dry")
+            assert run.summary == summary
+            assert [c.name for c in run.candidates] == ["Alpha Health"]
+            assert run.candidates[0].excluded_by_gate is None
+            # The page walks the candidates only: the excluded are not part of its total.
+            assert (run.candidate_total, run.next_offset) == (1, None)
+            # Grouped by the gate that excluded them, then by name.
+            assert [(c.name, c.excluded_by_gate) for c in run.excluded] == [
+                ("Seller", "is_buyer"),
+                ("Rival A", "sells_it"),
+                ("Rival B", "sells_it"),
+            ]
+            assert {c.disposition for c in run.excluded} == {"excluded"}
+            assert run.excluded_total == 3
+            # Judged, so verified; never shown.
+            assert (run.verified, run.shown) == (4, 1)
+
+            # ``@1``/``@2``'s shape: the excluded are listed inline, as they always were.
+            inline = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=str(run_id),
+                limit=25,
+            )
+            assert inline.candidate_total == 4
+            assert inline.excluded == () and inline.excluded_total == 0
+            assert sum(c.disposition == "excluded" for c in inline.candidates) == 3
+
+    run_async(scenario())
+
+
+def test_the_excluded_list_is_bounded_and_its_total_is_the_whole_run() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            run_id = await _seed_discovery_run(conn, project)
+            for index in range(MAX_CANDIDATES + 3):
+                name = f"Excluded {index:03d}"
+                await _seed_candidate(conn, project, run_id, name, disposition="pending")
+                await _exclude(conn, run_id, name, gate="sells_it")
+
+            run = await read_discovery_run(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                run_id=str(run_id),
+                limit=25,
+                excluded_apart=True,
+            )
+
+            assert len(run.excluded) == MAX_CANDIDATES
+            assert run.excluded_total == MAX_CANDIDATES + 3
+            assert run.candidates == () and run.candidate_total == 0
 
     run_async(scenario())

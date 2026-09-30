@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Literal, Protocol
@@ -92,6 +92,7 @@ __all__ = [
     "Arv2ReadService",
     "ClaimsQueryPage",
     "DbArv2ReadService",
+    "DiscoveryCandidateV3View",
     "DiscoveryCandidateView",
     "DiscoveryRunView",
     "ProjectAccountView",
@@ -110,6 +111,9 @@ __all__ = [
     "ReadDiscoveryRunV2Input",
     "ReadDiscoveryRunV2Output",
     "ReadDiscoveryRunV2Tool",
+    "ReadDiscoveryRunV3Input",
+    "ReadDiscoveryRunV3Output",
+    "ReadDiscoveryRunV3Tool",
     "ReadProjectAccountsInput",
     "ReadProjectAccountsOutput",
     "ReadProjectAccountsTool",
@@ -940,6 +944,18 @@ class DiscoveryCandidateView(BaseModel):
     fit: float | None
 
 
+class DiscoveryCandidateV3View(DiscoveryCandidateView):
+    """``read_discovery_run@3``'s candidate: ``@2``'s, plus the gate that excluded it.
+
+    A subclass rather than a new field on :class:`DiscoveryCandidateView`, because that model is
+    part of ``@1``/``@2``'s output schema and a promoted profile pins its digest.
+    """
+
+    #: The key of the ``must`` gate that failed or the ``must_not`` gate that passed, for a
+    #: candidate whose disposition is ``excluded``; ``None`` for every other candidate.
+    excluded_by_gate: str | None
+
+
 @dataclass(frozen=True, slots=True)
 class DiscoveryRunView:
     """One discovery run: what was asked for, what came back, and who is on the shortlist."""
@@ -967,6 +983,19 @@ class DiscoveryRunView:
     #: Where the next page starts, or ``None`` when this page ends the list — the same walk the
     #: claims read offers, so "read to the end" is one habit rather than two.
     next_offset: int | None
+    #: The search the run made — ``websets`` or ``search`` (``/search``).
+    source: str = "websets"
+    #: Why the run ended (``filled``, ``dry``, ``round_cap``, ``wall_clock``, ``stopped``,
+    #: ``failed``), or ``None`` while it is still searching and for a run from before the brief.
+    end_reason: str | None = None
+    #: The summary the platform wrote when the run ended — what the wake turn told the Head of ABM.
+    summary: Mapping[str, Any] | None = None
+    #: The companies a gate excluded, when the read asked for them apart (``excluded_apart``):
+    #: then they are not among ``candidates`` and not in ``candidate_total``. Grouped by gate, then
+    #: by name, and bounded like the candidate list. Empty when the read listed them inline.
+    excluded: tuple[DiscoveryCandidateView, ...] = ()
+    #: Every excluded company of the run when read apart, so a bounded list never reads as all.
+    excluded_total: int = 0
 
 
 #: The hard ceiling on one candidate list, for the same reason as :data:`MAX_ACCOUNTS`: a run can
@@ -1033,6 +1062,7 @@ async def read_discovery_run(
     run_id: str | None,
     limit: int,
     offset: int = 0,
+    excluded_apart: bool = False,
 ) -> DiscoveryRunView:
     """One discovery run of this project — the newest, or the one named — with its candidates.
 
@@ -1043,6 +1073,10 @@ async def read_discovery_run(
     ``offset``/``limit`` walk the ordered candidates, and ``next_offset`` names where to continue —
     a run of sixty companies is read in pages instead of being silently cut at the first twenty-
     five. ``candidate_total`` is the whole run on every page, so a page never reads as a small run.
+
+    ``excluded_apart`` (``read_discovery_run@3``) takes the companies a gate excluded out of the
+    paged candidates and returns them in ``excluded``, each with the gate that excluded it. Without
+    it (``@1``/``@2``, whose output schemas are pinned) they stay listed inline, as ``excluded``.
     """
 
     project = await get_project(conn, project_id)
@@ -1084,11 +1118,24 @@ async def read_discovery_run(
     # are scoped HERE, the same way the tallies above are. The two halves of one answer must agree
     # about whether the FK is trusted: a row whose workspace is not the run's would otherwise be
     # listed and counted into ``candidate_total`` while being excluded from ``shown``.
+    scoped = [
+        candidate
+        for candidate in await list_candidates(conn, run_id=run_uuid)
+        if candidate.workspace_id == workspace_id
+    ]
+    excluded = (
+        sorted(
+            (candidate for candidate in scoped if candidate.disposition == "excluded"),
+            key=lambda candidate: (candidate.excluded_by_gate or "", candidate.name),
+        )
+        if excluded_apart
+        else []
+    )
     candidates = sorted(
         (
             candidate
-            for candidate in await list_candidates(conn, run_id=run_uuid)
-            if candidate.workspace_id == workspace_id
+            for candidate in scoped
+            if not (excluded_apart and candidate.disposition == "excluded")
         ),
         key=_candidate_order,
     )
@@ -1116,21 +1163,36 @@ async def read_discovery_run(
         started_at=None if run.started_at is None else run.started_at.isoformat(),
         finished_at=None if run.finished_at is None else run.finished_at.isoformat(),
         candidates=tuple(
-            DiscoveryCandidateView(
-                name=candidate.name,
-                domain=candidate.domain,
-                pass_=str(candidate.pass_),
-                disposition=str(candidate.disposition),
-                decision=candidate.decision,
-                fit=None if candidate.fit is None else float(candidate.fit),
-            )
-            for candidate in window
+            _candidate_view(candidate, with_gate=excluded_apart) for candidate in window
         ),
         # The whole run, never the page: "the top 25 of 60" is one measurement and its remainder.
         candidate_total=len(candidates),
         offset=offset,
         next_offset=next_offset,
+        source=run.source,
+        end_reason=run.end_reason,
+        summary=run.summary,
+        excluded=tuple(
+            _candidate_view(candidate, with_gate=True) for candidate in excluded[:MAX_CANDIDATES]
+        ),
+        excluded_total=len(excluded),
     )
+
+
+def _candidate_view(candidate: CandidateRow, *, with_gate: bool) -> DiscoveryCandidateView:
+    """One candidate in ``@3``'s shape (with its excluding gate) or ``@1``/``@2``'s."""
+
+    fields: dict[str, Any] = {
+        "name": candidate.name,
+        "domain": candidate.domain,
+        "pass_": str(candidate.pass_),
+        "disposition": str(candidate.disposition),
+        "decision": candidate.decision,
+        "fit": None if candidate.fit is None else float(candidate.fit),
+    }
+    if with_gate:
+        return DiscoveryCandidateV3View(**fields, excluded_by_gate=candidate.excluded_by_gate)
+    return DiscoveryCandidateView(**fields)
 
 
 # =================================================================================================
@@ -1330,6 +1392,7 @@ class Arv2ReadService(Protocol):
         run_id: str | None,
         offset: int,
         limit: int,
+        excluded_apart: bool,
     ) -> DiscoveryRunView: ...
 
     async def read_claims(
@@ -1411,6 +1474,7 @@ class DbArv2ReadService:
         run_id: str | None,
         offset: int,
         limit: int,
+        excluded_apart: bool,
     ) -> DiscoveryRunView:
         async with self._conn_factory() as conn:
             return await read_discovery_run(
@@ -1420,6 +1484,7 @@ class DbArv2ReadService:
                 run_id=run_id,
                 offset=offset,
                 limit=limit,
+                excluded_apart=excluded_apart,
             )
 
     async def read_claims(
@@ -1778,11 +1843,15 @@ class ReadDiscoveryRunTool(Tool):
         del inputs, ctx
         return _not_composed() if self._service is None else ()
 
+    #: ``@3`` takes the excluded companies out of the candidate list; ``@1``/``@2`` list them
+    #: inline, because their pinned output schema has nowhere else to put them.
+    _excluded_apart: ClassVar[bool] = False
+
     async def _read(
         self, *, project_id: str, run_id: str | None, offset: int, limit: int, ctx: ToolContext
     ) -> DiscoveryRunView:
-        """The run, or a typed refusal — written once, because both versions read it the same way
-        and differ only in which window they ask for."""
+        """The run, or a typed refusal — written once, because every version reads it the same way
+        and differs only in which window it asks for and where the excluded companies go."""
 
         assert self._service is not None
         try:
@@ -1793,6 +1862,7 @@ class ReadDiscoveryRunTool(Tool):
                 run_id=run_id,
                 offset=offset,
                 limit=limit,
+                excluded_apart=self._excluded_apart,
             )
         except Arv2ReadRefused as refused:
             raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
@@ -1879,6 +1949,78 @@ class ReadDiscoveryRunV2Tool(ReadDiscoveryRunTool):
         return self._result(
             ReadDiscoveryRunV2Output(
                 **_discovery_fields(run), offset=run.offset, next_offset=run.next_offset
+            )
+        )
+
+
+#: ``@3`` pages exactly as ``@2`` does; only what comes back changed.
+ReadDiscoveryRunV3Input = ReadDiscoveryRunV2Input
+
+
+class ReadDiscoveryRunV3Output(ReadDiscoveryRunV2Output):
+    """``@2``'s page plus the run's end, its summary, and the companies its gates excluded."""
+
+    #: The run's candidates without the excluded ones, shown-first and best-fit-first; each
+    #: carries ``excluded_by_gate`` (always ``null`` here).
+    candidates: tuple[DiscoveryCandidateV3View, ...]
+    #: The search the run made: ``websets`` or ``search``.
+    source: str
+    #: Why the run ended — ``filled``, ``dry``, ``round_cap``, ``wall_clock``, ``stopped`` or
+    #: ``failed`` — or ``null`` while it is still searching.
+    end_reason: str | None
+    #: What the platform told you when the run ended: asked, added, excluded, unclear, the gates
+    #: that excluded companies with one example each, the last search's criteria pass rates, the
+    #: searches run, why it ended and the spend. ``null`` until the run ends.
+    summary: dict[str, Any] | None
+    #: The companies a gate excluded, with the gate, grouped by gate then by name. They were
+    #: never added to the project's accounts.
+    excluded: tuple[DiscoveryCandidateV3View, ...]
+    #: Every excluded company of the run; ``excluded`` holds at most 50 of them.
+    excluded_total: int
+
+
+class ReadDiscoveryRunV3Tool(ReadDiscoveryRunV2Tool):
+    """``read_discovery_run@3``: ``@2`` for a run launched from the brief the Head of ABM wrote.
+
+    Such a run ends for a reason and writes a summary, and its gates can exclude companies. ``@3``
+    serves those three things and lists the excluded companies apart from the candidates, which
+    stay the companies the human may be shown. The inputs, tallies, ordering and refusals are
+    ``@2``'s. A new address because ``@2``'s output schema is pinned by `head-of-abm@v69`.
+    """
+
+    version = "3"
+    model_description = (
+        "Read the project's latest discovery run (or one by id): status, what was asked for and "
+        "found, how many candidates the verifier judged against the ICP, how many were shown and "
+        "approved, why the run ended and its summary, and the candidates with their verdict, best "
+        "first. Companies a gate excluded are listed apart in excluded, each with the gate that "
+        "excluded it. Page the candidates with offset and limit (default 25) and follow "
+        "next_offset until it is null; candidate_total is the whole run on every page. Read this "
+        "before proposing another discovery, and to answer what discovery found. It approves "
+        "nothing. Effect-free. " + tool_manual_link("read_discovery_run")
+    )
+    output_model: ClassVar[type[ToolOutput]] = ReadDiscoveryRunV3Output
+    _excluded_apart: ClassVar[bool] = True
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadDiscoveryRunV3Input)
+        run = await self._read(
+            project_id=inputs.project_id,
+            run_id=inputs.run_id,
+            offset=inputs.offset,
+            limit=inputs.limit,
+            ctx=ctx,
+        )
+        return self._result(
+            ReadDiscoveryRunV3Output(
+                **_discovery_fields(run),
+                offset=run.offset,
+                next_offset=run.next_offset,
+                source=run.source,
+                end_reason=run.end_reason,
+                summary=None if run.summary is None else dict(run.summary),
+                excluded=run.excluded,
+                excluded_total=run.excluded_total,
             )
         )
 

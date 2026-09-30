@@ -104,6 +104,8 @@ def test_pinned_icp_products_discovery_and_research_render_from_the_rows() -> No
             approved=7,
             started_at=_T,
             finished_at=_T,
+            end_reason=None,
+            excluded=0,
         ),
         research=(
             ResearchRunFacts(
@@ -124,7 +126,9 @@ def test_pinned_icp_products_discovery_and_research_render_from_the_rows() -> No
     assert "- Selection version 2: `prd_a`, `prd_b`" in text
     assert "- Accounts in this project: 7" in text
     assert "- Latest run `00000000-0000-0000-0000-000000000002`: completed" in text
-    assert "asked 20, found 18, verified 18, shown 12, approved 7" in text
+    assert "asked 20, found 18, verified 18, shown 12, excluded 0, approved 7" in text
+    # A run from before the brief carries no end reason, and none is invented for it.
+    assert "ended" not in text
     assert (
         "- Run `00000000-0000-0000-0000-000000000003`: in_progress, effort full, 1/2 finished"
         in text
@@ -132,6 +136,31 @@ def test_pinned_icp_products_discovery_and_research_render_from_the_rows() -> No
     assert "  - Goodman Campbell: completed (member_research), 4 person jobs" in text
     assert "  - Acme Health: in_progress (synthesis), 0 person jobs" in text
     assert "2026-09-12T08:30:00+00:00" in text
+
+
+def test_a_discovery_run_reports_why_it_ended_and_how_many_a_gate_excluded() -> None:
+    """The run the Head of ABM launched from its brief ends for a reason, and the companies its
+    gates excluded are counted apart — never among the shown ones."""
+
+    text = render_status_markdown(
+        _facts(
+            discovery=DiscoveryFacts(
+                run_id=UUID(int=2),
+                status="completed",
+                asked=40,
+                found=30,
+                verified=30,
+                shown=8,
+                approved=0,
+                started_at=_T,
+                finished_at=_T,
+                end_reason="round_cap",
+                excluded=19,
+            )
+        )
+    )
+    assert "asked 40, found 30, verified 30, shown 8, excluded 19, approved 0" in text
+    assert "  - ended: round cap" in text
 
 
 def test_decisions_render_one_bullet_per_statement_oldest_first_or_an_honest_empty() -> None:
@@ -342,5 +371,7 @@ def test_the_discovery_counters_read_the_arv2_lanes_own_disposition_vocabulary()
     from clue_api.arv2.discovery_driver import _SHOWN
 
     assert frozenset(SHOWN_DISPOSITIONS) == _SHOWN
+    # An excluded company was judged, but it is never shown.
+    assert "excluded" not in SHOWN_DISPOSITIONS
     # "verified" is the complement of pending, not a vocabulary of its own.
     assert PENDING_DISPOSITION == "pending"
