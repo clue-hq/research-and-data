@@ -471,6 +471,10 @@ class Settings(BaseSettings):
     #: candidate's gate questions are asked together. ``1`` reproduces the serial order the R4
     #: DB proof scripts by position. Env: ``CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY``.
     arv2_discovery_verify_concurrency: int = Field(default=4, ge=1)
+    #: How many top-up searches a discovery run may make after its first, each with the SAME brief
+    #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
+    #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
+    arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
     #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
     #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
     #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the

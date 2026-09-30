@@ -9,9 +9,9 @@ The scenario is the one the proof of concept produced: the long list gives two c
 which this project already holds under the domain the long list got *wrong* (``probook.com`` for
 ``probook.ai``) — so it costs the one website answer that identified it and not a single gate —
 and the other passes every gate and becomes a ``candidate`` account whose fit reads High 100 on
-the accounts list. Exa filled the first search, so the duplicate leaves the run one short and a
-strict top-up — a second webset, excluding the first — asks for the one missing (rulings
-2026-09-28); the market has no more, and the run lands honestly short.
+the accounts list. The duplicate leaves the run one short, so a second round of the same brief —
+a second webset, excluding the first — asks for the one missing (spec 2026-09-30 §4); it finds
+nothing new, and the run ends dry, honestly short.
 """
 
 from __future__ import annotations
@@ -30,18 +30,27 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2 import discovery_store
 from clue_api.arv2.catalog_seed import load_arv2_pack
 from clue_api.arv2.claim_writer import LenientClaimWriter
 from clue_api.arv2.discovery_driver import (
     Arv2DiscoveryWorkHandler,
     arv2_discovery_work_id,
     build_arv2_discovery_handler,
+    summary_message,
 )
 from clue_api.arv2.discovery_launch import (
     Arv2DiscoveryRequest,
     launch_arv2_discovery,
 )
-from clue_api.arv2.discovery_store import list_candidates, list_searches, read_discovery_run
+from clue_api.arv2.discovery_request import DiscoveryBrief2
+from clue_api.arv2.discovery_store import (
+    DiscoveryRunRow,
+    active_discovery_for_project,
+    list_candidates,
+    list_searches,
+    read_discovery_run,
+)
 from clue_api.arv2.exa_client import ExaClient
 from clue_api.arv2.exa_websets_client import ExaWebsetsClient
 from clue_api.arv2.transport import HttpResponse, ScriptedTransport
@@ -58,10 +67,10 @@ from tests.arv2.test_discovery_driver import (
     _RULES,
     GEOGRAPHY_RULE,
     STAGE_RULE,
+    _brief_json,
     _clock,
     _no_sleep,
 )
-from tests.arv2.test_discovery_request import _brief
 
 # The claim-store harness lives in a sibling test package; a fixture is only visible to a module
 # that imports it, so re-export both (``require_claimstore_db`` depends on ``migrated_db``).
@@ -170,10 +179,10 @@ def _answer_body(
     }
 
 
-def _gate_answer(rule_quote: str, url: str) -> dict[str, Any]:
+def _gate_answer(rule_quote: str, url: str, verdict: str = "pass") -> dict[str, Any]:
     return _answer_body(
         {
-            "verdict": "pass",
+            "verdict": verdict,
             "reasoning": "The announcement states it.",
             "evidence_quote": rule_quote,
             "evidence_url": url,
@@ -288,7 +297,17 @@ def _conn_factory(conn: AsyncConnection) -> Any:
     return factory
 
 
-async def _launch(conn: AsyncConnection, storage: FsStorage, fixture: IcpFixture) -> UUID:
+async def _launch(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    fixture: IcpFixture,
+    *,
+    target_count: int = 2,
+    source: str = "websets",
+    **roles: str,
+) -> UUID:
+    """Launch with the brief the Head of ABM wrote: the ICP's four gates (each a ``prefer`` unless
+    a role is given), the query and criteria the scripted websets were built for."""
     receipt = await launch_arv2_discovery(
         conn,
         Arv2DiscoveryRequest(
@@ -296,8 +315,8 @@ async def _launch(conn: AsyncConnection, storage: FsStorage, fixture: IcpFixture
             project_id=fixture.project_id,
             requested_by_user_id=USER_ID,
             request_key="turn-action:db-ask",
-            target_count=2,
-            brief=_brief(),
+            target_count=target_count,
+            brief=DiscoveryBrief2.model_validate({**_brief_json(**roles), "source": source}),
         ),
         settings=settings_for(arv2_discovery_enabled=True),
         storage=storage,
@@ -368,17 +387,20 @@ def test_a_discovery_run_lands_candidates_a_candidate_account_its_fit_and_its_le
             assert run.status == "completed"
             first, topup = await list_searches(conn, run_id=run_id)
             assert (first.kind, first.webset_id, first.asked, first.found) == (
-                "strict",
+                "round",
                 "ws-db-1",
                 2,
                 2,
             )
             assert (topup.kind, topup.webset_id, topup.asked, topup.found) == (
-                "strict_topup",
+                "round",
                 "ws-db-2",
                 1,
                 0,
             )
+            # The second round found nothing new: the run ends dry, short and honestly so.
+            assert (run.end_reason, run.summary["end_reason"]) == ("dry", "dry")
+            assert run.released_at is not None
             assert topup.exclude_webset_ids == ("ws-db-1",)
             assert first.finished_at is not None and topup.finished_at is not None
             assert (run.asked, run.found_strict, run.found_relaxed, run.analyzed) == (3, 2, 0, 351)
@@ -559,10 +581,13 @@ class _RoutedTransport:
     def __init__(self, routes: list[tuple[str, str, HttpResponse]]) -> None:
         self._routes = list(routes)
         self._lock = threading.Lock()
+        #: Every request any hop sent, in the order sent — what a scenario asserts bodies against.
+        self.sent: list[Any] = []
 
     def __call__(self) -> ScriptedTransport:
         routes = self._routes
         lock = self._lock
+        sent = self.sent
 
         class _Transport(ScriptedTransport):
             def __init__(self) -> None:
@@ -570,6 +595,7 @@ class _RoutedTransport:
 
             def send(self, request: Any) -> HttpResponse:
                 self.requests.append(request)
+                sent.append(request)
                 haystack = (request.body or b"").decode() + str(request.url)
                 with lock:
                     for index, (company, needle, response) in enumerate(routes):
@@ -585,13 +611,17 @@ class _RoutedTransport:
         return len(self._routes)
 
 
-def _company_routes(name: str, domain: str) -> list[tuple[str, str, HttpResponse]]:
-    """One website answer and one answer per hard gate, tagged with the company they belong to.
+def _company_routes(
+    name: str, domain: str, verdicts: dict[str, str] | None = None
+) -> list[tuple[str, str, HttpResponse]]:
+    """One website answer and one answer per gate, tagged with the company they belong to.
 
     The website ask is the only question carrying the words "registrable domain" (they are in
     :data:`WEBSITE_SCHEMA`, never in the gate schema), and each gate ask quotes its own rule — so
-    the ICP's four gates need four routes, one per rule, and no two questions can be confused.
+    the brief's four gates need four routes, one per rule, and no two questions can be confused.
+    ``verdicts`` names a gate's verdict by key; every other gate passes.
     """
+    verdicts = verdicts or {}
     quote = f"{name} closed a Series A in March 2025 and is hiring in Boston."
     news = f"https://{domain}/news"
     website = _json(
@@ -600,7 +630,10 @@ def _company_routes(name: str, domain: str) -> list[tuple[str, str, HttpResponse
         )
     )
     routes: list[tuple[str, str, HttpResponse]] = [(name, "registrable domain", website)]
-    routes.extend((name, rule, _json(_gate_answer(quote, news))) for rule in _RULES.values())
+    routes.extend(
+        (name, rule, _json(_gate_answer(quote, news, verdicts.get(key, "pass"))))
+        for key, rule in _RULES.items()
+    )
     return routes
 
 
@@ -777,3 +810,515 @@ def test_the_composition_root_builds_the_same_handler_from_a_key(tmp_path: Any) 
     )
     assert composed is not None
     assert composed.kind is FleetTaskKind.ARV2_DISCOVERY
+
+
+# -- the agent's brief: rounds, roles, stop, and the end block (spec 2026-09-30 §4) --------------
+
+
+def _item_rows(*companies: tuple[str, str]) -> dict[str, Any]:
+    return {
+        "data": [
+            _item_body(f"itm-{name.lower()}", name=name, url=f"https://{domain}")
+            for name, domain in companies
+        ],
+        "hasMore": False,
+    }
+
+
+def _webset_round(
+    webset_id: str, *companies: tuple[str, str]
+) -> list[tuple[str, str, HttpResponse]]:
+    """One webset round, in the order the driver makes its calls: the lookup by external id (none
+    yet), the create, one poll that finds it idle, and the one list its companies arrive on."""
+    return [
+        ("", "arv2-discovery%3A", _not_found()),
+        (
+            "",
+            "/websets/v0/websets",
+            _json(_webset_body(status="running", found=0, analyzed=0, webset_id=webset_id)),
+        ),
+        (
+            "",
+            "/websets/v0/websets",
+            _json(
+                _webset_body(status="idle", found=len(companies), analyzed=100, webset_id=webset_id)
+            ),
+        ),
+        ("", "/items", _json(_item_rows(*companies))),
+    ]
+
+
+def _search_round(*companies: tuple[str, str]) -> tuple[str, str, HttpResponse]:
+    """One ``/search`` round's answer: one company-homepage hit per company."""
+    return (
+        "",
+        "/search",
+        _json(
+            {
+                "results": [
+                    {"url": f"https://{domain}", "title": name, "text": f"{name} is a company."}
+                    for name, domain in companies
+                ],
+                "costDollars": {"total": 0.005},
+            }
+        ),
+    )
+
+
+class _RecordingWake:
+    """A ``DiscoveryWake`` that records what it was handed and names a turn it never queues."""
+
+    def __init__(self) -> None:
+        self.turn_id = UUID(int=99)
+        self.queued: list[tuple[UUID, dict[str, Any], str]] = []
+
+    async def queue(
+        self, conn: AsyncConnection, run: DiscoveryRunRow, summary: Any, message: str
+    ) -> UUID:
+        del conn
+        self.queued.append((run.run_id, dict(summary), message))
+        return self.turn_id
+
+
+def _routed_handler(
+    conn: AsyncConnection,
+    storage: FsStorage,
+    transport: _RoutedTransport,
+    *,
+    max_topups: int = 3,
+    store: Any = discovery_store,
+    sleep: Any = _no_sleep,
+    wake: Any = None,
+) -> Arv2DiscoveryWorkHandler:
+    return Arv2DiscoveryWorkHandler(
+        settings=Settings(
+            _env_file=None,
+            arv2_discovery_enabled=True,
+            arv2_discovery_verify_concurrency=4,
+            arv2_discovery_max_topups=max_topups,
+        ),
+        conn_factory=_locked_conn_factory(conn),
+        storage=storage,
+        artifacts=DurableAgentArtifactStore(
+            storage=storage,  # type: ignore[arg-type]
+            conn_factory=_conn_factory(conn),
+        ),
+        clients=_LiveClientsForTest(),
+        writer=LenientClaimWriter(lenient=True),
+        store=store,
+        transport_factory=transport,
+        clock=_clock(),
+        sleep=sleep,
+        wake=wake,
+    )
+
+
+def _work(run_id: UUID, fixture: IcpFixture) -> WorkContext:
+    return WorkContext(
+        task_id=UUID(int=9),
+        work_id=arv2_discovery_work_id(run_id),
+        worker_id="w1",
+        lease_generation=LeaseGeneration(1),
+        payload={"run_id": str(run_id), "workspace_id": fixture.workspace_id},
+        stop_requested=asyncio.Event(),
+        lease_lost=asyncio.Event(),
+    )
+
+
+async def _project_account_domains(conn: AsyncConnection, fixture: IcpFixture) -> list[str]:
+    rows = await conn.execute(
+        text(
+            "SELECT a.primary_domain FROM project_account p "
+            "JOIN account_entity a ON a.id = p.account_entity_id "
+            "WHERE p.workspace_id = :w AND p.project_id = :p ORDER BY a.primary_domain"
+        ),
+        {"w": fixture.workspace_id, "p": fixture.project_id},
+    )
+    return [str(row[0]) for row in rows]
+
+
+def _create_bodies(transport: _RoutedTransport) -> list[dict[str, Any]]:
+    return [
+        json.loads(request.body)
+        for request in transport.sent
+        if request.method == "POST" and str(request.url).endswith("/websets/v0/websets")
+    ]
+
+
+#: Intent is the ``must_not`` of these scenarios: every company fails it (so none is excluded by
+#: it) except the one that is meant to be.
+_NO_INTENT = {"intent": "fail"}
+
+
+def test_rounds_repeat_the_same_brief_until_filled(tmp_path: Any) -> None:
+    """Target 3. Round 1's webset holds Alpha and Hotelco, and Hotelco passes the brief's
+    ``must_not`` — excluded, recorded with its gate, never an account. Round 2 asks the SAME brief
+    for the 2 still missing, skipping round 1's webset, and fills the run."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=3, intent="must_not")
+            transport = _RoutedTransport(
+                [
+                    *_webset_round("ws-r1", ("Alpha", "alpha.com"), ("Hotelco", "hotelco.com")),
+                    *_webset_round("ws-r2", ("Gamma", "gamma.com"), ("Delta", "delta.com")),
+                    *_company_routes("Alpha", "alpha.com", _NO_INTENT),
+                    *_company_routes("Hotelco", "hotelco.com"),
+                    *_company_routes("Gamma", "gamma.com", _NO_INTENT),
+                    *_company_routes("Delta", "delta.com", _NO_INTENT),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport)
+
+            result = await handler.handle(_work(run_id, fixture))
+
+            assert result.outcome == "completed"
+            assert transport.remaining == 0
+            first, second = _create_bodies(transport)
+            assert first["search"]["query"] == second["search"]["query"]
+            assert first["search"]["criteria"] == second["search"]["criteria"]
+            assert (first["search"]["count"], second["search"]["count"]) == (3, 2)
+            assert "exclude" not in first["search"]
+            assert second["search"]["exclude"] == [{"source": "webset", "id": "ws-r1"}]
+            searches = await list_searches(conn, run_id=run_id)
+            assert [(s.kind, s.source, s.exclude_webset_ids) for s in searches] == [
+                ("round", "websets", ()),
+                ("round", "websets", ("ws-r1",)),
+            ]
+
+            assert await _project_account_domains(conn, fixture) == [
+                "alpha.com",
+                "delta.com",
+                "gamma.com",
+            ]
+            candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
+            hotelco = candidates["hotelco.com"]
+            assert (hotelco.disposition, hotelco.excluded_by_gate) == ("excluded", "intent")
+            assert hotelco.account_entity_id is None
+            assert len(hotelco.verdicts) == 4
+
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert (run.status, run.end_reason) == ("completed", "filled")
+            assert run.summary is not None
+            assert run.summary["end_reason"] == "filled"
+            assert (run.summary["added"], run.summary["excluded"]) == (3, 1)
+            assert run.summary["excluded_by"] == [
+                {"gate": "intent", "role": "must_not", "count": 1, "example": "Hotelco"}
+            ]
+
+    run_async(scenario())
+
+
+def test_the_run_ends_at_the_round_cap(tmp_path: Any) -> None:
+    """One top-up allowed, and every company each round finds fails the brief's ``must``: exactly
+    two searches, nothing joins the project, and the run says why it stopped."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=2, geography="must")
+            outside_us = {"geography": "fail"}
+            transport = _RoutedTransport(
+                [
+                    *_webset_round("ws-c1", ("Alpha", "alpha.com")),
+                    *_webset_round("ws-c2", ("Beta", "beta.com")),
+                    *_company_routes("Alpha", "alpha.com", outside_us),
+                    *_company_routes("Beta", "beta.com", outside_us),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport, max_topups=1)
+
+            await handler.handle(_work(run_id, fixture))
+
+            assert transport.remaining == 0
+            assert len(await list_searches(conn, run_id=run_id)) == 2
+            assert await _project_account_domains(conn, fixture) == []
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert (run.status, run.end_reason) == ("completed", "round_cap")
+            assert run.summary["excluded"] == 2
+
+    run_async(scenario())
+
+
+def test_a_round_with_nothing_new_ends_dry(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=3)
+            transport = _RoutedTransport(
+                [
+                    *_webset_round("ws-d1", ("Alpha", "alpha.com")),
+                    *_webset_round("ws-d2"),
+                    *_company_routes("Alpha", "alpha.com"),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport)
+
+            await handler.handle(_work(run_id, fixture))
+
+            assert transport.remaining == 0
+            # Three top-ups were allowed; the second round found nothing, so no third was bought.
+            assert len(await list_searches(conn, run_id=run_id)) == 2
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert (run.status, run.end_reason, run.summary["added"]) == ("completed", "dry", 1)
+
+    run_async(scenario())
+
+
+def test_the_search_source_excludes_seen_domains(tmp_path: Any) -> None:
+    """Source ``search``: each round is one Exa ``/search`` for companies, asking for twice the
+    shortfall, excluding every domain already seen — this project's accounts, and every company an
+    earlier round found, the excluded ones included."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            await ensure_project_accounts(
+                conn,
+                workspace_id=fixture.workspace_id,
+                project_id=fixture.project_id,
+                account_entity_ids=[UUID(str(fixture.accounts[0]))],  # probook.ai
+                added_via="manual",
+            )
+            run_id = await _launch(
+                conn, storage, fixture, target_count=2, source="search", intent="must_not"
+            )
+            transport = _RoutedTransport(
+                [
+                    _search_round(("Alpha", "alpha.com"), ("Hotelco", "hotelco.com")),
+                    _search_round(),
+                    *_company_routes("Alpha", "alpha.com", _NO_INTENT),
+                    *_company_routes("Hotelco", "hotelco.com"),
+                ]
+            )
+            handler = _routed_handler(conn, storage, transport)
+
+            await handler.handle(_work(run_id, fixture))
+
+            assert transport.remaining == 0
+            bodies = [
+                json.loads(request.body)
+                for request in transport.sent
+                if str(request.url).endswith("/search")
+            ]
+            assert [body["category"] for body in bodies] == ["company", "company"]
+            assert [body["numResults"] for body in bodies] == [4, 2]
+            assert bodies[0]["excludeDomains"] == ["probook.ai"]
+            assert bodies[1]["excludeDomains"] == ["alpha.com", "hotelco.com", "probook.ai"]
+            assert not any("/websets/" in str(request.url) for request in transport.sent)
+
+            searches = await list_searches(conn, run_id=run_id)
+            assert [(s.kind, s.source, s.found, s.webset_id) for s in searches] == [
+                ("round", "search", 2, None),
+                ("round", "search", 0, None),
+            ]
+            candidates = {row.domain: row for row in await list_candidates(conn, run_id=run_id)}
+            assert candidates["alpha.com"].disposition == "pass"
+            assert candidates["hotelco.com"].disposition == "excluded"
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert (run.end_reason, run.summary["searches"]) == ("dry", 2)
+
+    run_async(scenario())
+
+
+def test_stop_cancels_the_webset_and_keeps_what_was_verified(tmp_path: Any) -> None:
+    """The human presses Stop once Acme is verified, while the webset is still running: the webset
+    is cancelled and read once more (Globex reaches the ledger, unverified), Acme is kept, and the
+    run lands ``stopped`` and released."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            run_id = await _launch(conn, storage, fixture, target_count=5)
+            verified = asyncio.Event()
+
+            class _StopAfterTheFirstVerdict:
+                """The real store, with the human's Stop pressed as the first verdict lands."""
+
+                def __getattr__(self, name: str) -> Any:
+                    return getattr(discovery_store, name)
+
+                async def record_verdicts(self, conn: AsyncConnection, **kwargs: Any) -> None:
+                    await discovery_store.record_verdicts(conn, **kwargs)
+                    await discovery_store.request_discovery_stop(
+                        conn,
+                        workspace_id=fixture.workspace_id,
+                        project_id=fixture.project_id,
+                        run_id=run_id,
+                    )
+                    verified.set()
+
+            async def wait_for_the_verdict(seconds: float) -> None:
+                del seconds
+                await asyncio.wait_for(verified.wait(), timeout=30)
+
+            transport = _RoutedTransport(
+                [
+                    ("", "arv2-discovery%3A", _not_found()),
+                    (
+                        "",
+                        "/websets/v0/websets",
+                        _json(
+                            _webset_body(status="running", found=0, analyzed=0, webset_id="ws-s")
+                        ),
+                    ),
+                    (
+                        "",
+                        "/websets/v0/websets",
+                        _json(
+                            _webset_body(status="running", found=1, analyzed=9, webset_id="ws-s")
+                        ),
+                    ),
+                    ("", "/items", _json(_item_rows(("Acme", "acme.com")))),
+                    (
+                        "",
+                        "/cancel",
+                        _json(_webset_body(status="idle", found=2, analyzed=20, webset_id="ws-s")),
+                    ),
+                    (
+                        "",
+                        "/items",
+                        _json(_item_rows(("Acme", "acme.com"), ("Globex", "globex.com"))),
+                    ),
+                    *_company_routes("Acme", "acme.com"),
+                ]
+            )
+            handler = _routed_handler(
+                conn,
+                storage,
+                transport,
+                store=_StopAfterTheFirstVerdict(),
+                sleep=wait_for_the_verdict,
+            )
+
+            result = await handler.handle(_work(run_id, fixture))
+
+            assert result.outcome == "stopped"
+            assert transport.remaining == 0
+            urls = [
+                str(request.url) for request in transport.sent if "/websets/" in str(request.url)
+            ]
+            assert urls[-2].endswith("/websets/v0/websets/ws-s/cancel")
+            assert "/items" in urls[-1]
+            assert await _project_account_domains(conn, fixture) == ["acme.com"]
+            assert [row.domain for row in await list_candidates(conn, run_id=run_id)] == [
+                "acme.com"
+            ]
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert (run.status, run.end_reason) == ("stopped", "stopped")
+            assert run.receipt["webset_stopped"] is True
+            assert run.released_at is not None
+            assert len(await list_searches(conn, run_id=run_id)) == 1
+
+    run_async(scenario())
+
+
+async def _one_company_run(
+    conn: AsyncConnection, storage: FsStorage, fixture: IcpFixture, *, wake: Any, thread: bool
+) -> UUID:
+    run_id = await _launch(conn, storage, fixture, target_count=1)
+    if thread:
+        # The launch resolves the thread from a real chat turn; the driver only reads the column.
+        await conn.execute(
+            text("UPDATE arv2_discovery_run SET launched_thread_id = 'thr-db' WHERE run_id = :r"),
+            {"r": run_id},
+        )
+    transport = _RoutedTransport(
+        [*_webset_round("ws-w", ("Alpha", "alpha.com")), *_company_routes("Alpha", "alpha.com")]
+    )
+    result = await _routed_handler(conn, storage, transport, wake=wake).handle(
+        _work(run_id, fixture)
+    )
+    assert result.outcome == "completed"
+    assert transport.remaining == 0
+    return run_id
+
+
+def test_a_threadless_run_releases_its_lock_at_the_end(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            wake = _RecordingWake()
+
+            run_id = await _one_company_run(conn, storage, fixture, wake=wake, thread=False)
+
+            assert wake.queued == []
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None
+            assert run.released_at is not None and run.wake_turn_id is None
+            assert (
+                await active_discovery_for_project(
+                    conn, workspace_id=fixture.workspace_id, project_id=fixture.project_id
+                )
+                is None
+            )
+
+    run_async(scenario())
+
+
+def test_a_threaded_run_hands_its_summary_to_the_wake(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            await load_core_pack(conn)
+            await load_arv2_pack(conn)
+            fixture = await seed_icp_fixture(conn, storage)
+            wake = _RecordingWake()
+
+            run_id = await _one_company_run(conn, storage, fixture, wake=wake, thread=True)
+
+            run = await read_discovery_run(conn, run_id=run_id)
+            assert run is not None and run.summary is not None
+            ((woken, summary, message),) = wake.queued
+            assert woken == run_id
+            assert summary == dict(run.summary)
+            assert message == summary_message(run_id, run.summary)
+            assert message.startswith(
+                f"Discovery finished (run {run_id}). Asked for 1, added 1, excluded 0, unclear 0."
+            )
+            # Held until the wake turn finishes (Task 5 releases it then).
+            assert run.released_at is None
+            assert run.wake_turn_id == wake.turn_id
+            held = await active_discovery_for_project(
+                conn, workspace_id=fixture.workspace_id, project_id=fixture.project_id
+            )
+            assert held is not None and held.run_id == run_id
+
+    run_async(scenario())
+
+
+def test_the_composition_root_hands_the_wake_to_the_handler(tmp_path: Any) -> None:
+    wake = _RecordingWake()
+    composed = build_arv2_discovery_handler(
+        Settings(_env_file=None, arv2_discovery_enabled=True),
+        Secrets(_env_file=None, exa_api_key=_SECRET),  # type: ignore[call-arg]
+        storage=FsStorage(tmp_path),
+        artifacts=DurableAgentArtifactStore(storage=FsStorage(tmp_path)),  # type: ignore[arg-type]
+        wake=wake,
+    )
+    assert composed is not None
+    assert composed._wake is wake
