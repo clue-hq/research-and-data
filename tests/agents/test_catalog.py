@@ -115,6 +115,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "skill:icp-synthesis@v1",
         "skill:icp-synthesis@v2",
         "skill:icp-synthesis@v3",
+        "skill:icp-synthesis@v4",
         # The operating manual's chapters. Each is an ordinary skill so the profile pins it like
         # any other and the capability map discloses it with its path. Four of them (errors,
         # fields, limits, tools) are generated, and the builder (`python -m clue_api.manual_build`)
@@ -580,6 +581,7 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:onboarding-synthesis@v1",
         "profile:onboarding-synthesis@v2",
         "profile:onboarding-synthesis@v3",
+        "profile:onboarding-synthesis@v4",
         "profile:research-specialist@v1",
         "profile:research-specialist@v2",
         "profile:research-specialist@v3",

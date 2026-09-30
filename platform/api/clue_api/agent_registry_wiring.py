@@ -271,8 +271,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # writes one document for the one ICP it is given. Its whole spendable surface is
     # ``exa_search_evidence@1`` — withheld on ``onboarding_icp``, where the profiles are written
     # from the files alone; it delegates to nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at
-    # the model's default reasoning effort.
-    AgentRole.ONBOARDING_SYNTHESIS: "v3",
+    # the model's default reasoning effort. v4 (2026-09-30): icp-synthesis@v4 writes the ICP's
+    # rows as block YAML with quoted values, so a comma inside a rule no longer splits it.
+    AgentRole.ONBOARDING_SYNTHESIS: "v4",
 }
 
 
