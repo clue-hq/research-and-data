@@ -151,8 +151,8 @@ open_design_leg:
     adds no duplicate, and an opening without a captured submission queues nothing. You do not
     run again while the leg is open and cannot close it; Design handles exit requests. Queued
     does not mean finished. The artifact appears in the project's gallery.
-  skill_section: Not taught by the current skill.
-  see_also: [siblings, gates-authority]
+  skill_section: manual-siblings, "Before an account-specific design handoff".
+  see_also: [siblings, accounts-research, humans-screens, gates-authority]
   refusals:
     design_leg_runtime_not_configured: Tell the human design is not wired on this deployment; a leg opened here could never run.
     design_leg_storage_not_configured: Tell the human this deployment has no artifact storage, so no design leg can open.
@@ -165,6 +165,11 @@ open_design_leg:
     design_document_pin_stale: Re-read the document, take its current version, and delegate again.
     design_document_pin_incomplete: Pass the document id alongside the expected version, or pass neither.
     design_leg_doc_kind_required: Pass doc_kind 'web' for a new website or 'scene' for a new ad, or name an existing document_id.
+    design_leg_artifacts_required: Pass one artifacts item per requested new artifact, preserving its intended account_id; the retired top-level title is not an item.
+    design_leg_artifacts_with_document: Choose the requested existing-document edit or new artifact creation; artifacts and document_id cannot be combined.
+    design_leg_artifacts_with_reopen: Resume the requested closed leg without artifacts, or create the requested new artifacts without reopen_leg_id; preserve the user's scope.
+    design_leg_account_not_found: Resolve the intended live workspace account by its tagged entity id or a fresh read; never omit its account_id or substitute a different account to make the call succeed.
+    design_leg_account_not_on_project: Preserve the intended account_id. Ask the human to add that account under this project's Target accounts and end awaiting_input. Do not open a generic substitute or launch research to create membership; retry the account-bound artifact only after the prerequisite is satisfied.
     brand_kit_pin_incomplete: Pass brand_kit_id and version together, or pass neither and let the platform choose.
     brand_kit_pin_not_found: Name a brand kit version this workspace holds; there is deliberately no fallback to a default kit.
     design_bundle_too_large: Trim the brief or the claim set and delegate again; the bundle carries references, not content.
@@ -257,7 +262,9 @@ read_account_research:
     account_not_researched: Say plainly that nothing is known about this account yet, and offer to research it.
     no_claims_under_prefix: Pick one of the families the refusal lists and read again; never invent a prefix.
     offset_past_end: You have already read to the end. Stop paging and answer from what you have.
-    offset_not_paged: Drop offset; the overview is served whole.
+    offset_not_paged: Older read contracts only; drop offset there. The current read_account_research@3 overview supports paging with next_offset.
+    invalid_page: Use a nonnegative offset and a limit from 1 to 120; continue from the returned next_offset rather than guessing an offset.
+    overview_metadata_too_large: Report that the stored overview cannot fit its read envelope. Read its claims if useful and report the overview gap; do not retry unchanged or describe it as fully read.
 
 read_artifact:
   afterwards: >-

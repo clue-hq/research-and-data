@@ -92,9 +92,9 @@ AUTHORITY_MARKS = ("(enforced)", "(asked of you)")
 #: The words that make a line a rule rather than a description.
 RULE_WORDS = ("never", "must", "only", "cannot", "may not", "do not", "always")
 
-#: The two refusal constructors whose first positional (or ``reason_code=``) argument is the
+#: Refusal constructors whose first positional (or ``reason_code=``) argument is the
 #: stable code the agent reads. Ruling M3.
-REFUSAL_CONSTRUCTORS = ("PreconditionFailure", "Arv2ReadRefused")
+REFUSAL_CONSTRUCTORS = ("PreconditionFailure", "Arv2ReadRefused", "_LegRefused")
 
 _REASON_CODE = re.compile(r"^[a-z_]+$")
 

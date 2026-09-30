@@ -71,11 +71,11 @@ __all__ = [
 #: package, never to the working directory.
 DEFAULT_CATALOG_ROOT = Path(__file__).resolve().parents[2] / "catalog"
 
-MANUAL_VERSION = "v9"
+MANUAL_VERSION = "v10"
 
 #: The profile the generated chapters describe. A chapter is true of one exact grant.
 PROFILE_NAME = "head-of-abm"
-PROFILE_VERSION = "v62"
+PROFILE_VERSION = "v63"
 
 #: The chapters the builder writes.
 GENERATED_CHAPTERS: tuple[str, ...] = ("tools", "fields", "errors", "limits")
@@ -950,7 +950,7 @@ def render_skill(chapter: Chapter, *, version: str, links: Mapping[str, str]) ->
             "",
         ]
     )
-    return header + body
+    return (header + body).rstrip() + "\n"
 
 
 def chapter_path(catalog_root: Path, name: str, version: str) -> Path:
