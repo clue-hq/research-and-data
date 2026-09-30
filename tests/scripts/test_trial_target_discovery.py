@@ -137,3 +137,55 @@ def test_the_report_counts_precision_per_arm() -> None:
         "precision": 1 / 3,
     }
     assert table["B"]["precision"] == pytest.approx(2 / 3)
+
+
+AGENT_ANSWER = {
+    "query": "Companies that manufacture widgets in their own plants.",
+    "criteria": [
+        "The company manufactures widgets in plants it operates.",
+        "The company is not a software vendor that sells to widget makers.",
+    ],
+    "gates": [
+        {
+            "key": "makes_widgets",
+            "rule": "The company manufactures widgets.",
+            "test": "Its site describes its own plants within the last 24 months.",
+            "disqualifying": True,
+        },
+        {
+            "key": "has_mes",
+            "rule": "An MES is in use.",
+            "test": "A job post names one.",
+            "disqualifying": False,
+        },
+    ],
+    "reasoning": "Identity first; vendors ruled out.",
+}
+
+
+def test_an_agent_answer_becomes_the_brief_the_search_sends() -> None:
+    brief, disqualifying = trial.brief_from_agent(AGENT_ANSWER)
+    assert brief.query == AGENT_ANSWER["query"]
+    assert brief.criteria == tuple(AGENT_ANSWER["criteria"])
+    assert [g.key for g in brief.gates] == ["makes_widgets", "has_mes"]
+    assert brief.gates[0].window_months == 24
+    assert disqualifying == frozenset({"makes_widgets"})
+
+
+def test_an_agent_answer_outside_the_limits_is_refused() -> None:
+    too_many = {**AGENT_ANSWER, "criteria": [f"c{i}" for i in range(6)]}
+    with pytest.raises(trial.TrialError, match="criteria"):
+        trial.brief_from_agent(too_many)
+    with pytest.raises(trial.TrialError, match="query"):
+        trial.brief_from_agent({**AGENT_ANSWER, "query": ""})
+
+
+def test_a_failed_disqualifying_gate_excludes_the_company() -> None:
+    verdicts = [
+        {"gate_key": "makes_widgets", "verdict": "fail"},
+        {"gate_key": "has_mes", "verdict": "pass"},
+    ]
+    assert trial.excluded_by(verdicts, frozenset({"makes_widgets"})) == ["makes_widgets"]
+    assert trial.excluded_by(verdicts, frozenset({"has_mes"})) == []
+    unclear = [{"gate_key": "makes_widgets", "verdict": "unclear"}]
+    assert trial.excluded_by(unclear, frozenset({"makes_widgets"})) == []

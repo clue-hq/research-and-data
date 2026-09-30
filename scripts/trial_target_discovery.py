@@ -38,7 +38,7 @@ import yaml
 from pydantic import SecretStr
 
 from clue_api.arv2.calls import ProviderCaller
-from clue_api.arv2.discovery_brief import DiscoveryBrief, compile_brief
+from clue_api.arv2.discovery_brief import DiscoveryBrief, Gate, compile_brief, parse_window_months
 from clue_api.arv2.discovery_verifier import (
     OUTPUT_SCHEMA,
     WEBSITE_SCHEMA,
@@ -57,8 +57,14 @@ from clue_spend.errors import ProviderTransportError
 from clue_spend.ledger import BufferedLedger, BufferedRawSink
 from clue_spend.transport import HttpxTransport
 
-ARMS = ("A", "B", "C", "D", "E")
-WEBSETS_ARMS = ("A", "B", "C", "D")
+ARMS = ("A", "B", "C", "D", "E", "G")
+WEBSETS_ARMS = ("A", "B", "C", "D", "G")
+AGENT_PROMPT = (
+    Path(__file__).resolve().parents[1]
+    / "docs/superpowers/drafts/2026-09-30-target-discovery-trial/agent-brief-prompt.md"
+)
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+AGENT_ESTIMATE_USD = Decimal("0.25")
 #: Fields a gate or qualifier row legitimately carries. Any other key whose value is ``null`` is a
 #: fragment of the value before it, split off at a comma by inline YAML.
 KNOWN_FIELDS = frozenset(
@@ -185,6 +191,8 @@ class Candidate:
     verified_domain: str | None = None
     fit: float | None = None
     disposition: str | None = None
+    #: Arm G: the agent's disqualifying gates this company failed (empty = not excluded).
+    excluded_by: list[str] = field(default_factory=list)
 
     @property
     def domain(self) -> str:
@@ -218,6 +226,88 @@ def precision_table(grades: Mapping[str, Mapping[str, str]]) -> dict[str, dict[s
             "precision": (target / len(labels)) if labels else None,
         }
     return table
+
+
+# -- arm G: the brief written by an agent -------------------------------------------------------
+
+
+def brief_from_agent(answer: Mapping[str, Any]) -> tuple[DiscoveryBrief, frozenset[str]]:
+    """The agent's JSON answer as the brief the search sends, plus its disqualifying gate keys."""
+    query = str(answer.get("query") or "").strip()
+    if not query:
+        raise TrialError("agent brief has no query")
+    criteria = tuple(str(c).strip() for c in answer.get("criteria") or () if str(c).strip())
+    if not 1 <= len(criteria) <= MAX_TRIAL_CRITERIA:
+        raise TrialError(f"agent brief has {len(criteria)} criteria (1-{MAX_TRIAL_CRITERIA})")
+    gates: list[Gate] = []
+    disqualifying: set[str] = set()
+    for raw in answer.get("gates") or ():
+        key, rule = str(raw.get("key") or "").strip(), str(raw.get("rule") or "").strip()
+        test = str(raw.get("test") or "").strip()
+        if not key or not rule:
+            raise TrialError(f"agent gate without key or rule: {raw!r}")
+        gates.append(
+            Gate(key=key, rule=rule, test=test, window_months=parse_window_months(rule, test))
+        )
+        if raw.get("disqualifying") is True:
+            disqualifying.add(key)
+    if not gates:
+        raise TrialError("agent brief has no gates")
+    brief = DiscoveryBrief(
+        query=query, criteria=criteria, criteria_gate_keys=(), gates=tuple(gates), exclusions=()
+    )
+    return brief, frozenset(disqualifying)
+
+
+def excluded_by(verdicts: Sequence[Mapping[str, Any]], disqualifying: frozenset[str]) -> list[str]:
+    """The disqualifying gates this company FAILED. An unclear gate never excludes."""
+    return [
+        v["gate_key"] for v in verdicts if v["verdict"] == "fail" and v["gate_key"] in disqualifying
+    ]
+
+
+def write_agent_brief(
+    *,
+    documents: Sequence[Path],
+    conversation: str,
+    api_key: SecretStr,
+    model: str,
+    run_dir: RunDir,
+    budget: Budget,
+) -> dict[str, Any]:
+    """One model call playing the Head of ABM: read the documents and chat, answer the brief."""
+    import httpx
+
+    budget.check(AGENT_ESTIMATE_USD)
+    parts = [f"## Document: {path.name}\n\n{path.read_text()}" for path in documents]
+    parts.append(f"## What the user said in this project's chat\n\n{conversation.strip()}")
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": AGENT_PROMPT.read_text()},
+            {"role": "user", "content": "\n\n".join(parts)},
+        ],
+        "response_format": {"type": "json_object"},
+        "usage": {"include": True},
+    }
+    response = httpx.post(
+        OPENROUTER_URL,
+        json=body,
+        timeout=300.0,
+        headers={"Authorization": f"Bearer {api_key.get_secret_value()}"},
+    )
+    payload = response.json()
+    run_dir.write_json(
+        "arm-G-agent-call.json",
+        {"request_model": model, "status": response.status_code, "response": payload},
+    )
+    cost = Decimal(str((payload.get("usage") or {}).get("cost") or "0"))
+    budget.spend(cost)
+    if response.status_code != 200:
+        raise TrialError(f"agent brief call failed: http {response.status_code}")
+    text = payload["choices"][0]["message"]["content"]
+    start, end = text.find("{"), text.rfind("}")
+    return json.loads(text[start : end + 1])
 
 
 # -- the run -----------------------------------------------------------------------------------
@@ -437,14 +527,24 @@ def run_arm(
     count: int,
     verify: bool,
     run_name: str,
+    agent: Callable[[], dict[str, Any]] | None = None,
 ) -> list[Candidate]:
-    brief = build_brief(arm, icp, overrides=overrides)
+    disqualifying: frozenset[str] = frozenset()
+    if arm == "G":
+        if agent is None:
+            raise TrialError("arm G needs the agent inputs (--agent-docs, --conversation)")
+        answer = agent()
+        providers.run_dir.write_json("arm-G-agent-answer.json", answer)
+        brief, disqualifying = brief_from_agent(answer)
+    else:
+        brief = build_brief(arm, icp, overrides=overrides)
     providers.run_dir.write_json(
         f"arm-{arm}-brief.json",
         {
             "query": brief.query,
             "criteria": list(brief.criteria),
             "gates": [asdict(g) for g in brief.gates],
+            "disqualifying": sorted(disqualifying),
         },
     )
     started = time.monotonic()
@@ -458,6 +558,8 @@ def run_arm(
         with ThreadPoolExecutor(VERIFY_CONCURRENCY) as pool:
             candidates = list(pool.map(lambda c: _verify(providers, brief, c, today), candidates))
         providers.flush()
+        for candidate in candidates:
+            candidate.excluded_by = excluded_by(candidate.verdicts, disqualifying)
     providers.run_dir.write_json(
         f"arm-{arm}-candidates.json",
         {
@@ -489,10 +591,13 @@ def _run(args: argparse.Namespace) -> None:
             "hard_gates_repaired": icp.repaired.get("hard_gates"),
         },
     )
-    for arm in args.arms:  # refuse a missing override before anything is bought
+    brief_arms = [arm for arm in args.arms if arm != "G"]
+    for arm in brief_arms:  # refuse a missing override before anything is bought
         build_brief(arm, icp, overrides=overrides)
+    if "G" in args.arms and not (args.agent_docs and args.conversation):
+        raise TrialError("arm G needs --agent-docs and --conversation")
     if args.dry_run:
-        for arm in args.arms:
+        for arm in brief_arms:
             brief = build_brief(arm, icp, overrides=overrides)
             print(
                 json.dumps({"arm": arm, "query": brief.query, "criteria": brief.criteria}, indent=2)
@@ -510,6 +615,27 @@ def _run(args: argparse.Namespace) -> None:
         budget=budget,
     )
     run_name = run_dir.path.name
+    agent = None
+    if "G" in args.arms:
+        if secrets.openrouter_api_key is None:
+            raise TrialError("CLUE_OPENROUTER_API_KEY is not set")
+        import os
+
+        docs = [Path(p) for p in args.agent_docs]
+        conversation = Path(args.conversation).read_text()
+        key = SecretStr(secrets.openrouter_api_key.get_secret_value())
+        model = os.environ.get("HEAD_OF_ABM_AGENT_MODEL") or "x-ai/grok-4.6"
+
+        def agent() -> dict[str, Any]:
+            return write_agent_brief(
+                documents=docs,
+                conversation=conversation,
+                api_key=key,
+                model=model,
+                run_dir=run_dir,
+                budget=budget,
+            )
+
     for arm in args.arms:
         print(f"arm {arm}: running (spent so far ${budget.spent_usd})", flush=True)
         try:
@@ -521,6 +647,7 @@ def _run(args: argparse.Namespace) -> None:
                 count=args.count,
                 verify=not args.no_verify,
                 run_name=run_name,
+                agent=agent,
             )
             print(f"arm {arm}: {len(found)} candidates, spent ${budget.spent_usd}", flush=True)
         except TrialError as error:
@@ -554,6 +681,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     run.add_argument("--run-dir", required=True)
     run.add_argument("--no-verify", action="store_true")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--agent-docs", nargs="*", help="arm G: the documents the agent reads")
+    run.add_argument("--conversation", help="arm G: a text file of what the user said")
     run.set_defaults(handler=_run)
     report = sub.add_parser("report")
     report.add_argument("--run-dir", required=True)
