@@ -1,0 +1,8 @@
+# Scoped account report import — 2026-09-27
+
+- User explicitly requested importing two supplied Markdown reports into the current fresh workspace's existing account. Stop before website regeneration; this is a specific exception to the earlier no-seeding test convention.
+- Reused the canonical account and five existing contacts; added one missing contact, linked the account to the current project, and retained both original files in workspace content-addressed storage with account/project attachment bindings. Original bytes were verified after storage.
+- Seeded 27 native review sections across overview, insights and three contact briefs, with 34 scoped research notes. Every imported note remains tier 4 / unverified; no existing claim was promoted, rescored or replaced. Prior review blocks remain in supersession history. No model calls or website generation were started.
+- Account overview and insights rendered in the actual platform; insights showed 23 items and six people. A detailed contact brief was also checked in the UI. Existing core-rail fields and automatic score were preserved and still conflict with parts of the supplied report; reconciliation/native verification remains outstanding before evidence-backed generation.
+- Local import script, immutable-source hashes, baseline display snapshot and final receipt are in `.local-setup/hotel-equities-import/` (ignored; not committed). Receipt is the current source for IDs. Do not rerun the initial apply command; it refuses duplicate lineage. Two follow-up transactions completed committee notes and formatting, recorded in the receipt.
+- Existing unfinished verification/display test edits were preserved. No remote publication, migration, environment change or service restart.
