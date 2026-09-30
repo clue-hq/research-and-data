@@ -7,13 +7,15 @@ driver's own module names. What is asserted is therefore the driver's own contra
 
 * **every candidate is verified before it is written**, and the verdicts the guards produced are
   what the fit is computed from;
-* **the first search asks for exactly the target**, a top-up asks only for the shortfall, and
-  every search is a webset of its own that excludes the websets before it (rulings 2026-09-28);
+* **the first round asks for exactly the target**, a top-up round asks the SAME brief only for
+  the shortfall, and every webset round excludes the websets before it (spec 2026-09-30 §4);
 * **no money is spent on a company this project already has or already found** — a duplicate and
   a ``found_before`` cost the one website answer that identified them and not a single gate — while
   an account of ANOTHER project is verified against this ICP and joins this project on its own row;
-* **the relaxed search runs only when the run is still short** and it drops the criterion the
-  strict search proved was starving it;
+* **a gate's role decides**: a failed ``must`` or a passed ``must_not`` excludes the company, an
+  unclear never does, and the fit is over the ``must`` and ``prefer`` gates;
+* **every ending runs one end block**: the summary is written and either handed to the launching
+  thread's wake turn (the run stays held) or the run is released at once;
 * **``handle`` never raises**: a wall-clock overrun and a provider that refuses to sell both land
   the run ``needs_review`` with a named reason, and the ledger is drained either way.
 """
@@ -96,6 +98,20 @@ _RULES = {
 }
 
 
+#: The brief the Head of ABM wrote for these runs: the ICP's four gates, each a ``prefer`` — so no
+#: gate excludes and the fit is over all four, the shape every scenario below was written for. The
+#: roles' own behaviour is exercised by the scenarios that set a ``must`` or a ``must_not``.
+def _brief_json(**roles: str) -> dict[str, Any]:
+    return {
+        "source": "websets",
+        "query": BUYER_SENTENCE,
+        "criteria": [GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE],
+        "gates": [
+            {**gate, "role": roles.get(gate["key"], "prefer")} for gate in ICP_FRONT["hard_gates"]
+        ],
+    }
+
+
 # -- the doubles ---------------------------------------------------------------------------------
 
 
@@ -114,8 +130,10 @@ def _run_row(**overrides: Any) -> DiscoveryRunRow:
         "request_sha256": "c" * 64,
         "target_count": 20,
         "relaxed_enabled": False,
-        "criteria_gate_keys": ("geography", "stage"),
+        "criteria_gate_keys": (),
         "status": "in_progress",
+        "source": "websets",
+        "brief": _brief_json(),
     }
     payload.update(overrides)
     return DiscoveryRunRow(**payload)
@@ -139,6 +157,10 @@ class _Store:
         self.candidates = list(candidates)
         self.searches = {search.ordinal: search for search in searches}
         self.events: list[tuple[str, dict[str, Any]]] = []
+        #: A human's Stop, as the driver reads it: ``None`` never; ``n`` from the read after the
+        #: first ``n`` reads on.
+        self.stop_after: int | None = None
+        self.stop_reads = 0
 
     async def begin_discovery_run(self, conn: Any, *, run_id: UUID) -> DiscoveryRunRow | None:
         del conn
@@ -182,6 +204,19 @@ class _Store:
     async def finish_discovery_run(self, conn: Any, **kwargs: Any) -> None:
         del conn
         self.events.append(("finish_discovery_run", kwargs))
+
+    async def stop_requested(self, conn: Any, *, run_id: UUID) -> bool:
+        del conn, run_id
+        self.stop_reads += 1
+        return self.stop_after is not None and self.stop_reads > self.stop_after
+
+    async def end_discovery_run(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("end_discovery_run", kwargs))
+
+    async def record_wake_turn(self, conn: Any, **kwargs: Any) -> None:
+        del conn
+        self.events.append(("record_wake_turn", kwargs))
 
     async def upsert_candidate(self, conn: Any, row: CandidateRow) -> UUID:
         del conn
@@ -256,6 +291,10 @@ class _Conn:
         if "project_account" in sql:
             return _Rows([(domain,) for domain in self.project_domains])
         return _Rows(list(self.workspace_accounts.items()))
+
+    @asynccontextmanager
+    async def begin_nested(self) -> AsyncIterator[None]:
+        yield
 
 
 class _ConnFactory:
@@ -696,8 +735,11 @@ def _handler(
     monkeypatch.setattr(driver, "insert_account_entity", accounts)
     monkeypatch.setattr(driver, "ensure_project_accounts", memberships)
 
+    # One search unless a scenario says otherwise: most scenarios are about what ONE webset does,
+    # and a run short of its target would otherwise buy top-up rounds of the same brief. The
+    # rounds themselves are the subject of the scenarios that set ``arv2_discovery_max_topups``.
     handler = Arv2DiscoveryWorkHandler(
-        settings=settings or Settings(_env_file=None),
+        settings=settings or Settings(_env_file=None, arv2_discovery_max_topups=0),
         conn_factory=conn_factory,
         storage=object(),
         artifacts=SimpleNamespace(),
@@ -774,7 +816,9 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
         # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
         # the document order. Under the shipped cap of 4 the candidates verify concurrently and
         # the order below would be decided by which thread finished first.
-        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
+        settings=Settings(
+            _env_file=None, arv2_discovery_verify_concurrency=1, arv2_discovery_max_topups=0
+        ),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -797,8 +841,7 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert store.named("create_search")[0]["row"].asked == 20
     assert store.named("record_search_webset")[0]["webset_id"] == "ws-1"
     assert store.named("finish_search")[0]["found"] == 2
-    # Exa found 2 of the 20 it was asked for — it ran out — so no top-up was bought, and the
-    # relaxed search is off for this run: one search, one webset.
+    # This scenario allows no top-up round: one search, one webset.
     assert len(websets.named("create")) == 1
     # And the document the run was pinned to is the one it verified against.
     assert handler.icp_reads == [  # type: ignore[attr-defined]
@@ -857,7 +900,9 @@ def test_strict_pass_verifies_every_candidate_writes_fit_and_records_the_receipt
     assert receipt["target_count"] == 20
     assert receipt["criteria"] == [GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE]
     searches = [(row["kind"], row["asked"], row["found"]) for row in receipt["searches"]]
-    assert searches == [("strict", 20, 2)]
+    assert searches == [("round", 20, 2)]
+    assert receipt["source"] == "websets"
+    assert receipt["end_reason"] == "round_cap"
     assert receipt["guards"] == {"ok": 8}
     assert receipt["duplicates"] == 0
     assert receipt["found_before"] == 0
@@ -970,70 +1015,13 @@ def test_an_account_of_another_project_is_verified_against_this_icp_and_joins_th
 _ALL_PASS = {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"}
 
 
-def test_when_exa_runs_out_the_relaxed_search_is_a_new_webset_for_the_shortfall(
+def test_a_short_run_asks_again_with_the_same_brief_for_the_shortfall(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Exa found 1 of the 3 it was asked for, so the same search again would find nothing: the run
-    skips the strict top-up and goes straight to the relaxed search — a NEW webset, asking only for
-    the 2 still missing, with the criterion search 1 satisfied least often dropped, and told to
-    skip search 1's webset (ruling 2026-09-28)."""
-    run = _run_row(target_count=3, relaxed_enabled=True)
-    store = _Store(run)
-    exa = _FakeExa(
-        _responder(
-            {
-                "Probook": _company_answers("Probook", "probook.ai", _ALL_PASS),
-                "Patientdesk": _company_answers("Patientdesk", "patientdesk.com", _ALL_PASS),
-            }
-        )
-    )
-    relaxed_view = _view(
-        webset_id="ws-3", searches=(_search("srch-3", found=1, analyzed=120, rates=()),)
-    )
-    websets = _FakeWebsets(
-        websets={
-            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Probook", "https://probook.com"))]),
-            "ws-3": (
-                [relaxed_view],
-                [_items(_item("Patientdesk", "https://patientdesk.com", search_id="srch-3"))],
-            ),
-        }
-    )
-    handler, _, _, _, accounts = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
-
-    result = asyncio.run(handler.handle(_context(run.run_id)))
-
-    assert result.outcome == "completed"
-    strict, relaxed = websets.named("create")
-    assert strict["count"] == 3
-    assert relaxed["count"] == 2  # the shortfall, never the whole target again
-    assert relaxed["criteria"] == (GEOGRAPHY_RULE, BUYER_SENTENCE)  # the 12% criterion is gone
-    assert relaxed["exclude_webset_ids"] == ("ws-1",)
-    assert relaxed["external_id"] == f"arv2-discovery:{run.run_id}:3"
-    assert relaxed["recall"] is False  # the pool estimate is search 1's alone
-    assert [call["row"].kind for call in store.named("create_search")] == ["strict", "relaxed"]
-
-    passes_by_domain = {
-        row["row"].domain: row["row"].pass_ for row in store.named("upsert_candidate")
-    }
-    assert passes_by_domain == {"probook.ai": "strict", "patientdesk.com": "relaxed"}
-    assert len(accounts.created) == 2
-    finished = store.named("finish_discovery_run")[0]
-    assert finished["found_strict"] == 1
-    assert finished["found_relaxed"] == 1
-    assert finished["analyzed"] == 420
-    assert finished["receipt"]["asked"] == 5
-    assert [search["kind"] for search in finished["receipt"]["searches"]] == ["strict", "relaxed"]
-    assert finished["receipt"]["shown"] == 2
-
-
-def test_when_our_checks_removed_some_the_strict_top_up_asks_again_for_the_missing_number(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Exa filled search 1 (3 of 3), but one was a company this project already has. Search 2
-    asks the same criteria for the one missing, skipping search 1's webset — and once the run
-    holds its number, the relaxed search is never bought."""
-    run = _run_row(target_count=3, relaxed_enabled=True)
+    """Round 1 found 3 for a target of 3, but one was a company this project already has. Round 2
+    asks the SAME brief — the same query and criteria — for the one missing, skipping round 1's
+    webset; once the run holds its number it buys nothing more (spec 2026-09-30 §4)."""
+    run = _run_row(target_count=3)
     store = _Store(run)
     exa = _FakeExa(
         _responder(
@@ -1064,59 +1052,53 @@ def test_when_our_checks_removed_some_the_strict_top_up_asks_again_for_the_missi
         }
     )
     handler, _, _, _, _ = _handler(
-        store, exa=exa, websets=websets, monkeypatch=monkeypatch, project_domains=["globex.com"]
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        project_domains=["globex.com"],
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=3),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
 
     assert result.outcome == "completed"
-    strict, topup = websets.named("create")
-    assert strict["count"] == 3
+    first, topup = websets.named("create")
+    assert first["count"] == 3
     assert topup["count"] == 1
+    assert (topup["query"], topup["criteria"]) == (first["query"], first["criteria"])
     assert topup["criteria"] == (GEOGRAPHY_RULE, STAGE_RULE, BUYER_SENTENCE)
     assert topup["exclude_webset_ids"] == ("ws-1",)
-    assert [call["row"].kind for call in store.named("create_search")] == [
-        "strict",
-        "strict_topup",
-    ]
+    assert [call["row"].kind for call in store.named("create_search")] == ["round", "round"]
     finished = store.named("finish_discovery_run")[0]
     assert finished["receipt"]["shown"] == 3
     assert finished["receipt"]["duplicates"] == 1
     assert finished["found_strict"] == 4
     assert finished["found_relaxed"] == 0
-
-
-def test_no_relaxed_search_when_the_run_does_not_allow_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    run = _run_row(target_count=3, relaxed_enabled=False)
-    store = _Store(run)
-    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
-    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
-    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
-
-    result = asyncio.run(handler.handle(_context(run.run_id)))
-
-    assert result.outcome == "completed"
-    assert len(websets.named("create")) == 1
-    finished = store.named("finish_discovery_run")[0]
-    assert finished["receipt"]["shown"] == 1  # short of 3, and honestly so
-    assert [search["kind"] for search in finished["receipt"]["searches"]] == ["strict"]
+    ended = store.named("end_discovery_run")[0]
+    assert (ended["status"], ended["end_reason"]) == ("completed", "filled")
 
 
 def test_a_run_holding_its_number_after_the_first_search_buys_nothing_more(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    run = _run_row(target_count=1, relaxed_enabled=True)
+    run = _run_row(target_count=1)
     store = _Store(run)
     exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
     websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
-    handler, _, _, _, _ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+    handler, _, _, _, _ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=3),
+    )
 
     asyncio.run(handler.handle(_context(run.run_id)))
 
     assert [call["count"] for call in websets.named("create")] == [1]
     assert store.named("finish_discovery_run")[0]["receipt"]["shown"] == 1
+    assert store.named("end_discovery_run")[0]["end_reason"] == "filled"
 
 
 def test_find_more_skips_every_webset_the_projects_earlier_discoveries_bought(
@@ -1199,7 +1181,7 @@ def test_the_wall_clock_ends_the_run_needs_review_with_the_reason(
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        settings=Settings(_env_file=None, arv2_discovery_wall_s=60),
+        settings=Settings(_env_file=None, arv2_discovery_wall_s=60, arv2_discovery_max_topups=0),
         clock=_clock(step_s=45.0),
     )
 
@@ -1234,7 +1216,7 @@ def test_a_run_out_of_time_cancels_its_webset_and_prices_what_exa_had_found(
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        settings=Settings(_env_file=None, arv2_discovery_wall_s=60),
+        settings=Settings(_env_file=None, arv2_discovery_wall_s=60, arv2_discovery_max_topups=0),
         clock=_clock(step_s=45.0),
     )
 
@@ -1387,24 +1369,6 @@ def test_the_handler_is_not_composed_without_the_flag_or_the_key(tmp_path: Any) 
         )
         is None
     )
-
-
-def test_the_dropped_criterion_is_the_least_satisfied_one_and_ties_drop_the_last() -> None:
-    """The relaxed pass's one choice, pinned: which criterion the run stops filtering on.
-
-    A criterion Exa reported no rate for is the one we know least about, so it counts as lowest;
-    two criteria at the same rate drop the *last*, so the choice cannot depend on ordering luck.
-    """
-    a, b, c = "alpha", "beta", "gamma"
-
-    assert driver.relaxed_criteria((a, b, c), ((a, 0.8), (b, 0.1), (c, 0.4))) == (a, c)
-    # An unrated criterion outranks every rated one as the thing to drop.
-    assert driver.relaxed_criteria((a, b, c), ((a, 0.8), (b, 0.1), (c, None))) == (a, b)
-    # A criterion Exa never mentioned at all is unrated too.
-    assert driver.relaxed_criteria((a, b, c), ((a, 0.8), (b, 0.1))) == (a, b)
-    # A tie drops the last of the tied criteria.
-    assert driver.relaxed_criteria((a, b, c), ((a, 0.2), (b, 0.9), (c, 0.2))) == (a, b)
-    assert driver.relaxed_criteria((), ()) == ()
 
 
 def test_a_revenue_band_is_arithmetic_over_the_registered_vocabulary() -> None:
@@ -1639,7 +1603,9 @@ def test_a_failing_candidate_is_contained_and_named_while_its_neighbours_still_l
         # Cap 1: this test's subject is the serial contract, not the pool — the order it pins is
         # the document order. Under the shipped cap of 4 the three candidates verify concurrently
         # and the order below would be decided by which thread finished first.
-        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=1),
+        settings=Settings(
+            _env_file=None, arv2_discovery_verify_concurrency=1, arv2_discovery_max_topups=0
+        ),
     )
 
     result = asyncio.run(handler.handle(_context(run.run_id)))
@@ -1977,7 +1943,11 @@ def _one_company_run_under_cap(
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=concurrency),
+        settings=Settings(
+            _env_file=None,
+            arv2_discovery_verify_concurrency=concurrency,
+            arv2_discovery_max_topups=0,
+        ),
     )
     asyncio.run(handler.handle(_context(run.run_id)))
     return exa, store
@@ -2106,7 +2076,9 @@ def test_a_halt_on_one_gate_drains_its_siblings_before_the_run_lands(
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=4),
+        settings=Settings(
+            _env_file=None, arv2_discovery_verify_concurrency=4, arv2_discovery_max_topups=0
+        ),
     )
     drain = _WatchingDrain(events=store.events)
     monkeypatch.setattr(driver, "drain_provider_calls", drain)
@@ -2261,7 +2233,9 @@ def test_the_pool_never_exceeds_the_cap(monkeypatch: pytest.MonkeyPatch) -> None
         exa=exa,
         websets=websets,
         monkeypatch=monkeypatch,
-        settings=Settings(_env_file=None, arv2_discovery_verify_concurrency=2),
+        settings=Settings(
+            _env_file=None, arv2_discovery_verify_concurrency=2, arv2_discovery_max_topups=0
+        ),
     )
 
     asyncio.run(handler.handle(_context(run.run_id)))
@@ -2363,3 +2337,406 @@ def test_two_candidates_halting_on_the_same_tick_land_the_run_needs_review(
     assert landed["receipt"]["failure"] == "provider_halted"
     # Both website asks reached the wire before either failure left the pool.
     assert len(store.named("record_verdicts")) == 0
+
+
+# -- the agent's brief: roles, rounds, stop, the summary and the end block (spec 2026-09-30) -----
+
+
+def test_the_summary_message_matches_the_spec_shape() -> None:
+    """Spec §6.3, for one fixed summary: the text the wake turn hands the Head of ABM."""
+    run_id = UUID("11111111-2222-3333-4444-555555555555")
+    summary = {
+        "asked": 20,
+        "added": 12,
+        "excluded": 7,
+        "unclear": 3,
+        "excluded_by": [
+            {"gate": "sells_product", "role": "must_not", "count": 5, "example": "Acme"},
+            {"gate": "is_buyer", "role": "must", "count": 2, "example": "Globex"},
+        ],
+        "criteria_rates": [
+            {"criterion": "The company runs clinics.", "rate": 83.39},
+            {"criterion": "Unrated yet.", "rate": None},
+            {"criterion": "It hires nurses.", "rate": 8.31},
+        ],
+        "searches": 4,
+        "end_reason": "round_cap",
+        "spend_usd": "3.456",
+    }
+
+    assert driver.summary_message(run_id, summary) == (
+        "Discovery finished (run 11111111-2222-3333-4444-555555555555). Asked for 20, added 12, "
+        "excluded 7, unclear 3.\n"
+        "Ended: round cap (4 searches).\n"
+        "Excluded by: sells_product (must_not) 5 — e.g. Acme; is_buyer (must) 2 — e.g. Globex.\n"
+        'Criteria pass rates, last search: "The company runs clinics." 83%; '
+        '"It hires nurses." 8%.\n'
+        "Spend: $3.46."
+    )
+
+
+def test_a_summary_with_nothing_excluded_and_no_rates_leaves_those_lines_out() -> None:
+    summary = {
+        "asked": 5,
+        "added": 5,
+        "excluded": 0,
+        "unclear": 0,
+        "excluded_by": [],
+        "criteria_rates": [],
+        "searches": 1,
+        "end_reason": "wall_clock",
+        "spend_usd": "0.2",
+    }
+
+    assert driver.summary_message(UUID(int=1), summary).splitlines() == [
+        f"Discovery finished (run {UUID(int=1)}). Asked for 5, added 5, excluded 0, unclear 0.",
+        "Ended: wall clock.",
+        "Spend: $0.20.",
+    ]
+
+
+def test_a_failed_must_and_a_passed_must_not_exclude_while_an_unclear_never_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Code applies the brief's roles: Acme fails its ``must`` (geography), Globex passes its
+    ``must_not`` (intent), Initech is unclear on the ``must`` — and only Initech joins the project,
+    with a fit over its ``must`` and ``prefer`` gates alone."""
+    run = _run_row(target_count=5, brief=_brief_json(geography="must", intent="must_not"))
+    store = _Store(run)
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers(
+                    "Acme",
+                    "acme.com",
+                    {"geography": "fail", "stage": "pass", "hiring": "pass", "intent": "fail"},
+                ),
+                "Globex": _company_answers(
+                    "Globex",
+                    "globex.com",
+                    {"geography": "pass", "stage": "pass", "hiring": "pass", "intent": "pass"},
+                ),
+                "Initech": _company_answers(
+                    "Initech",
+                    "initech.com",
+                    {"geography": "unclear", "stage": "pass", "hiring": "fail", "intent": "fail"},
+                ),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        items_results=[
+            _items(
+                _item("Acme", "https://acme.com"),
+                _item("Globex", "https://globex.com"),
+                _item("Initech", "https://initech.com"),
+            )
+        ]
+    )
+    handler, _, writer, _, accounts = _handler(
+        store, exa=exa, websets=websets, monkeypatch=monkeypatch
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "completed"
+    recorded = {call["candidate_id"]: call for call in store.named("record_verdicts")}.values()
+    by_disposition = sorted(
+        (call["disposition"], call.get("excluded_by_gate"), call["fit"]) for call in recorded
+    )
+    assert by_disposition == [
+        ("excluded", "geography", None),
+        ("excluded", "intent", None),
+        # Initech: unclear geography (½), stage pass (1), hiring fail (0) — intent is a must_not.
+        ("partial", None, 0.5),
+    ]
+    excluded = [call for call in recorded if call["disposition"] == "excluded"]
+    assert all(call["account_entity_id"] is None for call in excluded)
+    assert all(len(call["verdicts"]) == 4 for call in excluded)
+    assert [created["primary_domain"] for created in accounts.created] == ["initech.com"]
+    assert [draft.value_json for draft in writer.by_field("account.scoring.fit")] == [
+        {"value": 0.5}
+    ]
+    ended = store.named("end_discovery_run")[0]
+    summary = ended["summary"]
+    assert (summary["added"], summary["excluded"], summary["unclear"]) == (1, 2, 0)
+    assert sorted(
+        (entry["gate"], entry["role"], entry["count"], entry["example"])
+        for entry in summary["excluded_by"]
+    ) == [("geography", "must", 1, "Acme"), ("intent", "must_not", 1, "Globex")]
+    assert finished_receipt(store)["excluded"] == {"geography": 1, "intent": 1}
+
+
+def finished_receipt(store: _Store) -> dict[str, Any]:
+    return store.named("finish_discovery_run")[0]["receipt"]
+
+
+class _Wake:
+    """A :class:`~clue_api.arv2.discovery_driver.DiscoveryWake` that records what it was handed."""
+
+    def __init__(self, turn_id: UUID | None = None, error: Exception | None = None) -> None:
+        self.turn_id = turn_id
+        self.error = error
+        self.queued: list[tuple[UUID, dict[str, Any], str]] = []
+
+    async def queue(
+        self, conn: Any, run: DiscoveryRunRow, summary: Mapping[str, Any], message: str
+    ) -> UUID | None:
+        del conn
+        self.queued.append((run.run_id, dict(summary), message))
+        if self.error is not None:
+            raise self.error
+        return self.turn_id
+
+
+def _one_pass_run(
+    monkeypatch: pytest.MonkeyPatch, run: DiscoveryRunRow, wake: _Wake | None
+) -> tuple[_Store, Any]:
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Probook": _company_answers("Probook", "probook.ai", _ALL_PASS)}))
+    websets = _FakeWebsets(items_results=[_items(_item("Probook", "https://probook.com"))])
+    handler, *_ = _handler(store, exa=exa, websets=websets, monkeypatch=monkeypatch)
+    handler._wake = wake  # the constructor's seam, set after the shared harness built it
+    return store, asyncio.run(handler.handle(_context(run.run_id)))
+
+
+def test_a_threadless_run_is_released_as_it_ends_and_wakes_nobody(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wake = _Wake(turn_id=uuid4())
+    store, result = _one_pass_run(monkeypatch, _run_row(target_count=1), wake)
+
+    assert result.outcome == "completed"
+    assert wake.queued == []
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"], ended["release"]) == ("completed", "filled", True)
+    assert store.named("record_wake_turn") == []
+
+
+def test_a_threaded_run_hands_its_summary_to_the_wake_and_stays_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    turn_id = uuid4()
+    wake = _Wake(turn_id=turn_id)
+    run = _run_row(target_count=1, launched_thread_id="thr-1")
+    store, _ = _one_pass_run(monkeypatch, run, wake)
+
+    ((run_id, summary, message),) = wake.queued
+    assert run_id == run.run_id
+    assert message == driver.summary_message(run.run_id, summary)
+    (ended,) = store.named("end_discovery_run")
+    assert ended["release"] is False
+    assert ended["summary"] == summary
+    assert store.named("record_wake_turn") == [{"run_id": run.run_id, "wake_turn_id": turn_id}]
+    # The run ended — its summary written — before the wake was asked to carry it.
+    order = [name for name, _ in store.events]
+    assert order.index("finish_discovery_run") < order.index("end_discovery_run")
+
+
+@pytest.mark.parametrize(
+    "wake", [_Wake(turn_id=None), _Wake(error=RuntimeError("no thread")), None]
+)
+def test_a_threaded_run_whose_wake_queues_nothing_is_released_at_once(
+    monkeypatch: pytest.MonkeyPatch, wake: _Wake | None
+) -> None:
+    """A lock nobody will ever release would block every later discovery of the project."""
+    store, result = _one_pass_run(
+        monkeypatch, _run_row(target_count=1, launched_thread_id="thr-1"), wake
+    )
+
+    assert result.outcome == "completed"
+    assert store.named("end_discovery_run")[-1]["release"] is True
+    assert store.named("record_wake_turn") == []
+
+
+def test_a_run_without_a_brief_is_refused_by_name_before_a_cent_is_spent_and_still_ends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    wake = _Wake(turn_id=uuid4())
+    run = _run_row(brief=None, launched_thread_id="thr-1")
+    store, result = _one_pass_run(monkeypatch, run, wake)
+
+    assert result.outcome == "needs_review"
+    assert store.named("create_search") == []
+    assert finished_receipt(store)["failure"] == "brief_missing"
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"]) == ("needs_review", "failed")
+    # A failed run still wakes the agent, which is told why.
+    ((_, summary, message),) = wake.queued
+    assert summary["failure"] == "brief_missing"
+    assert "Ended: failed (brief_missing)." in message
+
+
+def test_a_failure_mid_round_lands_its_counters_and_still_wakes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(launched_thread_id="thr-1")
+    store = _Store(run)
+    refused = replace(_view(), error="http 400: bad criteria")
+    handler, *_ = _handler(
+        store,
+        exa=_FakeExa(_responder({})),
+        websets=_FakeWebsets(create_view=refused),
+        monkeypatch=monkeypatch,
+    )
+    wake = _Wake(turn_id=uuid4())
+    handler._wake = wake
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "needs_review"
+    receipt = finished_receipt(store)
+    assert receipt["failure"] == "websets_request_refused"
+    assert receipt["end_reason"] == "failed"
+    assert [row["ordinal"] for row in receipt["searches"]] == [1]
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"], ended["release"]) == (
+        "needs_review",
+        "failed",
+        False,
+    )
+    assert len(wake.queued) == 1
+
+
+def test_the_wall_clock_ends_the_run_with_its_own_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run)
+    handler, *_ = _handler(
+        store,
+        exa=_FakeExa(_responder({})),
+        websets=_FakeWebsets(get_views=[_view(status="running")]),
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_wall_s=60, arv2_discovery_max_topups=0),
+        clock=_clock(step_s=45.0),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"]) == ("needs_review", "wall_clock")
+
+
+def test_rounds_stop_at_the_cap_when_every_round_finds_only_excluded_companies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(target_count=2, brief=_brief_json(geography="must"))
+    store = _Store(run)
+    fails = {"geography": "fail", "stage": "pass", "hiring": "pass", "intent": "pass"}
+    exa = _FakeExa(
+        _responder(
+            {
+                "Acme": _company_answers("Acme", "acme.com", fails),
+                "Bolt": _company_answers("Bolt", "bolt.com", fails),
+            }
+        )
+    )
+    websets = _FakeWebsets(
+        websets={
+            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Acme", "https://acme.com"))]),
+            "ws-2": ([_view(webset_id="ws-2")], [_items(_item("Bolt", "https://bolt.com"))]),
+        }
+    )
+    handler, _, _, _, accounts = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=1),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert [call["count"] for call in websets.named("create")] == [2, 2]
+    assert accounts.created == []
+    (ended,) = store.named("end_discovery_run")
+    assert ended["end_reason"] == "round_cap"
+    assert ended["summary"]["searches"] == 2
+    assert "Ended: round cap (2 searches)." in driver.summary_message(run.run_id, ended["summary"])
+
+
+def test_a_round_that_finds_nothing_new_ends_the_run_dry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row(target_count=5)
+    store = _Store(run)
+    exa = _FakeExa(_responder({"Acme": _company_answers("Acme", "acme.com", _ALL_PASS)}))
+    websets = _FakeWebsets(
+        websets={
+            "ws-1": ([_view(webset_id="ws-1")], [_items(_item("Acme", "https://acme.com"))]),
+            "ws-2": ([_view(webset_id="ws-2")], [_items()]),
+        }
+    )
+    handler, *_ = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=3),
+    )
+
+    asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert len(websets.named("create")) == 2
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"]) == ("completed", "dry")
+
+
+def test_stop_before_a_round_buys_nothing_and_ends_the_run_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _run_row()
+    store = _Store(run)
+    store.stop_after = 0
+    websets = _FakeWebsets()
+    handler, *_ = _handler(
+        store, exa=_FakeExa(_responder({})), websets=websets, monkeypatch=monkeypatch
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "stopped"
+    assert websets.calls == []
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"]) == ("stopped", "stopped")
+
+
+def test_stop_mid_webset_cancels_it_reads_it_once_more_and_keeps_what_was_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The webset is still running on the first poll, whose tick verifies Acme; the human's Stop
+    is read before the second poll — the webset is cancelled, read once more (Globex reaches the
+    ledger, unverified), and Acme is kept."""
+    run = _run_row(target_count=5)
+    store = _Store(run)
+    # Read 1: before round 1 opens. Read 2: before the first poll. Stop from read 3 on.
+    store.stop_after = 2
+    acme = _item("Acme", "https://acme.com")
+    exa = _FakeExa(_responder({"Acme": _company_answers("Acme", "acme.com", _ALL_PASS)}))
+    websets = _FakeWebsets(
+        get_views=[_view(status="running")],
+        items_results=[_items(acme)],
+        items_after_cancel=_items(acme, _item("Globex", "https://globex.com")),
+    )
+    handler, _, _, _, accounts = _handler(
+        store,
+        exa=exa,
+        websets=websets,
+        monkeypatch=monkeypatch,
+        settings=Settings(_env_file=None, arv2_discovery_max_topups=3),
+    )
+
+    result = asyncio.run(handler.handle(_context(run.run_id)))
+
+    assert result.outcome == "stopped"
+    assert websets.named("cancel") == [{"webset_id": "ws-1"}]
+    assert [name for name, _ in websets.calls][-2:] == ["cancel", "items"]
+    assert [created["primary_domain"] for created in accounts.created] == ["acme.com"]
+    assert len(websets.named("create")) == 1  # no round after the Stop
+    receipt = finished_receipt(store)
+    assert receipt["webset_stopped"] is True
+    assert receipt["rows_priced_at_stop"] == 1
+    (ended,) = store.named("end_discovery_run")
+    assert (ended["status"], ended["end_reason"]) == ("stopped", "stopped")
+    assert ended["summary"]["added"] == 1

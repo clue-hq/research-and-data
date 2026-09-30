@@ -189,8 +189,7 @@ def test_require_secret_treats_a_blank_key_as_a_skip() -> None:
 #: ``str(default)`` rendering.
 ARV2_DISCOVERY_SETTINGS = (
     "arv2_discovery_enabled",
-    "arv2_discovery_relaxed_auto",
-    "arv2_discovery_criteria_gate_keys",
+    "arv2_discovery_max_topups",
     "arv2_discovery_answer_model",
     "arv2_discovery_poll_interval_s",
     "arv2_discovery_wall_s",
@@ -207,9 +206,8 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
         monkeypatch.delenv(_env_name(field_name), raising=False)
     settings = Settings(_env_file=None)
     assert settings.arv2_discovery_enabled is False
-    assert settings.arv2_discovery_relaxed_auto is True
-    # Empty on purpose: no deployment-wide gate set; the pinned ICP decides (ruling 2026-09-11).
-    assert settings.arv2_discovery_criteria_gate_keys == ""
+    # At most three top-up searches after the first (spec 2026-09-30 §4).
+    assert settings.arv2_discovery_max_topups == 3
     assert settings.arv2_discovery_answer_model == "exa"
     assert settings.arv2_discovery_poll_interval_s == 15.0
     assert settings.arv2_discovery_wall_s == 1800
@@ -220,11 +218,11 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
     # Empty on purpose: no Brandfetch fallback until a Logo API client id is configured.
     assert settings.brandfetch_client_id == ""
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_ENABLED", "true")
-    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS", "geography")
+    monkeypatch.setenv("CLUE_ARV2_DISCOVERY_MAX_TOPUPS", "1")
     monkeypatch.setenv("CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY", "2")
     loaded = Settings(_env_file=None)
     assert loaded.arv2_discovery_enabled is True
-    assert loaded.arv2_discovery_criteria_gate_keys == "geography"
+    assert loaded.arv2_discovery_max_topups == 1
     assert loaded.arv2_discovery_verify_concurrency == 2
 
 
@@ -235,12 +233,21 @@ def test_the_fixed_provider_ask_setting_is_gone() -> None:
     assert "CLUE_ARV2_DISCOVERY_STRICT_COUNT" not in ENV_EXAMPLE.read_text(encoding="utf-8")
 
 
+def test_the_relaxed_and_gate_key_settings_are_gone() -> None:
+    """Spec 2026-09-30 §8: the agent writes the brief, so no deployment-wide gate set and no
+    automatic relaxed search remain."""
+    for field_name in ("arv2_discovery_relaxed_auto", "arv2_discovery_criteria_gate_keys"):
+        assert field_name not in Settings.model_fields
+    example = ENV_EXAMPLE.read_text(encoding="utf-8")
+    assert "CLUE_ARV2_DISCOVERY_RELAXED_AUTO" not in example
+    assert "CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS" not in example
+
+
 def test_every_discovery_setting_is_in_env_example() -> None:
     example = ENV_EXAMPLE.read_text(encoding="utf-8")
     for key in (
         "CLUE_ARV2_DISCOVERY_ENABLED=false",
-        "CLUE_ARV2_DISCOVERY_RELAXED_AUTO=true",
-        "CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS=\n",
+        "CLUE_ARV2_DISCOVERY_MAX_TOPUPS=3",
         "CLUE_ARV2_DISCOVERY_ANSWER_MODEL=exa",
         "CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S=15",
         "CLUE_ARV2_DISCOVERY_WALL_S=1800",

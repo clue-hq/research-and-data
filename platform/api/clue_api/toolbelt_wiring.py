@@ -75,6 +75,7 @@ from clue_api.arv2.discovery_launch import (
 from clue_api.arv2.icp_authoring import IcpAuthoringService
 from clue_api.arv2.read_tools import (
     Arv2ReadService,
+    ReadDiscoveryRunV3Tool,
     build_arv2_paged_read_tools,
     build_arv2_read_tools,
 )
@@ -2827,8 +2828,10 @@ def build_toolbelt(
     # everywhere so the write surface and the authority audit stay complete, composed only where
     # the lane is (``fleet_main`` and the projections app root, behind ``arv2_discovery_enabled``).
     # Without a service it registers and refuses ``arv2_discovery_not_composed`` before any spend.
+    # ``@1`` stays registered for replay and refuses ``discovery_tool_retired``; ``@2`` (the brief
+    # the Head of ABM writes) owns the name-only default.
     for tool in build_arv2_discovery_tools(arv2_discovery_launch):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=tool.version == "2")
     # The other side of the lane: what the project's rows already say. Registered everywhere like
     # its launching neighbours, but composed with no flag of its own — these four read
     # ``project_account``, the display blocks, the claim store and the discovery run, all of which
@@ -2851,7 +2854,11 @@ def build_toolbelt(
     # resolves the address it planned; it is simply no longer the version an unversioned caller
     # gets — the reasoning `open_icp_confirmation_gate` already established, in this direction.
     for tool in build_arv2_paged_read_tools(arv2_reads):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=tool.descriptor.name != "read_discovery_run")
+    # Agent-authored discovery (2026-09-30): `read_discovery_run@3` adds the run's end reason, its
+    # summary and the companies its gates excluded (listed apart). It owns the name-only default;
+    # `@2` stays registered and granted while `head-of-abm@v69` pins it (plan task 8 moves the pin).
+    registry.register(ReadDiscoveryRunV3Tool(arv2_reads), make_default=True)
     # The gallery's own read, on the reads' terms and beside them. It takes no service at all: the
     # design documents and the legs that bind them to a project exist wherever there is a database,
     # so the ambient ``conn_factory`` is its whole composition. Granted at `head-of-abm@v56`,

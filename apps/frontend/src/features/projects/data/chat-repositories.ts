@@ -36,6 +36,11 @@ import {
   type ChatTurnsRepository,
 } from "./chat-turns.repository";
 import {
+  createFixtureDiscoveryRunsRepository,
+  createHttpDiscoveryRunsRepository,
+  type DiscoveryRunsRepository,
+} from "./discovery-runs.repository";
+import {
   createFixtureProjectDirectoryRepository,
   createHttpProjectDirectoryRepository,
   type ProjectDirectoryRepository,
@@ -89,6 +94,8 @@ export interface ChatRepositories {
   turns: ChatTurnsRepository;
   gates: ChatGatesRepository;
   stream: ChatStreamRepository;
+  /** Stop for the account discovery a thread is holding busy. */
+  discoveries: DiscoveryRunsRepository;
   /**
    * The dev-lens turn-context inspector. Present on both transports, but the
    * HTTP adapter's own probe reports it unavailable against any deployment that
@@ -115,6 +122,7 @@ export function createChatRepositories(
       turns: createHttpChatTurnsRepository(transport),
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
+      discoveries: createHttpDiscoveryRunsRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
       composerContext: createHttpComposerContextRepository(transport),
     };
@@ -135,6 +143,7 @@ export function createChatRepositories(
     turns: createFixtureChatTurnsRepository(state),
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
+    discoveries: createFixtureDiscoveryRunsRepository(),
     inspector: createFixtureChatInspectorRepository(),
     composerContext: unavailableComposerContextRepository,
   };

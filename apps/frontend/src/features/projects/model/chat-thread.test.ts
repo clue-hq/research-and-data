@@ -115,3 +115,34 @@ test("pane-state and handoff query keys ride along", () => {
     "/projects/p1/chats/t2?surface=web&edit=1&selection=text",
   );
 });
+
+/* --------------------------------------------------------------------------
+ * The discovery a thread is holding (agent-authored discovery, task 10)
+ *
+ * While an account discovery runs, the thread that launched it is busy. The
+ * thread LIST read names the run so the composer can show Stop for it.
+ * ----------------------------------------------------------------------- */
+
+function parseDiscovery(discovery?: unknown) {
+  return ChatThreadListResponseSchema.parse({
+    data: [
+      { ...threadWire(), ...(discovery === undefined ? {} : { discovery }) },
+    ],
+  }).threads[0];
+}
+
+test("a thread holding a discovery names the run and whether it can stop", () => {
+  assert.deepEqual(
+    parseDiscovery({ run_id: "run-7", stoppable: true })?.discovery,
+    { runId: "run-7", stoppable: true },
+  );
+  assert.deepEqual(
+    parseDiscovery({ run_id: "run-7", stoppable: false })?.discovery,
+    { runId: "run-7", stoppable: false },
+  );
+});
+
+test("a thread holding no discovery reads null, whether null or absent", () => {
+  assert.equal(parseDiscovery(null)?.discovery, null);
+  assert.equal(parseDiscovery()?.discovery, null);
+});

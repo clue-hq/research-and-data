@@ -48,7 +48,7 @@ def test_every_registered_tool_has_a_typed_output_contract() -> None:
 def test_conversation_runtime_pins_the_promoted_integration_recipe() -> None:
     """The combined recipe is inert if the detached turn runner still asks for a predecessor."""
 
-    assert CONVERSATION_RECIPE_VERSION == 32
+    assert CONVERSATION_RECIPE_VERSION == 33
 
 
 def test_every_standing_recipe_tool_is_exact_typed_pinned_and_replay_certified() -> None:
@@ -358,7 +358,10 @@ def test_r4_mints_recipe_v23_without_rewriting_v22() -> None:
     )
     assert set(v22["graph"]["tool_allowlist"]) | added == set(v23["graph"]["tool_allowlist"])
     assert set(v22_slot["dynamic_tool_allowlist"]) | added == set(slot["dynamic_tool_allowlist"])
-    assert "launch_arv2_discovery@1" in RECIPE_0_TOOL_ADDRESSES
+    # `@1` stood in the standing set until recipe0-stage0@33 re-pinned the launch at `@2` (the
+    # brief the agent writes); v23's own bytes are unchanged.
+    assert "launch_arv2_discovery@1" not in RECIPE_0_TOOL_ADDRESSES
+    assert "launch_arv2_discovery@2" in RECIPE_0_TOOL_ADDRESSES
     assert v22["version"] == 22
     assert v23["version"] == 23
     assert slot["dynamic_pin_kinds"] == v22_slot["dynamic_pin_kinds"]
@@ -622,7 +625,10 @@ def test_paged_and_new_reads_mint_recipe_v28_without_rewriting_v27() -> None:
     }
     assert (v27_requirements - gone) | joined == slot_requirements
     assert (v27_compatibility - gone) | joined == node_compatibility
-    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    # `read_discovery_run@2` stood in the standing set until recipe0-stage0@33 re-pinned the read
+    # at `@3`; v28's own bytes are unchanged.
+    assert added - {"read_discovery_run@2"} <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert "read_discovery_run@3" in RECIPE_0_TOOL_ADDRESSES
     assert removed.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
     assert v27["version"] == 27
     assert v28["version"] == 28
@@ -809,6 +815,80 @@ def test_web_search_mints_recipe_v32_without_rewriting_v31() -> None:
     assert v31["version"] == 31
     assert v32["version"] == 32
     assert slot["dynamic_pin_kinds"] == v31_slot["dynamic_pin_kinds"]
+
+
+def test_agent_authored_discovery_mints_recipe_v33_without_rewriting_v32() -> None:
+    root = Path(__file__).resolve().parents[2] / "platform" / "execution" / "recipes"
+    v32 = json.loads((root / "recipe0-stage0-v32.json").read_text())
+    v33 = json.loads((root / "recipe0-stage0-v33.json").read_text())
+    # Two addresses are RE-PINNED and none joins: `launch_arv2_discovery` moves to `@2` (the
+    # brief the Head of ABM writes) and `read_discovery_run` to `@3` (summary, end reason,
+    # exclusions), the contracts `head-of-abm@v70` grants. `@1` and `@2` LEAVE the slot rather
+    # than stand beside their successors: a requirement set resolves one version per (kind, key),
+    # so both at once refuses promotion. Both stay registered, so v32 stays promotable and is the
+    # exact replay input for a turn pinned to it.
+    added = {"launch_arv2_discovery@2", "read_discovery_run@3"}
+    removed = {"launch_arv2_discovery@1", "read_discovery_run@2"}
+
+    v32_index = SYSTEM_RECIPE_FILENAMES.index("recipe0-stage0-v32.json")
+    assert SYSTEM_RECIPE_FILENAMES[v32_index : v32_index + 2] == (
+        "recipe0-stage0-v32.json",
+        "recipe0-stage0-v33.json",
+    )
+    assert added.isdisjoint(v32["graph"]["tool_allowlist"])
+    assert added <= set(v33["graph"]["tool_allowlist"])
+    assert removed <= set(v32["graph"]["tool_allowlist"])
+    assert removed.isdisjoint(v33["graph"]["tool_allowlist"])
+    slot = next(node for node in v33["graph"]["nodes"] if node["node_key"] == "stage0_interactions")
+    assert added <= set(slot["dynamic_tool_allowlist"])
+    assert removed.isdisjoint(slot["dynamic_tool_allowlist"])
+    slot_requirements = {
+        (item["key"], item["version"]) for item in slot["requirements"] if item["kind"] == "tool"
+    }
+    node_compatibility = {
+        (item["key"], item["version"])
+        for item in v33["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    joined = {tuple(address.split("@")) for address in added}
+    gone = {tuple(address.split("@")) for address in removed}
+    assert joined <= slot_requirements
+    assert joined <= node_compatibility
+    assert gone.isdisjoint(slot_requirements)
+    assert gone.isdisjoint(node_compatibility)
+    # One version per (kind, key) in the resolved set.
+    assert [item for item in slot_requirements if item[0] == "launch_arv2_discovery"] == [
+        ("launch_arv2_discovery", "2")
+    ]
+    assert [item for item in slot_requirements if item[0] == "read_discovery_run"] == [
+        ("read_discovery_run", "3")
+    ]
+    v32_slot = next(
+        node for node in v32["graph"]["nodes"] if node["node_key"] == "stage0_interactions"
+    )
+    assert (set(v32["graph"]["tool_allowlist"]) - removed) | added == set(
+        v33["graph"]["tool_allowlist"]
+    )
+    assert (set(v32_slot["dynamic_tool_allowlist"]) - removed) | added == set(
+        slot["dynamic_tool_allowlist"]
+    )
+    v32_requirements = {
+        (item["key"], item["version"])
+        for item in v32_slot["requirements"]
+        if item["kind"] == "tool"
+    }
+    v32_compatibility = {
+        (item["key"], item["version"])
+        for item in v32["compatibility"]["nodes"]["stage0_interactions"]
+        if item["kind"] == "tool"
+    }
+    assert (v32_requirements - gone) | joined == slot_requirements
+    assert (v32_compatibility - gone) | joined == node_compatibility
+    assert added <= set(RECIPE_0_TOOL_ADDRESSES)
+    assert removed.isdisjoint(RECIPE_0_TOOL_ADDRESSES)
+    assert v32["version"] == 32
+    assert v33["version"] == 33
+    assert slot["dynamic_pin_kinds"] == v32_slot["dynamic_pin_kinds"]
 
 
 def test_operation_id_requirements_are_explicit() -> None:

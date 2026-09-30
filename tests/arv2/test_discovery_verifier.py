@@ -1,13 +1,11 @@
-"""The three guards, and the arithmetic the model got wrong (spec §3).
+"""The checks code makes on a verifier answer, and the arithmetic the model got wrong (spec §3).
 
-Every case below is one of the errors the proof-of-concept run actually produced: a quote the
-cited page does not contain, a job posting from a same-name company on another domain (INFI →
-infinIT), a 2023 round the model called "within 24 months", and "no source found" answered as
-`fail` instead of `unclear`. The guards exist for those four and nothing else, so these tests are
-the guards' whole specification.
+What is left after the founder ruling of 2026-10-01 removed the quote-on-page and right-company
+guards: a 2023 round the model called "within 24 months" is code's to fail, "no source found"
+answered as `fail` is `unclear`, and an answer that is not one is `malformed`.
 
-Everything here is offline: an Answer payload and its citations go in, a guarded verdict comes
-out. No provider, no database.
+Everything here is offline: an Answer payload goes in, a verdict comes out. No provider, no
+database.
 """
 
 from __future__ import annotations
@@ -16,16 +14,15 @@ from datetime import date
 
 from clue_api.arv2.discovery_brief import Gate
 from clue_api.arv2.discovery_verifier import (
+    MAIN_BUSINESS_CLAUSE,
     GateVerdict,
     apply_guards,
     disposition,
     fit_score,
     gate_question,
-    normalise,
     system_prompt,
     website_question,
 )
-from clue_api.arv2.exa_client import ExaCitation
 
 STAGE = Gate(
     key="stage",
@@ -34,10 +31,6 @@ STAGE = Gate(
     window_months=24,
 )
 TODAY = date(2026, 9, 10)
-
-
-def _cit(url: str, text: str, date_: str | None) -> ExaCitation:
-    return ExaCitation(url=url, title=None, published_date=date_, text=text)
 
 
 def test_a_grounded_pass_keeps_its_verdict_and_quote() -> None:
@@ -51,87 +44,23 @@ def test_a_grounded_pass_keeps_its_verdict_and_quote() -> None:
     v = apply_guards(
         gate=STAGE,
         answer=answer,
-        citations=[
-            _cit(
-                "https://finsmes.com/x",
-                "FinSMEs: Probook Raises $40M in Seed and Series A Financing today",
-                "2026-06-23",
-            )
-        ],
-        company_domain="probook.ai",
-        company_name="Probook",
         today=TODAY,
     )
     assert (v.verdict, v.guard, v.model_verdict) == ("pass", "ok", "pass")
 
 
-def test_a_quote_not_on_the_cited_page_becomes_unclear() -> None:
-    answer = {
-        "verdict": "fail",
-        "reasoning": "r",
-        "evidence_quote": "closed a $2.8M seed round",
-        "evidence_url": "https://signalbase.com/p",
-        "evidence_date": "2026-04-28",
-    }
-    v = apply_guards(
-        gate=STAGE,
-        answer=answer,
-        citations=[_cit("https://signalbase.com/p", "unrelated text about dentists", "2026-04-28")],
-        company_domain="patientdesk.ai",
-        company_name="Patientdesk",
-        today=TODAY,
-    )
-    assert (v.verdict, v.guard) == ("unclear", "quote_not_on_page")
-
-
-def test_a_page_about_another_company_on_another_domain_becomes_unclear() -> None:
+def test_a_sourced_verdict_is_kept_whatever_page_it_cites() -> None:
+    """Founder ruling 2026-10-01: no quote-on-page or right-company check. A sourced pass on a
+    page about a renamed company, a job board or a news article is the model's verdict, kept."""
     answer = {
         "verdict": "pass",
         "reasoning": "r",
-        "evidence_quote": "As an Account Executive at infinIT, you will prospect",
-        "evidence_url": "https://jobera.com/infinit",
-        "evidence_date": "2026-04-03",
+        "evidence_quote": "Guest Experience Manager, San Antonio",
+        "evidence_url": "https://jobboard.example/jobs/1",
+        "evidence_date": "2026-09-01",
     }
-    v = apply_guards(
-        gate=Gate("intent", "…", "…", None),
-        answer=answer,
-        citations=[
-            _cit(
-                "https://jobera.com/infinit",
-                "As an Account Executive at infinIT, you will prospect daily",
-                None,
-            )
-        ],
-        company_domain="infi.us",
-        company_name="INFI",
-        today=TODAY,
-    )
-    assert (v.verdict, v.guard) == ("unclear", "wrong_company")
-
-
-def test_a_news_page_that_names_the_company_is_accepted_off_domain() -> None:
-    answer = {
-        "verdict": "pass",
-        "reasoning": "r",
-        "evidence_quote": "Lassie raised $35 million in Series A financing",
-        "evidence_url": "https://businesswire.com/l",
-        "evidence_date": "2026-06-03",
-    }
-    v = apply_guards(
-        gate=STAGE,
-        answer=answer,
-        citations=[
-            _cit(
-                "https://businesswire.com/l",
-                "SAN FRANCISCO — Lassie raised $35 million in Series A financing led by a16z",
-                "2026-06-03",
-            )
-        ],
-        company_domain="lassie.ai",
-        company_name="Lassie",
-        today=TODAY,
-    )
-    assert (v.verdict, v.guard) == ("pass", "ok")
+    v = apply_guards(gate=Gate("guest_experience", "…", "…", None), answer=answer, today=TODAY)
+    assert (v.verdict, v.guard, v.model_verdict) == ("pass", "ok", "pass")
 
 
 def test_arithmetic_is_codes_a_pass_outside_the_window_fails() -> None:
@@ -145,15 +74,6 @@ def test_arithmetic_is_codes_a_pass_outside_the_window_fails() -> None:
     v = apply_guards(
         gate=STAGE,
         answer=answer,
-        citations=[
-            _cit(
-                "https://techcrunch.com/s",
-                "Superorder today announced that it raised $10 million in a Series A",
-                "2023-09-15",
-            )
-        ],
-        company_domain="superorder.com",
-        company_name="Superorder",
         today=TODAY,
     )
     assert (v.verdict, v.guard) == ("fail", "outside_window")
@@ -169,9 +89,6 @@ def test_no_source_is_unclear_never_fail_and_malformed_is_unclear() -> None:
             "evidence_url": "",
             "evidence_date": "",
         },
-        citations=[],
-        company_domain="x.com",
-        company_name="X",
         today=TODAY,
     )
     assert (absent.verdict, absent.guard) == ("unclear", "no_source")
@@ -179,9 +96,6 @@ def test_no_source_is_unclear_never_fail_and_malformed_is_unclear() -> None:
         apply_guards(
             gate=STAGE,
             answer="not json",
-            citations=[],
-            company_domain="x.com",
-            company_name="X",
             today=TODAY,
         ).guard
         == "malformed"
@@ -207,6 +121,18 @@ def test_fit_and_disposition_follow_the_spec_table() -> None:
     )
 
 
+def test_an_exclusion_gate_asks_about_the_main_business_and_no_other_gate_does() -> None:
+    plain = gate_question("Avoca", "https://avoca.ai", STAGE)
+    assert "main business" not in plain
+    exclusion = Gate(
+        "sells_product", "The company sells X.", "Its site sells X.", None, main_business=True
+    )
+    q = gate_question("Avoca", "https://avoca.ai", exclusion)
+    assert MAIN_BUSINESS_CLAUSE in q and exclusion.rule in q and exclusion.test in q
+    # The clause sits before the closing instruction, so the question still ends the same way.
+    assert q.endswith("citing the freshest relevant source.")
+
+
 def test_the_question_is_the_gates_own_words() -> None:
     q = gate_question("Avoca", "https://avoca.ai", STAGE)
     assert "Company: Avoca (website https://avoca.ai)" in q and STAGE.rule in q and STAGE.test in q
@@ -225,15 +151,9 @@ def test_an_unparseable_date_leaves_the_verdict_alone() -> None:
         "evidence_url": "https://businesswire.com/l",
         "evidence_date": "summer 2026",
     }
-    citations = [
-        _cit("https://businesswire.com/l", "Lassie raised $35 million in Series A financing", None)
-    ]
     v = apply_guards(
         gate=STAGE,
         answer=answer,
-        citations=citations,
-        company_domain="lassie.ai",
-        company_name="Lassie",
         today=TODAY,
     )
     assert (v.verdict, v.guard) == ("pass", "ok")
@@ -247,15 +167,9 @@ def test_a_year_and_month_date_is_read_as_the_first_of_that_month() -> None:
         "evidence_url": "https://lassie.ai/news",
         "evidence_date": "2024-09",
     }
-    citations = [
-        _cit("https://lassie.ai/news", "Lassie raised $35 million in Series A financing", None)
-    ]
     v = apply_guards(
         gate=STAGE,
         answer=answer,
-        citations=citations,
-        company_domain="lassie.ai",
-        company_name="Lassie",
         today=TODAY,
     )
     assert (v.verdict, v.guard) == ("pass", "ok")  # 2024-09 → 24 months, inside the window
@@ -271,9 +185,6 @@ def test_the_models_unclear_survives_with_no_source_at_all() -> None:
             "evidence_url": "",
             "evidence_date": "",
         },
-        citations=[],
-        company_domain="x.com",
-        company_name="X",
         today=TODAY,
     )
     assert (v.verdict, v.guard, v.model_verdict) == ("unclear", "ok", "unclear")
@@ -283,18 +194,9 @@ def test_a_verdict_word_the_schema_does_not_allow_is_malformed() -> None:
     v = apply_guards(
         gate=STAGE,
         answer={"verdict": "maybe", "reasoning": "r", "evidence_quote": "q"},
-        citations=[],
-        company_domain="x.com",
-        company_name="X",
         today=TODAY,
     )
     assert (v.verdict, v.guard, v.model_verdict) == ("unclear", "malformed", "maybe")
-
-
-def test_normalise_folds_typography_case_and_punctuation() -> None:
-    assert normalise("  Probook’s  “Series A” — $40M\n raised ") == (
-        "probook's series a - 40m raised"
-    )
 
 
 def test_a_verdict_serialises_every_field_the_candidate_row_stores() -> None:

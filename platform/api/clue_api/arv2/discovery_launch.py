@@ -19,9 +19,12 @@ The three properties R2's launch pins, pinned again here because they are the sa
   the task through :func:`enqueue_discovery_run` once the transaction has committed. See
   :class:`Arv2DiscoveryReceipt` for why that ordering is the safety property.
 
-The brief is compiled **before** anything is written, so a criteria gate key the confirmed document
-does not define refuses the launch rather than being discovered by a worker that already paid for
-a webset.
+The brief is the Head of ABM's own (spec 2026-09-30 §3): the query, the criteria and the gates
+arrive on the request, are stored whole on the run, and nothing is compiled out of the ICP
+document — the pinned ICP version is recorded as the context the agent was reading. A project runs
+**one** discovery at a time: a second ask while one is active is refused by name
+(``discovery_in_progress``), and the partial unique index ``arv2_discovery_run_project_active`` is
+what makes that structural when two asks race.
 """
 
 from __future__ import annotations
@@ -32,19 +35,22 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents.manual import tool_manual_link
-from clue_api.arv2.discovery_brief import BriefError, compile_brief
+from clue_api.arv2.discovery_request import BriefGate, DiscoveryBrief2, DiscoverySource
 from clue_api.arv2.discovery_store import (
     DiscoveryRunRow,
+    active_discovery_for_project,
     create_discovery_run,
     read_discovery_run,
+    release_discovery_for_turn,
 )
 from clue_api.arv2.errors import Arv2Error
 from clue_api.arv2.fleet_task import (
@@ -92,6 +98,8 @@ __all__ = [
     "LaunchArv2DiscoveryInput",
     "LaunchArv2DiscoveryOutput",
     "LaunchArv2DiscoveryTool",
+    "LaunchArv2DiscoveryV2Input",
+    "LaunchArv2DiscoveryV2Tool",
     "PinnedIcpDocument",
     "arv2_discovery_work_id",
     "build_arv2_discovery_tools",
@@ -129,11 +137,11 @@ def _utcnow() -> datetime:
 
 @dataclass(frozen=True)
 class Arv2DiscoveryRequest:
-    """One human's ask: find me companies like the ICP this project pinned.
+    """One ask: find me companies with the brief the Head of ABM wrote for this project.
 
-    Every ``None``/empty field falls back to the deployment's settings, and the *resolved* value is
-    what the run row records — so a run is readable years later without knowing what the flags said
-    on the day it was launched.
+    ``brief`` is required by the launch (``None`` refuses ``brief_required``); it is optional on the
+    dataclass only so a caller that has not been rewritten yet gets that named refusal rather than
+    a ``TypeError``.
     """
 
     workspace_id: str
@@ -148,19 +156,18 @@ class Arv2DiscoveryRequest:
     #: creator and owner) in place of the service principal that invoked the tool.
     launching_turn_ref: str | None = None
     target_count: int = 20
-    #: ``None`` → ``settings.arv2_discovery_relaxed_auto``.
-    relaxed_enabled: bool | None = None
-    #: Which hard gates become webset criteria. ``()`` → the settings' comma-separated list.
-    criteria_gate_keys: tuple[str, ...] = ()
     project_run_id: UUID | None = None
+    #: The search the Head of ABM wrote: source, query, criteria and role-bearing gates.
+    brief: DiscoveryBrief2 | None = None
 
 
 class Arv2DiscoveryRefused(Arv2Error):
     """A discovery prerequisite is unmet. ``code`` is stable and machine-readable.
 
-    Codes: ``lane_disabled``, ``target_count_invalid``, ``project_not_found``,
-    ``project_icp_not_pinned``, ``icp_artifact_not_found``, ``icp_artifact_not_confirmed``,
-    ``icp_digest_mismatch``, ``icp_front_matter_invalid``, ``unknown_criteria_gate_key``.
+    Codes: ``lane_disabled``, ``target_count_invalid``, ``brief_required``,
+    ``project_not_found``, ``project_icp_not_pinned``, ``icp_artifact_not_found``,
+    ``icp_artifact_not_confirmed``, ``icp_digest_mismatch``, ``icp_front_matter_invalid``,
+    ``discovery_in_progress``. (The v2 tool adds ``brief_invalid`` before a request exists.)
 
     The ICP codes are deliberately spelled the same as the account launch's: they are the same
     prerequisite failing on the same document, and a human who has learned what
@@ -386,6 +393,11 @@ _TURN_SUBMITTER = text(
 )
 _TURN_ACTION_PREFIX = "turn-action:"
 
+#: The conversation a turn was submitted to — the thread a discovery run holds busy and wakes.
+_TURN_THREAD = text(
+    "SELECT thread_id FROM agent_turn_submission WHERE turn_id = :turn_id AND workspace_id = :w"
+)
+
 
 async def _requesting_human(conn: AsyncConnection, request: Arv2DiscoveryRequest) -> str:
     """Who requested this run, as the accounts table can name them (ruling 10′, 2026-09-11).
@@ -413,30 +425,36 @@ async def _requesting_human(conn: AsyncConnection, request: Arv2DiscoveryRequest
     return str(submitter) if submitter else request.requested_by_user_id
 
 
-def _criteria_gate_keys(request: Arv2DiscoveryRequest, settings: Settings) -> tuple[str, ...]:
-    """The gate keys a caller *forces* as webset criteria: the request's, else the operator
-    override in settings, else nothing — and nothing is the normal case, in which the pinned ICP
-    document decides for itself (founder ruling 2026-09-11; see :func:`compile_brief`)."""
-    if request.criteria_gate_keys:
-        return tuple(request.criteria_gate_keys)
-    return tuple(
-        key.strip() for key in settings.arv2_discovery_criteria_gate_keys.split(",") if key.strip()
-    )
+async def _launching_turn(
+    conn: AsyncConnection, request: Arv2DiscoveryRequest
+) -> tuple[UUID | None, str | None]:
+    """The turn this launch acts for and its thread, or ``(None, None)`` outside a chat turn.
+
+    A fleet-driven launch names its turn in ``launching_turn_ref``; a human invoker's ask is its own
+    turn's action ref (``request_key``). Either way the same ``turn-action:<uuid>`` parse as
+    :func:`_requesting_human`, and a ref that does not resolve to a turn of this workspace is no
+    thread at all rather than a guess.
+    """
+    ref = request.launching_turn_ref or request.request_key
+    if not ref or not ref.startswith(_TURN_ACTION_PREFIX):
+        return None, None
+    try:
+        turn_id = UUID(ref[len(_TURN_ACTION_PREFIX) :])
+    except ValueError:
+        return None, None
+    thread = await conn.scalar(_TURN_THREAD, {"turn_id": turn_id, "w": request.workspace_id})
+    return (turn_id, str(thread)) if thread else (None, None)
 
 
 def _request_sha256(
-    request: Arv2DiscoveryRequest,
-    *,
-    icp_artifact_sha256: str,
-    relaxed_enabled: bool,
-    criteria_gate_keys: tuple[str, ...],
+    request: Arv2DiscoveryRequest, *, brief: DiscoveryBrief2, icp_artifact_sha256: str
 ) -> str:
     """The digest of what was asked for — and therefore the run's identity.
 
-    Every field is what the human approved: a different ask, a different target, a different gate
-    set or a moved ICP is a different question, so it is a different run rather than a quiet reuse
-    of one that answered something else. The gate keys keep their **order**, because the order is
-    the order the criteria are sent in.
+    Every field is what the ask carried: a different ask, a different target, a different brief or
+    a moved ICP is a different question, so it is a different run rather than a quiet reuse of one
+    that answered something else. The brief is dumped whole, in its own order, because the order
+    of its criteria and gates is the order they are sent and asked in.
     """
     payload = {
         "workspace_id": request.workspace_id,
@@ -444,11 +462,26 @@ def _request_sha256(
         "request_key": request.request_key,
         "icp_artifact_sha256": icp_artifact_sha256,
         "target_count": request.target_count,
-        "relaxed_enabled": relaxed_enabled,
-        "criteria_gate_keys": list(criteria_gate_keys),
+        "brief": brief.model_dump(mode="json"),
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _in_progress(active: DiscoveryRunRow | None) -> Arv2DiscoveryRefused:
+    """The refusal a second ask gets while the project's discovery is active, naming that run."""
+    if active is None:
+        # The rival released between the index violation and the re-read: it still held the
+        # project when this insert raced it, so the ask is refused the same way, unnamed.
+        return Arv2DiscoveryRefused(
+            "discovery_in_progress",
+            "another discovery run held this project when this one was launched; ask again",
+        )
+    return Arv2DiscoveryRefused(
+        "discovery_in_progress",
+        f"discovery run {active.run_id} is already running in conversation "
+        f"{active.launched_thread_id or 'outside chat'} of this project",
+    )
 
 
 async def launch_arv2_discovery(
@@ -462,8 +495,8 @@ async def launch_arv2_discovery(
     """Validate the request and write the discovery run. **It queues nothing.**
 
     Checks run in cost order — the free ones first — so a launch that cannot happen refuses before
-    it reads an artifact, and the brief is compiled before any row is written so a bad gate key
-    costs nothing. Nothing is written until every check has passed.
+    it reads an artifact. Nothing is written until every check has passed, and the project lock is
+    checked before the first write: the only way past it is to be the same ask replayed.
     """
     if not settings.arv2_discovery_enabled:
         raise Arv2DiscoveryRefused(
@@ -475,6 +508,11 @@ async def launch_arv2_discovery(
         raise Arv2DiscoveryRefused(
             "target_count_invalid",
             f"a discovery run must ask for at least one company, not {request.target_count}",
+        )
+    brief = request.brief
+    if brief is None:
+        raise Arv2DiscoveryRefused(
+            "brief_required", "a discovery run is launched with the brief the Head of ABM wrote"
         )
 
     # The project comes first: every check after this one is a question *about* a project — which
@@ -492,25 +530,27 @@ async def launch_arv2_discovery(
     )
     requested_by = await _requesting_human(conn, request)
 
-    try:
-        # Compiled here for two reasons. It proves the document CAN be compiled before a row
-        # exists, rather than by a worker that has already paid for a long list. And it settles
-        # WHICH gates are the criteria: a caller may force keys, but normally the document decides
-        # (its ``criterion`` marks, else its first three gates), and the run row records the
-        # resolved keys so every later attempt — the driver compiles from ``run.criteria_gate_keys``
-        # — filters on exactly the gates this launch settled on.
-        brief = compile_brief(
-            icp.front, icp.body, criteria_gate_keys=_criteria_gate_keys(request, settings)
-        )
-    except BriefError as unusable:
-        raise Arv2DiscoveryRefused("unknown_criteria_gate_key", str(unusable)) from unusable
-    criteria_gate_keys = brief.criteria_gate_keys
+    launching_turn_id, launched_thread_id = await _launching_turn(conn, request)
 
-    relaxed_enabled = (
-        request.relaxed_enabled
-        if request.relaxed_enabled is not None
-        else settings.arv2_discovery_relaxed_auto
+    request_sha = _request_sha256(request, brief=brief, icp_artifact_sha256=icp.artifact_sha256)
+    run_id = uuid5(_DISCOVERY_RUN_NS, request_sha)
+    # Checked before the first write, so a refused ask writes nothing — not even the project run.
+    # A replay of this very ask while its own run is active is not a rival; it replays below.
+    active = await active_discovery_for_project(
+        conn, workspace_id=request.workspace_id, project_id=request.project_id
     )
+    # The one exception is the run's own wake turn: it holds the lock until it finishes, and it is
+    # the only turn that may search again on the agent's own judgement (Ruling 11). Its launch
+    # takes the lock over — the ended run is released inside the insert's savepoint below, so the
+    # thread passes straight from the old run to the new one and nothing else can get in between.
+    takes_over = (
+        active is not None
+        and active.request_sha256 != request_sha
+        and launching_turn_id is not None
+        and active.wake_turn_id == launching_turn_id
+    )
+    if active is not None and active.request_sha256 != request_sha and not takes_over:
+        raise _in_progress(active)
 
     project_run_id = request.project_run_id or uuid5(
         NAMESPACE_URL,
@@ -528,33 +568,53 @@ async def launch_arv2_discovery(
         phase=ProjectPhase.DEEP,
     )
 
-    request_sha = _request_sha256(
-        request,
+    row = DiscoveryRunRow(
+        run_id=run_id,
+        workspace_id=request.workspace_id,
+        project_id=request.project_id,
+        brand_id=icp.brand_id,
+        project_run_id=project_run_id,
+        icp_artifact_key=icp.artifact_key,
         icp_artifact_sha256=icp.artifact_sha256,
-        relaxed_enabled=relaxed_enabled,
-        criteria_gate_keys=criteria_gate_keys,
+        icp_key=icp.icp_key,
+        icp_version=icp.icp_version,
+        requested_by_user_id=requested_by,
+        request_sha256=request_sha,
+        target_count=request.target_count,
+        # No relaxed pass and no compiled criteria: the brief carries the search (spec §3).
+        relaxed_enabled=False,
+        criteria_gate_keys=(),
+        created_at=now(),
+        source=brief.source,
+        brief=brief.model_dump(mode="json"),
+        launched_thread_id=launched_thread_id,
+        launching_turn_id=launching_turn_id,
     )
-    run_id = uuid5(_DISCOVERY_RUN_NS, request_sha)
-    inserted = await create_discovery_run(
-        conn,
-        DiscoveryRunRow(
-            run_id=run_id,
-            workspace_id=request.workspace_id,
-            project_id=request.project_id,
-            brand_id=icp.brand_id,
-            project_run_id=project_run_id,
-            icp_artifact_key=icp.artifact_key,
-            icp_artifact_sha256=icp.artifact_sha256,
-            icp_key=icp.icp_key,
-            icp_version=icp.icp_version,
-            requested_by_user_id=requested_by,
-            request_sha256=request_sha,
-            target_count=request.target_count,
-            relaxed_enabled=relaxed_enabled,
-            criteria_gate_keys=criteria_gate_keys,
-            created_at=now(),
-        ),
-    )
+    try:
+        # A savepoint, so the race's loser can be refused by name without poisoning the caller's
+        # transaction: two asks that both passed the check above (neither saw the other's
+        # uncommitted row) meet at the partial unique index, and only one of them holds the
+        # project.
+        async with conn.begin_nested():
+            if takes_over and active is not None and launching_turn_id is not None:
+                await release_discovery_for_turn(
+                    conn, workspace_id=request.workspace_id, turn_id=launching_turn_id
+                )
+                log.info(
+                    "arv2.discovery_lock_taken_over",
+                    released_run_id=str(active.run_id),
+                    run_id=str(run_id),
+                    turn_id=str(launching_turn_id),
+                )
+            inserted = await create_discovery_run(conn, row)
+    except IntegrityError as collided:
+        if "arv2_discovery_run_project_active" not in str(collided):
+            raise
+        raise _in_progress(
+            await active_discovery_for_project(
+                conn, workspace_id=request.workspace_id, project_id=request.project_id
+            )
+        ) from collided
     await record_run_lineage(
         conn,
         run_id=run_id,
@@ -690,6 +750,16 @@ def _not_composed() -> tuple[PreconditionFailure, ...]:
     )
 
 
+def _retired() -> PreconditionFailure:
+    return PreconditionFailure(
+        reason_code="discovery_tool_retired",
+        message=(
+            "launch_arv2_discovery@1 is retired; call launch_arv2_discovery@2 with the brief you "
+            "wrote"
+        ),
+    )
+
+
 def _trusted_action(ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
     if ctx.action_ref is None:
         return (
@@ -705,6 +775,9 @@ def _trusted_action(ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
 
 
 class LaunchArv2DiscoveryTool(Tool):
+    """``@1``, retired (spec 2026-09-30 §3): registered so its journaled calls stay readable, and
+    every new call is refused by name toward ``@2``, which takes the brief the agent wrote."""
+
     name = "launch_arv2_discovery"
     version = "1"
     model_description = (
@@ -718,7 +791,7 @@ class LaunchArv2DiscoveryTool(Tool):
         "and a successful result means the run was created or replayed, never that companies "
         "have been found. It researches nothing. " + tool_manual_link("launch_arv2_discovery")
     )
-    input_model = LaunchArv2DiscoveryInput
+    input_model: ClassVar[type[ToolInput]] = LaunchArv2DiscoveryInput
     output_model = LaunchArv2DiscoveryOutput
     effect_class = ToolEffectClass.SPEND
     replay = ReplaySafety(
@@ -742,11 +815,11 @@ class LaunchArv2DiscoveryTool(Tool):
     async def preconditions(
         self, inputs: ToolInput, ctx: ToolContext
     ) -> tuple[PreconditionFailure, ...]:
-        del inputs
-        return _not_composed() if self._service is None else _trusted_action(ctx)
+        del inputs, ctx
+        return (_retired(),)
 
     def estimate(self, inputs: ToolInput) -> ToolEstimate:
-        assert isinstance(inputs, LaunchArv2DiscoveryInput)
+        assert isinstance(inputs, LaunchArv2DiscoveryInput | LaunchArv2DiscoveryV2Input)
         # A discovery run's spend is governed by the lane's own ceilings and settles in
         # ``provider_call_ledger`` per call; the webset's credit price and the number of Answer
         # calls are not knowable from this call, so the estimate carries the *shape* of the spend
@@ -760,8 +833,58 @@ class LaunchArv2DiscoveryTool(Tool):
         )
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
-        assert isinstance(inputs, LaunchArv2DiscoveryInput)
+        del inputs, ctx
+        raise PreconditionFailed([_retired()])
+
+
+class LaunchArv2DiscoveryV2Input(ToolInput):
+    project_id: str
+    target_count: int = Field(default=20, ge=1, le=500)
+    source: DiscoverySource
+    query: str
+    criteria: list[str]
+    gates: list[BriefGate]
+
+
+class LaunchArv2DiscoveryV2Tool(LaunchArv2DiscoveryTool):
+    version = "2"
+    model_description = (
+        "Launch account discovery for one project with the search you write: what kind of company "
+        "to find (query), what every company must satisfy (criteria), and the checks run on every "
+        "company found (gates, each with a role: must, must_not or prefer). Read section 7b of the "
+        "stage0-interview skill before calling. The project needs a confirmed ICP and product set. "
+        "A successful result means the run was created or replayed, never that companies were "
+        "found; this conversation stays busy until the run ends and you get a turn with its "
+        "summary. " + tool_manual_link("launch_arv2_discovery")
+    )
+    input_model: ClassVar[type[ToolInput]] = LaunchArv2DiscoveryV2Input
+    replay = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity=(
+            "workspace + project + the approving user action + the brief + target count"
+        ),
+        external_boundary=ExternalReplayBoundary.NONE,
+    )
+    parameter_policy = JournalParameterPolicy(
+        safe_display_fields=("project_id", "target_count", "source")
+    )
+
+    async def preconditions(
+        self, inputs: ToolInput, ctx: ToolContext
+    ) -> tuple[PreconditionFailure, ...]:
+        del inputs
+        return _not_composed() if self._service is None else _trusted_action(ctx)
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, LaunchArv2DiscoveryV2Input)
         assert self._service is not None and ctx.action_ref is not None
+        try:
+            # Structural only (counts, unique keys); the wording is the agent's.
+            brief = DiscoveryBrief2.model_validate(
+                inputs.model_dump(include={"source", "query", "criteria", "gates"})
+            )
+        except ValidationError as bad:
+            raise PreconditionFailed([PreconditionFailure("brief_invalid", str(bad))]) from bad
         request = Arv2DiscoveryRequest(
             # The tenant and the requesting human are AMBIENT authority, never model-authored.
             workspace_id=ctx.workspace_id,
@@ -775,7 +898,7 @@ class LaunchArv2DiscoveryTool(Tool):
             # the same action retried is the same one (the precondition guarantees it is set).
             request_key=ctx.action_ref,
             target_count=inputs.target_count,
-            relaxed_enabled=inputs.relaxed_enabled,
+            brief=brief,
         )
         try:
             receipt = await self._service.launch(request)
@@ -796,5 +919,7 @@ def build_arv2_discovery_tools(service: Arv2DiscoveryService | None) -> tuple[To
     platform's write surface stays complete (the authority audit sees every tool), and an agent
     that reaches for discovery on a deployment without the lane gets the named
     ``arv2_discovery_not_composed`` refusal rather than an ``UnknownTool`` it cannot explain.
+    ``@1`` stays registered beside ``@2`` so a call journaled against it still resolves, and is
+    refused by name (``discovery_tool_retired``).
     """
-    return (LaunchArv2DiscoveryTool(service),)
+    return (LaunchArv2DiscoveryTool(service), LaunchArv2DiscoveryV2Tool(service))

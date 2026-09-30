@@ -80,6 +80,10 @@ class DiscoveryFacts:
     approved: int
     started_at: datetime | None
     finished_at: datetime | None
+    #: Why the run ended, or ``None`` while it searches and for a run from before the brief.
+    end_reason: str | None
+    #: Companies a gate excluded — judged (so in ``verified``), never shown, never an account.
+    excluded: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,7 +174,7 @@ _ACCOUNT_COUNT = text(
 # ``workspace_id`` is not forced equal to its run's by any FK.
 _LATEST_DISCOVERY = text(
     f"""
-    SELECT r.run_id, r.status, r.asked,
+    SELECT r.run_id, r.status, r.asked, r.end_reason,
            COALESCE(r.found_strict, 0) + COALESCE(r.found_relaxed, 0) AS found,
            r.started_at, r.finished_at,
            (SELECT count(*) FROM arv2_discovery_candidate c
@@ -179,6 +183,9 @@ _LATEST_DISCOVERY = text(
            (SELECT count(*) FROM arv2_discovery_candidate c
              WHERE c.run_id = r.run_id AND c.workspace_id = :ws
                AND c.disposition = ANY(:shown)) AS shown,
+           (SELECT count(*) FROM arv2_discovery_candidate c
+             WHERE c.run_id = r.run_id AND c.workspace_id = :ws
+               AND c.disposition = 'excluded') AS excluded,
            (SELECT count(*) FROM arv2_discovery_candidate c
              WHERE c.run_id = r.run_id AND c.workspace_id = :ws
                AND c.decision = 'approved') AS approved
@@ -390,6 +397,8 @@ async def load_project_status_facts(
             approved=int(row["approved"]),
             started_at=row["started_at"],
             finished_at=row["finished_at"],
+            end_reason=None if row["end_reason"] is None else str(row["end_reason"]),
+            excluded=int(row["excluded"]),
         )
     )
     personas = tuple(
@@ -583,9 +592,11 @@ def render_status_markdown(facts: ProjectStatusFacts) -> str:
         lines += [
             f"- Latest run `{d.run_id}`: {d.status}",
             f"  - asked {asked}, found {d.found}, verified {d.verified}, shown {d.shown}, "
-            f"approved {d.approved}",
+            f"excluded {d.excluded}, approved {d.approved}",
             f"  - started {_iso(d.started_at)}, finished {_iso(d.finished_at)}",
         ]
+        if d.end_reason is not None:
+            lines += [f"  - ended: {d.end_reason.replace('_', ' ')}"]
     lines += ["", "## Research"]
     if not facts.research:
         lines += ["No research run yet."]

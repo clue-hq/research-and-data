@@ -338,6 +338,126 @@ def test_front_matter_that_is_not_an_icp_is_refused_by_name(tmp_path: Any) -> No
     run_async(scenario())
 
 
+#: What an inline ``{key: …, rule: …}`` gate becomes when a value carries a comma: YAML splits the
+#: value there, keeps the first fragment, and turns every later fragment into a key with no value.
+#: The same shape a stored broken ICP has (``tests/scripts/test_trial_target_discovery.py``).
+COMMA_SPLIT_GATES = """hard_gates:
+- key: guest_function
+  rule: There is a named plant-operations
+  quality: null
+  or maintenance function that owns uptime.: null
+  test: Careers pages list Plant Operations
+"""
+
+#: The block form the icp-synthesis skill now asks for: every value quoted, so a comma is text.
+BLOCK_DOCUMENT = """---
+kind: icp-definition
+icp_key: gi-dac
+product_ids: [prd_aura]
+hard_gates:
+  - key: "guest_function"
+    rule: "There is a named plant-operations, quality, or maintenance function that owns uptime."
+    test: "Careers pages list Plant Operations, Quality, or Maintenance."
+exclusions:
+  - "Widget resellers, distributors, and marketplaces."
+persona_map:
+  economic_buyer:
+    titles:
+      - "VP, Plant Operations"
+qualifier_fields:
+  - field_key: "account.gi_case_volume"
+    description: "Annual GI case volume, per site, from the latest public filing."
+    display: "rail"
+---
+
+# GI-focused ASCs
+
+Body.
+"""
+
+
+def test_a_comma_split_row_is_refused_naming_the_row_and_the_stray_key(tmp_path: Any) -> None:
+    """A row with a value-less key that is not one of the row's fields is text a comma cut off.
+
+    Storing it would keep the first fragment as the rule and lose the rest silently, so it is
+    refused by name — the gate (or qualifier field) and the fragment — for the author to rewrite.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+            gate_split = DOCUMENT.replace(
+                "hard_gates:\n  - {key: specialty, rule: GI-focused ambulatory surgery centre, "
+                "test: website lists GI procedures}\n",
+                COMMA_SPLIT_GATES,
+            )
+            qualifier_split = DOCUMENT.replace(
+                "description: annual GI case volume,",
+                "description: annual GI case volume, per site,",
+            )
+            cases = {
+                gate_split: ("guest_function", "or maintenance function that owns uptime."),
+                qualifier_split: ("account.gi_case_volume", "per site"),
+            }
+            for document_text, (row_key, stray) in cases.items():
+                with pytest.raises(IcpAuthoringRefused) as excinfo:
+                    await author_icp_document(
+                        conn,
+                        storage,
+                        _request(workspace_id, brand_id, project_id, document_text=document_text),
+                    )
+                assert excinfo.value.code == "icp_front_matter_invalid"
+                assert row_key in str(excinfo.value)
+                assert stray in str(excinfo.value)
+            assert (
+                await conn.execute(
+                    text("SELECT count(*) FROM brand_knowledge_document WHERE workspace_id = :ws"),
+                    {"ws": workspace_id},
+                )
+            ).scalar_one() == 0
+
+    run_async(scenario())
+
+
+def test_a_block_yaml_document_keeps_every_comma_inside_its_quoted_values(tmp_path: Any) -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            workspace_id, project_id, brand_id = await _seed(conn)
+
+            authored = await author_icp_document(
+                conn,
+                storage,
+                _request(workspace_id, brand_id, project_id, document_text=BLOCK_DOCUMENT),
+            )
+
+            front = await _front(conn, storage, authored)
+            assert front["hard_gates"] == [
+                {
+                    "key": "guest_function",
+                    "rule": (
+                        "There is a named plant-operations, quality, or maintenance function "
+                        "that owns uptime."
+                    ),
+                    "test": "Careers pages list Plant Operations, Quality, or Maintenance.",
+                }
+            ]
+            assert front["exclusions"] == ["Widget resellers, distributors, and marketplaces."]
+            assert front["persona_map"] == {"economic_buyer": {"titles": ["VP, Plant Operations"]}}
+            assert front["qualifier_fields"] == [
+                {
+                    "field_key": "account.gi_case_volume",
+                    "description": (
+                        "Annual GI case volume, per site, from the latest public filing."
+                    ),
+                    "display": "rail",
+                }
+            ]
+
+    run_async(scenario())
+
+
 def test_a_key_another_scope_already_owns_is_refused_by_name(tmp_path: Any) -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:

@@ -1,0 +1,8 @@
+# Arm C/D inputs for Clue's own ICP (the control), written from the ICP document's own text.
+company_query: >-
+  US B2B vertical SaaS companies selling software to one industry, with 30 to 300 employees and
+  a priced Series A or later funding round.
+# exclusion_criterion: the ICP's "A direct competitor" exclusion.
+exclusion_criterion: >-
+  The company does not sell ABM orchestration, AI SDR or GTM agents, personalized-microsite or
+  intent tooling.

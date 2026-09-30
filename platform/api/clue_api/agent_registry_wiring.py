@@ -247,7 +247,14 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # window, written under work/conversation_history/) fits. `compact_conversation` is a framework
     # tool (runtime), so the re-minted `manual-*@v15` lists it; `stage0-interview@v42` only
     # repoints its manual paths. Prompt v18 and the recipe stay.
-    AgentRole.HEAD_OF_ABM: "v69",
+    # v70 (agent-authored discovery, spec 2026-09-30): the Head of ABM writes the discovery brief.
+    # Two addresses are RE-PINNED: `launch_arv2_discovery@2` (query, criteria, gates with roles,
+    # source in its input; `@1` stays registered only to refuse `discovery_tool_retired`) and
+    # `read_discovery_run@3` (summary, end reason, exclusions). `stage0-interview@v43` rewrites
+    # section 7b to teach the brief, the manual re-mints at `manual-*@v16` (a new discovery
+    # chapter), and the conversation recipe moves 32 -> 33 because its slot pins exact addresses.
+    # Prompt v18 stays.
+    AgentRole.HEAD_OF_ABM: "v70",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
@@ -264,8 +271,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # writes one document for the one ICP it is given. Its whole spendable surface is
     # ``exa_search_evidence@1`` — withheld on ``onboarding_icp``, where the profiles are written
     # from the files alone; it delegates to nobody. Model per ruling O-D1: ``x-ai/grok-4.6`` at
-    # the model's default reasoning effort.
-    AgentRole.ONBOARDING_SYNTHESIS: "v3",
+    # the model's default reasoning effort. v4 (2026-09-30): icp-synthesis@v4 writes the ICP's
+    # rows as block YAML with quoted values, so a comma inside a rule no longer splits it.
+    AgentRole.ONBOARDING_SYNTHESIS: "v4",
 }
 
 
@@ -841,6 +849,11 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # v61 withholds both versions now that automatic project targeting owns the current flow.
     if name == "open_icp_confirmation_gate":
         return ()
+    # Agent-authored discovery (2026-09-30) moved `read_discovery_run`'s grant to `@3` (summary, end
+    # reason, exclusions), the contract `head-of-abm@v70` pins; `@1` and `@2` stay registered for
+    # replay and are held by nobody.
+    if name == "read_discovery_run":
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@3" else ()
     # The paged reads. `read_account_research@2` and `read_discovery_run@2` take `offset`/`limit`
     # and answer with `next_offset`, and `head-of-abm@v56` pins those exact contracts, so the
     # grant is theirs. The `@1`s stay REGISTERED, and recipe0-stage0@27 stays the exact replay
@@ -851,12 +864,18 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
     # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
     # on `@2` only. The `@1`s stay held by nobody.
-    if name in {"read_account_research", "read_discovery_run"}:
+    if name == "read_account_research":
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
     # Asset ingestion registered @2 for the upload/edit API, while the reviewed design
     # profile still pins @1. Registration must not implicitly grant every new version.
     if name in {"design_register_asset_record", "design_set_asset_description"}:
         return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@1" else ()
+    # Agent-authored discovery (2026-09-30) registered `launch_arv2_discovery@2`, which takes the
+    # brief the Head of ABM writes; `@1` stays registered only to refuse `discovery_tool_retired`.
+    # The grant follows the version the active profile pins: `head-of-abm@v70` pins `@2`, so `@1`
+    # is held by nobody.
+    if name == "launch_arv2_discovery":
+        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address == f"{name}@2" else ()
     if name == "research_account_gaps":
         return ()
     if name == "profile_contact":

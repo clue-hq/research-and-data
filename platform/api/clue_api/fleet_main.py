@@ -105,6 +105,7 @@ from clue_api.design_fleet import (
 from clue_api.design_leg_wiring import build_design_leg_finisher
 from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
 from clue_api.design_platform_reads import build_design_platform_reads_factory
+from clue_api.discovery_wake import DbDiscoveryWake
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -827,11 +828,15 @@ def _build_arv2_discovery_handler(
     """
     if not settings.arv2_discovery_enabled:
         return None
+    artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=transaction)
     return build_arv2_discovery_handler(
         settings,
         secrets,
         storage=storage,
-        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        artifacts=artifacts,
+        # Spec 2026-09-30 §4: a run launched from a thread ends by queuing the Head of ABM's turn
+        # there. Built here, outside the lane, because it writes a turn submission.
+        wake=DbDiscoveryWake(artifacts),
     )
 
 

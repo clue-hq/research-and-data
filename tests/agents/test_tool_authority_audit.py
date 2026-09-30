@@ -164,13 +164,16 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # `configure_project_targeting` (automatic targeting, base) joined at 142 -> 143 without the
     # count moving here; web_search@1 (2026-09-22), granted at head-of-abm@v62 and design@v3,
     # makes 144.
+    # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` and
+    # `read_discovery_run@3`: new ADDRESSES of names this map already carries, so the count is
+    # unmoved. Authority is decided by address for both names below.
     assert len(C6_AGENT_TOOL_AUTHORITY) == 144
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
     # `design@v2`, reads the target account with head-of-abm's own tools on head-of-abm's own
     # contracts. `read_discovery_run` is deliberately not among them: the design leg never
-    # proposes a discovery. The version fence is unchanged, so the grant is on `@2`.
+    # proposes a discovery. Its grant is fenced by address (see below).
     assert C6_AGENT_TOOL_AUTHORITY["read_project_accounts"] == (
         AgentRole.HEAD_OF_ABM,
         AgentRole.DESIGN,
@@ -187,8 +190,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         AgentRole.HEAD_OF_ABM,
         AgentRole.DESIGN,
     )
+    # Agent-authored discovery (2026-09-30): `read_discovery_run@3` adds the run's summary, end
+    # reason and exclusions, and `head-of-abm@v70` pins it, so the grant moves to `@3`. The paged
+    # `@2` stays registered for replay (recipe0-stage0@32 and earlier) and is held by nobody,
+    # because recipe0-stage0@33 re-pins the key rather than admitting both.
     assert C6_AGENT_TOOL_AUTHORITY["read_discovery_run"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("read_discovery_run@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_discovery_run@3") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_discovery_run@2") == ()
     # Registered, audited, and held by nobody — the unpaged `@1`s, which no current profile pins.
     # An execution planned against recipe0-stage0@27 or earlier still resolves them from its own
     # immutable revision; @28 re-pins the key to `@2` rather than admitting both.
@@ -210,8 +218,13 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert c6_roles_for_tool("author_icp_document@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["request_persona_synthesis"] == ()
     assert c6_roles_for_tool("request_persona_synthesis@1") == ()
+    # Agent-authored discovery (2026-09-30): the Head of ABM writes the discovery brief, which is
+    # `launch_arv2_discovery@2`'s input; `head-of-abm@v70` pins `@2`, so the grant is there.
+    # `@1` stays registered only so its journaled calls replay, refuses every new call with
+    # `discovery_tool_retired`, and is held by nobody.
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_discovery"] == (AgentRole.HEAD_OF_ABM,)
-    assert c6_roles_for_tool("launch_arv2_discovery@1") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("launch_arv2_discovery@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("launch_arv2_discovery@1") == ()
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_person_research"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("launch_arv2_person_research@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["launch_arv2_account_research"] == (AgentRole.HEAD_OF_ABM,)

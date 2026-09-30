@@ -5,7 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDiscoveryStatus } from "@/features/accounts/hooks/use-discovery-status";
 import { ConversationContent } from "@/features/projects/components/conversation-content";
 import { ProjectComposer } from "@/features/projects/components/project-composer";
-import type { ProjectChatController } from "@/features/projects/hooks/use-project-chat-controller";
+import {
+  composerRunControl,
+  type ProjectChatController,
+} from "@/features/projects/hooks/use-project-chat-controller";
 import { useChatAttachments } from "@/features/projects/hooks/use-chat-attachments";
 import { useDesignReferenceAttachments } from "@/features/projects/hooks/use-design-reference-attachments";
 import { CHAT_ATTACHMENT_ACCEPT } from "@/features/projects/model/chat-attachments";
@@ -367,6 +370,8 @@ export function ChatSurface({
    * re-seats on it.
    */
   const runningTurnId = chat.runningTurn?.turnId ?? null;
+  // A running turn OR a discovery holding the thread keeps the composer running.
+  const runControl = composerRunControl(chat);
   /**
    * The second source, and the reason there are two (fix round 3): the durable
    * queue reads "running" from the TURN LIST, and a replayed `turn.accepted`
@@ -1073,9 +1078,9 @@ export function ChatSurface({
               />
             ) : null}
             <ProjectComposer
-              running={chat.runningTurn !== null}
+              running={runControl.running}
               stopping={chat.stopPending}
-              onStop={() => void chat.stopActiveTurn()}
+              onStop={runControl.onStop}
               attachmentAccept={
                 designReferencesEnabled
                   ? `${DESIGN_REFERENCE_ACCEPT},${CHAT_ATTACHMENT_ACCEPT}`

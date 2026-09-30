@@ -1,0 +1,236 @@
+schema_version: '1'
+kind: profile
+name: head-of-abm
+version: v70
+status: active
+role: head_of_abm
+prompt:
+  name: head-of-abm
+  version: v18
+  sha256: 3de3db26e72f63ae67697ae11556642bc4220908d2f093ce62eab34adb62fc45
+skills:
+- name: stage0-interview
+  version: v43
+  sha256: 3a78318a6bb1335c722e453e682692f104e4dac2b3b52b9888cdf70ae2c0e07e
+- name: account-research-briefing
+  version: v3
+  sha256: af01631ec609d588216a4a802a4ab44d6e91e851fa2bca579d01e108a057757e
+- name: icp-authoring
+  version: v3
+  sha256: 6303ca41b567caa53bdd15b52b89b9569da5ae7e2010584b8184b15b616a2f8d
+- name: persona-authoring
+  version: v2
+  sha256: 9850f92bd80d8caf3ebbe32dc3c46d5016f1857ec0cf0f5382bfd5e5deed6d40
+- name: plan-authoring
+  version: v2
+  sha256: 08f016d89695b9fd03fe9382e4ee851702feaec89c102aae2cb182848f423ba2
+- name: code-execution
+  version: v1
+  sha256: c4c9383e26d4921ecde44e495f569cd2af38df9e06831f16c13b5df5b4f4820a
+- name: manual-index
+  version: v16
+  sha256: 9b64755f10077508dae978cc9626a38e2ad47e11e87b3b9cd27b9ad59d6c13a9
+- name: manual-turn
+  version: v16
+  sha256: 4571c5505767f97d9e5110b74ad9504e558df87afe9ff9b8bceea749b27d469d
+- name: manual-workspace
+  version: v16
+  sha256: ed1a0dc61662bc906b1dc2c7b589aad31f2b1c3ee8f2d73a0a9bda023713d50f
+- name: manual-tools
+  version: v16
+  sha256: 48dd5ef07d1f0123c745c4c09d93e713f4a1753cd602f1182bd31eb57621d5e9
+- name: manual-fields
+  version: v16
+  sha256: be9d3c4b969332b3b015562b6e37a5cbb9022a7a5b42df311656b7009d033890
+- name: manual-claims
+  version: v16
+  sha256: 790f84e9d3fe3e97a8cccc5af71d441848abf9e15528ceb409869c342fcc41c8
+- name: manual-accounts-research
+  version: v16
+  sha256: 6b183685f4141ec2df21bb660d6db7b04fb40bee4bc02418c5e653297d1f2432
+- name: manual-discovery
+  version: v16
+  sha256: 712e282ba7ab02f9c0cf70762a6ad82ff635a780f434091dae97ecf570454931
+- name: manual-documents-decisions
+  version: v16
+  sha256: e579dd4838c0cf496249dde64c33267f8d08f06274e8f5538a0c5a17a714a320
+- name: manual-gates-authority
+  version: v16
+  sha256: a1742d981886929b285bf1b54e7420b5ac9b1115c150aeb2d9d0ab9a3684e333
+- name: manual-humans-screens
+  version: v16
+  sha256: 08864f161eb958b00aa143e6e82dcd0bb7b52a38233888ff3b6748c23e5a030c
+- name: manual-siblings
+  version: v16
+  sha256: cab4bd41f0d19121735bd7b14a23e3c32c49e62ff15f48f31dda5ef171d4e95e
+- name: manual-errors
+  version: v16
+  sha256: 80b138fa697c55db160f308f9e418c94b853c38aa00edafd98421d8c16d5246a
+- name: manual-limits
+  version: v16
+  sha256: ea49e803e47f95b01afb1c34f02dd4e5da52c68879680d220ecb732631204aba
+- name: manual-glossary
+  version: v16
+  sha256: 4af64bc277a72ce01f3b5b46931cbacb9c43952432891423ee2068cbf65c8d05
+tools:
+- name: inspect_statement_history
+  version: '1'
+  input_schema_sha256: 886263cab48572d3779e9a7d7dbb1b72f636f1441d0cd2d50c0dd696592daac6
+  output_schema_sha256: 6ce1ede45f5ab66f12b4530b58f1154df9f06167da45af785b4c11a5abf04875
+- name: launch_arv2_account_research
+  version: '1'
+  input_schema_sha256: 57638dc151a30c67905105bfe4d0a86650ccb31dc9675e3880fe173e17d88c2e
+  output_schema_sha256: 44180afee6410fe56bc94c928b5cbb543fa3bf175d4755b66b87f3abf690906a
+# v70 (agent-authored discovery, spec 2026-09-30): v69's surface with two addresses RE-PINNED —
+# `launch_arv2_discovery@2`, whose input is the brief the Head of ABM writes (query, criteria,
+# gates with roles, source), and `read_discovery_run@3` (summary, end reason, exclusions).
+# stage0-interview v43 section 7b teaches the brief; the manual re-mints at `manual-*@v16`; the
+# conversation recipe moves 32 -> 33. Prompt v18 stays.
+- name: launch_arv2_discovery
+  version: '2'
+  input_schema_sha256: 06a8291240e24374f610997fceb1372a7f0462839309fd0920ead029ce8f6a16
+  output_schema_sha256: bbf0f09767552e89cb6744319152dc99c25e370abfb1e4948cf6248a700b3552
+- name: launch_arv2_person_research
+  version: '1'
+  input_schema_sha256: d968b9e07d39af88cab9ce8ec9aaa211fb5ba62396cbd8f96e5be53ad100cead
+  output_schema_sha256: 63313e7dfdb79fe60dea37eb0284d1295c08026e33893afec9878a97e8fed067
+- name: open_design_leg
+  version: '5'
+  input_schema_sha256: cf0b0534ed46006d661e269b8ceb871a108cb43686c6f07e0874bf0d6bd01872
+  output_schema_sha256: 2a3d13666fbdad3c34bc5106914f0ce353c9d0fbe4ce396a3132fa10933ad626
+- name: propose_field
+  version: '2'
+  input_schema_sha256: 381ff072e572d2a4a11818b527d7b36fe1a64c0de63d7f34cebd70b44e26a4a2
+  output_schema_sha256: 3250d58ae68070d2e2112986d8c91befd06795a506770b1ed62cf2f6c99f9842
+- name: propose_source
+  version: '1'
+  input_schema_sha256: 641252341ba5eab67aefcc7748a3cc27cac07a158418a1d9855c61fddc21ef5b
+  output_schema_sha256: 708d9b5075c72103232daa51c12cbb83a5fe5bdf638bfa79659193f2324a851e
+- name: read_account_research
+  version: '2'
+  input_schema_sha256: 97e3f1dc122d321fa0d6165d65bfaf09f09b2de83cdf84d2e2331725e04bedd0
+  output_schema_sha256: 1697e1587da18c201a767fbe1bea67fda72a31b7280d1f422182127434af44fe
+- name: read_artifact
+  version: '1'
+  input_schema_sha256: 58b98e878063ee0c1b617b8268e9eb2eb07454c1395c3000e494ca30576d4516
+  output_schema_sha256: f8865423a1926ce1098ef2f735080150aeadbe52968d02c50e53b9fade0c0671
+- name: read_arv2_account_research_run
+  version: '1'
+  input_schema_sha256: 029dddd3db84fcdbb076aac5dd874d7e2cad14cdbefb945555b8e820a3b7d0ba
+  output_schema_sha256: 5663712620131bc9019b80e535f021552f2fcef08e410400d65bea71ad606162
+- name: read_claims
+  version: '1'
+  input_schema_sha256: fefe65c65874eee0c5832b5a63a764966cc53259b30c45c0613f35e44b59b578
+  output_schema_sha256: dc6936fd434e33fd37430cf46b2fd24885a6c8526330184f31b7ac6a84ca0f3e
+- name: read_discovery_run
+  version: '3'
+  input_schema_sha256: dc65a03a9ada24f96c61000b794d2030b18394e68406519663b354940d2d9d01
+  output_schema_sha256: 83169a9d98e6cb7c145d10827b35eaade9c8bc3cdd31730ee3a09e779aeffbb6
+- name: read_project_accounts
+  version: '1'
+  input_schema_sha256: 9a7aa42aacc66b5dcf1834db46284e876e12406ecc814419b3b63d55d2275cdd
+  output_schema_sha256: b3d662ea77b66e6ed4d408e3b8c707ed2cae4efda9a3cc01b5c078a8f2cace08
+- name: record_interview_answer
+  version: '1'
+  input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc
+  output_schema_sha256: 5f0e0fe7baad009e16af713744ef7abbc390615d627a69f5f25c43eb8734e7a8
+- name: run_python
+  version: '1'
+  input_schema_sha256: c3c261b3cb0dbd182dbbd14921a2228b29fcd5e3a626a387a7d4eee50db334d4
+  output_schema_sha256: f4fe91bacc68b4a45c7bcda24c72548481dc562b31312426db47f415b8a07c85
+- name: submit_ingestion
+  version: '1'
+  input_schema_sha256: 9b0a3d6ca25706d310fafd8a28969d6d39cff1272d904f3e4943eddb0b8b83c9
+  output_schema_sha256: 8e2acc7a8819cb1eaff07dc0fa6f8a90b824572e5fb39cbf34a5380f3f1319bf
+- name: configure_project_targeting
+  version: '1'
+  input_schema_sha256: 29e91cff09b7565ce93f9a5fd32509cc779bf93cb5b74c9d94bd755d12761012
+  output_schema_sha256: 71be2f7de9d4a1f36dd29f94578d12f3f3eb213ef414f79de5d0ef8ff87094cb
+# v62 (web search, spec 2026-09-22 — re-minted on the research-streaming merge; v61 is the
+# automatic-targeting profile): v61's surface with ONE address ADDED — `web_search@1`, one
+# deep-lite open-web search, used LAST after the claims and the seller's knowledge files,
+# text out and never a claim — and prompt v14→v15 for the paragraph that orders the lookups.
+# The conversation recipe moves 31 → 32; the manual re-mints at `manual-*@v9`.
+- name: web_search
+  version: '1'
+  input_schema_sha256: 61f98fac6f56398866ea7e61539ede2f836d4e23b9a2a54ea8897a0eb80084a6
+  output_schema_sha256: 45a58c07eb605b0f248bb7e60b9b30ec604a15202d5b1b3e0e0819f9b7f20599
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 8192
+  temperature: 0.1
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 20971520
+  max_file_bytes: 4194304
+  max_file_count: 400
+  allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .yaml
+  readable_prefixes:
+  - .deepagent
+  - inputs
+  - context
+  - scratch
+  - reads
+  - work
+  - outputs
+  - brand
+  - project
+  - attachments
+  writable_prefixes:
+  - scratch
+  - work
+  - outputs
+  - project
+  retention_class: agent-ephemeral-v1
+delegation_roles:
+- research
+- content_drafter
+- reviewer
+delegation_tool_grants:
+  research:
+  - name: get_research_view
+    version: '1'
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: run_verification
+    version: '1'
+    input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+    output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+  content_drafter:
+  - name: compose_handoff
+    version: '1'
+    input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+    output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+  - name: compose_contact_content_handoff
+    version: '1'
+    input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+    output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+  - name: get_research_view
+    version: '1'
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  reviewer:
+  - name: compose_handoff
+    version: '1'
+    input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+    output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+  - name: compose_contact_content_handoff
+    version: '1'
+    input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+    output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+  - name: get_research_view
+    version: '1'
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+max_delegation_depth: 1
+max_delegations: 6
+max_plan_nodes: 48
+turn_timeout_s: 1800.0
+max_model_rounds: 100

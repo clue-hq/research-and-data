@@ -143,6 +143,7 @@ export function createFixtureChatThreadsRepository(): ChatThreadsRepository {
         // yet, and `null` is exactly that: not derived. Never `{state: null}`,
         // which would be a positive claim that this thread holds no design leg.
         designLeg: null,
+        discovery: null,
       });
     },
     async update({ threadId, title, pinned }) {

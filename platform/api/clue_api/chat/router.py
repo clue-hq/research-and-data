@@ -60,6 +60,7 @@ from clue_api.agent_turn_submission import (
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.discovery_store import active_discoveries_for_threads, request_discovery_stop
 from clue_api.arv2.icp_confirmation import (
     IcpConfirmationStale,
     confirm_icp_document,
@@ -161,6 +162,7 @@ from clue_api.chat.schemas import (
     gate_wire,
     message_list_response,
     research_task_wire,
+    thread_discovery_wire,
     thread_href,
     thread_speaker_wire,
     thread_wire,
@@ -1687,6 +1689,12 @@ def build_chat_router(
             workspace_id=who.workspace_id,
             thread_ids=thread_ids,
         )
+        # The fourth: the discovery holding a thread (spec 2026-09-30 §5), so the composer can say
+        # why the thread is busy and offer Stop while the run still searches.
+        async with conn_factory() as conn:
+            discoveries = await active_discoveries_for_threads(
+                conn, workspace_id=who.workspace_id, thread_ids=thread_ids
+            )
         return ThreadListResponse(
             data=tuple(
                 thread_wire(
@@ -1694,6 +1702,7 @@ def build_chat_router(
                     open_gate_kinds=open_gates.get(item.thread_id, ()),
                     running=item.thread_id in busy,
                     speaker=thread_speaker_wire(open_legs.get(item.thread_id)),
+                    discovery=thread_discovery_wire(discoveries.get(item.thread_id)),
                 )
                 for item in page.items
             ),
@@ -1746,6 +1755,40 @@ def build_chat_router(
             idempotency_key=idempotency_key,
         )
         return ThreadResponse(data=thread_wire_from_references(references))
+
+    # --- discovery Stop (spec 2026-09-30 §4) ------------------------------------------------
+
+    @router.post("/projects/{project_id}/discovery-runs/{run_id}/stop")
+    async def stop_discovery_run_route(
+        project_id: str,
+        run_id: UUID,
+        who: PrincipalDep,
+    ) -> dict[str, JsonValue]:
+        """Record a human's Stop on this project's running discovery.
+
+        The request is recorded, not performed: the discovery driver reads it between steps,
+        cancels its current search, keeps what it already verified and ends the run ``stopped``
+        through its normal end (the wake turn, then the release). Pressing it again changes
+        nothing. A run that is not this workspace's and this project's is not found.
+        """
+
+        _require(who, PERMISSION_THREAD_WRITE)
+        async with conn_factory() as conn:
+            run = await request_discovery_stop(
+                conn, workspace_id=who.workspace_id, project_id=project_id, run_id=run_id
+            )
+        if run is None:
+            raise _refuse(
+                status_code=404,
+                code="DISCOVERY_RUN_NOT_FOUND",
+                message="no such discovery run in this project",
+            )
+        return {
+            "data": {
+                "run_id": str(run.run_id),
+                "stop_requested": run.stop_requested_at is not None,
+            }
+        }
 
     # --- transcript cold load ---------------------------------------------------------------
 

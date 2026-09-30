@@ -131,12 +131,12 @@ def _call(name: str, args: dict[str, Any], index: int) -> dict[str, Any]:
     return {"name": name, "args": args, "id": f"c{index}", "type": "tool_call"}
 
 
-def _icp_script(version: int) -> list[AIMessage]:
+def _icp_script(version: int, *, content: str | None = None) -> list[AIMessage]:
     """The ICP turn writes the profile and finalizes. It reads nothing.
 
     Reading nothing is the point of the assertion that follows it: if the turn still knows the
     company overview and the product catalog, they reached the model through the opening context,
-    which is the whole change this lane makes.
+    which is the whole change this lane makes. ``content`` replaces the profile's text.
     """
 
     return [
@@ -145,7 +145,10 @@ def _icp_script(version: int) -> list[AIMessage]:
             tool_calls=[
                 _call(
                     "write_file",
-                    {"file_path": "outputs/audience/icp-gi-groups.md", "content": _icp(version)},
+                    {
+                        "file_path": "outputs/audience/icp-gi-groups.md",
+                        "content": _icp(version) if content is None else content,
+                    },
                     1,
                 )
             ],
@@ -608,6 +611,47 @@ def test_a_persona_turn_whose_icp_document_is_gone_fails_without_raising(tmp_pat
             assert result.status == "failed"
             assert result.failure_code == "icp_document_missing"
             assert result.documents == ()
+
+    run_async(scenario())
+
+
+def test_an_icp_whose_gate_a_comma_split_is_not_registered(tmp_path: Path) -> None:
+    """An inline gate whose rule carried a comma loses the rest of the rule to value-less keys.
+
+    Registering it would store the first fragment as the whole rule, so the output is skipped the
+    way an unreadable one is — and with it the only ICP, so the turn honestly wrote none.
+    """
+
+    comma_split = _icp(1).replace(
+        "  - {key: specialty, rule: gastroenterology practices, test: NPI taxonomy}\n",
+        "  - {key: specialty, rule: gastroenterology practices, with endoscopy suites, "
+        "test: NPI taxonomy}\n",
+    )
+    assert "with endoscopy suites" in comma_split
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WS, name="seed")
+            await seed_principal(conn, workspace_id=WS, user_id="usr_o4")
+            storage = _MemoryStorage()
+            await _seed_inputs(conn, storage=storage, brand_id=project.brand_id)
+
+            launcher = await OnboardingSynthesisLauncher.for_tests(
+                conn=conn,
+                storage=storage,
+                models=_Models(_icp_script(1, content=comma_split)),
+                workspace_root=tmp_path / "ws",
+            )
+            icps = await launcher.launch_icps(
+                workspace_id=WS,
+                brand_id=project.brand_id,
+                run_id=uuid4(),
+                step_id=uuid4(),
+            )
+
+            assert icps.status == "empty"
+            assert icps.icps == ()
+            assert await _document_rows(conn) == []
 
     run_async(scenario())
 

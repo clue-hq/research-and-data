@@ -110,6 +110,15 @@ import {
 /** How many recent turns are re-projected on cold load. */
 const REHYDRATED_TURNS = 3;
 
+/**
+ * How often a thread held by a discovery re-reads itself.
+ *
+ * The turn stream is per turn, so nothing streams while the run searches. The
+ * run ends by queueing a wake turn this controller has never seen; only a read
+ * finds it, and once it is attached its own frames take over.
+ */
+const DISCOVERY_HOLD_REREAD_MS = 5000;
+
 export interface ChatAccessState {
   code: string;
   message: string;
@@ -138,6 +147,14 @@ export interface ProjectChatController {
   runningTurn: ChatTurn | null;
   /** Durable queued turns, preserving submission order. */
   queuedTurns: readonly ChatTurn[];
+  /**
+   * The account discovery holding this thread busy, as the thread list names
+   * it, or `null`. While it is set the backend holds every message sent here
+   * until the run's wake turn ends.
+   */
+  discoveryRunId: string | null;
+  /** Stop that discovery. A no-op when there is none or it can no longer stop. */
+  stopDiscovery(): Promise<void>;
   /**
    * Two monotone counters the design surfaces watch (genweb slice 3, B5).
    *
@@ -251,6 +268,25 @@ export interface ProjectChatController {
   threadLabelFor(thread: ChatThread): string;
   /** Bumps on every terminal turn event of the thread this controller shows. */
   terminalTurnRevision: number;
+}
+
+/**
+ * The composer's run control: Stop shows while a turn runs OR a discovery holds
+ * the thread, and targets the discovery only when no turn is running.
+ */
+export function composerRunControl(
+  chat: Pick<
+    ProjectChatController,
+    "runningTurn" | "discoveryRunId" | "stopActiveTurn" | "stopDiscovery"
+  >,
+): { running: boolean; onStop: () => void } {
+  return {
+    running: chat.runningTurn !== null || chat.discoveryRunId !== null,
+    onStop: () =>
+      void (chat.runningTurn === null && chat.discoveryRunId
+        ? chat.stopDiscovery()
+        : chat.stopActiveTurn()),
+  };
 }
 
 export type ChatSubmissionResult =
@@ -400,6 +436,10 @@ export function useProjectChatController({
   const attached = useRef(new Set<string>());
   const messageSubmissions = useRef(new MessageSubmissionGuard());
   const turnsRef = useRef<ChatTurn[]>([]);
+  // The active thread's discovery, readable inside the stream handler (which
+  // is created once per attach and would otherwise see a stale list).
+  const discoveryHeldRef = useRef(false);
+  const discoveryStopRef = useRef<string | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     const open = attachments.current;
@@ -839,11 +879,22 @@ export function useProjectChatController({
                         ...thread,
                         status: deriveThreadStatus({
                           archived: false,
-                          running,
+                          // A held discovery keeps the thread running after
+                          // its turns end, exactly as the server derives it.
+                          running: running || thread.discovery !== null,
                         }),
                       },
                 ),
               );
+            }
+            if (
+              !isTerminalTurnState(streamedState) &&
+              discoveryHeldRef.current
+            ) {
+              // A turn moving on a held thread is the wake turn, or a message
+              // the hold just let go: either way the run may be gone, and only
+              // the thread list says so. (Terminal frames re-read it below.)
+              void loadThreads().catch(() => undefined);
             }
             if (isTerminalTurnState(streamedState)) {
               invalidateProjectCatalog();
@@ -1181,7 +1232,9 @@ export function useProjectChatController({
         });
         if (mounted.current) {
           setThreads((current) => current.map((thread) =>
-            thread.id === saved.id ? saved : thread,
+            // Only the list read derives the discovery; a rename's echo sends
+            // none, and must not release a thread the run still holds.
+            thread.id === saved.id ? { ...saved, discovery: thread.discovery } : thread,
           ));
         }
         invalidateProjectCatalog();
@@ -1277,6 +1330,46 @@ export function useProjectChatController({
     [activeThreadId, threads],
   );
 
+  // --- account discovery -------------------------------------------------
+
+  const activeDiscovery = activeThread?.discovery ?? null;
+  const discoveryRunId = activeDiscovery?.runId ?? null;
+  useEffect(() => {
+    discoveryHeldRef.current = discoveryRunId !== null;
+  }, [discoveryRunId]);
+
+  useEffect(() => {
+    if (!activeThreadId || discoveryRunId === null) return;
+    const timer = window.setInterval(() => {
+      void Promise.all([
+        loadThreads(),
+        loadConversation(activeThreadId),
+      ]).catch(report);
+    }, DISCOVERY_HOLD_REREAD_MS);
+    return () => window.clearInterval(timer);
+  }, [activeThreadId, discoveryRunId, loadConversation, loadThreads, report]);
+
+  const stopDiscovery = useCallback(async () => {
+    if (
+      !activeDiscovery ||
+      !activeDiscovery.stoppable ||
+      discoveryStopRef.current === activeDiscovery.runId
+    ) {
+      return;
+    }
+    const runId = activeDiscovery.runId;
+    discoveryStopRef.current = runId;
+    try {
+      await repositories.discoveries.stop({ projectId, runId });
+    } catch (failure) {
+      // Not acknowledged, so a second press may try again.
+      discoveryStopRef.current = null;
+      report(failure);
+    } finally {
+      await loadThreads().catch(report);
+    }
+  }, [activeDiscovery, loadThreads, projectId, repositories, report]);
+
   // Conversation naming (§4.7): a name that lands after the terminal event needs a
   // second look. Bounded, and only while a placeholder is still on screen.
   const namingPending =
@@ -1319,6 +1412,8 @@ export function useProjectChatController({
     threadBusy: queue.threadBusy,
     runningTurn: queue.runningTurn,
     queuedTurns: queue.queuedTurns,
+    discoveryRunId,
+    stopDiscovery,
     designRefresh,
     planWriteRevision,
     writtenProjectDocumentId,

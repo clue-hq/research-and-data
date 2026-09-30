@@ -285,6 +285,20 @@ def test_status_facts_read_the_pin_the_product_set_and_the_arv2_rows() -> None:
                 disposition="duplicate_of_existing",
                 judged=False,
             )
+            # A company a ``must_not`` gate excluded: judged (so verified), never shown, and
+            # counted on its own line — and the run says why it ended.
+            await _seed_candidate(conn, project, discovery_run, "rival.org", disposition="pending")
+            await conn.execute(
+                text(
+                    "UPDATE arv2_discovery_candidate SET disposition = 'excluded', "
+                    "excluded_by_gate = 'sells_it' WHERE run_id = :run AND domain = 'rival.org'"
+                ),
+                {"run": discovery_run},
+            )
+            await conn.execute(
+                text("UPDATE arv2_discovery_run SET end_reason = 'dry' WHERE run_id = :run"),
+                {"run": discovery_run},
+            )
             research_run = await _seed_research_run(conn, project, project_run_id)
             await _seed_job(
                 conn,
@@ -320,7 +334,8 @@ def test_status_facts_read_the_pin_the_product_set_and_the_arv2_rows() -> None:
                 facts.discovery.verified,
                 facts.discovery.shown,
                 facts.discovery.approved,
-            ) == (13, 1, 1, 1)
+            ) == (13, 2, 1, 1)
+            assert (facts.discovery.excluded, facts.discovery.end_reason) == (1, "dry")
             assert facts.discovery.asked == 20
             assert len(facts.research) == 1
             (job,) = facts.research[0].jobs

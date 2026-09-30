@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -41,6 +41,9 @@ from clue_projections import (
     ThreadResearchTaskView,
     ThreadView,
 )
+
+if TYPE_CHECKING:
+    from clue_api.arv2.discovery_store import DiscoveryRunRow
 
 __all__ = [
     "AgentProfileOptionWire",
@@ -81,6 +84,7 @@ __all__ = [
     "UpdateProjectRequest",
     "gate_response_message",
     "gate_wire",
+    "ThreadDiscoveryWire",
     "ThreadListResponse",
     "ThreadMessageWire",
     "ThreadResponse",
@@ -90,6 +94,7 @@ __all__ = [
     "UpdateThreadRequest",
     "message_list_response",
     "message_wire",
+    "thread_discovery_wire",
     "thread_href",
     "thread_status",
     "thread_wire",
@@ -459,6 +464,19 @@ class ThreadSpeakerWire(_Wire):
     design_leg_state: Literal["open_awaiting_user", "running"] | None = None
 
 
+class ThreadDiscoveryWire(_Wire):
+    """The account discovery holding this thread (spec 2026-09-30 §5, §7).
+
+    A thread whose discovery run is unreleased is busy: a message sent to it is held until the
+    run's wake turn finishes. ``stoppable`` is ``True`` while the run is still searching — the
+    composer's Stop then calls the discovery stop route — and ``False`` once it has ended and only
+    its wake turn is pending. The brief the agent wrote is internal and never rides this wire.
+    """
+
+    run_id: str
+    stoppable: bool
+
+
 class ThreadWire(_Wire):
     """One thread, in the sidebar conversation shape plus the fields the shell genuinely owns."""
 
@@ -473,6 +491,9 @@ class ThreadWire(_Wire):
     #: ``None`` on reads that did not derive it (the tool-reference projections after a
     #: create/rename); the listing always derives it. Absent knowledge is never a guess.
     speaker: ThreadSpeakerWire | None = None
+    #: The discovery holding this thread, or ``None`` when none does (and on reads that did not
+    #: derive it — the tool-reference projections after a create/rename).
+    discovery: ThreadDiscoveryWire | None = None
 
 
 class ThreadMessageWire(_Wire):
@@ -1037,6 +1058,7 @@ def thread_wire(
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
     speaker: ThreadSpeakerWire | None = None,
+    discovery: ThreadDiscoveryWire | None = None,
 ) -> ThreadWire:
     """One thread on the wire.
 
@@ -1045,7 +1067,9 @@ def thread_wire(
     ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4),
     ``running`` from :func:`~clue_projections.threads_running` (D3), and ``speaker`` (P3.4) from
     :func:`~clue_api.design_leg_wiring.design_legs_for_threads` through
-    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm".
+    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm". ``discovery``
+    comes from :func:`~clue_api.arv2.discovery_store.active_discoveries_for_threads` through
+    :func:`thread_discovery_wire`.
     """
 
     return ThreadWire(
@@ -1062,7 +1086,20 @@ def thread_wire(
         created_at=view.created_at.isoformat(),
         updated_at=view.updated_at.isoformat(),
         speaker=speaker,
+        discovery=discovery,
     )
+
+
+def thread_discovery_wire(run: DiscoveryRunRow | None) -> ThreadDiscoveryWire | None:
+    """The discovery a thread is held by, from its unreleased run — or ``None`` without one.
+
+    Stop means something only while the run is searching: once it has an end reason the run is
+    over and the thread waits only for the wake turn, which the turn's own Stop handles.
+    """
+
+    if run is None:
+        return None
+    return ThreadDiscoveryWire(run_id=str(run.run_id), stoppable=run.end_reason is None)
 
 
 def thread_wire_from_references(references: dict[str, Any]) -> ThreadWire:

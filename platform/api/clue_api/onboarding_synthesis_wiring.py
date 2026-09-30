@@ -89,6 +89,7 @@ from clue_api.agent_runtime_wiring import (
     GovernedAgentToolFactory,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.icp_authoring import comma_split_rows
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
 from clue_api.brand_knowledge_context import (
     SERVABLE_STATUSES,
@@ -152,7 +153,7 @@ TURN_NAMESPACE = UUID("6c2f9d0e-4b3a-5f1e-9a77-0e2b4c8d1f55")
 BUDGET_LIMIT_MILLICENTS = 500_000
 SYNTHESIS_CARD_MEDIA_TYPE = "application/vnd.clue.onboarding-synthesis-card+json"
 #: Where THIS surface puts the knowledge documents its turns read. It seeds its own read-only
-#: copies per turn and mounts no library, and its profile (``onboarding-synthesis@v3``), prompt
+#: copies per turn and mounts no library, and its profile (``onboarding-synthesis@v4``), prompt
 #: and skill all name this path — so it is deliberately not on the library/mount path the
 #: conversation turn moved to, and it owns the constant rather than sharing
 #: ``brand_knowledge_context.INPUT_PREFIX``, which now names the mount.
@@ -1280,7 +1281,10 @@ class OnboardingSynthesisLauncher:
 
         An output whose front matter is unreadable, whose ``kind`` is not one this surface may
         produce, or which carries no ``icp_key`` is skipped and logged. It is never a failure: the
-        turn's other documents are real, and an unidentifiable file is honestly not a document.
+        turn's other documents are real, and an unidentifiable file is honestly not a document. An
+        ICP whose gate or qualifier rows lost text to an unquoted comma
+        (:func:`~clue_api.arv2.icp_authoring.comma_split_rows`) is skipped the same way: stored,
+        it would serve half a rule as the whole one to every agent that reads it.
 
         A persona turn is scoped to exactly one ICP, so two more outputs are skipped there: an
         ``icp-definition`` (the ICP turn is the only authority that registers one — a persona turn
@@ -1317,6 +1321,16 @@ class OnboardingSynthesisLauncher:
                     artifact_key=ref.artifact_key,
                     kind=kind,
                     icp_key=icp_key,
+                )
+                continue
+            damaged = comma_split_rows(front) if kind == _ICP_KIND else ()
+            if damaged:
+                log.warning(
+                    "onboarding_synthesis.comma_split_output",
+                    turn_id=str(turn_id),
+                    artifact_key=ref.artifact_key,
+                    icp_key=icp_key,
+                    rows=list(damaged),
                 )
                 continue
             if task == "persona" and kind == _ICP_KIND:

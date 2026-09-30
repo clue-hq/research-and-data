@@ -1,35 +1,37 @@
-"""One ARV2 discovery run on the fleet: up to three searches, the verifier, the candidate accounts.
+"""One ARV2 discovery run on the fleet: rounds of the agent's brief, the verifier, the accounts.
 
-This is spec §2–§4 executed in order, once per ``arv2_discovery`` task, in the shape the founder
-ruled on 2026-09-28
-(``docs/superpowers/plans/2026-09-28-arv2-discovery-exact-count-and-find-more.md``):
+This is spec 2026-09-30 §4 (``docs/superpowers/specs/2026-09-30-agent-authored-account-discovery-
+design.md``) executed once per ``arv2_discovery`` task:
 
 1. **Claim the run** (``begin_discovery_run``). A run another worker is driving, or one that has
    already landed, is not this task's to run — the task completes without spending a cent.
-2. **Read the program.** The document THIS RUN was pinned to — ``run.icp_artifact_key``, checked
-   against ``run.icp_artifact_sha256`` — is re-read at the start of every attempt and compiled
-   into the brief (§2: *the ICP document is the program*), so a resumed run asks exactly the
-   questions the first attempt asked even if a human has since repinned the project onto a newer
-   ICP. Reading the project's *current* pin instead would grade one run's candidates against two
-   different documents; the digest that no longer matches refuses by name instead.
-3. **Up to three searches, each a webset of its own, one after another.** Search 1 asks Exa for
-   exactly the number the human asked for. If our checks removed some of what Exa found (a company
-   this project already has, one an earlier discovery of the project found, a website nobody could
-   confirm) while Exa did fill its ask, search 2 asks again with the same criteria for the missing
-   number. If the run is still short and the relaxed search is allowed, search 3 drops the
-   criterion search 1's own success rates show was starving it and asks for what is still missing.
-   Every search tells Exa to skip the websets before it — this run's, and every earlier discovery
-   run's of the project — so no company is found, or paid for, twice. A whole webset is the
-   smallest thing Exa's ``exclude`` accepts, which is why every search is a webset of its own.
-   Each search asks only for the shortfall, and Exa lists a company only once it matches every
-   criterion, so a run never shows more companies than the human asked for.
+2. **Read the brief** the Head of ABM wrote and the launch stored whole on the run (query,
+   criteria, gates with their roles, and the source). A run launched without one is refused by
+   name (``brief_missing``). The ICP document the run was pinned to is still re-read and checked
+   against ``run.icp_artifact_sha256``, so a run whose pinned bytes moved is refused rather than
+   scored against a different document than the fit claims name.
+3. **Rounds with the same brief.** Round 1 asks the brief's source for ``target_count``
+   companies; while the run has shown fewer than asked, the next round asks again with the SAME
+   brief for the shortfall, excluding every company seen so far — a webset excludes the websets
+   before it (this run's and every earlier discovery run's of the project), a ``/search`` asks
+   for one more result per domain already known and skips those in code. The run ends on the
+   first of *filled*, *dry* (a round found nothing new), *round cap*
+   (``1 + arv2_discovery_max_topups`` searches), *wall clock* (per search) and *stopped* (a
+   human pressed Stop: the current webset is cancelled and read once more, and every company
+   already verified is kept).
 4. **The verifier, per candidate** — first the company's own website (Websets gave ``probook.com``
    for a company whose site is ``probook.ai``, and everything downstream keys on the verified
-   domain), then one Answer call per hard gate, each graded by
-   :func:`~clue_api.arv2.discovery_verifier.apply_guards`. The fit is ``passes / gates`` with an
-   unclear counted as half, and it is written as an ``account.scoring.fit`` claim on the account.
-5. **The receipt** — asked, found, analyzed, Exa's recall estimate, every search, the guard counts,
-   the money. A short list is information, never padded (§4).
+   domain), then one Answer call per gate of the brief, each graded by
+   :func:`~clue_api.arv2.discovery_verifier.apply_guards`. Code applies the gate's role
+   (:func:`~clue_api.arv2.discovery_request.apply_roles`): a failed ``must`` or a passed
+   ``must_not`` **excludes** the company — kept on the run with the gate that excluded it, never
+   added to the project, never counted toward the target; otherwise it joins the project with a
+   fit over its ``must`` and ``prefer`` gates, written as an ``account.scoring.fit`` claim.
+5. **The receipt and the summary.** The receipt keeps every number behind the run; the summary is
+   what the Head of ABM is told (:func:`summary_message`). The end block writes both, and either
+   hands the summary to the launching thread's wake turn (:class:`DiscoveryWake`) — the run stays
+   held until that turn finishes — or, for a run with no launching thread, releases the run's
+   project lock at once. Every ending runs that block, a contained failure included.
 
 Two laws shape the code below.
 
@@ -60,7 +62,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import JsonValue, SecretStr
@@ -70,8 +72,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2 import discovery_store as default_store
 from clue_api.arv2.calls import ProviderCaller
 from clue_api.arv2.claim_writer import ClaimDraft, LenientClaimWriter
-from clue_api.arv2.discovery_brief import DiscoveryBrief, compile_brief
-from clue_api.arv2.discovery_launch import read_icp_document
+from clue_api.arv2.discovery_brief import DiscoveryBrief
+from clue_api.arv2.discovery_launch import Arv2DiscoveryRefused, read_icp_document
+from clue_api.arv2.discovery_request import DiscoveryBrief2, apply_roles, verifier_gates
 from clue_api.arv2.discovery_store import (
     CandidateRow,
     DiscoveryRunRow,
@@ -85,14 +88,12 @@ from clue_api.arv2.discovery_verifier import (
     WEBSITE_SCHEMA,
     GateVerdict,
     apply_guards,
-    disposition,
-    fit_score,
     gate_question,
     system_prompt,
     website_question,
 )
 from clue_api.arv2.errors import Arv2Error, ProviderHalted
-from clue_api.arv2.exa_client import ExaAnswerResult, ExaClient
+from clue_api.arv2.exa_client import ExaAnswerResult, ExaClient, ExaHit
 from clue_api.arv2.exa_websets_client import (
     ExaWebsetsClient,
     WebsetItem,
@@ -124,10 +125,13 @@ log = get_logger("clue_api.arv2.discovery_driver")
 
 __all__ = [
     "DiscoveryClients",
+    "DiscoveryWake",
     "Arv2DiscoveryWorkHandler",
     "arv2_discovery_work_id",
     "build_arv2_discovery_handler",
+    "build_summary",
     "revenue_band",
+    "summary_message",
 ]
 
 #: The failure a wall-clock overrun records. Named, because "the webset never went idle" and "the
@@ -143,8 +147,18 @@ INVALID_TASK_PAYLOAD = "invalid_task_payload"
 #: The failure a Websets call Exa refused (a non-2xx other than a refusal to sell) records.
 WEBSET_REFUSED = "websets_request_refused"
 
-#: The three searches a run may make, in order, with the pass their companies are recorded under.
-_SEARCHES: tuple[tuple[int, SearchKind], ...] = ((1, "strict"), (2, "strict_topup"), (3, "relaxed"))
+#: The failure a ``/search`` call Exa answered with a non-2xx records — named for the same reason
+#: as :data:`WEBSET_REFUSED`: a refused search must never read as a dry one.
+SEARCH_REFUSED = "search_request_refused"
+
+#: The failure a run launched without the agent's brief records.
+BRIEF_MISSING = "brief_missing"
+
+#: Why a run ended (spec 2026-09-30 §4). ``failed`` is a run a failure ended.
+EndReason = Literal["filled", "dry", "round_cap", "wall_clock", "stopped", "failed"]
+
+#: The most a ``/search`` round asks Exa for — the endpoint's own ceiling on ``numResults``.
+_SEARCH_MAX_RESULTS = 100
 
 #: The candidate id is derived from ``(run, domain)``, so a resumed run re-addresses the row it
 #: already wrote instead of racing its own ``ON CONFLICT`` for a second id.
@@ -216,6 +230,23 @@ class DiscoveryClients(Protocol):
     def websets(self, caller: ProviderCaller) -> ExaWebsetsClient: ...
 
 
+class DiscoveryWake(Protocol):
+    """Queue the turn that tells the launching thread its discovery run ended (spec §4, §6.3).
+
+    Called inside the transaction that ends the run, after the run's summary is written and
+    before it is released. It returns the queued turn's id — the run then stays held until that
+    turn finishes — or ``None`` when no turn was queued, and the run is released at once.
+    """
+
+    async def queue(
+        self,
+        conn: AsyncConnection,
+        run: DiscoveryRunRow,
+        summary: Mapping[str, Any],
+        message: str,
+    ) -> UUID | None: ...
+
+
 class _WallExceeded(Arv2Error):
     """The webset did not reach ``idle`` inside the run's wall clock."""
 
@@ -230,11 +261,24 @@ class _WebsetRefused(Arv2Error):
     code = WEBSET_REFUSED
 
 
+class _SearchRefused(Arv2Error):
+    """Exa answered a ``/search`` round with a non-2xx."""
+
+    code = SEARCH_REFUSED
+
+
+class _Stopped(Arv2Error):
+    """A human asked this run to stop while a webset round was being read."""
+
+
 @dataclass
 class _RunState:
     """What one attempt has learned so far — the numbers its receipt is made of."""
 
     run: DiscoveryRunRow
+    #: The brief the Head of ABM wrote, as the run stored it: the source, and each gate's role.
+    brief2: DiscoveryBrief2
+    #: The same brief in the verifier's shape: the query, the criteria, and the gates it asks.
     brief: DiscoveryBrief
     today: date
     #: The current search's wall clock (the limit applies per search, founder ruling 2026-09-28).
@@ -269,9 +313,9 @@ class _RunState:
     #: again on every resume, and each read returns every row, so without this a row would be
     #: priced onto the ledger many times — on the exact number §8's exit gate divides by.
     priced_item_ids: set[str] = field(default_factory=set)
-    #: Search 1's per-criterion success rates: what the relaxed search's dropped criterion is
-    #: chosen from.
-    strict_rates: tuple[tuple[str, float | None], ...] = ()
+    #: The per-criterion success rates of the last webset this run read (Exa reports 0–100), for
+    #: the summary: a criterion almost nothing satisfies is what starves a search.
+    criteria_rates: tuple[tuple[str, float | None], ...] = ()
     recall_estimate: int | None = None
     #: What each search's webset holds and how many companies Exa analyzed for it, by ordinal.
     found_by_search: dict[int, int] = field(default_factory=dict)
@@ -282,6 +326,12 @@ class _RunState:
     #: Companies another project already had that this run verified and added to this project.
     from_other_projects: int = 0
     unresolvable: int = 0
+    #: The companies a gate's role excluded, by the gate that excluded them, in the order verified.
+    excluded: dict[str, list[str]] = field(default_factory=dict)
+    #: Companies shown with an ``unclear`` disposition.
+    unclear_count: int = 0
+    #: Why the run ended, once something has decided it (``None`` while it is still running).
+    end_reason: EndReason | None = None
     guards: dict[str, int] = field(default_factory=dict)
     #: One entry per company that was on the list and could not be finished, with the named reason.
     candidate_failures: list[dict[str, str]] = field(default_factory=list)
@@ -335,8 +385,11 @@ class Arv2DiscoveryWorkHandler:
         transport_factory: Callable[[], Transport] = HttpxTransport,
         clock: Callable[[], datetime] = _utcnow,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        wake: DiscoveryWake | None = None,
     ) -> None:
         self._settings = settings
+        # ``None`` means no launching thread is ever woken: every run releases its lock as it ends.
+        self._wake = wake
         self._conn_factory = conn_factory
         self._storage = storage
         self._artifacts = artifacts
@@ -391,7 +444,8 @@ class Arv2DiscoveryWorkHandler:
     # -- the run -------------------------------------------------------------------------------
 
     async def _run(self, run_id: UUID, workspace_id: str) -> str:
-        """Claim, compile, discover, verify, land. Raises only into ``handle``'s containment."""
+        """Claim, read the brief, run the rounds, verify, land. Raises into ``handle``'s
+        containment only for a failure before the run's state exists (a refused brief or pin)."""
         async with self._connection() as conn:
             run = await self._store.begin_discovery_run(conn, run_id=run_id)
         if run is None:
@@ -403,8 +457,14 @@ class Arv2DiscoveryWorkHandler:
         status, failure = "completed", None
         try:
             await self._search(state)
+        except _Stopped:
+            # A human pressed Stop mid-round: Exa stops finding (and billing), what it had already
+            # found reaches the ledger, and every company already verified is kept.
+            await self._stop_webset(state)
+            state.end_reason = "stopped"
         except _WallExceeded as exceeded:
             status, failure = "needs_review", (WEBSET_WALL_EXCEEDED, str(exceeded))
+            state.end_reason = "wall_clock"
         except ProviderHalted as halted:
             log.warning(
                 "arv2.discovery_provider_halted",
@@ -413,34 +473,54 @@ class Arv2DiscoveryWorkHandler:
                 reason=halted.reason_code,
             )
             status, failure = "needs_review", (PROVIDER_HALTED, str(halted))
-        except Exception:
-            # ``handle`` contains this and lands the run; the webset must stop first.
-            await self._stop_webset(state)
-            raise
+            state.end_reason = "failed"
+        except Exception as error:  # noqa: BLE001 — containment: the run row is the only report
+            # Landed here rather than in ``handle`` so the receipt keeps every counter, the summary
+            # names what was verified before the failure, and the end block still runs.
+            log.exception("arv2.discovery_contained_failure", run_id=str(run_id))
+            status, failure = "needs_review", (_failure_code(error), str(error))
+            state.end_reason = "failed"
         if failure is not None:
             await self._stop_webset(state)
-        if status == "completed" and state.candidate_failures:
+        if state.end_reason == "stopped":
+            status = "stopped"
+        elif status == "completed" and state.candidate_failures:
             # Every other candidate landed and every counter is kept; the run still asks for a
             # human, because a company that was on the list and has no verdict is not a finished
             # run — it is a finished run minus a company, and the receipt names which.
             status = "needs_review"
-        await self._land(state, status=status, failure=failure)
+        try:
+            await self._land(state, status=status, failure=failure)
+        except Exception as error:  # noqa: BLE001 — containment, with the counters it had
+            log.exception("arv2.discovery_land_failed", run_id=str(run_id))
+            state.end_reason = "failed"
+            code = _failure_code(error)
+            await self._contain(
+                run_id, code=code, message=str(error), summary=build_summary(state, failure=code)
+            )
+            return "needs_review"
         return status
 
     async def _compose(self, run: DiscoveryRunRow) -> _RunState:
-        """Re-read the program and everything this attempt must not spend twice on."""
+        """Read the brief, re-check the pin, and read everything this attempt must not spend twice
+        on."""
+        if run.brief is None:
+            raise Arv2DiscoveryRefused(
+                BRIEF_MISSING, "this run was launched without an agent brief"
+            )
+        brief2 = DiscoveryBrief2.model_validate(run.brief)
         now = self._clock()
         async with self._connection() as conn:
-            # The RUN's pinned bytes, not the project's current pin: a project repinned while this
-            # run was queued or suspended must not silently change the gates half-way through it.
-            icp = await read_icp_document(
+            # The RUN's pinned bytes, not the project's current pin. The brief is the agent's, but
+            # it was written against this document and the fit claims name it by key and sha, so
+            # a run whose pinned bytes moved is refused by name rather than scored against another.
+            await read_icp_document(
                 conn,
                 self._storage,
                 workspace_id=run.workspace_id,
                 artifact_key=run.icp_artifact_key,
                 artifact_sha256=run.icp_artifact_sha256,
             )
-            brief = compile_brief(icp.front, icp.body, criteria_gate_keys=run.criteria_gate_keys)
             workspace_accounts = await self._workspace_accounts(conn, run.workspace_id)
             project_domains = await self._project_domains(conn, run)
             found_before = await self._store.project_found_domains(
@@ -460,7 +540,14 @@ class Arv2DiscoveryWorkHandler:
             owner_user_id = await self._owner_user(conn, run.requested_by_user_id)
         state = _RunState(
             run=run,
-            brief=brief,
+            brief2=brief2,
+            brief=DiscoveryBrief(
+                query=brief2.query,
+                criteria=tuple(brief2.criteria),
+                criteria_gate_keys=(),
+                gates=verifier_gates(brief2),
+                exclusions=(),
+            ),
             today=now.date(),
             deadline=now + timedelta(seconds=self._settings.arv2_discovery_wall_s),
             project_domains=project_domains,
@@ -490,6 +577,10 @@ class Arv2DiscoveryWorkHandler:
                 state.seen.add(websets_domain)
             if candidate.disposition in _SHOWN:
                 state.shown += 1
+            if candidate.disposition == "unclear":
+                state.unclear_count += 1
+            if candidate.disposition == "excluded" and candidate.excluded_by_gate:
+                state.excluded.setdefault(candidate.excluded_by_gate, []).append(candidate.name)
         # Every row an earlier attempt read was priced then; the raw Websets item is kept whole on
         # the candidate's snapshot, so its id is recoverable and this attempt does not buy it again.
         for candidate in already:
@@ -498,77 +589,58 @@ class Arv2DiscoveryWorkHandler:
                 state.priced_item_ids.add(item_id)
         return state
 
-    # -- step one: the searches ------------------------------------------------------------------
+    # -- step one: the rounds --------------------------------------------------------------------
 
     async def _search(self, state: _RunState) -> None:
-        """Run the searches in order until the run holds its number or has nothing left to ask.
+        """Run rounds of the same brief until the run is filled, dry, capped or stopped.
 
-        A search this run already finished is skipped; one it started — bought, or only recorded —
-        is picked back up rather than bought again (see :meth:`_run_search`). A search not yet
-        started starts only while the run is short, and only when :meth:`_criteria_for` says it
-        should run at all.
+        Round 1 asks for ``target_count``; every later round asks for the shortfall, excluding
+        every company seen so far (spec §4). A round this run already finished is skipped; one it
+        started — bought, or only recorded — is picked back up rather than bought again (see
+        :meth:`_run_search`). Stop is read before every new round, and between the polls of a
+        webset round (:meth:`_watch_and_verify`).
         """
         run = state.run
-        for ordinal, kind in _SEARCHES:
+        last = 1 + self._settings.arv2_discovery_max_topups
+        for ordinal in range(1, last + 1):
             search = state.searches.get(ordinal)
             if search is not None and search.finished_at is not None:
                 continue
+            resumed = search is not None
             if search is None:
                 if state.shown >= run.target_count:
                     return
-                criteria = await self._criteria_for(state, kind)
-                if criteria is None:
-                    continue
-                search = await self._open_search(state, ordinal, kind, criteria)
-            await self._run_search(state, search)
+                if await self._stop_requested(state):
+                    state.end_reason = "stopped"
+                    return
+                search = await self._open_search(state, ordinal, "round", state.brief.criteria)
+            before = len(state.seen)
+            if search.source == "search":
+                await self._run_search_round(state, search)
+            else:
+                await self._run_search(state, search)
+            # Nothing new: the same brief asked again would find nothing more. A resumed round's
+            # companies were counted as seen by the attempt that read them, so it is dry only when
+            # its search found nothing at all.
+            if len(state.seen) == before and not (resumed and state.found_by_search.get(ordinal)):
+                if state.shown < run.target_count:
+                    state.end_reason = "dry"
+                return
+        if state.shown < run.target_count:
+            state.end_reason = "round_cap"
 
-    async def _criteria_for(self, state: _RunState, kind: SearchKind) -> tuple[str, ...] | None:
-        """The criteria a search of this kind sends, or ``None`` when it should not run.
-
-        * ``strict`` — the brief's criteria, always.
-        * ``strict_topup`` — the same criteria, but only when Exa FILLED search 1 and our own checks
-          (a company this project has, one found before, an unconfirmable website) removed some of
-          it. When Exa found fewer than it was asked for it has run out: the same search again finds
-          nothing new, so the run goes straight to the relaxed search (founder ruling 2026-09-28).
-        * ``relaxed`` — the criteria minus the one search 1 satisfied least often, only when the run
-          allows it and something is left to send.
-        """
-        run = state.run
-        if kind == "strict":
-            return state.brief.criteria
-        first = state.searches.get(1)
-        if first is None:
-            return None
-        if kind == "strict_topup":
-            exa_filled = state.found_by_search.get(1, 0) >= first.asked
-            return state.brief.criteria if exa_filled else None
-        if not run.relaxed_enabled:
-            log.info(
-                "arv2.discovery_relaxed_skipped",
-                run_id=str(run.run_id),
-                shown=state.shown,
-                target=run.target_count,
-            )
-            return None
-        if not state.strict_rates and first.webset_id is not None:
-            # A resumed run that finished search 1 in an earlier attempt re-reads its success rates
-            # (a free read) rather than choosing the dropped criterion blind.
-            webset_id = first.webset_id
-            view = await self._hop(
-                state, lambda caller: self._clients.websets(caller).get(webset_id)
-            )
-            self._require(view)
-            self._read_view(state, first, view, current=False)
-        criteria = relaxed_criteria(first.criteria, state.strict_rates)
-        return criteria or None
+    async def _stop_requested(self, state: _RunState) -> bool:
+        """Whether a human pressed Stop on this run (a free read, made between steps)."""
+        async with self._connection() as conn:
+            return bool(await self._store.stop_requested(conn, run_id=state.run.run_id))
 
     async def _open_search(
         self, state: _RunState, ordinal: int, kind: SearchKind, criteria: tuple[str, ...]
     ) -> SearchRow:
-        """Record the next search — before anything is bought — asking only for the shortfall.
+        """Record the next round — before anything is bought — asking only for the shortfall.
 
-        It skips every webset this project's earlier discovery runs bought and every webset this
-        run has bought so far, so no company is found, or charged for, a second time.
+        A webset round skips every webset this project's earlier discovery runs bought and every
+        webset this run has bought so far, so no company is found, or charged for, a second time.
         """
         run = state.run
         own = tuple(
@@ -584,6 +656,7 @@ class Arv2DiscoveryWorkHandler:
             asked=run.target_count - state.shown,
             criteria=tuple(criteria),
             exclude_webset_ids=tuple(dict.fromkeys(state.prior_websets + own)),
+            source=state.brief2.source,
         )
         async with self._connection() as conn:
             held: SearchRow = await self._store.create_search(conn, row)
@@ -593,10 +666,72 @@ class Arv2DiscoveryWorkHandler:
             run_id=str(run.run_id),
             ordinal=ordinal,
             kind=kind,
+            source=held.source,
             asked=held.asked,
             excluded_websets=len(held.exclude_webset_ids),
         )
         return held
+
+    async def _run_search_round(self, state: _RunState, search: SearchRow) -> None:
+        """One ``/search`` round: ask Exa for companies with the brief's query, verify the new ones.
+
+        It asks for twice the shortfall (a search result is a page, not a company, and some do not
+        survive the verifier) plus one result for every domain already known — this run's, this
+        project's accounts, and every company an earlier discovery of the project found — and
+        skips the known ones here. It does not send them as ``excludeDomains``: with the company
+        category, Exa answers any ``excludeDomains`` at all with zero results (live 2026-10-01 —
+        even a list holding only ``example.com``), which ended every search round dry. Asking for
+        more instead also moves a later round past the same query's earlier answers.
+        """
+        run = state.run
+        known = state.seen | state.project_domains | state.found_before
+        query = state.brief.query
+        result = await self._hop(
+            state,
+            lambda caller: self._clients.exa(caller).search(
+                query,
+                category="company",
+                num_results=min(_SEARCH_MAX_RESULTS, 2 * search.asked + len(known)),
+                label=f"discovery-search-{search.ordinal}",
+            ),
+        )
+        if not 200 <= result.status < 300:
+            raise _SearchRefused(f"exa search refused round {search.ordinal}: http {result.status}")
+        items = [_item_from_hit(hit) for hit in result.results if hit.url]
+        state.found_by_search[search.ordinal] = len(items)
+        # Verification is the spend, so a round verifies at most twice its shortfall. The padding
+        # above only makes room for the known domains Exa still returns; without this bound a
+        # three-company ask verified all 42 new results live (2026-10-01) and added 31.
+        budget = 2 * search.asked
+        tasks: set[asyncio.Task[None]] = set()
+        for item in items:
+            if len(tasks) >= budget:
+                break
+            domain = registrable_domain(item.url) or ""
+            if not domain or domain in known or domain in state.seen:
+                continue
+            state.seen.add(domain)
+            tasks.add(asyncio.create_task(self._verify_contained(state, item, pass_="strict")))
+        await self._drain_pool(tasks)
+        async with self._connection() as conn:
+            await self._store.record_discovery_progress(
+                conn,
+                run_id=run.run_id,
+                found_strict=state.found_strict,
+                found_relaxed=state.found_relaxed,
+                analyzed=state.analyzed,
+            )
+            await self._store.finish_search(
+                conn,
+                run_id=run.run_id,
+                ordinal=search.ordinal,
+                found=len(items),
+                analyzed=None,
+                recall_estimate=None,
+            )
+        state.searches[search.ordinal] = replace(
+            search, found=len(items), finished_at=self._clock()
+        )
 
     async def _run_search(self, state: _RunState, search: SearchRow) -> None:
         """Buy this search's webset if nobody has yet, verify everything it finds, then close it.
@@ -709,6 +844,9 @@ class Arv2DiscoveryWorkHandler:
         A company is claimed **at dispatch**, by item id and by registrable domain: two rows of one
         company must never be two verifications, which would be two bills and two accounts.
 
+        A human's Stop is read before every poll: the tasks in flight are drained and
+        :class:`_Stopped` is raised, so ``_run`` cancels the webset and lands the run ``stopped``.
+
         Containment is per task (``_verify_contained``); ``ProviderHalted``, a refused Websets call
         and the wall clock are not contained — the first of them cancels the pool and re-raises, so
         ``_run`` lands the run ``needs_review``.
@@ -745,6 +883,11 @@ class Arv2DiscoveryWorkHandler:
 
         try:
             while True:
+                if await self._stop_requested(state):
+                    # Every verification already in flight was paid for as it started: let it land,
+                    # dispatch nothing more, and let ``_run`` cancel the webset.
+                    await self._drain_pool(tasks)
+                    raise _Stopped(f"a human stopped the run while webset {webset_id} was read")
                 if self._clock() > state.deadline:
                     raise _WallExceeded(
                         f"webset {webset_id} did not reach idle within "
@@ -846,24 +989,20 @@ class Arv2DiscoveryWorkHandler:
             rows_priced_at_stop=state.rows_priced_at_stop,
         )
 
-    def _read_view(
-        self, state: _RunState, search: SearchRow, view: WebsetView, *, current: bool = True
-    ) -> None:
-        """Keep what a poll of a search's webset reports: its status (for the current search), how
-        many companies Exa analyzed, and — for search 1 — the criteria's success rates and the
-        pool-size estimate. Each webset holds exactly one search."""
-        if current:
-            state.webset_status = view.status
+    def _read_view(self, state: _RunState, search: SearchRow, view: WebsetView) -> None:
+        """Keep what a poll of the current round's webset reports: its status, how many companies
+        Exa analyzed, the criteria's success rates (the summary names the last round's), and — for
+        round 1 — the pool-size estimate. Each webset holds exactly one search."""
+        state.webset_status = view.status
         if not view.searches:
             return
         reported = view.searches[0]
         if reported.analyzed is not None:
             state.analyzed_by_search[search.ordinal] = reported.analyzed
-        if search.ordinal == 1:
-            if reported.criteria_success_rates:
-                state.strict_rates = reported.criteria_success_rates
-            if reported.recall_estimate is not None:
-                state.recall_estimate = reported.recall_estimate
+        if reported.criteria_success_rates:
+            state.criteria_rates = reported.criteria_success_rates
+        if search.ordinal == 1 and reported.recall_estimate is not None:
+            state.recall_estimate = reported.recall_estimate
 
     # -- step two: the verifier ----------------------------------------------------------------
 
@@ -947,8 +1086,31 @@ class Arv2DiscoveryWorkHandler:
         verdicts = await self._verify_gates(state, item.name, verified)
         for verdict in verdicts:
             state.count_guard(verdict.guard)
-        fit = fit_score(verdicts)
-        outcome = disposition(verdicts)
+        roles = apply_roles(state.brief2, verdicts)
+        if roles.excluded_by is not None:
+            # A failed ``must`` or a passed ``must_not``: kept on the run with the gate that decided
+            # it and the verdicts behind it, never an account, never counted toward the target.
+            # Written through ``record_verdicts`` because the row already exists ``pending``.
+            async with self._connection() as conn:
+                await self._store.record_verdicts(
+                    conn,
+                    candidate_id=candidate_id,
+                    verdicts=[verdict.as_json() for verdict in verdicts],
+                    fit=None,
+                    disposition="excluded",
+                    excluded_by_gate=roles.excluded_by,
+                    account_entity_id=None,
+                )
+            state.excluded.setdefault(roles.excluded_by, []).append(item.name)
+            log.info(
+                "arv2.discovery_candidate_excluded",
+                run_id=str(run.run_id),
+                domain=verified,
+                gate=roles.excluded_by,
+            )
+            return
+        fit = roles.fit
+        outcome: Disposition = roles.shown_disposition  # type: ignore[assignment]
         logo = await self._resolve_logo(state, item=item, verified=verified)
         # An account of the workspace that is not in this project (founder ruling 2026-09-28) is
         # checked against THIS project's ICP like any other company, and joins this project on its
@@ -1010,6 +1172,8 @@ class Arv2DiscoveryWorkHandler:
             state.from_other_projects += 1
         if outcome in _SHOWN:
             state.shown += 1
+        if outcome == "unclear":
+            state.unclear_count += 1
         log.info(
             "arv2.discovery_candidate_verified",
             run_id=str(run.run_id),
@@ -1054,7 +1218,7 @@ class Arv2DiscoveryWorkHandler:
     async def _verify_gates(
         self, state: _RunState, company_name: str, verified: str
     ) -> tuple[GateVerdict, ...]:
-        """Every hard gate the document states — asked together, then guarded in document order.
+        """Every gate of the brief — asked together, then guarded in the brief's order.
 
         The verdicts are assembled only once every answer is back, so parallel questions change
         nothing about what is decided; the semaphore on ``_answer`` decides how many are in flight.
@@ -1084,9 +1248,6 @@ class Arv2DiscoveryWorkHandler:
             apply_guards(
                 gate=gate,
                 answer=result.answer,
-                citations=result.citations,
-                company_domain=verified,
-                company_name=company_name,
                 today=state.today,
             )
             for gate, result in zip(state.brief.gates, answers, strict=True)
@@ -1132,7 +1293,7 @@ class Arv2DiscoveryWorkHandler:
         item: WebsetItem,
         account_id: EntityId,
         verdicts: Sequence[GateVerdict],
-        fit: float,
+        fit: float | None,
         pass_: Pass,
         verified: str,
         logo: tuple[str, str] | None = None,
@@ -1145,7 +1306,8 @@ class Arv2DiscoveryWorkHandler:
 
         The fit claim cites the first *passing* verdict's page and quote, because that is the
         evidence a reader of the score should land on; a fit with no passing gate cites the
-        company's own site and carries no span rather than borrowing an unrelated one.
+        company's own site and carries no span rather than borrowing an unrelated one. A brief
+        whose every gate is a ``must_not`` scores nothing (``fit`` is ``None``): no fit is written.
         """
         run = state.run
         supporting = next((v for v in verdicts if v.verdict == "pass"), None)
@@ -1158,22 +1320,23 @@ class Arv2DiscoveryWorkHandler:
             "icp_artifact_key": run.icp_artifact_key,
             "icp_artifact_sha256": run.icp_artifact_sha256,
         }
-        await self._writer.write(
-            conn,
-            self._draft(
-                run,
-                account_id=account_id,
-                field_key="account.scoring.fit",
-                value_json={"value": fit},
-                source_key=_ANSWER_SOURCE,
-                source_url=(
-                    supporting.evidence_url if supporting is not None else f"https://{verified}"
+        if fit is not None:
+            await self._writer.write(
+                conn,
+                self._draft(
+                    run,
+                    account_id=account_id,
+                    field_key="account.scoring.fit",
+                    value_json={"value": fit},
+                    source_key=_ANSWER_SOURCE,
+                    source_url=(
+                        supporting.evidence_url if supporting is not None else f"https://{verified}"
+                    ),
+                    evidence_span=supporting.evidence_quote if supporting is not None else None,
+                    confidence=fit,
+                    markers=markers,
                 ),
-                evidence_span=supporting.evidence_quote if supporting is not None else None,
-                confidence=fit,
-                markers=markers,
-            ),
-        )
+            )
         if isinstance(item.employees, int) and not isinstance(item.employees, bool):
             await self._writer.write(
                 conn,
@@ -1264,18 +1427,25 @@ class Arv2DiscoveryWorkHandler:
     async def _land(
         self, state: _RunState, *, status: str, failure: tuple[str, str] | None
     ) -> None:
-        """Write the run's terminal row: the §4 counters and the receipt behind them."""
+        """Write the run's terminal row — the §4 counters and the receipt behind them — and end it
+        through :meth:`_end`, in one transaction."""
+        run = state.run
+        if state.end_reason is None:
+            state.end_reason = "filled" if state.shown >= run.target_count else "dry"
         receipt: dict[str, JsonValue] = {
             "asked": sum(search.asked for search in state.searches.values()) or None,
             "recall_estimate": state.recall_estimate,
             "shown": state.shown,
-            "target_count": state.run.target_count,
+            "target_count": run.target_count,
+            "source": state.brief2.source,
             "criteria": list(state.brief.criteria),
+            "end_reason": state.end_reason,
             # Every search this run made, in order: what it asked for, what it sent, what it found.
             "searches": [
                 {
                     "ordinal": search.ordinal,
                     "kind": search.kind,
+                    "source": search.source,
                     "asked": search.asked,
                     "criteria": list(search.criteria),
                     "excluded_websets": len(search.exclude_webset_ids),
@@ -1297,29 +1467,83 @@ class Arv2DiscoveryWorkHandler:
             "found_before": state.found_before_count,
             "from_other_projects": state.from_other_projects,
             "unresolvable_domain": state.unresolvable,
+            "excluded": {gate: len(names) for gate, names in state.excluded.items()},
             "candidate_failures": [dict(failure) for failure in state.candidate_failures],
         }
         if failure is not None:
             receipt["failure"], receipt["message"] = failure[0], failure[1][:1_000]
+        summary = build_summary(state, failure=None if failure is None else failure[0])
         async with self._connection() as conn:
             await self._store.finish_discovery_run(
                 conn,
-                run_id=state.run.run_id,
+                run_id=run.run_id,
                 status=status,
                 found_strict=state.found_strict,
                 found_relaxed=state.found_relaxed,
                 analyzed=state.analyzed,
                 receipt=receipt,
             )
+            await self._end(conn, run, status=status, end_reason=state.end_reason, summary=summary)
         log.info(
             "arv2.discovery_run_finished",
-            run_id=str(state.run.run_id),
+            run_id=str(run.run_id),
             status=status,
+            end_reason=state.end_reason,
             shown=state.shown,
-            target=state.run.target_count,
+            target=run.target_count,
             cost_usd=str(state.cost_usd),
             candidate_failures=len(state.candidate_failures),
         )
+
+    async def _end(
+        self,
+        conn: AsyncConnection,
+        run: DiscoveryRunRow,
+        *,
+        status: str,
+        end_reason: str,
+        summary: Mapping[str, Any],
+    ) -> None:
+        """The one end block every ending runs (spec §4, §5): write why the run ended and its
+        summary, then either hand the summary to the launching thread's wake turn — the run stays
+        held until that turn finishes — or release the run's project lock now.
+
+        A run with no launching thread (or a worker composed without a wake) releases at once. So
+        does a run whose wake queued nothing or failed: a lock nobody will ever release would block
+        every later discovery of the project. The wake runs in a savepoint so its failure cannot
+        take the run's own ending down with it.
+        """
+        wake = self._wake
+        threaded = run.launched_thread_id is not None and wake is not None
+        await self._store.end_discovery_run(
+            conn,
+            run_id=run.run_id,
+            status=status,
+            end_reason=end_reason,
+            summary=summary,
+            release=not threaded,
+        )
+        if wake is None or not threaded:
+            return
+        wake_turn: UUID | None = None
+        try:
+            async with conn.begin_nested():
+                wake_turn = await wake.queue(
+                    conn, run, summary, summary_message(run.run_id, summary)
+                )
+        except Exception:  # noqa: BLE001 — the run still ends, and is released below
+            log.exception("arv2.discovery_wake_failed", run_id=str(run.run_id))
+        if wake_turn is None:
+            await self._store.end_discovery_run(
+                conn,
+                run_id=run.run_id,
+                status=status,
+                end_reason=end_reason,
+                summary=summary,
+                release=True,
+            )
+        else:
+            await self._store.record_wake_turn(conn, run_id=run.run_id, wake_turn_id=wake_turn)
 
     async def _suspend(self, run_id: UUID) -> None:
         """Park the run for requeue. A failure here is logged, never raised into the fleet."""
@@ -1329,10 +1553,25 @@ class Arv2DiscoveryWorkHandler:
         except Exception:  # noqa: BLE001 — a stopped task must still return a result
             log.exception("arv2.discovery_suspend_failed", run_id=str(run_id))
 
-    async def _contain(self, run_id: UUID, *, code: str, message: str) -> None:
-        """Land a failed run ``needs_review`` with a named reason. Never raises."""
+    async def _contain(
+        self,
+        run_id: UUID,
+        *,
+        code: str,
+        message: str,
+        summary: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Land a failed run ``needs_review`` with a named reason, and end it. Never raises.
+
+        Without a ``summary`` this is the ending of a run that failed before it had any state — a
+        task whose ids disagree, a refused brief or ICP pin — so nothing was verified or spent,
+        and the summary says so. (A failure after the rounds began is landed by ``_run`` with its
+        real counters; only a failure of that landing itself comes here, with its summary.) The
+        run still goes through :meth:`_end`: it wakes the launching thread and is released.
+        """
         try:
             async with self._connection() as conn:
+                run = await self._store.read_discovery_run(conn, run_id=run_id)
                 await self._store.finish_discovery_run(
                     conn,
                     run_id=run_id,
@@ -1340,8 +1579,16 @@ class Arv2DiscoveryWorkHandler:
                     found_strict=0,
                     found_relaxed=0,
                     analyzed=0,
-                    receipt={"failure": code, "message": message[:1_000]},
+                    receipt={"failure": code, "message": message[:1_000], "end_reason": "failed"},
                 )
+                if run is not None and run.released_at is None and run.wake_turn_id is None:
+                    await self._end(
+                        conn,
+                        run,
+                        status="needs_review",
+                        end_reason="failed",
+                        summary=summary if summary is not None else _failure_summary(run, code),
+                    )
         except Exception:  # noqa: BLE001 — the log is the last report left
             log.exception("arv2.discovery_contain_failed", run_id=str(run_id))
 
@@ -1431,25 +1678,104 @@ def _fold(domain: object) -> str:
     return registrable_domain(raw) or raw.strip().lower()
 
 
-def relaxed_criteria(
-    criteria: Sequence[str], rates: Sequence[tuple[str, float | None]]
-) -> tuple[str, ...]:
-    """The criteria minus the one the strict search satisfied least often.
+def build_summary(state: _RunState, *, failure: str | None = None) -> dict[str, Any]:
+    """What the Head of ABM is told when the run ends (spec §4 "The summary"), built by code.
 
-    A criterion Exa reported no rate for counts as the lowest (it is the one we know least about,
-    and a criterion nobody satisfied often reports nothing); ties drop the *last* one, so the
-    dropped criterion is deterministic rather than dependent on dict ordering.
+    ``excluded_by`` lists each gate that excluded companies, most first, with its role and one
+    example; ``criteria_rates`` are the last webset's (Exa reports 0–100); ``spend_usd`` is this
+    run's ledger total as a string, like the receipt's.
     """
-    if not criteria:
-        return ()
-    lookup = dict(rates)
-    worst_index, worst = 0, None
-    for index, criterion in enumerate(criteria):
-        rate = lookup.get(criterion)
-        score = float("-inf") if rate is None else float(rate)
-        if worst is None or score <= worst:
-            worst, worst_index = score, index
-    return tuple(criterion for index, criterion in enumerate(criteria) if index != worst_index)
+    roles = {gate.key: gate.role for gate in state.brief2.gates}
+    summary: dict[str, Any] = {
+        "asked": state.run.target_count,
+        "added": state.shown,
+        "excluded": sum(len(names) for names in state.excluded.values()),
+        "unclear": state.unclear_count,
+        "excluded_by": [
+            {"gate": gate, "role": roles.get(gate), "count": len(names), "example": names[0]}
+            for gate, names in sorted(state.excluded.items(), key=lambda kv: -len(kv[1]))
+        ],
+        "criteria_rates": [
+            {"criterion": criterion, "rate": rate} for criterion, rate in state.criteria_rates
+        ],
+        "searches": len(state.searches),
+        "end_reason": state.end_reason,
+        "spend_usd": str(state.cost_usd),
+    }
+    if failure is not None:
+        summary["failure"] = failure
+    return summary
+
+
+def _failure_summary(run: DiscoveryRunRow, failure: str) -> dict[str, Any]:
+    """The summary of a run that failed before it had any state: nothing verified, nothing spent."""
+    return {
+        "asked": run.target_count,
+        "added": 0,
+        "excluded": 0,
+        "unclear": 0,
+        "excluded_by": [],
+        "criteria_rates": [],
+        "searches": 0,
+        "end_reason": "failed",
+        "spend_usd": "0",
+        "failure": failure,
+    }
+
+
+def summary_message(run_id: UUID, summary: Mapping[str, Any]) -> str:
+    """The wake turn's message (spec §6.3): the summary, as the Head of ABM reads it."""
+    reason = str(summary["end_reason"])
+    ended = reason.replace("_", " ")
+    if reason == "round_cap":
+        ended = f"round cap ({summary['searches']} searches)"
+    elif reason == "failed" and summary.get("failure"):
+        # Not in spec §6.3's list: a failed run names its failure, so the agent can say why.
+        ended = f"failed ({summary['failure']})"
+    lines = [
+        f"Discovery finished (run {run_id}). Asked for {summary['asked']}, added "
+        f"{summary['added']}, excluded {summary['excluded']}, unclear {summary['unclear']}.",
+        f"Ended: {ended}.",
+    ]
+    if summary["excluded_by"]:
+        lines.append(
+            "Excluded by: "
+            + "; ".join(
+                f"{entry['gate']} ({entry['role']}) {entry['count']} — e.g. {entry['example']}"
+                for entry in summary["excluded_by"]
+            )
+            + "."
+        )
+    rates = [entry for entry in summary["criteria_rates"] if entry["rate"] is not None]
+    if rates:
+        lines.append(
+            "Criteria pass rates, last search: "
+            + "; ".join(f'"{entry["criterion"]}" {round(float(entry["rate"]))}%' for entry in rates)
+            + "."
+        )
+    lines.append(f"Spend: ${Decimal(str(summary['spend_usd'])):.2f}.")
+    return "\n".join(lines)
+
+
+def _item_from_hit(hit: ExaHit) -> WebsetItem:
+    """A ``/search`` result in the verifier's shape. A search result carries none of the company
+    facts a webset row does, so the account gets no employee count, revenue band or mark from it."""
+    url = str(hit.url)
+    return WebsetItem(
+        item_id=f"search:{url}",
+        search_id=None,
+        url=url,
+        name=hit.title or url,
+        description=(hit.text or "")[:400],
+        hq_city=None,
+        hq_state=None,
+        hq_country_code=None,
+        employees=None,
+        revenue_annual=None,
+        funding_total=None,
+        evaluations=(),
+        raw={"url": url, "title": hit.title},
+    )
 
 
 def _snapshot_item_id(candidate: CandidateRow) -> str | None:
@@ -1531,12 +1857,16 @@ def build_arv2_discovery_handler(
     storage: StorageBackend,
     artifacts: ArtifactSink,
     conn_factory: ConnFactory = transaction,
+    wake: DiscoveryWake | None = None,
 ) -> Arv2DiscoveryWorkHandler | None:
     """Compose the lane on this worker, or refuse loudly and compose nothing.
 
     A worker missing the Exa credential gets a named warning and **no handler**: the enqueued runs
     then wait for a correctly-credentialed worker, which is the honest outcome. Composing a keyless
     handler would fail each run at its first provider call — after it had already claimed the row.
+
+    ``wake`` queues the launching thread's turn when a run ends; without one every run releases
+    its project lock as it ends.
     """
     if not settings.arv2_discovery_enabled:
         return None
@@ -1558,4 +1888,5 @@ def build_arv2_discovery_handler(
         artifacts=artifacts,
         clients=_LiveClients(settings=settings, exa_api_key=SecretStr(key.get_secret_value())),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
+        wake=wake,
     )

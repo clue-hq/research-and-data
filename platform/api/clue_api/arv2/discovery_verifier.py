@@ -3,44 +3,40 @@
 The verifier is two halves. The first half is what we *send*: a system prompt that is the same
 paragraph for every call, a question built entirely out of the gate's own words, and an output
 schema with exactly five keys. The second half is what we *trust* — :func:`apply_guards`, which
-takes the Answer object plus the citations Exa says it read and refuses anything the sources do
-not carry.
+takes the Answer object and holds it to what code can check.
 
-Three guards, one per error kind the proof-of-concept run actually produced, and nothing else:
+One guard, for the error kind the proof-of-concept run produced that code can settle:
 
-1. **Quote on the page.** The quoted sentence must appear in the text of a citation, compared
-   after :func:`normalise` so typography and wrapping cannot decide a fact. A quote nobody's page
-   contains is a quote the model wrote.
-2. **Right company.** The page carrying the quote must be on the company's own domain, or name the
-   company in its text — a job posting for *infinIT* is not evidence about *INFI*.
-3. **Arithmetic is code's.** When the gate states a window, the evidence date is subtracted here.
+1. **Arithmetic is code's.** When the gate states a window, the evidence date is subtracted here.
    The model called a 2023 round "within 24 months"; code does not.
+
+(The quote-on-the-page and right-company guards were removed by founder ruling 2026-10-01: on the
+live hotel-operators run they turned correct verdicts to `unclear` — a renamed company's LinkedIn
+page, a job board, a news article that shortened the company's name — and the model's own
+verdict is trusted instead. Rows written before then may still carry `quote_not_on_page` or
+`wrong_company` in `guard`.)
 
 And one rule the guards enforce rather than request: **no source found is `unclear`, never
 `fail`.** A gate we could not evidence is an open question for the human, not a rejection — and
 R4's disposition vocabulary has no `fail` for exactly that reason.
 
-Pure: an answer and its citations in, a verdict out. No provider call, no database, no clock of
+Pure: an answer in, a verdict out. No provider call, no database, no clock of
 its own (``today`` is passed in, so a replay of a stored answer grades the same way twice).
 """
 
 from __future__ import annotations
 
-import re
-import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
 from clue_api.arv2.discovery_brief import Gate
-from clue_api.arv2.exa_client import ExaCitation
-from clue_research.identity.normalize import registrable_domain
 
 __all__ = [
     "GUARDS",
+    "MAIN_BUSINESS_CLAUSE",
     "OUTPUT_SCHEMA",
-    "QUOTE_PREFIX_CHARS",
     "VERDICTS",
     "WEBSITE_SCHEMA",
     "GateVerdict",
@@ -49,7 +45,6 @@ __all__ = [
     "fit_score",
     "gate_question",
     "months_between",
-    "normalise",
     "system_prompt",
     "website_question",
 ]
@@ -59,11 +54,7 @@ __all__ = [
 VERDICTS = ("pass", "fail", "unclear")
 
 #: Every guard label a verdict can carry. `ok` means the model's answer survived unchanged.
-GUARDS = ("ok", "quote_not_on_page", "wrong_company", "outside_window", "no_source", "malformed")
-
-#: How much of the quote must be found on the page. A prefix, not the whole quote: models trim and
-#: re-join long passages, and a paragraph-length quote would fail on an ellipsis the page never had.
-QUOTE_PREFIX_CHARS = 60
+GUARDS = ("ok", "outside_window", "no_source", "malformed")
 
 OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -115,27 +106,6 @@ WEBSITE_SCHEMA: dict[str, Any] = {
     },
 }
 
-#: Typography a page and a model spell differently. Folded before anything is compared.
-_TYPOGRAPHIC = str.maketrans(
-    {
-        "‘": "'",
-        "’": "'",
-        "‚": "'",
-        "‛": "'",
-        "“": '"',
-        "”": '"',
-        "‐": "-",
-        "‑": "-",
-        "‒": "-",
-        "–": "-",
-        "—": "-",
-        "―": "-",
-        "−": "-",
-    }
-)
-
-_KEEPABLE = re.compile(r"[^a-z0-9' -]")
-
 _DATE_FORMATS = ("%Y-%m-%d", "%Y-%m")
 
 
@@ -158,13 +128,27 @@ def system_prompt(today: date) -> str:
     )
 
 
+#: Added to the question of a gate that excludes when it passes (founder ruling 2026-10-01). Asked
+#: "does it do this?", the verifier excluded hotel operators for a side business (a software
+#: subsidiary, a rentals line) and on a look-alike company's site; asked about the main business,
+#: it kept all five and still excluded every real vendor (replay 2026-10-01, 15 of 15).
+MAIN_BUSINESS_CLAUSE = (
+    "This is an exclusion test. Answer pass only if this is the company's main business: what its "
+    "own website presents it as, and what most of its revenue comes from. A side business, a "
+    "subsidiary, one product line or a service it also offers does not make it pass; when the "
+    "company's main business is something else, answer fail. "
+)
+
+
 def gate_question(company_name: str, url: str, gate: Gate) -> str:
     """The gate, asked in the document's own words — nothing here paraphrases the ICP."""
     return (
         f"Company: {company_name} (website {url}). "
         f"Test to verify: {gate.rule}. "
         f"How it is tested: {gate.test} "
-        "Decide pass, fail or unclear for THIS company today, citing the freshest relevant source."
+        + (MAIN_BUSINESS_CLAUSE if gate.main_business else "")
+        + "Decide pass, fail or unclear for THIS company today, "
+        "citing the freshest relevant source."
     )
 
 
@@ -182,17 +166,6 @@ def website_question(company_name: str, websets_url: str) -> str:
     )
 
 
-def normalise(text: str) -> str:
-    """Fold a page's text and a model's quote onto common ground before comparing them.
-
-    NFKC, lower case, typographic quotes and dashes to ASCII, every other non-alphanumeric to a
-    space, whitespace collapsed. What survives is the words — which is all a quote check should
-    turn on, since a page's line wrapping and a model's smart quotes are not facts.
-    """
-    folded = unicodedata.normalize("NFKC", text or "").translate(_TYPOGRAPHIC).lower()
-    return " ".join(_KEEPABLE.sub(" ", folded).split())
-
-
 def months_between(a: date, b: date) -> int:
     """Whole calendar months from ``a`` to ``b`` — the subtraction the model kept getting wrong."""
     return (b.year - a.year) * 12 + (b.month - a.month)
@@ -206,18 +179,6 @@ def _parse_evidence_date(raw: str) -> date | None:
         except ValueError:
             continue
     return None
-
-
-def _names_company(company_name: str, text: str | None) -> bool:
-    """Whether ``text`` names the company as a whole word run, not as a prefix of another name.
-
-    A substring test would read "infinIT" as naming "INFI" — which is precisely the confusion the
-    right-company guard exists to catch — so both sides are padded and compared on word edges.
-    """
-    name = normalise(company_name)
-    if not name:
-        return False
-    return f" {name} " in f" {normalise(text or '')} "
 
 
 @dataclass(frozen=True)
@@ -256,16 +217,11 @@ def apply_guards(
     *,
     gate: Gate,
     answer: object,
-    citations: Sequence[ExaCitation],
-    company_domain: str,
-    company_name: str,
     today: date,
 ) -> GateVerdict:
-    """Grade one Answer response against the sources behind it.
+    """Grade one Answer response: the model's verdict, held to a source and to a gate's window.
 
-    The guards run in order and the first one that fires decides, because each later guard assumes
-    the earlier ones held: there is no point asking whether the right company appears on a page
-    that does not carry the quote.
+    The checks run in order and the first one that fires decides.
     """
     if not isinstance(answer, Mapping):
         return GateVerdict(gate.key, "unclear", "", "", "", "", "malformed", "")
@@ -300,23 +256,7 @@ def apply_guards(
     if not quote or not url:
         return verdict_of("unclear", "no_source")
 
-    # (4) Guard one: the quote must be on a page Exa says it read.
-    needle = normalise(quote)[:QUOTE_PREFIX_CHARS]
-    supporting = [
-        citation for citation in citations if needle and needle in normalise(citation.text or "")
-    ]
-    if not supporting:
-        return verdict_of("unclear", "quote_not_on_page")
-
-    # (5) Guard two: that page is the company's own, or it names the company.
-    domain = registrable_domain(company_domain) or company_domain.strip().lower()
-    if not any(
-        registrable_domain(citation.url) == domain or _names_company(company_name, citation.text)
-        for citation in supporting
-    ):
-        return verdict_of("unclear", "wrong_company")
-
-    # (6) Guard three: when the gate names a window, code does the subtraction. A date it cannot
+    # (4) The one guard: when the gate names a window, code does the subtraction. A date it cannot
     # read leaves the verdict alone — an unreadable date is not evidence against a sourced fact.
     if gate.window_months is not None and model_verdict == "pass":
         when = _parse_evidence_date(evidence_date)

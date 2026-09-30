@@ -2,7 +2,7 @@ schema_version: "1"
 kind: profile
 name: onboarding-synthesis
 version: v3
-status: active
+status: retired
 # ARV2 Track O, O4 (ARV2-ONBOARDING-PLAN.md §5). One ICP turn and one persona turn per ICP; the
 # ICP turn runs on the `onboarding_icp` surface, which withholds the evidence tool because that
 # turn writes from the brand's knowledge documents alone. Reads the brand's knowledge documents

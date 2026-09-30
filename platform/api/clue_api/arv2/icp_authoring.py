@@ -66,6 +66,7 @@ __all__ = [
     "IcpAuthoringService",
     "author_icp_document",
     "authored_document_id",
+    "comma_split_rows",
 ]
 
 #: An ICP key is a path segment and a file name, so it is lowercase kebab-case and nothing else.
@@ -115,8 +116,44 @@ _PLATFORM_OWNED_KEYS: tuple[str, ...] = (
 )
 
 
+#: The fields a ``hard_gates`` or ``qualifier_fields`` row is written with. Any of them may be
+#: empty; a key with no value that is *not* one of them is the comma-split signature below.
+ICP_ROW_FIELDS: frozenset[str] = frozenset(
+    {"key", "rule", "test", "criterion", "field_key", "description", "display", "titles"}
+)
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def comma_split_rows(front: Mapping[str, Any]) -> tuple[str, ...]:
+    """Name every gate or qualifier row whose text an unquoted comma cut apart.
+
+    Written inline — ``- {key: k, rule: a, b, test: t}`` — a comma inside a value ends it: YAML
+    keeps ``a`` as the rule and turns ``b`` into a key of its own with no value. The document
+    still parses, and the rest of the sentence is gone. So a value-less key that is not one of
+    :data:`ICP_ROW_FIELDS` is text that was lost, never a field; one line per damaged row, naming
+    the row by its ``key`` (a gate) or ``field_key`` (a qualifier field) and the fragments.
+    """
+
+    damaged: list[str] = []
+    for list_name, name_field in (("hard_gates", "key"), ("qualifier_fields", "field_key")):
+        rows = front.get(list_name)
+        if not isinstance(rows, list):
+            continue
+        for index, row in enumerate(rows):
+            if not isinstance(row, Mapping):
+                continue
+            stray = [
+                str(field)
+                for field, value in row.items()
+                if value is None and field not in ICP_ROW_FIELDS
+            ]
+            if stray:
+                name = row.get(name_field) or f"#{index + 1}"
+                damaged.append(f"{list_name} {name!r}: {', '.join(repr(s) for s in stray)}")
+    return tuple(damaged)
 
 
 class IcpAuthoringRefused(Exception):
@@ -247,7 +284,9 @@ def _validate_front(front: Mapping[str, Any], *, icp_key: str) -> None:
 
     Deliberately a floor, not a schema. The gates' shape, the persona map and the qualifier fields
     are read by the surfaces that use them; what is refused here is a document that could not be
-    an ICP at all — the wrong kind, another key, no products to sell, no gates to qualify on.
+    an ICP at all — the wrong kind, another key, no products to sell, no gates to qualify on — and
+    one whose gate or qualifier rows lost text to a comma (:func:`comma_split_rows`), because the
+    agents that read the document would otherwise act on half a rule.
     """
 
     kind = front.get("kind")
@@ -277,6 +316,15 @@ def _validate_front(front: Mapping[str, Any], *, icp_key: str) -> None:
         raise IcpAuthoringRefused(
             "icp_front_matter_invalid",
             "front matter must declare hard_gates: a non-empty list of gates an account must pass",
+        )
+    damaged = comma_split_rows(front)
+    if damaged:
+        raise IcpAuthoringRefused(
+            "icp_front_matter_invalid",
+            "a comma inside an unquoted value split these rows, and the text after it became "
+            f"keys with no value ({'; '.join(damaged)}). Write each hard_gates and "
+            "qualifier_fields row in block YAML, one field per line, with every value in double "
+            'quotes (rule: "…, …").',
         )
 
 

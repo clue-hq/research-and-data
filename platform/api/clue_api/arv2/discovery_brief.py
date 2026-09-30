@@ -81,6 +81,10 @@ class Gate:
     #: synthesis skill sets it on the gates a public page can answer; absent everywhere, the
     #: document's first gates stand in (see :func:`compile_brief`).
     criterion: bool = False
+    #: The gate excludes a company when it passes (a ``must_not`` gate of the agent's brief), so
+    #: the verifier asks whether it is the company's MAIN business, not whether the company does it
+    #: at all (founder ruling 2026-10-01).
+    main_business: bool = False
 
 
 @dataclass(frozen=True)

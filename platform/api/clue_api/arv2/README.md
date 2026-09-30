@@ -1495,7 +1495,7 @@ steps below wherever the two disagree:
 | `discovery_brief.py` | the ICP document compiled into the brief one run executes — `Gate`, `DiscoveryBrief`, `compile_brief`, `buyer_sentence`, `parse_window_months`, and the typed `BriefError` |
 | `discovery_verifier.py` | what we send and what we trust — `system_prompt(today)`, `gate_question`, `website_question`, `OUTPUT_SCHEMA` / `WEBSITE_SCHEMA`, `apply_guards` (the three guards), `fit_score`, `disposition`; pure, with no clock, no settings, no database and no provider |
 | `discovery_launch.py` | **seam 1** for discovery — `read_pinned_icp` (the project's *current* pin, for the launch) and `read_icp_document` (a run's *own* pinned bytes, by key and sha, for the driver), `launch_arv2_discovery` (replay + lineage, rows only), `enqueue_discovery_run`, the `Arv2DiscoveryService` seam and the `launch_arv2_discovery@1` toolbelt tool |
-| `discovery_driver.py` | the fleet handler: claim, compile, run up to three searches (each a webset), verify every candidate, land the run — plus `relaxed_criteria` and `revenue_band`, the two pure helpers its arithmetic lives in |
+| `discovery_driver.py` | the fleet handler: claim, read the agent's brief, run rounds of that brief (a webset or an Exa `/search` each, up to `1 + CLUE_ARV2_DISCOVERY_MAX_TOPUPS`), verify every candidate and apply its gates' roles, honour Stop, land the run and end it (summary, then the launching thread's wake or an immediate release) — plus `summary_message` and `revenue_band`, the pure helpers |
 | `fleet_task.py` | R4's three names beside R2's — `ARV2_DISCOVERY_DEDUP_PREFIX = "arv2-discovery:"`, `ARV2_DISCOVERY_TASK_PRIORITY = -90`, `arv2_discovery_work_id(run_id)` (the run id **is** the work id) — so the enqueuer and the handler never import each other |
 | `scripts/launch_arv2_discovery.py` | the operator CLI: launch (`--request-key` to replay an ask), `--report <run>` |
 
@@ -1580,22 +1580,30 @@ nobody has picked yet. Migration `2cd622be2da0` adds the enum label and the two 
    raw sinks are drained under the run's `LedgerStamp` in a `finally` — costs are always recorded and
    **never a gate** (ruling 3).
 
-### The three guards
+### The guard
 
-One guard per error kind the proof of concept actually produced, and nothing else. Each turns a
-verdict the model got wrong into one a human can trust, and every overturn is recorded on the row
-(`guard`, beside the model's own `model_verdict`):
+The verifier trusts the model's own sourced verdict, with one arithmetic check in code; an
+overturn is recorded on the row (`guard`, beside the model's own `model_verdict`):
 
 | guard | what it catches |
 | --- | --- |
-| `quote_not_on_page` | `evidence_quote` must appear verbatim — NFKC-folded, typography and case normalised — in the text of a citation Exa actually returned; otherwise `unclear` |
-| `wrong_company` | the citation carrying the quote must be on the company's verified domain, or name the company in its text on a word boundary (character containment would let a posting from same-name `infinIT` clear the guard for `INFI`); otherwise `unclear` |
 | `outside_window` | when a gate names a window, the arithmetic is **code's**: `evidence_date` is checked against it (the model called a 2023 round "within 24 months"), and a pass outside the window becomes `fail` |
 
 Plus two rules that are not guards: `no_source` (an empty quote or URL on a pass/fail is `unclear`),
 and `malformed` (an answer that is not a mapping, or a verdict word the schema forbids, is `unclear`
-with the model's word kept). Every one of them errs toward `unclear`, never toward a `fail` the
-evidence does not support.
+with the model's word kept). Both err toward `unclear`, never toward a `fail` the evidence does not
+support.
+
+**`must_not` questions ask about the main business (founder ruling 2026-10-01).** A gate that
+excludes when it passes gets `MAIN_BUSINESS_CLAUSE` in its question: it passes only on what the
+company's own site presents it as and what most of its revenue comes from — a side business, a
+subsidiary or one product line does not count. `must` and `prefer` questions are unchanged.
+
+**Removed 2026-10-01 (founder ruling):** the `quote_not_on_page` guard (the quote had to appear in
+a page Exa returned) and the `wrong_company` guard (the page had to be the company's own domain or
+name it exactly). On the live hotel-operators run they turned correct verdicts to `unclear` — a
+renamed company's LinkedIn page, a job board, a news article that shortened the company's name.
+Rows written before then may still carry those two values in `guard`.
 
 **Fit** is `(passes + ½ × unclears) / gates`, banded by the accounts list's own thresholds
 (`CLUE_ARV2_FIT_HIGH_THRESHOLD` / `CLUE_ARV2_FIT_MEDIUM_THRESHOLD`) — a full match reads High 100,
@@ -1657,39 +1665,36 @@ existing `launch_arv2_account_research`; there is no research button and no new 
 
 ### Configuration (R4's additions)
 
-Eight keys, all in `.env.example` at parity:
+The live keys, all in `.env.example` at parity:
 
 - `CLUE_ARV2_DISCOVERY_ENABLED` (default `false`) — composes the handler and the launch service, and
   only when `CLUE_EXA_API_KEY` is configured too (otherwise the composition warns
   `arv2.discovery_handler_not_composed` and stays `None`). The tool registers on every deployment
   and refuses `arv2_discovery_not_composed` where the lane is off.
 - ~~`CLUE_ARV2_DISCOVERY_STRICT_COUNT`~~ — removed 2026-09-28: search 1 asks for exactly the target.
-- `CLUE_ARV2_DISCOVERY_RELAXED_AUTO` (default `true`) — allow the relaxed search when the caller did
-  not say (the agent's tool always says).
-- `CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS` (default **empty**) — operator override only. Empty means
-  the pinned ICP decides its own webset criteria (below); a comma-separated list of that document's
-  hard-gate keys forces those instead. At most three either way; a fourth is refused, not dropped.
-  There is no deployment-wide default gate set (founder ruling 2026-09-11): the first Insight Health
-  launch was refused `unknown_criteria_gate_key 'geography'` because the shipped default named the
-  Clue ICP's keys and a synthesised ICP names its own.
+- ~~`CLUE_ARV2_DISCOVERY_RELAXED_AUTO`~~ and ~~`CLUE_ARV2_DISCOVERY_CRITERIA_GATE_KEYS`~~ — removed
+  2026-09-30: the Head of ABM writes the whole brief (source, query, criteria, gates with roles),
+  so there is no compiled brief left for an operator switch to shape.
 - `CLUE_ARV2_DISCOVERY_ANSWER_MODEL` (default `exa`) — the Answer model the verifier asks.
 - `CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S` (default `15`) / `CLUE_ARV2_DISCOVERY_WALL_S` (default
   `1800`) — the webset poll cadence and each search's wall clock.
 - `CLUE_ARV2_DISCOVERY_WEBSETS_USD_PER_CREDIT` (default `0.00449`) — Websets bill 10 credits per
   all-green result; this is the plan's dollar rate for the pre-spend estimate and the ledger.
+- `CLUE_ARV2_DISCOVERY_MAX_TOPUPS` (default `3`, `0`–`15`) — top-up searches a run may make after
+  its first, each with the same brief, while it has shown fewer companies than asked.
 
 ### Starting one
 
 ```bash
 set -a; source .env; set +a
 
-# the operator path
+# the operator path: brief.json is a DiscoveryBrief2 (source, query, criteria, gates with roles)
 uv run python scripts/launch_arv2_discovery.py \
-    --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20
+    --workspace ws_arv2_answer_key --project prj_arv2_answer_key --target 20 --brief brief.json
 
 # replaying an ask (a repeated --request-key), and reading what a run found
 uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key \
-    --project prj_arv2_answer_key --target 20 --request-key <key>
+    --project prj_arv2_answer_key --target 20 --brief brief.json --request-key <key>
 uv run python scripts/launch_arv2_discovery.py --workspace ws_arv2_answer_key --report <run-id>
 ```
 
