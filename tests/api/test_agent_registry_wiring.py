@@ -171,7 +171,7 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # v69 (2026-09-29): 4 MB workspace files for offloaded history; stage0@v42, manual@v15.
         # v70 (2026-09-30): the agent writes the discovery brief — `launch_arv2_discovery@2` and
         # `read_discovery_run@3`; stage0@v43 (section 7b), manual@v16.
-        AgentRole.HEAD_OF_ABM: ("9bd1154743b9db2ea8f668a90595110085f9b2bea59ad9cd541d7b34d4d00488"),
+        AgentRole.HEAD_OF_ABM: ("7d081683dcef5863f58fd6a341228ad8806de41f24c1128443d30159c94202b6"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"

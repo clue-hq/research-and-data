@@ -58,12 +58,15 @@ The guard values you may see are `ok`, `quote_not_on_page`, `wrong_company`, `ou
 
 | Disposition | Meaning |
 | --- | --- |
+| `pending` | nothing has verified it yet |
 | `pass` | every scored gate passed |
 | `partial` | a `prefer` gate failed |
 | `unclear` | nothing failed and not everything passed |
 | `excluded` | a `must` failed or a `must_not` passed; kept on the run only |
 | `duplicate_of_existing` | already one of this project's accounts |
 | `found_before` | an earlier discovery of this project found it |
+
+Every candidate also names the search that found it: `strict` for every round of a run of the search you write; `relaxed` appears only on runs from before 2026-09-30, when the platform loosened a criterion by itself.
 
 ## The tallies
 

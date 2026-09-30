@@ -50,7 +50,7 @@ skills:
   sha256: 6b183685f4141ec2df21bb660d6db7b04fb40bee4bc02418c5e653297d1f2432
 - name: manual-discovery
   version: v16
-  sha256: bb01528916642a4748ee355fa302edb2bfe725b679d9f3823762adeef6a71533
+  sha256: 712e282ba7ab02f9c0cf70762a6ad82ff635a780f434091dae97ecf570454931
 - name: manual-documents-decisions
   version: v16
   sha256: e579dd4838c0cf496249dde64c33267f8d08f06274e8f5538a0c5a17a714a320
@@ -71,7 +71,7 @@ skills:
   sha256: ea49e803e47f95b01afb1c34f02dd4e5da52c68879680d220ecb732631204aba
 - name: manual-glossary
   version: v16
-  sha256: aab539be4452fd390fe3c3efbd19a0e9560b265b1c33bfd5d0b89e12ae196674
+  sha256: 4af64bc277a72ce01f3b5b46931cbacb9c43952432891423ee2068cbf65c8d05
 tools:
 - name: inspect_statement_history
   version: '1'

@@ -67,7 +67,7 @@ things share a word, both lines are here: read the one that matches where you sa
 - **onboarding run** a `full` brand walk or a `personas` run for one pinned ICP. `.deepagent/skills/manual-documents-decisions/v16/SKILL.md`
 - **outputs** the folder snapshotted to artifacts at finalize, and immutable afterwards. `.deepagent/skills/manual-workspace/v16/SKILL.md`
 - **outreach_safe** appropriateness, not accuracy. A false claim reaches only a restricted section and is dropped from the claims read. `.deepagent/skills/manual-claims/v16/SKILL.md`
-- **pass** which search produced a discovery candidate: `strict` or `relaxed`. `.deepagent/skills/manual-discovery/v16/SKILL.md`
+- **pass** which search produced a discovery candidate. A run of the search you write records `strict`; `relaxed` appears only on runs from before 2026-09-30. `.deepagent/skills/manual-discovery/v16/SKILL.md`
 - **persona** a committee seat: champion, economic buyer, technical evaluator, blocker, user. Display order differs from that list. `.deepagent/skills/manual-accounts-research/v16/SKILL.md`
 - **pinned** bound to one exact version by id and digest for the whole turn or the whole run. `.deepagent/skills/manual-documents-decisions/v16/SKILL.md`
 - **plan card** what a `domain_refs` entry of an allowed object type renders as in the chat. `.deepagent/skills/manual-turn/v16/SKILL.md`
@@ -80,7 +80,7 @@ things share a word, both lines are here: read the one that matches where you sa
 - **refreshing** a non terminal account job newer than a completed one for that account. Person jobs never set it. `.deepagent/skills/manual-accounts-research/v16/SKILL.md`
 - **rejected (claim)** a judge or the use gate refused the claim. `.deepagent/skills/manual-claims/v16/SKILL.md`
 - **rejected (gate)** the human closed the subject. It confirms nothing. `.deepagent/skills/manual-gates-authority/v16/SKILL.md`
-- **relaxed pass** the relaxed search: a run's last search, with one ICP criterion dropped, run only when the run is still short and allows it. `.deepagent/skills/manual-discovery/v16/SKILL.md`
+- **relaxed pass** the platform's own loosened search, used only by runs from before 2026-09-30. Runs today never loosen by themselves; loosening is your decision after a run ends. `.deepagent/skills/manual-discovery/v16/SKILL.md`
 - **repair budget** three governed refusals per turn, shared across tools, plus two separate finalize repairs. `.deepagent/skills/manual-turn/v16/SKILL.md`
 - **replayed** this operation already happened and its stored result was returned; the tool did not run again. `.deepagent/skills/manual-turn/v16/SKILL.md`
 - **research directive** a row of the retired lane. Nothing on this lane executes a confirmed directive; the launch takes free text instead. `.deepagent/skills/manual-siblings/v16/SKILL.md`
@@ -100,7 +100,7 @@ things share a word, both lines are here: read the one that matches where you sa
 - **stage** how far a job has walked: `deep_research`, `synthesis`, `committee`, `member_research`. Only `status.md` carries it. `.deepagent/skills/manual-accounts-research/v16/SKILL.md`
 - **statement** the durable record of something the human said, bound to their exact words by offsets and a digest. `.deepagent/skills/manual-documents-decisions/v16/SKILL.md`
 - **status.md** the compiled project state file, frozen for your turn. `.deepagent/skills/manual-workspace/v16/SKILL.md`
-- **strict pass** a discovery search under the ICP's full criteria: search 1, and the top-up that replaces companies the platform's own checks removed. `.deepagent/skills/manual-discovery/v16/SKILL.md`
+- **strict pass** a discovery search with the full criteria. Every round of a run of the search you write is strict. `.deepagent/skills/manual-discovery/v16/SKILL.md`
 - **superseded** replaced by a newer row or version, which the older one points at. `.deepagent/skills/manual-claims/v16/SKILL.md`
 - **superstep** one step of the turn's graph. The superstep ceiling, not any plan ceiling, is what ends a long turn. `.deepagent/skills/manual-limits/v16/SKILL.md`
 - **suspended** a run or job that is **paused, not failed**. Every worker restart suspends what was in flight. `.deepagent/skills/manual-accounts-research/v16/SKILL.md`
