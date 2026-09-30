@@ -1,0 +1,162 @@
+{
+  "cases": [
+    {
+      "id": "hotel-fit",
+      "answer": "Possible hotel-group fit for guest communication, not a qualified deal. Five properties match the group workspace (shared standards, per-property knowledge, calls in a shared inbox). After-hours voice with staff in control matches Agents answering calls/messages and escalating with history—not an unattended hotel, kiosk, or Operations. Room count, PMS, and budget are unknown, so do not treat it as qualified. Verify in order: hotel group vs independent vs mis-tagged STR; live job is voice/messaging not housekeeping/labor; reservation source of truth and whether messaging stays on the PMS; brand owner vs property exceptions; which requests must hit the desk; channels; Messaging vs Guest vs Full Suite. A PMS logo is not write-back. Start with AI Agents plus Inbox; Messaging lists inbound/outbound Voice AI, unified inbox, and escalation. Humans stay in the loop. Proof: no hotel-group case here—investigate, do not reject. Do not reuse STR automation rates. Lauderdale is the only named hotel story (boutique; AI platform plus 24/7 staffed support; not a group analog).",
+      "document_keys": [
+        "icp-hotels",
+        "integrations",
+        "customer-evidence",
+        "product-agents"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/industry/hotel-groups",
+        "https://www.conduit.ai/industry/independent-hotels",
+        "https://www.conduit.ai/product/agents",
+        "https://www.conduit.ai/pricing",
+        "https://www.conduit.ai/customers/lauderdale-hotel",
+        "https://www.conduit.ai/integrations"
+      ],
+      "asset_ids": [],
+      "unresolved": [
+        "room count, PMS, budget, channels",
+        "hotel-group named proof",
+        "per-PMS write-back and OTA messaging path",
+        "package and unit vs room"
+      ],
+      "assessment": {
+        "verdict": "Passed bounded case",
+        "reason": "Keeps hotel fit provisional; asks about PMS, buyer, channel and economics; does not transfer rental case percentages to a hotel group.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    },
+    {
+      "id": "small-rental-quote",
+      "answer": "No. Messaging is published as a starting rate of $18 per unit per month with 40 credits per unit, not a contract, and the pages never equate unit, listing, and room. Do not quote a small portfolio by multiplying the headline per-unit rate. Twenty-two units sit in the published 0–25 Startup band: $899 per month, 2,000 credits, described as the full feature set with no implementation fee. Credits (AI voice 8/min; inbox AI replies use none), unpublished overage, and package mapping can still change the bill. Question before any quote: are the 22 units the billed inventory object, and should this account use Startup ($899/mo, 0–25 units) rather than Messaging at $18/unit starting?",
+      "document_keys": [
+        "pricing",
+        "commercial-model",
+        "icp-rentals"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/pricing",
+        "https://docs.conduit.ai/setting-up-conduit/credits"
+      ],
+      "asset_ids": [],
+      "unresolved": [
+        "unit vs listing definition",
+        "Startup eligibility vs Messaging path",
+        "overage dollar rate",
+        "credit mix for voice"
+      ],
+      "assessment": {
+        "verdict": "Passed bounded case",
+        "reason": "Refuses the unsupported 22 × $18 quote, identifies the published Startup offer, and asks about package eligibility and billable units.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    },
+    {
+      "id": "unknown-stack",
+      "answer": "Research—do not reject. A vacation-rental operator is in-category; a website that omits the PMS is a readiness unknown, not an exclusion. Sources say map the reservation source of truth and do not reject only because the PMS is unlisted. Hold applies when the company does not operate guest stays or the required job is a physical check-in kiosk. Proceed needs a connectable messaging and context path, which is not yet known. Precise next question: Which system is the source of truth for reservations, and should guest messaging stay on the PMS or move?",
+      "document_keys": [
+        "buying-triggers",
+        "integrations",
+        "icp-rentals"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/pricing",
+        "https://docs.conduit.ai/setting-up-conduit/connect-pms",
+        "https://www.conduit.ai/industry/short-term-rentals",
+        "https://www.conduit.ai/product/agents.md"
+      ],
+      "asset_ids": [],
+      "unresolved": [
+        "PMS name and messaging vs data-only class",
+        "required OTAs and live connector status"
+      ],
+      "assessment": {
+        "verdict": "Passed bounded case",
+        "reason": "Treats an unknown PMS as research/readiness, not a reason to reject an otherwise relevant rental operator.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    },
+    {
+      "id": "operator-vs-operations",
+      "answer": "No. Operator is the in-product workspace assistant: draft agents and Skills, inspect Knowledge, reason about escalations and configuration. It has no guest inbox, is a Messaging bundle line (starting $18/unit/mo), not a standalone SKU, and is not a housekeeping or workforce platform. Internal agents are a separate V3 pattern for team/system work without a customer inbox; gallery examples (cleaning status, lockouts) are scoped internal-agent patterns, not unattended Operator jobs. Operations is a different nav item labeled coming soon for AI-coordinated housekeeping, maintenance, and inspections. Full Suite lists tasks, workforce, scheduling, and dispatch, but that conflict is a confirmation item—do not promise Operator or Operations as a generally available replacement for their housekeeping/workforce platform.",
+      "document_keys": [
+        "product-operator",
+        "products-capabilities",
+        "pricing"
+      ],
+      "source_urls": [
+        "https://docs.conduit.ai/agent-hub/operator.md",
+        "https://www.conduit.ai/product/agents",
+        "https://www.conduit.ai/pricing",
+        "https://docs.conduit.ai/agent-hub/internal-agent-use-cases.md"
+      ],
+      "asset_ids": [],
+      "unresolved": [
+        "which Full Suite operational features are live vs coming soon",
+        "Operator default tools and guest-write permissions"
+      ],
+      "assessment": {
+        "verdict": "Passed bounded case",
+        "reason": "Separates the workspace assistant, Internal Agents and the Operations product; avoids promising housekeeping replacement.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    },
+    {
+      "id": "proof-and-copy",
+      "answer": "Draft headline: After-hours guest calls and messages, answered with your hotel’s policies. Draft support: Conduit agents handle voice, chat, email, WhatsApp, and connected OTA threads using the hotel’s policies and booking details, then escalate with history so the desk stays in control. Named proof only: The Lauderdale Boutique Hotel (using Conduit since December 2024) replaced a call-center path with Conduit’s AI-powered support platform and 24/7 staffed support team—one boutique story, not a group result. Do not use Haven/Cascadia/HomeHop percentages for hotels. Voice choices: lead with the guest job; name agent and human handoff; use operator nouns (calls, policies, desk); no invented drowning-desk pain; no averaged automation; unlabeled guarantees avoided; CTA is book a demo. Lines are drafts, not published copy.",
+      "document_keys": [
+        "brand-voice",
+        "writing-examples",
+        "customer-evidence",
+        "icp-hotels"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/industry/independent-hotels",
+        "https://www.conduit.ai/product/agents",
+        "https://www.conduit.ai/customers/lauderdale-hotel",
+        "https://www.conduit.ai/product/inbox"
+      ],
+      "asset_ids": [],
+      "unresolved": [
+        "no hotel-group named proof for broader hotel ads"
+      ],
+      "assessment": {
+        "verdict": "Passed bounded case",
+        "reason": "Produces a bounded hotel copy draft and preserves the scope of boutique-hotel proof. It is not a finished or layout-tested creative.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    },
+    {
+      "id": "account-logo",
+      "answer": "Dark-background Conduit mark: use only the official pale transparent 512px icon (asset_b8d066fe19fbc0e24e47). Prefer it over the smaller Brandfetch pale PNG. Do not place the official dark wordmark SVG on a dark field; the footer reverse is an observed treatment, not a downloaded white master—do not recolor or invent one. Do not use opaque site/touch tiles as lockup art. Do not generate logos. Verified Hyatt logo: no. No Hyatt file is in this pack; Bali Luxury Stays, Blue Gems, and Bocobay marks are unrelated and must not stand in. Unavailable: Hyatt artwork and usage rights, reverse wordmark master, official transparent dark-on-light icon, published clear-space, campaign approval. If Hyatt art is obtained later, keep Conduit and Hyatt as separate unaltered layers. Do not imply a Conduit × Hyatt partnership or customer relationship.",
+      "document_keys": [
+        "visual-identity",
+        "brand-messaging"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/",
+        "https://www.conduit.ai/figma/conduit-wordmark.svg",
+        "https://www.conduit.ai/conduit-icon.png"
+      ],
+      "asset_ids": [
+        "asset_b8d066fe19fbc0e24e47"
+      ],
+      "unresolved": [
+        "Hyatt logo file and permission",
+        "official reverse wordmark master",
+        "clear-space and campaign approval"
+      ],
+      "assessment": {
+        "verdict": "Partial on first pass",
+        "reason": "Initial answer selected the safe original icon but underused the observed white-wordmark treatment. Structured asset context was improved; the focused retest names the exact SVG treatment, export dependency and missing Hyatt master.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    }
+  ],
+  "created_at": "2026-09-20T01:30:53.165538+00:00",
+  "assessment": "Model answers from deliberately selected document bundles. Parent-agent assessment follows; not human approval or a general retrieval benchmark."
+}

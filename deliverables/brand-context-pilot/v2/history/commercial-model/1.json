@@ -1,0 +1,119 @@
+{
+  "key": "commercial-model",
+  "title": "Commercial model & market context",
+  "summary": "Conduit publishes per-unit monthly packages with included credits, a small-portfolio Startup bundle, and sales-assisted mapping for larger use cases; list rates are starting prices, not reported revenue. Value is framed as hospitality AI agents that convert guest conversations into bookings, upsells, and coordinated work, sold mainly through demos and self-serve starts, with affiliate referral as a partner route rather than a product.",
+  "markdown": "Conduit sells a hospitality AI platform, not a standalone chat model. Public pages describe on-brand agents that handle guest journeys across channels, convert inquiries into bookings, drive upsells, and connect to systems operators already use ([Company](https://www.conduit.ai/company)). [Pricing & packaging](#knowledge/pricing) is the detailed rate card; this note covers how that packaging sits in the market and what is still unpublished.\n\n## How value is created\n\nThe published commercial idea is simple: guest communication is the operation, and an agent that already holds reservation and property context can answer, act, and hand off instead of adding another inbox. Industry pages position the same core for short-term rentals, independent hotels, and hotel groups—after-hours coverage, omnichannel inbox, extras and upgrades, and PMS-connected work ([Independent hotels](https://www.conduit.ai/industry/independent-hotels); [Short-term rentals](https://www.conduit.ai/industry/short-term-rentals); [Hotel groups](https://www.conduit.ai/industry/hotel-groups)). Product surfaces that carry that value include [AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), and [Workflows](#knowledge/product-workflows). Operations (AI-coordinated housekeeping, maintenance, inspections) is labeled coming soon on the company site, so it is not a billed, generally available module in the current catalog ([Company](https://www.conduit.ai/company)).\n\nCompany-authored proof on the manifesto and build-vs-buy pages should be treated as Conduit’s own scoreboard, not third-party audit: more than 50M conversations handled, over $3B reservation value influenced, 87% of guest messages resolved autonomously, 95% guest CSAT, median first response under a minute, and a customer base described as past 300 hospitality brands in 120+ countries and 140 languages ([Manifesto](https://www.conduit.ai/manifesto); [Build vs. Buy](https://www.conduit.ai/build-vs-buy)). Those figures are not the same as billed revenue or average contract value.\n\nCredits sit next to the subscription. Each published package includes a monthly credit allotment per unit (or a flat 2,000 credits on Startup). What a credit consumes, whether unused credits roll, and overage rates are not on the pricing page.\n\n## How the offer is sold\n\nThe site sells from independent teams to enterprise and asks buyers to talk to an AI expert to map plans to a use case. Starting rates are shown; pricing is said to scale beyond 50 listings ([Pricing](https://www.conduit.ai/pricing)).\n\n| Package | Starting list rate | Included credits | Buy motion on page |\n| --- | --- | --- | --- |\n| Messaging | $18 / unit / mo | 40 / unit / mo | Get Started |\n| Guest | $30 / unit / mo | 60 / unit / mo | Get Started |\n| Guest + Devices | $36 / unit / mo | 80 / unit / mo | Get Started |\n| Full Suite | $48 / unit / mo | 100 / unit / mo | Talk to Sales |\n| Startup (0–25 units) | $899 / mo | 2,000 / mo | Get Started; no implementation fee claimed |\n\nMessaging is the unified-inbox and voice layer; Guest adds portals, waivers, and one-click upsell payments; Guest + Devices adds locks, thermostats, and sensors; Full Suite adds tasks, workforce, scheduling, dispatch, and inventory ([Pricing](https://www.conduit.ai/pricing)). FAQ copy says Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers—not a free product ([Pricing](https://www.conduit.ai/pricing)).\n\nY Combinator lists Account Executive and Sales Development Representative roles in San Francisco, which is consistent with a demo-led motion alongside “Get Started” ([Y Combinator](https://www.ycombinator.com/companies/conduit-ai)). Contract length, discounting, seat vs. unit definitions for hotels, and whether “unit” equals listing, room, or door are not published.\n\n## Routes to market\n\nPrimary demand capture is the public site: Book demo / Get Started, industry landing pages, comparison pages, and a [Build vs Buy](#knowledge/alternatives) argument aimed at operators considering in-house agents. The [Affiliate Program](https://www.conduit.ai/affiliate) is a partner channel, not a SKU. Anyone can submit a referral; Conduit’s team runs outreach, demo, and go-live. Referral partners earn a flat $500, paid 30 days after the referred business becomes a customer. An invite-only Ambassador tier is described as 5% of ARR for 12 months, $10,000 max per deal, monthly while the account is active, with a $25,000 quarterly cap that the page calls negotiable ([Affiliate Program](https://www.conduit.ai/affiliate)).\n\nInvestor and accelerator presence (Y Combinator Winter 2024; company page also lists Pi Labs, Unpopular Ventures, Transpose Platform, yventures) is backing, not a GTM product ([Company](https://www.conduit.ai/company); [Y Combinator](https://www.ycombinator.com/companies/conduit-ai)).\n\n## Market and alternatives\n\nConduit’s own footer frames two competitor sets: hospitality messaging/guest-experience vendors (Canary, Akia, Revinate, Duve, Volara, Enso Connect, Besty AI, HiJiffy, Quicktext) and general service desks (Zendesk, Salesforce Service Cloud, Freshdesk, Zoho Desk, Intercom) ([Company](https://www.conduit.ai/company)). Build-vs-buy copy contrasts Conduit with in-house engineering (claimed days vs. 6+ months and 3–5 engineers), VA teams or spreadsheets, and ChatGPT or Claude plus Zapier. Those are Conduit’s positioning claims; they are not independent win/loss data. See [Alternatives & differentiation](#knowledge/alternatives) for a fuller map.\n\nIdentity notes that affect how the company is researched: PitchBook lists the business as formerly HostAI, founded 2023, private, seed, San Francisco; Y Combinator lists Conduit, founded 2024, Winter 2024, team size 15 ([PitchBook](https://pitchbook.com/profiles/company/548975-44); [Y Combinator](https://www.ycombinator.com/companies/conduit-ai)). An earlier HostAI launch described an all-in-one vacation-rental OS; current commercial packaging is the Conduit hospitality agent platform ([HostAI launch](https://www.ycombinator.com/launches/KTc-hostai-the-operating-system-for-vacation-rentals)).\n\n## Buying economics\n\nList prices scale with units and package depth. A 10-unit Messaging quote at starting rates would be $180/month plus 400 credits; the same portfolio on Full Suite would be $480/month at the published starting rate. A 0–25 unit operator can instead buy Startup at $899/month for the full feature set and 2,000 credits, with no implementation fee on that card ([Pricing](https://www.conduit.ai/pricing)). Beyond 50 listings, the page only says pricing scales—no published curve.\n\nDo not treat those starting rates as realized ACV, net revenue, or a customer’s all-in bill. PitchBook’s public preview redacts current revenue while stating $3.6M raised to date, including a $500K accelerator (14 Dec 2023) and a $3.1M seed (10 Apr 2025) ([PitchBook](https://pitchbook.com/profiles/company/548975-44)). Credit overages, telephony/SMS pass-through, implementation for non-Startup deals, and multi-year terms are unknown from these sources.\n\nCustomer-count language also diverges: Y Combinator and LinkedIn say trusted by over 1000+ global hospitality brands across 120+ countries; industry pages and the manifesto say 300+ brands ([Y Combinator](https://www.ycombinator.com/companies/conduit-ai); [Independent hotels](https://www.conduit.ai/industry/independent-hotels); [Manifesto](https://www.conduit.ai/manifesto)). Use both as company statements until reconciled. Named operator quotes on pricing (Cascadia Getaways, Cosmica, Haven, Renjoy) illustrate why some teams buy—workload, automation, custom workflows—but are not financial outcomes ([Pricing](https://www.conduit.ai/pricing)). Named case metrics live in [Customer evidence](#knowledge/customer-evidence).\n\nHeadcount signals are similarly inconsistent (YC team size 15; PitchBook 30 employees; LinkedIn company size 51–200 and “Discover all 26 employees”). Treat them as snapshots from different directories, not a staffing model ([Y Combinator](https://www.ycombinator.com/companies/conduit-ai); [PitchBook](https://pitchbook.com/profiles/company/548975-44); [LinkedIn](https://www.linkedin.com/company/useconduitai/)).\n\n## Questions for the company\n\nAsk sales or finance to map unit definition, credit burn, overage, implementation, and which package actually matches the stack (messaging-only vs. portals vs. devices vs. Full Suite). Confirm whether Operations “coming soon” is in the quote. For partner-sourced deals, confirm Referral vs. Ambassador economics before promising payouts. Reconcile 300+ vs. 1000+ brand counts if the figure will be used externally. None of the public pages publish realized revenue, logo-level ACV, or a guaranteed payback period—do not invent one for [ICP strategy](#knowledge/ideal-customers) or campaigns.",
+  "source_ids": [
+    "src_0fe82516611ad5df",
+    "src_156a9e102c46da8e",
+    "src_3af7171895425b61",
+    "src_471f8f07bdc83e12",
+    "src_5eb74e069d5f7cb9",
+    "src_670b352acfa5edac",
+    "src_69422497b09c2257",
+    "src_69eff34511b34337",
+    "src_7c4526fa84e6106c",
+    "src_85ee63cd368efc44",
+    "src_9c6aa2bef5e4a30a",
+    "src_c6cc2b292bccdae2",
+    "src_d30d1770ff08e6a4",
+    "src_f09009069a2d197f"
+  ],
+  "open_questions": [
+    "What is a billed ‘unit’ for hotels versus STR listings, and how does the unpublished scale curve work past 50 listings?",
+    "What does one credit buy, do unused credits roll, and what is the overage or telephony/SMS pass-through rate?",
+    "What contract term, implementation fees (outside Startup), and discounting apply to Full Suite / enterprise quotes?",
+    "Which customer-count figure (300+ vs 1000+) and founding year (2023 vs 2024) should be used as the current company statement?",
+    "What share of bookings is self-serve Get Started versus demo-led sales, and what is realized revenue versus list price?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Published Messaging starting rate is $18 per unit per month with 40 credits per unit per month.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n18\n/ unit / mo\nGet Started\n40 credits\n/ unit / mo"
+    },
+    {
+      "statement": "Pricing page states starting rates and that pricing scales beyond 50 listings.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+    },
+    {
+      "statement": "Startup package for 0–25 units is $899 per month with 2,000 credits and no implementation fee on the published card.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "The full feature set, designed to help scale your operations with no implementation fee.\n2,000 credits\n/ mo\n$\n899\n/ mo"
+    },
+    {
+      "statement": "Referral affiliates earn a flat $500 paid 30 days after the referred business becomes a customer.",
+      "source_id": "src_69422497b09c2257",
+      "quote": "Earn a flat $500, paid out 30 days after they become a customer."
+    },
+    {
+      "statement": "Ambassador partners are invite-only and are described as earning 5% of ARR for 12 months.",
+      "source_id": "src_69422497b09c2257",
+      "quote": "Our Ambassador tier, with recurring revenue share, is invite-only for active partners."
+    },
+    {
+      "statement": "Y Combinator profile claims trust from over 1000+ hospitality brands across 120+ countries.",
+      "source_id": "src_c6cc2b292bccdae2",
+      "quote": "Trusted by over 1000+ global hospitality brands across 120+ countries."
+    },
+    {
+      "statement": "PitchBook preview states Conduit has raised $3.6M, with a $3.1M seed dated 10-Apr-2025.",
+      "source_id": "src_9c6aa2bef5e4a30a",
+      "quote": "Conduit (San Francisco, California) has raised $3.6M."
+    },
+    {
+      "statement": "Company manifesto attributes 50M+ conversations, $3B+ reservation value influenced, and 300+ brands to Conduit.",
+      "source_id": "src_3af7171895425b61",
+      "quote": "Conduit has handled more than 50M conversations and influenced over $3B in reservation value. The customer base runs past 300 hospitality brands."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "drafting pricing or commercial conversations from public list rates",
+      "explaining affiliate vs product",
+      "contrasting Conduit packaging with DIY, VA, or generic inbox tools",
+      "qualifying portfolio size against published unit tiers"
+    ],
+    "decisions_supported": [
+      "which published package to discuss before a demo",
+      "whether a referral should be routed as Affiliate vs direct sales",
+      "what commercial claims may be repeated as company-reported versus verified revenue"
+    ],
+    "do_not_infer": [
+      "realized ACV, ARR, or discount off list price",
+      "credit overage, SMS/voice pass-through, or contract term",
+      "that Operations coming soon is a current billed module",
+      "that 300+ and 1000+ brand counts are the same metric",
+      "ROI or payback from list price alone"
+    ],
+    "document_key": "commercial-model",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_0fe82516611ad5df",
+      "src_156a9e102c46da8e",
+      "src_3af7171895425b61",
+      "src_471f8f07bdc83e12",
+      "src_5eb74e069d5f7cb9",
+      "src_670b352acfa5edac",
+      "src_69422497b09c2257",
+      "src_69eff34511b34337",
+      "src_7c4526fa84e6106c",
+      "src_85ee63cd368efc44",
+      "src_9c6aa2bef5e4a30a",
+      "src_c6cc2b292bccdae2",
+      "src_d30d1770ff08e6a4",
+      "src_f09009069a2d197f"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "company",
+  "revision": 1,
+  "created_at": "2026-09-20T00:38:58.457295+00:00",
+  "status": "research_draft",
+  "input_hash": "65fe353229a76ea368434bd89428411244f56b8fb18273e2b68f755eefc3a99d",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

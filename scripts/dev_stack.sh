@@ -190,7 +190,7 @@ up() {
     env "${PLATFORM_ENV[@]}" \
         LUMEN_EMBEDDED_FLEET_WORKER=1 \
         LUMEN_CORE_HELPER="$ROOT/subsystems/clue-design/target/release/lumen-api-helper" \
-        LUMEN_API_CORS_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3000" \
+        LUMEN_API_CORS_ORIGINS="${LUMEN_API_CORS_ORIGINS:-http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3000}" \
         PYTHONPATH=.:apps/api:apps/agent_runtime \
         "$ROOT/.venv/bin/python" -m uvicorn lumen_api.main:app --port "$DESIGN_PORT" \
         > "${LOG}_design_api.log" 2>&1 & )

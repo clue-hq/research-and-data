@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:clue:proposal:brand-research-output:v1",
+  "title": "Proposed Exa Agent research output; not the shallow deep-reasoning schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "heading": {
+                  "type": "string"
+                },
+                "markdown": {
+                  "type": "string"
+                },
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "heading",
+                "markdown",
+                "evidence_ids"
+              ]
+            }
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open_questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "qualification_criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "criterion": {
+                  "type": "string"
+                },
+                "dimension": {
+                  "enum": [
+                    "fit",
+                    "readiness",
+                    "urgency",
+                    "exclusion"
+                  ]
+                },
+                "strength": {
+                  "enum": [
+                    "necessary",
+                    "preference",
+                    "hypothesis"
+                  ]
+                },
+                "rationale": {
+                  "type": "string"
+                },
+                "assessment_method": {
+                  "type": "string"
+                },
+                "positive_evidence": {
+                  "type": "string"
+                },
+                "negative_evidence": {
+                  "type": "string"
+                },
+                "unknown_handling": {
+                  "type": "string"
+                },
+                "evidence_ids": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "owner_confirmation_required": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "criterion",
+                "dimension",
+                "strength",
+                "rationale",
+                "assessment_method",
+                "positive_evidence",
+                "negative_evidence",
+                "unknown_handling",
+                "evidence_ids",
+                "owner_confirmation_required"
+              ]
+            }
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "summary",
+          "sections",
+          "evidence_ids",
+          "open_questions",
+          "qualification_criteria"
+        ]
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "statement": {
+            "type": "string"
+          },
+          "subject_entity": {
+            "type": "string"
+          },
+          "product_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "quote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "epistemic_status": {
+            "enum": [
+              "observed",
+              "company_reported",
+              "customer_reported",
+              "inference",
+              "hypothesis"
+            ]
+          },
+          "material": {
+            "type": "boolean"
+          },
+          "qualifiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "statement",
+          "subject_entity",
+          "product_id",
+          "source_url",
+          "quote",
+          "published_at",
+          "epistemic_status",
+          "material",
+          "qualifiers"
+        ]
+      }
+    },
+    "follow_up": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "suggested_source": {
+            "type": "string"
+          },
+          "affected_document_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "question",
+          "reason",
+          "suggested_source",
+          "affected_document_keys"
+        ]
+      }
+    }
+  },
+  "required": [
+    "documents",
+    "evidence",
+    "follow_up"
+  ]
+}

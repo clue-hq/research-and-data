@@ -1,0 +1,116 @@
+{
+  "key": "product-workflows",
+  "title": "Workflows",
+  "summary": "Conduit Workflows is a visual automation layer for hospitality guest journeys: scheduled messages, follow-ups, upgrades, routing, and triage built from triggers, conditions, and actions. It is packaged inside Messaging-and-up plans rather than as a published standalone SKU, and customer proof should stay tied to workflow-building stories rather than platform-wide automation rates.",
+  "markdown": "## Overview\n\nConduit Workflows is the product for automating the guest journey after a booking exists—not the live reply engine itself. Conduit describes it as automating that journey from check-in through follow-ups and routine tasks, with builders assembling confirmations, check-in instructions, follow-ups, and upgrades around the booking, the property, and the guest’s response. [Source](https://www.conduit.ai/product/workflows)\n\nIn platform architecture, workflows are the “arms and legs”: proactive outreach, routing into systems or teammates, and triage that escalates then can auto-close. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work) Conversational answering still sits with [AI Agents](#knowledge/product-agents) and the [Inbox](#knowledge/product-inbox). Workflows schedule, branch, wait, notify, and inject an agent when a defined event fires.\n\nA concrete before/after: a support team copy-pastes door codes and check-in notes whenever a reservation appears. After a PMS-tied workflow, a reservation or stay-date trigger sends the confirmation and check-in sequence on connected email, WhatsApp, or OTA channels, branches on channel or a custom signal, waits until a send window, and only then injects an agent or pings Slack if the guest replies with a problem. Limits are real: the sequence only sends on connected channels, stay-date logic needs PMS/booking data, paid actions consume credits, and inbox routing is evaluated before workflow triggers. [Source](https://docs.conduit.ai/setting-up-conduit/inbox-routing)\n\n## Who it is for\n\nConduit positions the company for hotel teams, serviced-apartment operators, and short-term rental managers. [Source](https://www.conduit.ai/pricing) Workflows is aimed at operators who already have a repeating guest calendar (confirm, instruct, upsell, follow up) and want those sequences designed once instead of typed per stay.\n\nBuyers are typically founders, revenue/guest-services leads, or ops owners who care whether journey automation is included in a package and whether credits will cover outbound volume. Users are guest-services managers and the people Haven calls conversational engineers—staff who build and iterate workflows rather than answering every check-in question. [Source](https://www.conduit.ai/customers/haven-2026) Day-to-day agents still work exceptions in the inbox; they are consumers of routing and triage, not the primary authors.\n\n## Capabilities and limits\n\nPublished Workflows capabilities on the product page:\n\n| Capability | What Conduit states | Depends on | Not the same as |\n| --- | --- | --- | --- |\n| Visual builder | Hospitality triggers and actions without writing each sequence from scratch | Workspace access to workflows | Custom code in the [developer platform](#knowledge/product-developers) |\n| Connected send | Email, WhatsApp, and OTA channels already connected | Channel setup | Unconnected OTAs |\n| Conditional steps | Branch by booking channel, loyalty status, or custom signals; webhooks or MCP for supported tools | Those signals existing in the workspace | Guaranteed write-back to every PMS |\n| Scheduled guest messages | Confirmations, check-in instructions, checkout reminders from PMS events and booking dates | Connected PMS / booking dates | Housekeeping dispatch ([Operations](#knowledge/product-operator) is listed as coming soon) |\n| Post-stay campaigns | Stay dates, properties, guest responses; return offers | Identity of past guests | A measured win-back rate |\n| Rule-based upgrades | Early check-in, gap nights, private chefs, room upgrades from booking details and rules you set | Rules and booking fields you configure | [Guest Portals](#knowledge/product-portals) checkout UI |\n\n[Source](https://www.conduit.ai/product/workflows)\n\nDocs add the building blocks: triggers such as a new contact, a conversation tag, or an AI tool call; actions (templated reply, reassign, notify, wait, inject AI); conditions/paths; and variables such as `{{contact.first_name}}`. Action groups are Message, AI, Workspace, and Controls. [Source](https://docs.conduit.ai/workflows/getting-started)\n\nLimits to keep explicit: workflow **runs** are free; credits apply only when a successful run finishes a priced action. Triggers, conditions, waits, contact updates, and labels cost nothing. Failed or cancelled runs use 0 credits even if earlier steps finished. [Source](https://docs.conduit.ai/workflows/workflow-usage) Routing rules run **before** workflow triggers, so triggers should target the routed inbox, not Unmapped. [Source](https://docs.conduit.ai/setting-up-conduit/inbox-routing) REST and MCP workflow APIs are documented as v3-plan features, enabled via support—not as a default on every commercial package. [Source](https://docs.conduit.ai/api-reference/introduction)\n\n## Workflows and use cases\n\nDocs classify three types you can build from scratch or from a template:\n\n| Type | Role | Doc examples | Hospitality reading (interpretation) |\n| --- | --- | --- | --- |\n| Proactive | Scheduled or triggered outbound | Survey 24 hours after a ticket resolves; renewal reminder | Confirmations, check-in/out reminders, return offers |\n| Routing | Alert team or guest when conditions match | SMS when an order ships; Slack on negative survey | Slack/email when an agent books something or a tag fires |\n| Triage | Ask humans when the AI lacks an answer, then reply | Billing/engineering/inventory ping then guest update | Escalate a lockout or billing exception, then close |\n\n[Source](https://docs.conduit.ai/workflows/types-of-workflows)\n\nProduct-page hospitality sequences to scope in a demo: booking confirmation → check-in instructions on stay dates → checkout reminder → post-stay return offer; and if/then upgrade offers (early check-in, gap nights, add-ons) using booking details. [Source](https://www.conduit.ai/product/workflows) FAQ wording is the bound of what Conduit claims workflows automate: guest messages, follow-up campaigns, and add-ons such as early check-in, gap nights, and room upgrades, with the operator choosing trigger, conditions, and actions. [Source](https://www.conduit.ai/product/workflows)\n\nHaven’s reported dog-at-property example is a routing/ops adjacent flow: when a guest brings a dog to a defined set of properties, notify the cleaning company and push the information back—built in about an hour by the guest-services manager. That is a customer-built workflow, not a packaged template catalog. [Source](https://www.conduit.ai/customers/haven-2026)\n\n## Integrations and setup\n\nSetup is not “pick a vendor logo.” Practical route:\n\n1. Workspace with hospitality type so PMS connections appear; connect PMS under Settings > Connections > PMS so listings and reservations sync and contacts can be created from bookings. Messaging vs non-messaging PMS paths differ: some PMS connections deliver guest messages; others supply property/reservation data only, with OTA messaging connected separately. [Source](https://docs.conduit.ai/setting-up-conduit/connect-pms)\n2. Connect the send channels the builder will use (email, WhatsApp, OTAs such as Airbnb). [Source](https://www.conduit.ai/product/workflows)\n3. Set inbox routing so new contacts land in the inbox your workflow trigger targets. [Source](https://docs.conduit.ai/setting-up-conduit/inbox-routing)\n4. Build in the visual editor (triggers, conditions, waits, sends, AI injection) or install workflow templates from the Marketplace. [Source](https://docs.conduit.ai/)\n5. Optional: webhooks or MCP for supported tools; programmatic list/create/update of workflows and execution logs on the v3 API/MCP. [Source](https://docs.conduit.ai/mcp/overview)\n\nThe public integrations directory is a catalog of 43 apps (PMS, messaging, CRM, task managers). A logo is not proof that a named action exists as a first-class workflow step. [Source](https://www.conduit.ai/integrations) HomeHop’s SuiteOP workflow comment is a customer stack, not a listed Conduit integration. [Source](https://www.conduit.ai/customers/homehop)\n\n## Pricing and packaging\n\nThere is **no published standalone Workflows price**. On the pricing page, workflows appear inside Messaging (“Operator, workflows, escalation”), which starts at **$18 / unit / month** with **40 credits / unit / month**. Starting rates are shown; pricing scales beyond 50 listings. Higher bundles (Guest from $30, Guest + Devices from $36, Full Suite from $48 per unit per month) nest Messaging and add portals/devices/operations features—including “Device management workflows” and “Agentic operations workflows” on those SKUs, which are not the same as a Workflows-only fee. A 0–25 unit Startup package is listed at **$899 / month** with 2,000 credits / month and no implementation fee. Talk-to-sales language applies as portfolio size grows. [Source](https://www.conduit.ai/pricing)\n\nCredit units that matter for this product (successful finished steps only):\n\n| Action | Credits |\n| --- | --- |\n| Slack or Teams message | 1 |\n| HTTP webhook | 0 |\n| HubSpot / Salesforce / Airtable record step | 1 |\n| Run AI Prompt / Web Search | 2 / 5 |\n| Email send (non-AI / AI-generated) | 1 / 4 |\n| SMS or WhatsApp (non-AI / AI-generated) | 2 / 5 |\n| Voice Agent Call (workflow action) | 6 per minute |\n\n[Source](https://docs.conduit.ai/workflows/workflow-usage)\n\nHow far 40 credits per unit goes for a typical stay sequence is not published; model it from the table, not from package rhetoric. See [Pricing & packaging](#knowledge/pricing).\n\n## Differentiation\n\nAttributed to Conduit, not independently verified: a hospitality visual builder with booking/property/guest-response context, PMS-event scheduling, and branches on booking channel or loyalty—not a generic ticket macro tool. [Source](https://www.conduit.ai/product/workflows) Platform docs further separate workflows from agents (execution vs conversation) and from dashboards. [Source](https://docs.conduit.ai/overview/how-conduit-agents-work)\n\nCustomer-attributed, not a Conduit SLA: Haven’s CEO on staff being given operational problems and building the workflow themselves. [Source](https://www.conduit.ai/customers/haven-2026) Do not convert that into “all customers become engineers in an hour.”\n\nCompetitive pages on conduit.ai list other vendors; those lists are not Workflows feature matrices. Keep comparisons in [Alternatives & differentiation](#knowledge/alternatives).\n\n## Customer evidence\n\nUse only stories that mention workflows. Do not assign Haven’s 90% automation, staffing cuts, or other accounts’ message-automation rates to this SKU unless the narrative isolates Workflows.\n\n**Haven Vacation Rentals** (STR, ~270 properties, Conduit since February 2024; company-reported 2026 update): they had listings in Conduit at about 40% automation **with no workflows** and little knowledge-base work. The later operating model includes team members building workflows and training AI; Jack Zoppa: “Give them these problems. They just went and built the workflow and figured it out.” The dog-notification workflow was built in about an hour. Haven was rebuilding Slack triage workflows and expanding use of Conduit’s workflow engine. Portfolio automation and headcount figures in that article describe the broader Conduit program, not a Workflows-only KPI. [Source](https://www.conduit.ai/customers/haven-2026)\n\n**HomeHop** (customer quote): Dan Mitchen called using AI in workflows with SuiteOP “an absolute game changer.” Treat as their integration pattern, not a Conduit product metric. [Source](https://www.conduit.ai/customers/homehop)\n\n## Sales discovery\n\nAsk what is still typed by hand on a clock (confirmation, access instructions, checkout, win-back). Which PMS is source of truth, and does it pass messages or only reservations? Which send paths must the sequence use (email, WhatsApp, Airbnb/other OTA)? Who will own the builder after go-live—guest services, a single “Jonathan,” or a vendor? Which branches are policy (channel, pet, loyalty, gap night) versus hope? Where should a no-answer path go (Slack, reassign, inject agent)? Estimate monthly sends × credit table against the package’s credits per unit.\n\n**Next practical step:** in a demo, rebuild one live stay sequence with their PMS event and one real channel—not a slide of 43 logos—then map Messaging-and-up packaging and credit burn. Book that working session rather than pitching Operations (still “coming soon”) or transferring an Agents case study into Workflows.\n",
+  "source_ids": [
+    "src_0f66e375eb2b7089",
+    "src_156a9e102c46da8e",
+    "src_2a445232675660d9",
+    "src_2d5d23c8d8b6f535",
+    "src_44ca2b5b2ec94cdf",
+    "src_8f9aa404cff029a5",
+    "src_9078cb1971869041",
+    "src_91caff45e9dfd65f",
+    "src_a2a67d2faa01de13",
+    "src_b27f818d3e0ae613",
+    "src_b4b8a8b99c077661",
+    "src_c1dd8d452a784c57",
+    "src_d097938bd9b8b088",
+    "src_f01f1010ac8ddab8"
+  ],
+  "open_questions": [
+    "Is Workflows sold or discounted as its own SKU anywhere, or only as a line inside Messaging and higher bundles?",
+    "Which hospitality triggers, PMS events, and loyalty/custom signals are actually selectable in the builder versus marketing examples?",
+    "Which third-party actions are first-class workflow steps versus webhook/MCP/custom work (including SuiteOP, cleaning vendors, locks)?",
+    "How should 40 credits per unit per month be sized against a typical confirmation + check-in + checkout + upsell sequence?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Conduit’s product nav defines Workflows as automating the guest journey from check-in through follow-ups and routine tasks.",
+      "source_id": "src_9078cb1971869041",
+      "quote": "Workflows\nAutomate the guest journey, from check-in to follow-ups and routine tasks."
+    },
+    {
+      "statement": "The Workflows product page states outbound can use connected email, WhatsApp, and OTA channels.",
+      "source_id": "src_9078cb1971869041",
+      "quote": "Send messages through your connected email, WhatsApp, and OTA channels."
+    },
+    {
+      "statement": "Conduit’s Workflows FAQ bounds automation to guest messages, follow-up campaigns, and listed add-ons with operator-chosen trigger, conditions, and actions.",
+      "source_id": "src_9078cb1971869041",
+      "quote": "Workflows can send guest messages, run follow-up campaigns, and offer add-ons such as early check-in, gap nights, and room upgrades. You choose the trigger, conditions, and actions."
+    },
+    {
+      "statement": "Messaging package starting rate is $18 per unit per month and lists workflows among included items.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rate\n$\n18\n/ unit / mo\nGet Started\n40 credits\n/ unit / mo\nUnified inbox, every channel\nVoice AI, inbound and outbound\nPMS and OTA integrations\nOperator, workflows, escalation"
+    },
+    {
+      "statement": "Workflow runs themselves are not billed; credits apply only when a successful run completes a priced action.",
+      "source_id": "src_b4b8a8b99c077661",
+      "quote": "Workflow runs are free. You only use credits when a successful run completes an action that has a credit cost."
+    },
+    {
+      "statement": "Docs name three workflow types: proactive, routing, and triage.",
+      "source_id": "src_44ca2b5b2ec94cdf",
+      "quote": "There are 3 types of workflows you can build in Conduit to streamline customer interactions"
+    },
+    {
+      "statement": "Haven reported running Conduit at about 40% automation with no workflows before the later workflow-building push.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "the system ran at about 40 percent automation with no workflows and minimal knowledge base work."
+    },
+    {
+      "statement": "Haven’s CEO attributed a specific operational problem to staff building a Conduit workflow themselves.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Give them these problems. They just went and built the workflow and figured it out."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Explaining Conduit Workflows versus Agents, Inbox, Portals, or Operations",
+      "Scoping a demo around stay-date sequences, upgrades, routing, or triage",
+      "Answering packaging or credit questions that mention workflows"
+    ],
+    "decisions_supported": [
+      "Whether Workflows is in-scope for an account given PMS and channel setup",
+      "Which commercial package currently lists workflows and how credits attach to sends",
+      "Which customer quotes are safe to use without borrowing Agents automation rates"
+    ],
+    "do_not_infer": [
+      "A standalone Workflows price or per-workflow fee",
+      "That Haven’s 90% automation or staffing reduction is a Workflows-only outcome",
+      "That Operations housekeeping/maintenance/inspections are generally available as this product",
+      "That an integrations logo or a customer’s SuiteOP stack means a supported workflow action"
+    ],
+    "document_key": "product-workflows",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_0f66e375eb2b7089",
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_44ca2b5b2ec94cdf",
+      "src_8f9aa404cff029a5",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_f01f1010ac8ddab8"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "product",
+  "revision": 1,
+  "created_at": "2026-09-20T00:42:44.759537+00:00",
+  "status": "research_draft",
+  "input_hash": "0479141cca65c7fb295e5699cded73a6ae8d5a57fa2c48a4c39cae9cbb56d93b",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

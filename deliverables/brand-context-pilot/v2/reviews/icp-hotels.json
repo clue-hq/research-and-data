@@ -1,0 +1,128 @@
+{
+  "issues": [
+    {
+      "document_key": "icp-rentals",
+      "severity": "material",
+      "excerpt": "Portfolio growth without extra guest-support hires | HomeHop: roughly 40→108 ... Canbnb: 7→170 properties",
+      "problem": "Canbnb’s 7→170 growth is the pre-Conduit volume crisis (630-message backlog, virtual vs on-site scramble), not a measured outcome of growing without extra guest-support hires. Pairing it with HomeHop’s 40→108 no-hire claim will produce inaccurate outbound copy.",
+      "source_ids": [
+        "src_5cb5674a725889a9",
+        "src_d097938bd9b8b088",
+        "src_5eb74e069d5f7cb9"
+      ],
+      "suggested_correction": "Keep 7→170 as challenge context only. Cite Canbnb outcomes as ~1,500 messages/week with 60% handled by AI after March 2024; reserve “growth without extra guest-support hires” for HomeHop’s attributed 40→108 / 70% messaging automation story."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "do not assume every OTA thread is live (other catalog pages still mark some OTAs coming soon)",
+      "problem": "No supplied source marks OTAs as coming soon. Inbox and industry pages describe connected OTA threads; asserting a coming-soon catalog will cause reps to under-sell or over-qualify channel scope. Unknown coverage is not a categorical negative.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_e6200582a2004292",
+        "src_5eb74e069d5f7cb9",
+        "src_d30d1770ff08e6a4"
+      ],
+      "suggested_correction": "Replace with: treat named OTAs as marketed connection targets; confirm for each account whether the thread is live messaging vs reservation/context only. Do not tell hotels that catalog pages mark OTAs coming soon."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "A group whose RFP is enterprise CRM, labor/payroll, or portfolio housekeeping as the must-have. Group use-case pages describe those themes, while the product nav labels Operations coming soon.",
+      "problem": "Enterprise CRM is a Hotel Groups guest-experience use case (conversation-derived profiles), not the Operations SKU. Lumping it with labor/payroll/housekeeping teaches reps to treat CRM RFPs as not-GA Operations.",
+      "source_ids": [
+        "src_d30d1770ff08e6a4",
+        "src_e805a9592ee44f73",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Split gates: (1) physical kiosk = mismatch; (2) housekeeping/labor/workforce-as-GA = confirm against Operations coming soon vs Full Suite copy; (3) enterprise CRM / loyalty / shared inbox = guest-communication motion to investigate, not an Operations-availability reject."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "material",
+      "excerpt": "Portals is a paid add-on by listing count and is not evidenced in the hotel story",
+      "problem": "Unresolved notes only the Portals add-on FAQ, while qualification step 4 sells Guest packaging that already includes portals, waivers, and upsells. Reps cannot choose Messaging vs Guest vs add-on from this conflict.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b",
+        "src_8b30f0226db273ad",
+        "src_6eff9afc29aa8e32"
+      ],
+      "suggested_correction": "State both facts: Guest starts at $30/unit/mo and includes portals/waivers/upsells; Portals is also described as a listing-count add-on. Map the commercial path in pricing discovery; do not default hotels to add-on-only. Still do not cite a hotel Portals result."
+    },
+    {
+      "document_key": "buyer-roles",
+      "severity": "material",
+      "excerpt": "CEOs or partners owning a homegrown PMS, prior AI vendor, or SuiteOP wiring (The Flex, HomeHop, Bali)",
+      "problem": "Conflates three stacks: The Flex’s homegrown PMS, HomeHop’s SuiteOP wiring, Bali/Easy BnB’s abandoned in-house AI. A rep could brief the wrong technical evaluator or name SuiteOP at Flex/Bali.",
+      "source_ids": [
+        "src_765674900bd1f4dd",
+        "src_d097938bd9b8b088",
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Split observed build paths: The Flex = CEO left comms AI out of a homegrown PMS; HomeHop = co-founders plus SuiteOP for verification/door codes; Bali/Easy BnB = founder stopped an in-house messaging AI. Do not imply SuiteOP at Flex or Bali."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "minor",
+      "excerpt": "A single independent hotel whose night team still takes late-arrival calls and WhatsApp, with Opera or Mews already in use",
+      "problem": "Labeled good-fit scenario mixes necessary communication fit with PMS readiness. Opera/Mews are named logos, not a fit gate or write-back proof.",
+      "source_ids": [
+        "src_f09009069a2d197f",
+        "src_e805a9592ee44f73",
+        "src_a649d4d3ab5f59f5"
+      ],
+      "suggested_correction": "Keep good-fit as desk/after-hours guest comms plus a GM who will maintain policies. Move Opera/Mews to readiness: preferred hotel-class examples; confirm actions separately."
+    },
+    {
+      "document_key": "icp-hotels",
+      "severity": "minor",
+      "excerpt": "Extras during the stay | Room upgrades, spa, dining | Loyalty/perks, upgrades, spa and dining | Workflows, Guest Portals",
+      "problem": "The extras row points reps at Guest Portals even though the hotel story has no Portals evidence and unresolved text says not to infer it.",
+      "source_ids": [
+        "src_f09009069a2d197f",
+        "src_d30d1770ff08e6a4",
+        "src_9078cb1971869041",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Map extras first to Agents/Workflows offer copy. Note Portals only as an unproven hotel package option to discover, not a default surface."
+    },
+    {
+      "document_key": "buyer-roles",
+      "severity": "minor",
+      "excerpt": "Stop linear hiring ... Haven ~25 people → two per shift",
+      "problem": "Haven’s cited result is an 80% reduction in support staffing needs (≈25 people to two per shift) with a no-layoff pledge, not merely stopping linear hiring. Compressing it under that job invites copy that contradicts the change narrative later in the same doc.",
+      "source_ids": [
+        "src_c1dd8d452a784c57"
+      ],
+      "suggested_correction": "Cite Haven as: support staffing need fell from ~25 to two per shift; CEO pledged no AI layoffs and moved people into workflow/AI training. Do not use it as a generic no-hire slogan."
+    },
+    {
+      "document_key": "icp-rentals",
+      "severity": "minor",
+      "excerpt": "Account is a short-term rental, vacation-rental, or serviced-apartment operator ... not solely a hotel-brand motion",
+      "problem": "FAQ lists serviced-apartment operators as a third audience. Folding them into the STR necessary-fit criterion with zero named serviced-apartment proof will cause reps to reuse PMC automation stories on staffed aparthotels.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e6200582a2004292"
+      ],
+      "suggested_correction": "Route serviced apartments as mixed hospitality: confirm desk vs unstaffed listing ops before applying hotel or STR proof; do not treat STR case metrics as aparthotel evidence."
+    }
+  ],
+  "strengths": [
+    "Hotel vs STR vs hotel-group narratives are separated; missing group outcomes are investigate-not-reject, not a fake disqualifier.",
+    "Named figures (Lauderdale $4k→$600 / cap-rate math, Bocobay 80% header, STR 60/70/80%) are treated as company-attributed stories, not SLAs or segment averages.",
+    "Logo strips are not treated as reservation write-back; agent resolution is explicitly request/knowledge/integration/rule dependent.",
+    "Operations-as-GA vs use-case copy vs Full Suite is mostly handled as readiness, and the physical kiosk line is a real product mismatch.",
+    "No invented room-count, revenue, headcount, or procurement numbers; buyer-roles keeps observed titles distinct from labeled search hypotheses and refuses age/income/CISO invention.",
+    "Lauderdale’s $600 and 2-minute figures are flagged as mixed AI + 24/7 staffed support, so the human share is not isolated."
+  ],
+  "decision_usefulness": "A salesperson can choose hotel vs STR motion, avoid citing a hotel-group case, and ask useful next questions on desk vs portfolio, channels, PMS source of truth, and whether the job is guest comms vs not-GA Operations. They cannot yet reliably pick Messaging vs Guest vs Portals add-on, brief the right technical stack story, or treat enterprise CRM RFPs. Copy drafted from the Canbnb 7→170 row or the SuiteOP blender would be wrong. Use with the pricing/integrations/customer-evidence dependents; this pack is a strong qualifier, not a complete product-selector.",
+  "reviewed_at": "2026-09-20T01:26:31.679524+00:00",
+  "document_keys": [
+    "icp-hotels",
+    "icp-rentals",
+    "buyer-roles"
+  ],
+  "human_approval": false
+}

@@ -1,0 +1,219 @@
+{
+  "key": "icp-rentals",
+  "title": "ICP · vacation-rental operators",
+  "summary": "Conduit names short-term rental managers as an intended operator class and illustrates them with vacation-rental and property-management case pages, not with a published unit, revenue, or headcount cutoff. Qualify the operating entity (who answers guests, which PMS/OTA threads they hold, owner vs manager) and treat named automation figures as company-attributed stories, not segment averages.",
+  "markdown": "This page is an **account-fit model** for professional short-term / vacation-rental operators. It is not a claim that every listing owner shares the same pain. Public FAQs say Conduit is for hotel teams, serviced-apartment operators, and **short-term rental managers**. [Source](https://www.conduit.ai/pricing) Industry entry: [AI for Short-Term Rentals](https://www.conduit.ai/industry/short-term-rentals). Hotel-shaped accounts belong in [ICP · hotel operators](#knowledge/icp-hotels). Capabilities sit in [Product catalog & capability map](#knowledge/products-capabilities); named proof in [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n## Account definition\n\nThe operator Conduit describes answers **guests per listing**: messages and calls using property information and reservation data, actions in connected tools, escalation to a team. [Source](https://www.conduit.ai/product/agents) Inbox copy says hotel teams, serviced-apartment operators, and short-term rental managers use it for guest communication across properties. [Source](https://www.conduit.ai/product/inbox)\n\n**Owner versus management company** (do not collapse):\n\n| Pattern | What sources show | Unknown |\n| --- | --- | --- |\n| Property management company | Bocobay: high-end PM firm in Aruba and Curaçao. Canbnb: Canberra PMC for Airbnb and short-term accommodation. [Source](https://www.conduit.ai/customers/bocobay) [Source](https://www.conduit.ai/customers/canbnb) | Whether the economic buyer is founder, ops, or owner-clients |\n| Local operator acquiring other PMs | Cascadia Getaways: locally owned Oregon vacation rentals; leadership expected to absorb its first PM acquisition without extra guest-service staff; a completed staffing outcome is not established. [Source](https://www.conduit.ai/customers/cascadia-getaways) | Acquisition size |\n| Multi-market hospitality + real estate | Wynwood House across seven countries in Latin America and Europe. [Source](https://www.conduit.ai/customers/wynwood-house) | Unit count behind “thousands of guest interactions” |\n| Individual listing owner | No named owner-host story in this pack. **Startup** is 0–25 units at $899/mo with 2,000 credits. [Source](https://www.conduit.ai/pricing) | Whether hosts without a support team are a priority |\n\nA vacation-rental homepage is not evidence of professional ops, distributed guest communications, or field staff. Identify who answers OTA threads, who holds the PMS, and who employs cleaners.\n\n## Best-fit operating situations\n\nThese are **published situations**, not a ranked need list. Do not read pain into a prospect from marketing copy.\n\n| Situation as published | Named example | Confirm in product |\n| --- | --- | --- |\n| Portfolio growth without extra guest-support hires | HomeHop: roughly 40→108 Cleveland/Akron listings; case TL;DR 70% automation. Canbnb’s 7→170 properties describes the scaling challenge, not proven hire avoidance; its reported outcome is ~1,500 messages sent/week, 60% AI-handled. [Source](https://www.conduit.ai/customers/homehop) [Source](https://www.conduit.ai/customers/canbnb) | [Inbox](#knowledge/product-inbox), [AI Agents](#knowledge/product-agents) |\n| Absorb a PM book without a new call center | Cascadia: 60% automation and 4.9 communication scores across 100 properties; results also list 150 properties per support rep on shift. [Source](https://www.conduit.ai/customers/cascadia-getaways) | Knowledge base + agents—not an SLA |\n| Split guest / owner / OTA inboxes; leaving a generic helpdesk | Bocobay: WhatsApp, a separate support inbox, Hostaway; left Intercom (using Conduit since June 2024). Header: 80% resolution rate, “100s” hours saved—body does not show the math. [Source](https://www.conduit.ai/customers/bocobay) | Unified inbox; owner vs guest queues |\n| Multi-country CX on Guesty plus side tools | Wynwood: Guesty, ChatGPT, translation tools, Sheets; resolution 14–15 minutes → 3; using since October 2025. [Source](https://www.conduit.ai/customers/wynwood-house) | Inbox + agents |\n| After-hours voice | HomeHop voice AI 1 AM–7 AM. [Source](https://www.conduit.ai/customers/homehop) | Voice listed in Messaging packaging. [Source](https://www.conduit.ai/pricing) |\n| Per-property instructions and booking-change requests | STR industry page. [Source](https://www.conduit.ai/industry/short-term-rentals) | Per-listing knowledge + live PMS data |\n\n**Hypothetical (not evidence, not a claimed relationship):** a 20-unit self-managing host who wants overnight lockout calls; a villa owner with no PMS; a co-host who does not hold reservations. Use as research prompts only.\n\nField ops appear as **inbox design and wishes**, not as a generally available fifth product. Canbnb structured Guest, Owner, and Vendor inboxes. [Source](https://www.conduit.ai/customers/canbnb) Cascadia’s Ryan wants a control panel for homeowners, vendors, and cleaners. [Source](https://www.conduit.ai/customers/cascadia-getaways) Product nav still labels Operations “Coming soon.” [Source](https://www.conduit.ai/product/agents)\n\n## Company and technology profile\n\nPackages are **per unit per month** (Messaging from $18 / 40 credits; Guest $30 / 60; Guest + Devices $36 / 80; Full Suite $48 / 100). “Starting rates shown. Pricing scales beyond 50 listings.” Startup is a full-feature $899/mo bundle for 0–25 units. A bundle price is not a standalone Agents or Portals price. [Source](https://www.conduit.ai/pricing) See [Pricing & packaging](#knowledge/pricing).\n\nThe STR page lists Guesty, Hostaway, Track, Wheelhouse, Streamline, Lodgify, Hostfully, OwnerRez, Airbnb, Booking.com, Expedia, and VRBO, and describes bringing Airbnb, Vrbo, Booking.com, Expedia, email, SMS, and calls into one workspace through connected accounts. [Source](https://www.conduit.ai/industry/short-term-rentals) A logo is not proof of reservation writes, payments, or lock control—confirm in [Integrations & implementation readiness](#knowledge/integrations).\n\n[Guest Portals](#knowledge/product-portals) describe one branded stay link (no app) for stay details, identity checks, rental agreements or damage waivers, fees/deposits, upgrades, access when requirements are complete, and an AI concierge. [Source](https://www.conduit.ai/product/portals) [Workflows](#knowledge/product-workflows) can send check-in instructions and offer add-ons such as early check-in and gap nights. [Source](https://www.conduit.ai/product/workflows)\n\n## Buying committee\n\nNamed STR voices: co-founders (Bocobay’s Nick Curtis; HomeHop’s Dan Mitchen), Canbnb’s Process and Communication Manager Jo-Anne Quiros plus leadership Dan, Cascadia’s Ryan (Revenue & Guest Services), Wynwood’s Mayra (Global Head of Customer Experience). [Source](https://www.conduit.ai/customers/bocobay) [Source](https://www.conduit.ai/customers/homehop) [Source](https://www.conduit.ai/customers/canbnb) [Source](https://www.conduit.ai/customers/cascadia-getaways) [Source](https://www.conduit.ai/customers/wynwood-house)\n\nDo not invent a mandatory economic-buyer title or a segment-wide attitude toward AI. Jo-Anne was skeptical; Dan Mitchen was leery after a failed vendor—those are **those people**. Map roles in [Buying committee & professional personas](#knowledge/buyer-roles).\n\n## Qualification decisions\n\n1. **Operator class.** STR/vacation-rental manager versus hotel-led operation. For serviced apartments and mixed portfolios, establish staffed front-desk versus distributed listing operations before selecting the hotel or rental motion; do not transfer STR case metrics automatically. [Source](https://www.conduit.ai/pricing)\n2. **Who runs communications.** If listing owners never touch guest threads, the manager is the account.\n3. **Channels and reservation context.** Inbox lists SMS, WhatsApp, email, calls, social messages, and connected OTA threads, with PMS/OTA details beside the conversation. [Source](https://www.conduit.ai/product/inbox)\n4. **Scale.** No published minimum units, revenue, or headcount. 100 / 108 / 170+ are **examples**, not cutoffs. Startup exists for 0–25 units. [Source](https://www.conduit.ai/pricing)\n5. **Proof.** One named story, dates and caveats in the same breath. Do not average 60% / 70% / 80%. See [Customer evidence & usable proof](#knowledge/customer-evidence).\n\nResearch without projecting pain: management brand vs owner name on OTAs; PMS mentioned in careers or help center; advertised 24/7 guest line; Intercom/Zendesk vs Hostaway/Guesty messaging; multi-market sites. Then ask—playbook: [Qualification & account research playbook](#knowledge/buying-triggers).\n\n## Signals and next questions\n\n**Public signals to investigate (not auto-qualify):** multiple listings under one management brand; Hostaway/Guesty/Lodgify in public stack clues; WhatsApp as the guest line; overnight phone coverage; a recent PM acquisition; owner-communication copy.\n\n**Next questions:** Which system owns Airbnb/Vrbo threads today? Separate owner vs guest vs vendor queues? Who approves AI vs autopilot? Are smart locks, waivers, or deposits on the critical path? Is housekeeping coordination a now-need while Operations is still “coming soon” on the nav?\n\n## Disqualifiers and unresolved assumptions\n\nNo hard listing-count exclusion is published—do not reject “too small” from the site alone. Preferential misfits to **investigate**: no guest messaging (pure back-office admin); the only job is AI-coordinated housekeeping as a generally available catalog product; treating Conduit as a PMS replacement (STR page positions it on top of Guesty, Hostaway, and Lodgify). [Source](https://www.conduit.ai/industry/short-term-rentals)\n\n**Unresolved:** live messaging path for every OTA named on the industry page; Cascadia “using Conduit since December 2024” vs deployed in March; HomeHop “June 2025” vs “approximately two years”; automation denominators (messages vs resolution rate); whether owner-hosts on Startup are a priority versus PMCs. Segment ranking: [ICP strategy & segment priorities](#knowledge/ideal-customers).",
+  "source_ids": [
+    "src_156a9e102c46da8e",
+    "src_5cb5674a725889a9",
+    "src_5eb74e069d5f7cb9",
+    "src_6eff9afc29aa8e32",
+    "src_75269914aa6b6dfd",
+    "src_8b30f0226db273ad",
+    "src_9078cb1971869041",
+    "src_a649d4d3ab5f59f5",
+    "src_b2ab716efd97c239",
+    "src_d097938bd9b8b088",
+    "src_e067203ca4528d4b",
+    "src_e6200582a2004292",
+    "src_e805a9592ee44f73",
+    "src_ec670ccb114e21b7",
+    "src_f0d546128c30936b"
+  ],
+  "open_questions": [
+    "Is there any internal or unpublished listing, revenue, or headcount floor for STR, or is Startup 0–25 the only public size signal?",
+    "Are individual owner-hosts a priority ICP or only a packaging path, given named stories are PMCs and multi-listing operators?",
+    "For a given account, which of Airbnb, Vrbo, Booking.com, and Expedia actually pass messaging into Conduit versus reservation data only?",
+    "When a prospect’s job is housekeeping, maintenance, or cleaner dispatch, what is sellable now versus Operations still marked coming soon?",
+    "How should Cascadia’s December 2024 vs March deployment dates and HomeHop’s June 2025 vs “approximately two years” be treated in customer proof?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Public pricing FAQ names short-term rental managers as an intended Conduit audience alongside hotel and serviced-apartment operators.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers."
+    },
+    {
+      "statement": "Cascadia Getaways case page attributes 60 percent automation and 4.9 communication scores across 100 properties.",
+      "source_id": "src_b2ab716efd97c239",
+      "quote": "Within months, the company reached 60 percent automation  and 4.9 communication scores across across 100 properties."
+    },
+    {
+      "statement": "STR industry page attributes HomeHop growth from 40 to 108 properties and 70% guest-messaging automation without a support hire.",
+      "source_id": "src_5eb74e069d5f7cb9",
+      "quote": "HomeHop scaled from 40 to 108 properties while automating 70% of guest messaging across SMS, email, and voice — without adding a single support hire."
+    },
+    {
+      "statement": "Public packages are starting per-unit rates that the site says scale beyond 50 listings.",
+      "source_id": "src_156a9e102c46da8e",
+      "quote": "Starting rates shown. Pricing scales beyond 50 listings."
+    },
+    {
+      "statement": "Bocobay is presented as a high-end property management firm in Aruba and Curaçao, not a hotel group.",
+      "source_id": "src_ec670ccb114e21b7",
+      "quote": "High-end property management firm in Aruba and Curaçao"
+    },
+    {
+      "statement": "Canbnb case page describes growth from 7 properties to 170.",
+      "source_id": "src_5cb5674a725889a9",
+      "quote": "From 7 properties to 170, the pace was relentless."
+    },
+    {
+      "statement": "STR industry page claims Airbnb, Vrbo, Booking.com, Expedia, email, SMS, and calls can be brought into one workspace through connected accounts.",
+      "source_id": "src_5eb74e069d5f7cb9",
+      "quote": "Bring Airbnb, Vrbo, Booking.com, Expedia, email, SMS, and calls into one workspace through your connected accounts."
+    },
+    {
+      "statement": "Portals FAQ lists rental agreements or damage waivers among stay tasks guests can complete in the branded link.",
+      "source_id": "src_6eff9afc29aa8e32",
+      "quote": "They can review stay details, complete pre-arrival questions and identity checks, sign rental agreements or damage waivers, pay required fees or deposits, purchase upgrades, access the property when requirements are complete, and ask the AI concierge for property-aware answers."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Qualifying a vacation-rental, short-term rental, or property-management account versus a hotel motion",
+      "Selecting a named STR proof story for ABM or outbound without averaging automation rates",
+      "Deciding whether the operator (PMC) or the listing owner is the account",
+      "Checking whether guest communications, portals/waivers, or field operations is the actual job"
+    ],
+    "decisions_supported": [
+      "Pursue, recycle, or hand to the hotel ICP playbook",
+      "Which case page is allowable for this situation (growth, acquisition, Intercom exit, multi-country, after-hours voice)",
+      "Whether missing unit count is a research gap rather than a reject",
+      "Whether Operations/housekeeping should be sold as generally available"
+    ],
+    "do_not_infer": [
+      "A minimum number of units, revenue, or headcount",
+      "That every STR homepage implies distributed guest comms or cleaner/vendor coordination pain",
+      "Supported PMS/OTA write-backs from a logo on the STR integrations strip",
+      "A typical automation percentage, AI attitude, or buying-committee script for the segment",
+      "That owner-hosts are excluded because named stories are PMCs",
+      "That Conduit replaces the prospect’s PMS"
+    ],
+    "document_key": "icp-rentals",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_d097938bd9b8b088",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_ec670ccb114e21b7",
+      "src_f0d546128c30936b"
+    ]
+  },
+  "icp_criteria": [
+    {
+      "criterion": "Account is a short-term rental, vacation-rental, or serviced-apartment operator (or the manager of those stays), not solely a hotel-brand motion",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "Pricing and inbox FAQs name short-term rental managers as a user class next to hotel teams and serviced-apartment operators.",
+      "assessment_method": "Confirm operating brand, OTA listing type, and whether stays are unstaffed/distributed rentals versus a hotel front desk; mixed portfolios get a split motion.",
+      "unknown_handling": "For serviced apartments or mixed portfolios, confirm staffed front-desk versus distributed listing operations before applying hotel or rental proof. Unknown operating model means research, not rejection.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e6200582a2004292"
+      ]
+    },
+    {
+      "criterion": "Someone on the account answers guest messages or calls per listing across OTA and/or SMS, WhatsApp, email, or voice",
+      "dimension": "fit",
+      "strength": "necessary",
+      "rationale": "The marketed STR job is answering guests with listing-specific details and unifying those channels; without guest communications there is no documented primary job.",
+      "assessment_method": "Ask which inboxes exist today and inspect public guest-contact methods; do not treat an OTA logo as proof the thread already lands in Conduit.",
+      "unknown_handling": "Missing channel list means discovery, not reject.",
+      "source_ids": [
+        "src_5eb74e069d5f7cb9",
+        "src_a649d4d3ab5f59f5",
+        "src_e805a9592ee44f73"
+      ]
+    },
+    {
+      "criterion": "Professional multi-listing operator or property management company rather than an inferred single-listing hobby host",
+      "dimension": "fit",
+      "strength": "preference",
+      "rationale": "Named STR stories in this pack are PMCs and multi-property operators; Startup still prices 0–25 units, so size alone is not an exclusion.",
+      "assessment_method": "Company site, listing inventory under one management brand, who employs guest services.",
+      "unknown_handling": "Unknown unit count: investigate. Do not invent a cutoff or reject owner-hosts solely for lack of a PMC case study.",
+      "source_ids": [
+        "src_ec670ccb114e21b7",
+        "src_5cb5674a725889a9",
+        "src_b2ab716efd97c239",
+        "src_f0d546128c30936b"
+      ]
+    },
+    {
+      "criterion": "Reservation or messaging stack Conduit markets to STR (examples on the industry page include Guesty, Hostaway, Lodgify, OwnerRez, Hostfully, and named OTAs) or a plan to connect equivalent PMS/OTA data",
+      "dimension": "readiness",
+      "strength": "preference",
+      "rationale": "Agents are described as acting through connected tools with live PMS and per-listing knowledge; logos are not an action matrix.",
+      "assessment_method": "Stack interview plus integration review before promising booking changes, payments, or lock codes.",
+      "unknown_handling": "Unknown PMS: map current source of truth. Do not infer write-back from a logo.",
+      "source_ids": [
+        "src_5eb74e069d5f7cb9",
+        "src_e805a9592ee44f73"
+      ]
+    },
+    {
+      "criterion": "Message or call load tied to portfolio growth, a PM acquisition, multi-market CX, overnight coverage, or fractured inboxes",
+      "dimension": "urgency",
+      "strength": "hypothesis",
+      "rationale": "Those situations recur in Cascadia, HomeHop, Canbnb, Wynwood, and Bocobay write-ups; they are not shown as universal STR needs.",
+      "assessment_method": "Ask about hiring plans, after-hours coverage, acquisitions, and current tools (e.g. Intercom vs Hostaway); attach one named story only.",
+      "unknown_handling": "Absence of these situations is not a disqualifier; do not invent urgency.",
+      "source_ids": [
+        "src_b2ab716efd97c239",
+        "src_d097938bd9b8b088",
+        "src_5cb5674a725889a9",
+        "src_e067203ca4528d4b",
+        "src_ec670ccb114e21b7"
+      ]
+    },
+    {
+      "criterion": "Primary asked-for product is generally available AI-coordinated housekeeping, maintenance, and inspections as a catalog Operations SKU",
+      "dimension": "exclusion",
+      "strength": "hypothesis",
+      "rationale": "Product nav marks Operations coming soon while STR use-case copy still describes housekeeping and maintenance coordination—timing and packaging are unresolved.",
+      "assessment_method": "Separate guest-comms/portals/workflows jobs from an ops control-tower job; check current nav/changelog with sales.",
+      "unknown_handling": "If operations is the only job, flag availability; do not promise a generally available Operations product from the nav.",
+      "source_ids": [
+        "src_e805a9592ee44f73",
+        "src_5eb74e069d5f7cb9"
+      ]
+    }
+  ],
+  "folder": "audience",
+  "revision": 2,
+  "created_at": "2026-09-20T01:07:59.573112+00:00",
+  "status": "research_draft",
+  "input_hash": "965ede84e338662ca0b6221dcb89ae21bd8e1c05a32c9a323a30384a322bac6e",
+  "depends_on": [
+    "products-capabilities",
+    "integrations",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:28:36.642865+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:28:36.642870+00:00",
+      "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+      "human_approved": false
+    }
+  ]
+}

@@ -1,0 +1,575 @@
+[
+  {
+    "key": "company-overview",
+    "title": "Company overview",
+    "folder": "company",
+    "phase": 0,
+    "paths": [
+      "www.conduit.ai/",
+      "/company",
+      "/about",
+      "/privacy",
+      "/pricing",
+      "/manifesto",
+      "ycombinator.com",
+      "phocuswire.com",
+      "/customers/"
+    ],
+    "sections": [
+      "Business at a glance",
+      "Origin and evolution",
+      "What Conduit sells",
+      "Who it serves",
+      "Business model",
+      "Market position",
+      "Customer evidence",
+      "Commercial implications"
+    ],
+    "brief": "Write a substantial 800–1100 word commercial company overview. Identify this hospitality Conduit, founder/legal/name history only if explicit, what system it replaces or complements, product architecture, customer segments and evidence. Distinguish company promises from observed customers. Explain what this means for sales. Avoid a generic funding dossier or invented TAM.",
+    "depends_on": []
+  },
+  {
+    "key": "commercial-model",
+    "title": "Commercial model & market context",
+    "folder": "company",
+    "phase": 0,
+    "paths": [
+      "/pricing",
+      "/company",
+      "/about",
+      "/manifesto",
+      "/build-vs-buy",
+      "/industry/",
+      "/affiliate",
+      "ycombinator.com"
+    ],
+    "sections": [
+      "How value is created",
+      "How the offer is sold",
+      "Routes to market",
+      "Market and alternatives",
+      "Buying economics",
+      "Questions for the company"
+    ],
+    "brief": "Explain subscription/usage packaging as published, why customers might buy, commercial constraints, scale economics without invented ROI/ACV. Affiliate is a route to market, not a product. Distinguish subscription prices from actual realized revenue. 600–900 words.",
+    "depends_on": []
+  },
+  {
+    "key": "products-capabilities",
+    "title": "Product catalog & capability map",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/product/",
+      "/pricing",
+      "/developers",
+      "/mcp",
+      "/changelog",
+      "/integrations",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "Product system",
+      "Product and capability map",
+      "How the products work together",
+      "Availability and boundaries",
+      "Choosing the entry point"
+    ],
+    "brief": "Catalog the four current primary website products. Treat Operator, developer APIs, integrations and partner program according to source evidence, not automatically as standalone products. Include a product → buyer problem → workflow → dependency → linked guide table. Distinguish availability, marketing use-case pages, and plan packaging.",
+    "depends_on": []
+  },
+  {
+    "key": "product-agents",
+    "title": "AI Agents",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/product/agents",
+      "/pricing",
+      "/integrations",
+      "/customers/",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "brief": "Create a complete 700–1000 word product guide for AI Agents. Each capability must belong to this product. Describe a concrete before/after workflow and its limits, buyers vs users, integration route not just vendor names, published pricing with units or explicit unknown, differentiation with attribution, proof tied only to the scope actually reported. Avoid transferring an AI Agents case metric to this product unless the story supports it. End with pointed discovery questions and the next practical sales step.",
+    "depends_on": []
+  },
+  {
+    "key": "product-inbox",
+    "title": "Inbox",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/product/inbox",
+      "/pricing",
+      "/integrations",
+      "/customers/",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "brief": "Create a complete 700–1000 word product guide for Inbox. Each capability must belong to this product. Describe a concrete before/after workflow and its limits, buyers vs users, integration route not just vendor names, published pricing with units or explicit unknown, differentiation with attribution, proof tied only to the scope actually reported. Avoid transferring an AI Agents case metric to this product unless the story supports it. End with pointed discovery questions and the next practical sales step.",
+    "depends_on": []
+  },
+  {
+    "key": "product-portals",
+    "title": "Guest Portals",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/product/portals",
+      "/pricing",
+      "/integrations",
+      "/customers/",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "brief": "Create a complete 700–1000 word product guide for Guest Portals. Each capability must belong to this product. Describe a concrete before/after workflow and its limits, buyers vs users, integration route not just vendor names, published pricing with units or explicit unknown, differentiation with attribution, proof tied only to the scope actually reported. Avoid transferring an AI Agents case metric to this product unless the story supports it. End with pointed discovery questions and the next practical sales step.",
+    "depends_on": []
+  },
+  {
+    "key": "product-workflows",
+    "title": "Workflows",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/product/workflows",
+      "/pricing",
+      "/integrations",
+      "/customers/",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "brief": "Create a complete 700–1000 word product guide for Workflows. Each capability must belong to this product. Describe a concrete before/after workflow and its limits, buyers vs users, integration route not just vendor names, published pricing with units or explicit unknown, differentiation with attribution, proof tied only to the scope actually reported. Avoid transferring an AI Agents case metric to this product unless the story supports it. End with pointed discovery questions and the next practical sales step.",
+    "depends_on": []
+  },
+  {
+    "key": "product-operator",
+    "title": "Operator & internal AI availability",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/changelog",
+      "/pricing",
+      "/product/",
+      "/developers",
+      "docs.conduit.ai/"
+    ],
+    "sections": [
+      "What is established",
+      "Role in the product system",
+      "Use cases and users",
+      "Availability and dependencies",
+      "What sales can say",
+      "Questions to resolve"
+    ],
+    "brief": "Investigate Operator separately: is it a named offering, internal assistant or unreleased capability? Do not promote historical/internal naming to a current standalone product. Offer concrete supported use cases only; state narrow unknowns rather than padding. No inferred autonomous actions.",
+    "depends_on": []
+  },
+  {
+    "key": "product-developers",
+    "title": "Developer platform & custom workflows",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/developers",
+      "/mcp",
+      "docs.conduit.ai/",
+      "/pricing"
+    ],
+    "sections": [
+      "Purpose and users",
+      "Interfaces and capabilities",
+      "Implementation patterns",
+      "Dependencies and controls",
+      "Packaging and limits",
+      "Sales and technical discovery"
+    ],
+    "brief": "Detailed guide to API/MCP/webhooks only where documented. Separate an API endpoint existing from authorization for an agent to execute it. Explain who needs a developer and what remains a managed product feature. 600–900 words.",
+    "depends_on": []
+  },
+  {
+    "key": "integrations",
+    "title": "Integrations & implementation readiness",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/integrations",
+      "docs.conduit.ai/",
+      "/product/"
+    ],
+    "sections": [
+      "Integration map",
+      "Direct versus relayed connections",
+      "Data and action boundaries",
+      "Implementation checklist",
+      "Unknowns and discovery questions"
+    ],
+    "brief": "Separate PMS data, messaging channels, operational tools, API/MCP. Name important supported systems with exact sources and distinguish marketplace listing, official setup docs and actual action support. Do not require every company to have every connector. Include readiness questions and failure/ownership concerns without pretending sources document controls they do not.",
+    "depends_on": []
+  },
+  {
+    "key": "pricing",
+    "title": "Pricing & packaging",
+    "folder": "product",
+    "phase": 0,
+    "paths": [
+      "/pricing",
+      "/product/",
+      "/developers"
+    ],
+    "sections": [
+      "Published plans",
+      "Usage and billing units",
+      "What is included",
+      "Choosing a package",
+      "Unpublished terms",
+      "Questions before a quote"
+    ],
+    "brief": "Capture all public plan prices, currencies, billing cadence, units, credits and voice/text distinctions exactly. If HTML toggles expose conflicting values, explain rather than choose. No inferred per-product standalone license from a bundle. Cite the pricing source next to the table; give sales a practical quote checklist.",
+    "depends_on": []
+  },
+  {
+    "key": "customer-evidence",
+    "title": "Customer evidence & usable proof",
+    "folder": "proof",
+    "phase": 0,
+    "paths": [
+      "/customers/",
+      "/customers"
+    ],
+    "sections": [
+      "Proof by customer and buying situation",
+      "What the results do and do not establish",
+      "Matching proof to a campaign",
+      "Evidence gaps"
+    ],
+    "brief": "Build a detailed proof library from named case studies: customer, operating situation, product actually mentioned, reported result, measurement caveat and campaign use. Do not use logo walls as product adoption evidence. Cover hotel and vacation-rental proof; 700–1000 words. Preserve source dates and time periods if given.",
+    "depends_on": []
+  },
+  {
+    "key": "alternatives",
+    "title": "Alternatives & differentiation",
+    "folder": "proof",
+    "phase": 0,
+    "paths": [
+      "/build-vs-buy",
+      "/alternatives/",
+      "/product/",
+      "prohost.ai",
+      "ersona.co",
+      "jurny.com"
+    ],
+    "sections": [
+      "Alternatives buyers consider",
+      "Decision criteria",
+      "Conduit differentiators and evidence",
+      "Objections and honest responses",
+      "Proof to request"
+    ],
+    "brief": "Compare doing nothing/manual work, PMS-native messaging, hospitality point solutions, general helpdesks and custom build. Competitor comparisons authored by Conduit must be attributed; never turn them into independent benchmarks. Give decision criteria, tradeoffs and concrete discovery questions. No unsupported superiority.",
+    "depends_on": []
+  },
+  {
+    "key": "brand-messaging",
+    "title": "Positioning & brand promise",
+    "folder": "brand",
+    "phase": 1,
+    "paths": [
+      "www.conduit.ai/",
+      "/manifesto",
+      "/company",
+      "/product/",
+      "/industry/",
+      "/customers/"
+    ],
+    "sections": [
+      "Core positioning",
+      "Promise and supporting pillars",
+      "Why this work matters",
+      "Reasons to believe",
+      "Positioning boundaries"
+    ],
+    "brief": "Create a usable positioning guide derived from actual company language and customer proof. Explain what a guest-operations team gets and why it matters, not generic AI hype. Separate observed company positioning from recommended articulation. 600–900 words.",
+    "depends_on": [
+      "company-overview",
+      "products-capabilities",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "brand-voice",
+    "title": "Brand voice & language",
+    "folder": "brand",
+    "phase": 1,
+    "paths": [
+      "www.conduit.ai/",
+      "/manifesto",
+      "/product/",
+      "/customers/",
+      "linkedin.com/ad-library"
+    ],
+    "sections": [
+      "Voice principles",
+      "Vocabulary and sentence patterns",
+      "Tone by situation",
+      "What to avoid",
+      "Editing checklist"
+    ],
+    "brief": "Infer voice from multiple official examples: calm hospitality operator language, precision, human/automation relationship if supported. Include evidence-backed pattern → writing rule → original example → avoid table. Examples are newly proposed drafts, not quoted published copy. Limit direct quotations; no invented approved style guide.",
+    "depends_on": [
+      "company-overview",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "message-map",
+    "title": "Audience-to-message map",
+    "folder": "brand",
+    "phase": 1,
+    "paths": [
+      "/industry/",
+      "/customers/",
+      "/product/"
+    ],
+    "sections": [
+      "Message hierarchy",
+      "Messages by buying situation",
+      "Role-specific emphasis",
+      "Offer and call to action",
+      "Proof and personalization boundaries"
+    ],
+    "brief": "Make actionable situation → problem → capability → value → specific proof → next action tables. Show independent hotel, hotel group, STR operator examples. Do not treat a public ad as a performance-tested winner. Personalization must be grounded in target-account evidence; no invented partnerships.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "writing-examples",
+    "title": "Campaign writing examples & rules",
+    "folder": "brand",
+    "phase": 1,
+    "paths": [
+      "/product/",
+      "/customers/",
+      "/industry/",
+      "/manifesto"
+    ],
+    "sections": [
+      "How to use these examples",
+      "Hotel campaign",
+      "Vacation-rental campaign",
+      "Technical evaluator follow-up",
+      "Claims and copy review"
+    ],
+    "brief": "Write genuinely usable short headline, support copy, email opener and discovery invitation examples for 2 buying situations, plus technical follow-up. Label them proposed copy. Use no fictional customer percentages or target-account pain assertions. Explain why each works and what target evidence is required. Do not fabricate an offer or trial.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "ideal-customers",
+    "title": "ICP strategy & segment priorities",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/industry/",
+      "/customers/",
+      "/pricing",
+      "/product/"
+    ],
+    "sections": [
+      "Who is a good-fit account",
+      "Priority buying situations",
+      "Company characteristics",
+      "Buyer roles versus company fit",
+      "Readiness and urgency",
+      "Exclusions and unknowns",
+      "What the company must confirm"
+    ],
+    "brief": "Define a substantive ICP, not a jobs list. Distinguish hotels and vacation-rental operators, buying unit, ownership vs management, geography/language, portfolio complexity and systems; label unsupported thresholds unknown. Rank investigation priority by evidence strength, not invented market attractiveness. No invented employee/revenue/unit gates. Explain what fit means, tests and why. 850–1100 words.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "icp-hotels",
+    "title": "ICP · hotel operators",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/industry/independent-hotels",
+      "/industry/hotel-groups",
+      "/customers/lauderdale-hotel",
+      "/customers/haven-2026",
+      "/pricing",
+      "/product/"
+    ],
+    "sections": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "brief": "Develop independent hotels vs hotel groups as subsegments, not a single vague hospitality label. Identify central/property buying locus, front desk/reservations/guest services, operating complexity, evidence markers, implementation reality. Give realistic good-fit/uncertain/poor-fit hypothetical examples explicitly labeled scenarios, no invented brands or thresholds.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "icp-rentals",
+    "title": "ICP · vacation-rental operators",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/industry/short-term-rentals",
+      "/customers/bocobay",
+      "/customers/wynwood-house",
+      "/customers/cascadia-getaways",
+      "/customers/homehop",
+      "/customers/canbnb",
+      "/pricing",
+      "/product/"
+    ],
+    "sections": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "brief": "Define professional STR/vacation-rental operators, distributed guest communications and field operations; distinguish owners from management companies. Evidence-based operational scale, no made-up minimum units/revenue/headcount. Explain how to research fit without claiming internal pain from a homepage. Include clearly hypothetical fit scenarios.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "buyer-roles",
+    "title": "Buying committee & professional personas",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/customers/",
+      "/industry/",
+      "/product/",
+      "/developers"
+    ],
+    "sections": [
+      "Buying roles and title map",
+      "Priorities and desired results",
+      "Buying attitudes and objections",
+      "Decision process",
+      "Questions by role"
+    ],
+    "brief": "Detailed buying committee matrix: economic buyer, champion, technical/security evaluator, operational user/blocker. Professional demographics: titles/seniority/remit/property vs group scope. Psychographics: evidence-based or clearly hypothesized attitudes toward guest trust, control, automation, change. Jobs, KPIs, objection, evidence required, message. Do not invent ages/gender/income or pretend inferred title maps are confirmed.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "buying-triggers",
+    "title": "Qualification & account research playbook",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/industry/",
+      "/customers/",
+      "/integrations",
+      "/pricing",
+      "/product/"
+    ],
+    "sections": [
+      "Fit, readiness and timing",
+      "Qualification matrix",
+      "Signals and sourcing",
+      "Discovery conversation",
+      "Decision and handoff"
+    ],
+    "brief": "Create testable qualification criteria and search/data-source plan, not a list of buzzwords. Each criterion: dimension, rationale, positive observation, source/method, unknown action and disqualifying evidence if truly relevant. Distinguish actual buying timing from later adoption or outcome. No unsupported scores/weights. Add structured icp_criteria. Show proceed/research/hold decisions with dependencies.",
+    "depends_on": [
+      "ideal-customers",
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ]
+  },
+  {
+    "key": "customer-jobs",
+    "title": "Buyer problems & desired results",
+    "folder": "audience",
+    "phase": 2,
+    "paths": [
+      "/customers/",
+      "/industry/",
+      "/product/"
+    ],
+    "sections": [
+      "What this document means",
+      "Work buyers need to accomplish",
+      "Before and after workflows",
+      "How improvement would be measured",
+      "Turning problems into campaigns"
+    ],
+    "brief": "Explain jobs/outcomes in plain English: work a buyer needs done and the result they need. Map specific situation → current workaround → failure → capability → desired measurable change → evidence. Distinguish desired KPI from a promised result. Include 2 concrete scenarios. Make this commercially useful, not a second feature catalog.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ]
+  }
+]

@@ -1,0 +1,8 @@
+# Versions already present in the local environment; no installation performed.
+httpx==0.28.1
+beautifulsoup4==4.15.0
+Pillow==11.3.0
+python-dotenv==1.2.2
+markdown-it-py==4.2.0
+playwright==1.61.0
+psycopg==3.3.4

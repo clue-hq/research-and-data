@@ -1,0 +1,1380 @@
+[
+  {
+    "key": "company-overview",
+    "title": "Company overview",
+    "folder": "company",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/company-overview.json",
+    "source_sha256": "22666ff5b17a514b6a41003208f2abbc15384cd5b76ac5d1a5286a51ff7e4e57",
+    "output": "reference/conduit-output/company/company-overview.md",
+    "body_sha256": "84da06f267de2c6b41435404e050537206a5d8dac0997c8abcc68a555c47f990",
+    "word_count": 1984,
+    "revision": 5,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_0fe82516611ad5df",
+      "src_156a9e102c46da8e",
+      "src_2c11152848161ec3",
+      "src_2e2dd617ac3b5ae4",
+      "src_36bdd6a3aaaa9e16",
+      "src_37286663c1a57667",
+      "src_3af7171895425b61",
+      "src_471f8f07bdc83e12",
+      "src_5833d03e0af9b73d",
+      "src_5cb5674a725889a9",
+      "src_670b352acfa5edac",
+      "src_69eff34511b34337",
+      "src_765674900bd1f4dd",
+      "src_7c4526fa84e6106c",
+      "src_98f3111f126b26d0",
+      "src_9c6aa2bef5e4a30a",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c6cc2b292bccdae2",
+      "src_c8a1bb788be5b03f",
+      "src_c8e3a0604ce1e6d6",
+      "src_d097938bd9b8b088",
+      "src_e067203ca4528d4b",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7"
+    ],
+    "headings": [
+      "Business at a glance",
+      "Origin and evolution",
+      "What Conduit sells",
+      "Who it serves",
+      "Business model",
+      "Market position",
+      "Customer evidence",
+      "Commercial implications"
+    ],
+    "open_questions": [
+      "Which published customer-count line is current: homepage/manifesto 300+ brands or YC/LinkedIn 1000+?",
+      "What is current headcount given YC 15, PitchBook 30, and LinkedIn 26 / 51–200?",
+      "Which HostAI-era modules (payroll, loyalty, leasing/housing) still ship versus hospitality Agents/Inbox/Portals/Workflows?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T00:51:27.351493+00:00",
+        "reason": "Read official privacy and pricing passages directly; correct missing legal identity, omitted business model and an overbroad availability inference.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:23:37.678031+00:00",
+        "reason": "Resolve reviewed company, commercial and catalog scope errors against the public evidence; distinguish marketing groups from qualification gates.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:38:57.863791+00:00",
+        "reason": "Cross-document editorial pass: propagate Easy BnB attribution and Cascadia expectation boundaries, clarify security comparisons, and repair prose after source corrections.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:48:20.879521+00:00",
+        "reason": "Cross-document editorial pass: propagate Easy BnB attribution and Cascadia expectation boundaries, clarify security comparisons, and repair prose after source corrections.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "commercial-model",
+    "title": "Commercial model & market context",
+    "folder": "company",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/commercial-model.json",
+    "source_sha256": "e1708df6335488ecb6bf4af652f0d49d51ab8f9f6502d663470177622e80ade7",
+    "output": "reference/conduit-output/company/commercial-model.md",
+    "body_sha256": "df3d22312fe126ec6877cf1d2825d31d8105e2dc8e62e02aafa122dd4f4a2a7b",
+    "word_count": 1166,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_0fe82516611ad5df",
+      "src_156a9e102c46da8e",
+      "src_3af7171895425b61",
+      "src_471f8f07bdc83e12",
+      "src_5eb74e069d5f7cb9",
+      "src_670b352acfa5edac",
+      "src_69422497b09c2257",
+      "src_69eff34511b34337",
+      "src_7c4526fa84e6106c",
+      "src_85ee63cd368efc44",
+      "src_9c6aa2bef5e4a30a",
+      "src_c6cc2b292bccdae2",
+      "src_d30d1770ff08e6a4",
+      "src_f09009069a2d197f",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "How value is created",
+      "How the offer is sold",
+      "Routes to market",
+      "Market and alternatives",
+      "Buying economics",
+      "Questions for the company"
+    ],
+    "open_questions": [
+      "What is a billed ‘unit’ for hotels versus STR listings, and how does the unpublished scale curve work past 50 listings?",
+      "What does one credit buy, do unused credits roll, and what is the overage or telephony/SMS pass-through rate?",
+      "What contract term, implementation fees (outside Startup), and discounting apply to Full Suite / enterprise quotes?",
+      "Which customer-count figure (300+ vs 1000+) and founding year (2023 vs 2024) should be used as the current company statement?",
+      "What share of bookings is self-serve Get Started versus demo-led sales, and what is realized revenue versus list price?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T00:51:27.359146+00:00",
+        "reason": "Remove an unestablished 10-unit quote and separate Operations navigation status from published Full Suite inclusions.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:23:37.686822+00:00",
+        "reason": "Resolve reviewed company, commercial and catalog scope errors against the public evidence; distinguish marketing groups from qualification gates.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "products-capabilities",
+    "title": "Product catalog & capability map",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/products-capabilities.json",
+    "source_sha256": "dc71668b895c251118a7324256757fc531d4cdb25d8e11f16db1924b5364867f",
+    "output": "reference/conduit-output/product/products-capabilities.md",
+    "body_sha256": "310aed9b6a650ab588888ce8e8bc0d83fc7c870c4c743bed33e5711f01572433",
+    "word_count": 1377,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_3e7552876a098bb0",
+      "src_44ca2b5b2ec94cdf",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_dae2c4b0bd94e5a6",
+      "src_e805a9592ee44f73",
+      "src_ee72b875099c7ac7",
+      "src_f01f1010ac8ddab8"
+    ],
+    "headings": [
+      "Product system",
+      "Product and capability map",
+      "How the products work together",
+      "Availability and boundaries",
+      "Choosing the entry point"
+    ],
+    "open_questions": [
+      "How do public packages (Messaging, Guest, Guest + Devices, Full Suite, Startup) map contractually onto the four named products versus add-ons?",
+      "What does “v3 plan” mean relative to the website packages, and is API/MCP included or separately enabled?",
+      "Is Operations a fifth upcoming product, or are tasks/workforce in Full Suite and recent changelogs already that surface?",
+      "Which actions (read vs messaging vs write-back) are actually supported on each of the 43 directory listings?",
+      "What is commercially offered as Affiliate Program versus the reseller copy on the integrations page?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:23:37.693446+00:00",
+        "reason": "Resolve reviewed company, commercial and catalog scope errors against the public evidence; distinguish marketing groups from qualification gates.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:25:08.882906+00:00",
+        "reason": "Resolve brand/proof review findings with specific source attribution; preserve conflicting results and separate product, packaging and target-entity meanings.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "product-agents",
+    "title": "AI Agents",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-agents.json",
+    "source_sha256": "3c35fdde560f1daf518370dc5fe7c6925a2257b76c21389d4138a23790e1b364",
+    "output": "reference/conduit-output/product/product-agents.md",
+    "body_sha256": "e23853495edf9d35956cd6f9c41701e247561691f0d07dec3bf7bdb2b7e4d615",
+    "word_count": 1719,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_3399afceb260e44f",
+      "src_37286663c1a57667",
+      "src_5cb5674a725889a9",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9fb1a5550c393b02",
+      "src_a2a67d2faa01de13",
+      "src_b27f818d3e0ae613",
+      "src_b2ab716efd97c239",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_dae2c4b0bd94e5a6",
+      "src_e067203ca4528d4b",
+      "src_e805a9592ee44f73",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "open_questions": [
+      "The Agents product FAQ asks how much agents resolve on their own but the captured page does not publish an answer.",
+      "No standalone Agents SKU or per-reply credit rate is published; only bundle starting rates and workflow credit tables.",
+      "Write-back (reservation change, payment, task) is claimed for “supported integrations,” but per-PMS action matrices are incomplete in these passages.",
+      "HomeHop’s story header says using Conduit since June 2025 while the footer says approximately two years.",
+      "The Flex page reports both ~70% customer-service automation and 90% of guest communication automated."
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:22:14.844918+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "product-inbox",
+    "title": "Inbox",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-inbox.json",
+    "source_sha256": "8f9e7b6b1a50ce2343f2bf7f0486eb950949ba26405194194e2e14bd13751742",
+    "output": "reference/conduit-output/product/product-inbox.md",
+    "body_sha256": "d9cb2cd2798be4035c3d0f658eee9bc2136cd9b350bd7aee5cfdd3d40be148de",
+    "word_count": 1476,
+    "revision": 1,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_3399afceb260e44f",
+      "src_5cb5674a725889a9",
+      "src_765674900bd1f4dd",
+      "src_8f9aa404cff029a5",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_ad64b9e1ad88ae2a",
+      "src_b27f818d3e0ae613",
+      "src_dae2c4b0bd94e5a6",
+      "src_e067203ca4528d4b",
+      "src_ec670ccb114e21b7"
+    ],
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "open_questions": [
+      "Can Inbox be purchased without Voice AI, Agents, or Workflows, or is it only available inside Messaging and higher packages?",
+      "What is the GA timing and supported action set for Booking.com and VRBO messaging, both listed as coming soon?",
+      "When should a team choose a contact inbox versus a ticket inbox? The docs index names the distinction but the supplied passages do not define it.",
+      "How are credits consumed for human-only inbox replies versus AI sends outside workflow actions?"
+    ],
+    "editorial_reviews": []
+  },
+  {
+    "key": "product-portals",
+    "title": "Guest Portals",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-portals.json",
+    "source_sha256": "422f38702b492815b88d6819bbb843f85f3a470387534452e0f85dfd6366df87",
+    "output": "reference/conduit-output/product/product-portals.md",
+    "body_sha256": "f567db220fff99569a5a898d8a22cfdcfea3a07a0d33338e958eb63fc05df5f6",
+    "word_count": 1633,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_6eff9afc29aa8e32",
+      "src_8b30f0226db273ad",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_dd30ed33c607e76d",
+      "src_e6b08f48fc993eb2",
+      "src_f01f1010ac8ddab8",
+      "src_f0d546128c30936b",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "open_questions": [
+      "For a given account, is Portals sold as the Guest per-unit bundle, a listing-count add-on, or both stacked, and what guest-transaction terms apply?",
+      "Which PMS/OTA integrations support which portal fields, payment rules, and write-back, and which lock models can show codes or controls after verification?",
+      "Are there customer stories that isolate portal completion, waiver, payment, or upsell outcomes rather than inbox/agent automation?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:22:14.883698+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "product-workflows",
+    "title": "Workflows",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-workflows.json",
+    "source_sha256": "106401cf652dd7f9d7f2bdf8c1199a68fc81dbf92ae435a76e5a85de0799fcc0",
+    "output": "reference/conduit-output/product/product-workflows.md",
+    "body_sha256": "33bdf688d33a956310818f267c56677b3989fd4268371750c7cd7c4cfb4d4bd4",
+    "word_count": 1804,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_0f66e375eb2b7089",
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_44ca2b5b2ec94cdf",
+      "src_8f9aa404cff029a5",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_f01f1010ac8ddab8",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "Overview",
+      "Who it is for",
+      "Capabilities and limits",
+      "Workflows and use cases",
+      "Integrations and setup",
+      "Pricing and packaging",
+      "Differentiation",
+      "Customer evidence",
+      "Sales discovery"
+    ],
+    "open_questions": [
+      "Is Workflows sold or discounted as its own SKU anywhere, or only as a line inside Messaging and higher bundles?",
+      "Which hospitality triggers, PMS events, and loyalty/custom signals are actually selectable in the builder versus marketing examples?",
+      "Which third-party actions are first-class workflow steps versus webhook/MCP/custom work (including SuiteOP, cleaning vendors, locks)?",
+      "How should 40 credits per unit per month be sized against a typical confirmation + check-in + checkout + upsell sequence?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:16:32.031525+00:00",
+        "reason": "Remove the misleading link that equated Operations with Operator.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:22:14.853462+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "product-operator",
+    "title": "Operator & internal AI availability",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-operator.json",
+    "source_sha256": "2f9b78d5db8d054ac16a0f46ee8aa84122264ccb7136fd268e663a26f91790dd",
+    "output": "reference/conduit-output/product/product-operator.md",
+    "body_sha256": "d1801e309a4275e4b89b1cd0d403fb27dd70c8bd205825733a2f33dee4b130cb",
+    "word_count": 1069,
+    "revision": 4,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_56565f67371994a7",
+      "src_75269914aa6b6dfd",
+      "src_8f25c49f10b781f9",
+      "src_8f9aa404cff029a5",
+      "src_c8cbc2ec50c61efe",
+      "src_dd30ed33c607e76d",
+      "src_e805a9592ee44f73",
+      "src_ee72b875099c7ac7",
+      "src_f01f1010ac8ddab8",
+      "src_f0d546128c30936b",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "What is established",
+      "Role in the product system",
+      "Use cases and users",
+      "Availability and dependencies",
+      "What sales can say",
+      "Questions to resolve"
+    ],
+    "open_questions": [
+      "Does Operator consume credits, and on which rate card, when used as the workspace assistant?",
+      "Is Operator included on every Messaging-or-above workspace, or only after a v3/API entitlement?",
+      "Can Operator send or change guest-facing messages, or only configuration artifacts unless a tool/agent is explicitly enabled?",
+      "What is the default Operator tool set before an admin grants connection, custom, MCP, or device tools?",
+      "How should sales treat the internal-agent gallery versus Operator when a prospect asks for ‘internal AI’?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:16:31.998980+00:00",
+        "reason": "Add the official credit guide discovered through billing documentation.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:22:14.868349+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "product-developers",
+    "title": "Developer platform & custom workflows",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/product-developers.json",
+    "source_sha256": "ad0adbb89d342401d28955c6ee1c5e69c00496ec9dbee32d312d2b1f1ef1c3e9",
+    "output": "reference/conduit-output/product/product-developers.md",
+    "body_sha256": "916e98e175a89b0720479317835d12c85e6cb70ae6352963a937b50a87f266e4",
+    "word_count": 1240,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_0f66e375eb2b7089",
+      "src_156a9e102c46da8e",
+      "src_2a445232675660d9",
+      "src_2d5d23c8d8b6f535",
+      "src_3e7552876a098bb0",
+      "src_44ca2b5b2ec94cdf",
+      "src_8f9aa404cff029a5",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_f01f1010ac8ddab8"
+    ],
+    "headings": [
+      "Purpose and users",
+      "Interfaces and capabilities",
+      "Implementation patterns",
+      "Dependencies and controls",
+      "Packaging and limits",
+      "Sales and technical discovery"
+    ],
+    "open_questions": [
+      "How does the documented “v3 plan” required for API/MCP map to named packages on conduit.ai/pricing?",
+      "Is there a documented public event-subscription webhook API (payloads, signatures, event types), or only workflow Send webhook and inbound PMS webhook URLs?",
+      "What entitlements, quotas, or review process exist for custom Python/JavaScript tools beyond v3 enablement?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:22:14.861764+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "integrations",
+    "title": "Integrations & implementation readiness",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/integrations.json",
+    "source_sha256": "9c36453bfa76ce7ae85cf6d1f8b31432d21842ea861b1c820c100d3a35c738fc",
+    "output": "reference/conduit-output/product/integrations.md",
+    "body_sha256": "325d4c2f14ea760325ec6853cda68c37b92096ef42b443623cc1ded52b8cb848",
+    "word_count": 1274,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_2d5d23c8d8b6f535",
+      "src_3399afceb260e44f",
+      "src_3eddba4921daba7a",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8f9aa404cff029a5",
+      "src_904a981650724bf1",
+      "src_9078cb1971869041",
+      "src_91caff45e9dfd65f",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_ad64b9e1ad88ae2a",
+      "src_b27f818d3e0ae613",
+      "src_b4b8a8b99c077661",
+      "src_c8cbc2ec50c61efe",
+      "src_dae2c4b0bd94e5a6",
+      "src_e805a9592ee44f73",
+      "src_f01f1010ac8ddab8"
+    ],
+    "headings": [
+      "Integration map",
+      "Direct versus relayed connections",
+      "Data and action boundaries",
+      "Implementation checklist",
+      "Unknowns and discovery questions"
+    ],
+    "open_questions": [
+      "Which write actions (reservation change, payment, task creation, lock codes) are enabled for each named PMS versus only described generically for “supported integrations”?",
+      "Is StayNTouch a messaging or non-messaging PMS in the product, and is two-way write-back implemented beyond the marketplace card?",
+      "Current status of Booking.com and VRBO (still coming soon?) and of Hospitable, PassTheKeys, CiiRUS, Kross Booking, LINE, and iMessage relative to the 43-card catalog.",
+      "How Guest Portals bind to PMS/OTA data and which smart-lock vendors are compatible.",
+      "How to reconcile Mews marketplace “centralize guest messaging” copy with the docs classification of Mews as non-messaging."
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:27:07.883048+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "pricing",
+    "title": "Pricing & packaging",
+    "folder": "product",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/pricing.json",
+    "source_sha256": "bd11dfd11b180e6727d78d3d746185806ddbecc82a1ce2963e25f2c84f8701bd",
+    "output": "reference/conduit-output/product/pricing.md",
+    "body_sha256": "961d5be440060db48f03513684d2b41343dc53f3082df5346aff3ddb176cac08",
+    "word_count": 1282,
+    "revision": 4,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_6eff9afc29aa8e32",
+      "src_8b30f0226db273ad",
+      "src_b4b8a8b99c077661",
+      "src_b502f83a4ef37393",
+      "src_f0d546128c30936b",
+      "src_f599093e8cf0b47d"
+    ],
+    "headings": [
+      "Published plans",
+      "Usage and billing units",
+      "What is included",
+      "Choosing a package",
+      "Unpublished terms",
+      "Questions before a quote"
+    ],
+    "open_questions": [
+      "What dollar rate is charged per credit in overage, and is it the same across packages?",
+      "Does a billed “unit” equal a contracted listing, a room, or another inventory object?",
+      "What are the graduated prices beyond 50 listings and the Portals add-on rates by listing count?",
+      "Can Portals be bought on Messaging without the Guest bundle, and how do guest-transaction terms change the rate?",
+      "What implementation fees, annual multipliers, and taxes apply outside the Startup “no implementation fee” claim?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:22:14.876399+00:00",
+        "reason": "Resolve source-checked content review findings: factual scope, pricing meter distinctions, product availability, and attribution.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:27:07.867362+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "customer-evidence",
+    "title": "Customer evidence & usable proof",
+    "folder": "proof",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/customer-evidence.json",
+    "source_sha256": "59f84aef75a019fc5ca4f98d645975b551b7193dd6dea52788b35d12481d4fed",
+    "output": "reference/conduit-output/proof/customer-evidence.md",
+    "body_sha256": "ba879b0be7d0580294383c55024606c9e9af4fec68321b26e72c3e7f26bca6cc",
+    "word_count": 1327,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_5cb5674a725889a9",
+      "src_7554566ca6745e69",
+      "src_765674900bd1f4dd",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8a1bb788be5b03f",
+      "src_d097938bd9b8b088",
+      "src_e067203ca4528d4b",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7"
+    ],
+    "headings": [
+      "Proof by customer and buying situation",
+      "What the results do and do not establish",
+      "Matching proof to a campaign",
+      "Evidence gaps"
+    ],
+    "open_questions": [
+      "What methodology sits behind Bocobay’s 80% resolution rate and “100s” of hours saved?",
+      "Which surfaces (Agents, Inbox, Workflows, voice, 24/7 staffed support) were in production for each named metric?",
+      "How should Cascadia’s March deploy vs December 2024 “using since,” HomeHop’s June 2025 vs “approximately two years,” and Bali founded-2025 vs using-since-December-2024 be reconciled?",
+      "Do index-only stories (BlueGems, 35-property 96% automation, Moxxi, Renjoy/Joy) have measurable bodies?",
+      "Is Lauderdale’s $500k an OM illustration, a completed sale, or only an 8% cap-rate model?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:27:07.876323+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "alternatives",
+    "title": "Alternatives & differentiation",
+    "folder": "proof",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/alternatives.json",
+    "source_sha256": "3f8c23800fbdc90b03735b4204f8a5108ab1003b8a48c3cb97991e192a4c1ea7",
+    "output": "reference/conduit-output/proof/alternatives.md",
+    "body_sha256": "055767f81c08741c34891113d5167138e81aac84f11a928cb9082ed3aee50c0e",
+    "word_count": 1591,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_36bdd6a3aaaa9e16",
+      "src_54c03b95f90b1e68",
+      "src_654dffae90142089",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_7bc35ef1f73d36e7",
+      "src_8263cdab2378c09a",
+      "src_85ee63cd368efc44",
+      "src_9078cb1971869041",
+      "src_98f3111f126b26d0",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_c8e3a0604ce1e6d6",
+      "src_e805a9592ee44f73"
+    ],
+    "headings": [
+      "Alternatives buyers consider",
+      "Decision criteria",
+      "Conduit differentiators and evidence",
+      "Objections and honest responses",
+      "Proof to request"
+    ],
+    "open_questions": [
+      "Is Conduit Ops generally available, or still “Coming soon” as on product navigation while the Canary page describes it as live?",
+      "What is the current, connector-level read vs write matrix (especially reservation, rate, calendar, payment, and task write-back) versus Ersona, ProhostAI, and named PMS-native inboxes?",
+      "Which of Conduit’s company-reported figures (87% autonomous resolve, 95% CSAT, 50M+ conversations) can be tied to a named customer, period, and definition?",
+      "What can hotel PMS-native messaging and the listed helpdesks (Zendesk, Service Cloud, Intercom, and others) actually do for hospitality actions? Those products are named in footers only.",
+      "Which equivalent competitor package and implementation scope should be compared with Conduit’s published bundles for this account?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:25:08.892118+00:00",
+        "reason": "Resolve brand/proof review findings with specific source attribution; preserve conflicting results and separate product, packaging and target-entity meanings.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:38:57.879044+00:00",
+        "reason": "Cross-document editorial pass: propagate Easy BnB attribution and Cascadia expectation boundaries, clarify security comparisons, and repair prose after source corrections.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "brand-messaging",
+    "title": "Positioning & brand promise",
+    "folder": "brand",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/brand-messaging.json",
+    "source_sha256": "982d9691d4cdd663ca78e0079f594ee23928b2ce7e589efc72e3261177f5f66c",
+    "output": "reference/conduit-output/brand/brand-messaging.md",
+    "body_sha256": "6ff9b2253b371f50f4a5c6ed75e8531a84a6f305ea2e9f248f11b1bc7021b969",
+    "word_count": 1125,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "company-overview",
+      "products-capabilities",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_0fe82516611ad5df",
+      "src_156a9e102c46da8e",
+      "src_36bdd6a3aaaa9e16",
+      "src_37286663c1a57667",
+      "src_3af7171895425b61",
+      "src_471f8f07bdc83e12",
+      "src_5eb74e069d5f7cb9",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_7c4526fa84e6106c",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_98f3111f126b26d0",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8e3a0604ce1e6d6",
+      "src_d097938bd9b8b088",
+      "src_d30d1770ff08e6a4",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "Core positioning",
+      "Promise and supporting pillars",
+      "Why this work matters",
+      "Reasons to believe",
+      "Positioning boundaries"
+    ],
+    "open_questions": [
+      "Which brand-count line (homepage 300+ vs LinkedIn 1000+) is approved for external copy, and should manifesto scale metrics stay thought-leadership only?",
+      "Is Operations still a positioning boundary as “coming soon,” or may maintenance/housekeeping language from stories and Full Suite packaging be used as current product?",
+      "What hotel-group proof, if any, can sit beside STR and boutique-hotel stories without stretching Lauderdale or Wynwood?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:25:08.900056+00:00",
+        "reason": "Resolve brand/proof review findings with specific source attribution; preserve conflicting results and separate product, packaging and target-entity meanings.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:38:57.872359+00:00",
+        "reason": "Cross-document editorial pass: propagate Easy BnB attribution and Cascadia expectation boundaries, clarify security comparisons, and repair prose after source corrections.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "brand-voice",
+    "title": "Brand voice & language",
+    "folder": "brand",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/brand-voice.json",
+    "source_sha256": "505e68e48c5ce78fde5461b23c2a3832446589a070ef71899b38fda131a0230b",
+    "output": "reference/conduit-output/brand/brand-voice.md",
+    "body_sha256": "57be0c5b0edd4267e88a3cf3bdc72586a2f558977808cd0d98d2f41b595fa0bc",
+    "word_count": 1274,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "company-overview",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_36bdd6a3aaaa9e16",
+      "src_3af7171895425b61",
+      "src_5a71a6776ae43f4d",
+      "src_62adc21be4856125",
+      "src_74beb96da6e34c56",
+      "src_75269914aa6b6dfd",
+      "src_7887eadbc3fe7616",
+      "src_792004fc0d3ff885",
+      "src_98f3111f126b26d0",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8e3a0604ce1e6d6",
+      "src_dd47af2745ba5b91",
+      "src_e067203ca4528d4b",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7"
+    ],
+    "headings": [
+      "Voice principles",
+      "Vocabulary and sentence patterns",
+      "Tone by situation",
+      "What to avoid",
+      "Editing checklist"
+    ],
+    "open_questions": [
+      "Is there an internal approved style guide, word list, or legal disclaimer set that should override these inferred patterns?",
+      "Which brand-count line (homepage 300+ vs LinkedIn ad 1,000+) is current for new copy?",
+      "When may manifesto metrics (87% resolution, 95% CSAT, 50M conversations) appear outside the manifesto?",
+      "How should voice differ for hotel-group vs STR campaigns given most named stories are STR/PM?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:25:08.908083+00:00",
+        "reason": "Resolve brand/proof review findings with specific source attribution; preserve conflicting results and separate product, packaging and target-entity meanings.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "message-map",
+    "title": "Audience-to-message map",
+    "folder": "brand",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/message-map.json",
+    "source_sha256": "b003f6c5b8cd3a29be7693fbe590e988aa0e2ccb97889dea5220f8e25811a641",
+    "output": "reference/conduit-output/brand/message-map.md",
+    "body_sha256": "4f8c21d406ab6877f5813e7c7121160ae5f411159c985785cac1c803e8bfa9a4",
+    "word_count": 1137,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_66f6c23da9142b32",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8a1bb788be5b03f",
+      "src_d097938bd9b8b088",
+      "src_d30d1770ff08e6a4",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "Message hierarchy",
+      "Messages by buying situation",
+      "Role-specific emphasis",
+      "Offer and call to action",
+      "Proof and personalization boundaries"
+    ],
+    "open_questions": [
+      "Which named hotel-group story, if any, can sit in group-targeted copy given this pack has no group case body?",
+      "Which automation denominator (messages, support volume, guest communication) should outbound use when stories disagree?",
+      "When, if ever, should Portals or Operations appear in a proof-led CTA before a story isolates them?",
+      "How should staffing claims be phrased when Haven reports no AI layoffs and Bali reports replacing eleven VAs?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:27:07.889709+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "writing-examples",
+    "title": "Campaign writing examples & rules",
+    "folder": "brand",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/writing-examples.json",
+    "source_sha256": "ddd698d51726a5fa7e71da09be81d60f0f827d718a8cca558d757927fcce59fe",
+    "output": "reference/conduit-output/brand/writing-examples.md",
+    "body_sha256": "1193a57f633e825304a2a097f8b1eaf9115d154a0181685b48a8540bf7d81735",
+    "word_count": 1258,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_3af7171895425b61",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d097938bd9b8b088",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "How to use these examples",
+      "Hotel campaign",
+      "Vacation-rental campaign",
+      "Technical evaluator follow-up",
+      "Claims and copy review"
+    ],
+    "open_questions": [
+      "Which named hotel-group stories, if any, can later campaigns use? This pack has Lauderdale as the only hotel P&L write-up and no hotel-group body.",
+      "Lauderdale describes an AI-powered platform plus a 24/7 staffed support team; campaigns still need a source that separates staffed support from Agents/Inbox.",
+      "No named story isolates Guest Portals, so stay-link copy remains capability-only until a portal-attributed result exists.",
+      "Should manifesto-wide figures (50M conversations, 87% resolve, 95% CSAT) ever be allowed in ABM, or only on thought-leadership pages?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:27:07.898288+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "ideal-customers",
+    "title": "ICP strategy & segment priorities",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/ideal-customers.json",
+    "source_sha256": "cb1737f40fe004225b91a3508e0ac80fba98a045e0ef4f4c3b95b9e6129e544a",
+    "output": "reference/conduit-output/audience/ideal-customers.md",
+    "body_sha256": "21a9651b63594037050838a6b34b6efb4f173733c13b7bdfee6bb5090426a43a",
+    "word_count": 1255,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d30d1770ff08e6a4",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "Who is a good-fit account",
+      "Priority buying situations",
+      "Company characteristics",
+      "Buyer roles versus company fit",
+      "Readiness and urgency",
+      "Exclusions and unknowns",
+      "What the company must confirm"
+    ],
+    "open_questions": [
+      "Is there named, body-complete proof for hotel groups comparable to STR stories?",
+      "Which serviced-apartment operators are referenceable, and how do they differ from hotels and STRs in buying unit?",
+      "Does Conduit bill a unit as a listing, room, key, or something else—and is that ever a fit rule or only packaging?",
+      "Who contracts—owner, management company, franchisee, or brand—and does that change qualification?",
+      "Which languages and locales are product-supported versus outcomes reported only in the Wynwood story?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:16:32.015055+00:00",
+        "reason": "Do not describe multilingual capability as absent when marketed explicitly; ask about workflow-specific coverage.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:27:07.905698+00:00",
+        "reason": "Resolve reviewed proof attribution, buying-role and connector readiness issues; preserve unknowns without manufacturing exclusions.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "icp-hotels",
+    "title": "ICP · hotel operators",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/icp-hotels.json",
+    "source_sha256": "71bbe6a5c1836ef52083ea8ac9d03988e4685011dfca806c5e8398b7a55281c3",
+    "output": "reference/conduit-output/audience/icp-hotels.md",
+    "body_sha256": "be01eadba6942f84aff7c6a81b5e5f3ad2f8b6a10155272c1fa53ec0e3df40f0",
+    "word_count": 1159,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_9078cb1971869041",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_d30d1770ff08e6a4",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f",
+      "src_f0d546128c30936b"
+    ],
+    "headings": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "open_questions": [
+      "Is there a named hotel-group customer with documented outcomes, or only industry-page use cases?",
+      "For Lauderdale, what mix of AI agents versus 24/7 staffed support produced the $600/month and 2-minute response figures?",
+      "Which Opera, Mews, and Cloudbeds actions are live for hotels (read context vs reservation changes, payments, tasks)?",
+      "Do independent hotels in practice buy Messaging only or Guest/Portals, given no hotel portal proof in this pack?",
+      "Who signs (owner, GM, brand, procurement) when a group wants shared standards plus property exceptions?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:16:32.007332+00:00",
+        "reason": "Separate genuine product mismatches from readiness questions and seller claim errors.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:28:36.634431+00:00",
+        "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "icp-rentals",
+    "title": "ICP · vacation-rental operators",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/icp-rentals.json",
+    "source_sha256": "bb7df4dcc46c103dfbbfd20caa035cdf6c5a24c9b29248ff1f70a6b92d7113a6",
+    "output": "reference/conduit-output/audience/icp-rentals.md",
+    "body_sha256": "2ac532cbbb6b87dc662a8039ca34329e1b68635bef707ddfd31b01066e41957c",
+    "word_count": 1214,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_d097938bd9b8b088",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_ec670ccb114e21b7",
+      "src_f0d546128c30936b"
+    ],
+    "headings": [
+      "Account definition",
+      "Best-fit operating situations",
+      "Company and technology profile",
+      "Buying committee",
+      "Qualification decisions",
+      "Signals and next questions",
+      "Disqualifiers and unresolved assumptions"
+    ],
+    "open_questions": [
+      "Is there any internal or unpublished listing, revenue, or headcount floor for STR, or is Startup 0–25 the only public size signal?",
+      "Are individual owner-hosts a priority ICP or only a packaging path, given named stories are PMCs and multi-listing operators?",
+      "For a given account, which of Airbnb, Vrbo, Booking.com, and Expedia actually pass messaging into Conduit versus reservation data only?",
+      "When a prospect’s job is housekeeping, maintenance, or cleaner dispatch, what is sellable now versus Operations still marked coming soon?",
+      "How should Cascadia’s December 2024 vs March deployment dates and HomeHop’s June 2025 vs “approximately two years” be treated in customer proof?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:28:36.642870+00:00",
+        "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "buyer-roles",
+    "title": "Buying committee & professional personas",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/buyer-roles.json",
+    "source_sha256": "0ade663cc93454d4192694e0592907ceef2b7b282ec0187063004726632e2a27",
+    "output": "reference/conduit-output/audience/buyer-roles.md",
+    "body_sha256": "f9d9679900e68c5e59d21ca86a8032d026de102a47cf445f8b3a8019ed0ade57",
+    "word_count": 1318,
+    "revision": 3,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_3e7552876a098bb0",
+      "src_5a71a6776ae43f4d",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8a1bb788be5b03f",
+      "src_d097938bd9b8b088",
+      "src_d30d1770ff08e6a4",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "Buying roles and title map",
+      "Priorities and desired results",
+      "Buying attitudes and objections",
+      "Decision process",
+      "Questions by role"
+    ],
+    "open_questions": [
+      "Who actually sits on hotel-group evaluations (brand, property GM, IT, security) when this pack has no named hotel-group case?",
+      "When is a technical or security reviewer required versus founder-led knowledge setup?",
+      "How often operational users can slow or veto autopilot after job-threat concerns, versus economic buyers who already chose VA reduction?",
+      "Which titles specifically sponsor Portals, voice numbers, or API/MCP rather than inbox-plus-agents?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:16:32.023370+00:00",
+        "reason": "Add usable professional title hypotheses with remit and discovery questions, kept distinct from observed customer titles.",
+        "human_approved": false
+      },
+      {
+        "at": "2026-09-20T01:28:36.649870+00:00",
+        "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "buying-triggers",
+    "title": "Qualification & account research playbook",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/buying-triggers.json",
+    "source_sha256": "0e341a9b857ab7dc5cbd13ad1b16e5b34a5037cb23dde12fdbf8ed07b1ba45a9",
+    "output": "reference/conduit-output/audience/buying-triggers.md",
+    "body_sha256": "6617922f4e79d872fe448494797a9a0861a4b64aeb146c66f4a763c019728d85",
+    "word_count": 1229,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "ideal-customers",
+      "products-capabilities",
+      "integrations",
+      "pricing",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_156a9e102c46da8e",
+      "src_3399afceb260e44f",
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_a2a67d2faa01de13",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_d30d1770ff08e6a4",
+      "src_dae2c4b0bd94e5a6",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_f09009069a2d197f",
+      "src_f0d546128c30936b"
+    ],
+    "headings": [
+      "Fit, readiness and timing",
+      "Qualification matrix",
+      "Signals and sourcing",
+      "Discovery conversation",
+      "Decision and handoff"
+    ],
+    "open_questions": [
+      "What Conduit bills as a unit versus a listing, room, or key, and whether that changes hotel versus STR quotes.",
+      "Which PMS/OTA connectors actually modify reservations, take payment, or create tasks for a given stack—not merely appear as logos.",
+      "Whether Booking.com and VRBO messaging are live after the 19 Sep 2026 directory capture that marked both coming soon.",
+      "Named, in-body proof for hotel groups and serviced-apartment operators comparable to the STR stories.",
+      "Whether Full Suite operations lines can be scoped while product nav still labels Operations coming soon."
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:28:36.656256+00:00",
+        "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "customer-jobs",
+    "title": "Buyer problems & desired results",
+    "folder": "audience",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/customer-jobs.json",
+    "source_sha256": "d6eebac696384301c54f3e9f44024d46fe57c0c5f95694da747c0d36d9525a6a",
+    "output": "reference/conduit-output/audience/customer-jobs.md",
+    "body_sha256": "f5592ce5c426048672bf471eb2dbf84a76f4608ef98334881c135848b9e901bf",
+    "word_count": 1267,
+    "revision": 2,
+    "model_metadata": "x-ai/grok-4.6",
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [
+      "products-capabilities",
+      "customer-evidence"
+    ],
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_5a71a6776ae43f4d",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_66f6c23da9142b32",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_8b30f0226db273ad",
+      "src_9078cb1971869041",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8a1bb788be5b03f",
+      "src_d097938bd9b8b088",
+      "src_d30d1770ff08e6a4",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ],
+    "headings": [
+      "What this document means",
+      "Work buyers need to accomplish",
+      "Before and after workflows",
+      "How improvement would be measured",
+      "Turning problems into campaigns"
+    ],
+    "open_questions": [
+      "What denominator (messages, support tickets, guest communication) should campaigns use when customer stories disagree, as on The Flex 70% vs 90%?",
+      "Which named hotel-group or multi-property hotel outcomes exist beyond Lauderdale and Wynwood, which is multi-market CX rather than group ops?",
+      "Do any named stories isolate Guest Portals (pre-arrival completion, deposits, in-portal upgrades) as the cause of a result?",
+      "How should staffing proof be framed when Haven reports no AI layoffs and Bali/Easy BnB reports eleven VAs replaced?"
+    ],
+    "editorial_reviews": [
+      {
+        "at": "2026-09-20T01:28:36.662967+00:00",
+        "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+        "human_approved": false
+      }
+    ]
+  },
+  {
+    "key": "visual-identity",
+    "title": "Visual identity & logo pack",
+    "folder": "design",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/visual-identity.json",
+    "source_sha256": "bd4fc18d08e731c3d0ecf5e7606a9f448813d9fd330c9c2b8e65d9cd0bc23dde",
+    "output": "reference/conduit-output/design/visual-identity.md",
+    "body_sha256": "514975e09758ee1bf9f088322cb29fbd1a80d808d6ee21c65097131a2443eaf2",
+    "word_count": 504,
+    "revision": 1,
+    "model_metadata": null,
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [
+      "src_36bdd6a3aaaa9e16",
+      "src_6c398213f32eba5f",
+      "src_98f3111f126b26d0",
+      "src_c8e3a0604ce1e6d6",
+      "src_d0b759265293bc83"
+    ],
+    "headings": [
+      "Logo family and background fit",
+      "Color and typography",
+      "How an agent should use this pack",
+      "Remaining gaps and next action"
+    ],
+    "open_questions": [],
+    "editorial_reviews": []
+  },
+  {
+    "key": "library-guide",
+    "title": "Library organization & research flow",
+    "folder": "guide",
+    "source_document": "experiments/brand-context-agent-v1/runs/conduit-rework-20260919/documents/library-guide.json",
+    "source_sha256": "e8e4dffc4a8697500dbed4f043a868acfc2e5a9e052078c2ab693a43e144d760",
+    "output": "reference/conduit-output/guide/library-guide.md",
+    "body_sha256": "ed956a02eb1d4edcc1b0eabe499f3a65ce6fc683bf74f18a780b1ebc9d2cf033",
+    "word_count": 1071,
+    "revision": 1,
+    "model_metadata": null,
+    "authorship_caution": "Model metadata does not exclude subsequent Codex editorial changes.",
+    "depends_on": [],
+    "source_ids": [],
+    "headings": [
+      "What belongs in each folder",
+      "Why there are multiple product documents",
+      "What triggers each step",
+      "What an agent receives",
+      "How this maps to Clue today",
+      "Review and maintenance"
+    ],
+    "open_questions": [],
+    "editorial_reviews": []
+  }
+]

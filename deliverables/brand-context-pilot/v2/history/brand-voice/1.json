@@ -1,0 +1,131 @@
+{
+  "key": "brand-voice",
+  "title": "Brand voice & language",
+  "summary": "Conduit’s public copy reads as hospitality-operator language: short action verbs, property and booking nouns, and agents that answer, act, then hand work to the team. This note infers patterns from site, product, manifesto, customer, and LinkedIn examples; it is not an approved style guide, and proposed lines are unlabeled drafts until a human signs them.",
+  "markdown": "# Brand voice & language\n\nThis is an inferred voice from public Conduit pages, product copy, the manifesto, customer stories, and LinkedIn ads—not a signed style guide. Pair it with [Positioning & brand promise](#knowledge/brand-messaging), [Company overview](#knowledge/company-overview), and [Customer evidence & usable proof](#knowledge/customer-evidence). Proposed lines below are **drafts**. Do not present them as published Conduit copy or as a relationship with a named prospect.\n\n## Voice principles\n\n**Write for the operator, not for “AI.”** Homepage and product pages open on guest messages, calls, bookings, handoffs, and procedures, then name the product. Industries on the same pages are short-term rentals, independent hotels, and hotel groups. [Source](https://www.conduit.ai/)\n\n**Agents act, then people take the edges.** Product language is a relay, not a replacement slogan: agents answer and take action in connected tools; they escalate when needed; the inbox lets the team take over with history. [Source](https://www.conduit.ai/product/agents) [Source](https://www.conduit.ai/product/inbox)\n\n**The agent mirrors the operation.** The manifesto is the longest official voice: coordination layer, full context across channels, specialists stay, the middle shuttle role goes away—and a sloppy operation yields a sloppy agent. That is founder essay, denser than product UI copy; do not flatten it into a homepage guarantee. [Source](https://www.conduit.ai/manifesto)\n\n**Hospitality-specific, not generic desk software.** LinkedIn paid units contrast “AI agents built for hospitality” with generic chatbots and “human touch.” Use that contrast only as category language, not as a claim that every reply is indistinguishable from a host. [Source](https://www.linkedin.com/ad-library/detail/1538690886) [Source](https://www.linkedin.com/ad-library/detail/1538623406)\n\n**Precision over borrowed superlatives.** Product blocks use numbered jobs and parallel verbs (answer, act, review). Scale lines conflict in public: homepage “300+ hospitality brands in 120+ countries” versus a LinkedIn ad’s “1,000+ … in 120+ countries.” Attribute company reach; do not pick a number to sound bigger. [Source](https://www.conduit.ai/) [Source](https://www.linkedin.com/ad-library/detail/1538690886)\n\n**Proof stays named.** Customer pages and ads retell Haven, Wynwood House, Cosmica, Lauderdale, and others with operator quotes and local numbers. Voice may be warmer there than on product FAQs; still keep the customer, metric, and caveat in one breath. See [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n## Vocabulary and sentence patterns\n\nObserved pattern (public copy) → writing rule → **draft** example → avoid.\n\n| Pattern in sources | Rule | Draft (not published copy) | Avoid |\n| --- | --- | --- | --- |\n| Two-beat imperatives: “Answer the question. Handle the request.” [Source](https://www.conduit.ai/product/agents) | Lead with the guest job, then the system action. | Draft: Answer the WhatsApp. Update the reservation. | “Revolutionize hospitality with next-gen AI.” |\n| Operator nouns: messages, calls, PMS, OTA threads, handoffs, procedures, knowledge base. [Source](https://www.conduit.ai/product/inbox) | Prefer stay/ops vocabulary over SaaS abstractions. | Draft: One inbox for OTA threads and the night phone. | “Omnichannel synergy across the stack.” |\n| Agent + team split: escalate when needed; team takes over when appropriate. [Source](https://www.conduit.ai/product/agents) | Name what the agent does *and* when a person steps in. | Draft: The agent handles the door-code thread; your night manager still owns the lockout. | “Fully autonomous hotel. No staff required.” |\n| Channel list, then action: voice, chat, email, WhatsApp, connected OTAs. [Source](https://www.conduit.ai/product/agents) | List real channels; do not invent a channel the page does not name. | Draft: Same history on email, WhatsApp, and the call. | “We cover every app your guest might use.” |\n| Manifesto scene: 1am leak → plumber on WhatsApp → owner digest. [Source](https://www.conduit.ai/manifesto) | One concrete night, one sequence, no extra adjectives. | Draft: Guest reports a leak at 1am; the agent pages the on-call plumber and leaves a six-line note. | “Our AI magically orchestrates your entire estate.” |\n| Founder ads: short data, then the operational ask (staff for peaks; agents in the plan). [Source](https://www.linkedin.com/ad-library/detail/1538381626) | If you use volume, say it is Conduit-observed and dated in the ad, not a universal law. | Draft: Message load is not the same in every market; size coverage to the property, not the average. | “Guests everywhere send 2x the messages.” |\n\nKeep sentences short on product and ads. The manifesto may run long, historical, and first-person (“-Punn and Cole”); that register is for essays, not pricing pages. [Source](https://www.conduit.ai/manifesto)\n\nWords that show up because they are on the site: agent, inbox, portal, workflow, guest, booking, property, procedure, escalation, handoff, coordinate, purpose-built. Words that rarely carry the homepage: chatbot (used mainly as a foil in ads), disrupt, magic, fire your team.\n\n## Tone by situation\n\n| Situation | Tone to match public examples | Draft (label as draft) |\n| --- | --- | --- |\n| Homepage / product | Calm, numbered, production. Book a demo, not a manifesto. [Source](https://www.conduit.ai/) | Draft: Agents answer guests and take action in the tools you already run. |\n| Manifesto / category essay | Historical, argumentative, still operational. Coordination tax, not “AI hype.” [Source](https://www.conduit.ai/manifesto) | Draft: The bottleneck is no longer how fast a message arrives. It is how fast someone can act on it. |\n| Feature / integration announcement | Specific verbs and objects (read reservation, open a task). LinkedIn Mews/OPERA ads list actions; an integration logo is not a license to invent others. [Source](https://www.linkedin.com/ad-library/detail/1502619576) | Draft: With the PMS connected, the agent can pull the live stay and open a maintenance task—confirm which writes your stack allows. |\n| Customer proof | Named operator, local number, one story. Ads retell Wynwood (15 minutes → about 3) without turning a 4.8 Colombia rating into a caused lift. [Source](https://www.linkedin.com/ad-library/detail/1513892706) | Draft: Wynwood House’s published story is faster answers across seven countries—not a promise for every portfolio. |\n| Human/automation | Cascadia’s quoted mission keeps boots-on-property and guest interaction human; AI is the rest. Haven’s story is teach-the-agent, not silent layoff copy. [Source](https://www.conduit.ai/customers/cascadia-getaways) | Draft: If it needs someone on the property or in the room with the guest, it stays with your people. |\n\nProduct FAQs stay dry (“You provide policies… Agents combine that information with reservation data”). Match that dryness in implementation copy. [Source](https://www.conduit.ai/product/agents.md)\n\n## What to avoid\n\n- **Guarantees from rhetoric.** “Build the perfect guest experience” is homepage marketing, not a SLA. [Source](https://www.conduit.ai/)\n- **Universal automation rates.** Manifesto 87% autonomous resolution and 95% CSAT are company-reported there; customer pages print different rates (Haven 90%, Cascadia 60%, HomeHop 70%). Do not average them. [Source](https://www.conduit.ai/manifesto) [Source](https://www.conduit.ai/customers/haven-2026)\n- **Staff-replacement punchlines** when the product page says escalate and take over. Bali’s VA-replacement story is a named exit narrative; Haven says nobody was laid off because of the AI. Keep those apart. [Source](https://www.conduit.ai/customers/bali-luxury-stays) [Source](https://www.conduit.ai/customers/haven-2026)\n- **Generic chatbot / helpdesk voice** (ticket, CSAT widget, “your query is important”). Bocobay left Intercom for hospitality-shaped copy; do not sound like the tool they left. [Source](https://www.conduit.ai/customers/bocobay)\n- **Invented brand-count or channel coverage.** 300+ vs 1,000+ is unresolved. Do not add channels beyond those listed on product pages.\n- **Unlabeled draft lines as if they ran on conduit.ai.** Campaign rules live in [Campaign writing examples & rules](#knowledge/writing-examples).\n\n## Editing checklist\n\n1. Is the first sentence a guest or ops job (message, call, booking, handoff), not “AI platform”? \n2. Did you name the human handoff if you named the agent? \n3. Are numbers attached to a named customer or clearly company-reported, with the source URL in the same block? \n4. Did you avoid blending manifesto metrics with homepage brand counts? \n5. Would a GM or STR ops lead recognize the nouns (property, PMS, OTA, procedure)? \n6. Is every original line marked **draft** until approved? \n7. For ads, did you keep hospitality-not-generic without claiming undetectable AI in every market? Wynwood’s “cannot tell the difference” is that operator’s quote, not a global proof point. [Source](https://www.conduit.ai/customers/wynwood-house)\n",
+  "source_ids": [
+    "src_36bdd6a3aaaa9e16",
+    "src_3af7171895425b61",
+    "src_5a71a6776ae43f4d",
+    "src_62adc21be4856125",
+    "src_74beb96da6e34c56",
+    "src_75269914aa6b6dfd",
+    "src_7887eadbc3fe7616",
+    "src_792004fc0d3ff885",
+    "src_98f3111f126b26d0",
+    "src_a649d4d3ab5f59f5",
+    "src_b2ab716efd97c239",
+    "src_c1dd8d452a784c57",
+    "src_c8e3a0604ce1e6d6",
+    "src_dd47af2745ba5b91",
+    "src_e067203ca4528d4b",
+    "src_e805a9592ee44f73",
+    "src_e84c3306650f8a0e",
+    "src_ec670ccb114e21b7"
+  ],
+  "open_questions": [
+    "Is there an internal approved style guide, word list, or legal disclaimer set that should override these inferred patterns?",
+    "Which brand-count line (homepage 300+ vs LinkedIn ad 1,000+) is current for new copy?",
+    "When may manifesto metrics (87% resolution, 95% CSAT, 50M conversations) appear outside the manifesto?",
+    "How should voice differ for hotel-group vs STR campaigns given most named stories are STR/PM?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Homepage positions Conduit as AI agents that answer guests, handle requests, and coordinate teams.",
+      "source_id": "src_98f3111f126b26d0",
+      "quote": "Answer guest messages and calls, handle requests end to end, and coordinate work across your teams."
+    },
+    {
+      "statement": "Agent product copy states escalation to the human team when agents are needed.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Agents escalate to your team when they’re needed."
+    },
+    {
+      "statement": "Inbox copy frames automation plus human takeover, not staff elimination.",
+      "source_id": "src_a649d4d3ab5f59f5",
+      "quote": "Let agents automate work end to end while your team takes over when appropriate."
+    },
+    {
+      "statement": "Manifesto names Conduit as hospitality’s coordination layer.",
+      "source_id": "src_3af7171895425b61",
+      "quote": "Conduit is the coordination layer for hospitality."
+    },
+    {
+      "statement": "Manifesto states the agent mirrors existing operations rather than repairing them.",
+      "source_id": "src_3af7171895425b61",
+      "quote": "The agent reflects how the business already runs; it won't fix it for you."
+    },
+    {
+      "statement": "Homepage company-reported reach is 300+ brands in 120+ countries.",
+      "source_id": "src_98f3111f126b26d0",
+      "quote": "Trusted by 300+ hospitality brands in 120+ countries"
+    },
+    {
+      "statement": "A LinkedIn ad uses a higher brand-count line of 1,000+ in 120+ countries.",
+      "source_id": "src_62adc21be4856125",
+      "quote": "Plug into the systems you already use and see why 1,000+ hospitality brands in 120+ countries trust Conduit."
+    },
+    {
+      "statement": "Paid LinkedIn creative contrasts hospitality agents with generic chatbots.",
+      "source_id": "src_62adc21be4856125",
+      "quote": "AI Agents Built for Hospitality, Not Generic Chatbots"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Drafting or editing Conduit-facing copy for site, ads, outbound, or ABM",
+      "Checking a line against inferred operator voice before it ships",
+      "Choosing register: product/FAQ vs manifesto vs named customer story"
+    ],
+    "decisions_supported": [
+      "Whether a sentence sounds like Conduit’s public operator voice",
+      "When to name agent vs human handoff",
+      "How to cite scale and automation figures without blending conflicting public numbers"
+    ],
+    "do_not_infer": [
+      "An approved corporate style guide or banned-word list",
+      "A single official brand-count or automation rate for all copy",
+      "That customer quotes (undetectable AI, no layoffs, VA replacement) apply to every account",
+      "Supported PMS write actions from an integration mention or ad list without a live confirmation"
+    ],
+    "document_key": "brand-voice",
+    "depends_on": [
+      "company-overview",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_36bdd6a3aaaa9e16",
+      "src_3af7171895425b61",
+      "src_5a71a6776ae43f4d",
+      "src_62adc21be4856125",
+      "src_74beb96da6e34c56",
+      "src_75269914aa6b6dfd",
+      "src_7887eadbc3fe7616",
+      "src_792004fc0d3ff885",
+      "src_98f3111f126b26d0",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8e3a0604ce1e6d6",
+      "src_dd47af2745ba5b91",
+      "src_e067203ca4528d4b",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "brand",
+  "revision": 1,
+  "created_at": "2026-09-20T00:52:37.684238+00:00",
+  "status": "research_draft",
+  "input_hash": "4cd48001d46f6ec60b74bd3a5abc106d1e13c85f86c2d2dc9c71139c6764657c",
+  "depends_on": [
+    "company-overview",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review."
+}

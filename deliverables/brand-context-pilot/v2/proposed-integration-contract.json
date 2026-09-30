@@ -1,0 +1,100 @@
+{
+  "status": "proposal_only_requires_explicit_human_approval",
+  "principles": [
+    "Separate quick onboarding identity/logo/color extraction from resumable background company, product, customer, ICP and ad research. This pilot does not establish a production onboarding latency target.",
+    "One Assets collection owns original logos, website imagery and published ads. Preserve bytes, media role, deduplication, sponsor versus author, source, dates, and rights uncertainty. Classifications are versioned advisory annotations.",
+    "Postgres and the existing claim-store/storage seams remain authoritative after any approved integration. Do not import another subsystem or write knowledge directly around those seams.",
+    "Store atomic company facts with evidence spans and provenance; keep buyer hypotheses, qualification decisions and preferences distinct. Exact quotation matching is not sufficient entailment validation.",
+    "Head of ABM consumes an approved version and proposes changes. Campaign documents do not silently become global brand governance. Human edits and approvals remain attributable, versioned and scope-aware.",
+    "Publish friendly titles and typed document blocks, including tables, to the existing editor. Internal file keys and raw provider traces stay outside the normal reading interface.",
+    "Review conflicts, unsupported necessities, unknown compatibility, changed logos and unverified metrics before promotion. Report gaps instead of substituting generated facts or artwork.",
+    "Before integration: human acceptance of the Conduit draft, semantic claim verification, held-out multi-brand evaluation, stale-source/conflict tests, durable cancel/resume, tenancy and cost enforcement, and a fast-onboarding measurement."
+  ],
+  "proposed_records": {
+    "BrandContextRun": [
+      "workspace_id",
+      "canonical_company_id",
+      "domain",
+      "input_version",
+      "status",
+      "checkpoint",
+      "budget",
+      "source_policy",
+      "created_at",
+      "cancel_requested"
+    ],
+    "Evidence": [
+      "source_id",
+      "url",
+      "retrieved_at",
+      "published_at_or_unknown",
+      "content_hash",
+      "excerpt_or_attribute",
+      "company_binding",
+      "source_type"
+    ],
+    "Claim": [
+      "claim_id",
+      "field",
+      "atomic_statement",
+      "evidence_ids",
+      "epistemic_status",
+      "contradictions",
+      "freshness",
+      "promotion_decision"
+    ],
+    "KnowledgeDocument": [
+      "stable_key",
+      "display_name",
+      "revision",
+      "typed_blocks",
+      "evidence_ids",
+      "open_questions",
+      "approval_state"
+    ],
+    "QualificationCriterion": [
+      "criterion",
+      "fit_readiness_or_urgency",
+      "necessary_preference_or_hypothesis",
+      "basis",
+      "assessment",
+      "unknown_handling",
+      "approval"
+    ],
+    "Asset": [
+      "asset_id",
+      "original_hash",
+      "storage_ref",
+      "media_format",
+      "media_role",
+      "dimensions",
+      "origins",
+      "sponsor",
+      "post_author",
+      "ad_id",
+      "actual_run_dates_or_unknown"
+    ],
+    "AssetAnnotation": [
+      "asset_id",
+      "revision",
+      "literal_description",
+      "observed_properties",
+      "inferred_use",
+      "use_when",
+      "how_to_use",
+      "avoid_when",
+      "crop_background_guidance",
+      "uncertainties",
+      "evidence_ids"
+    ],
+    "Approval": [
+      "object_id",
+      "revision",
+      "scope",
+      "reviewer",
+      "decision",
+      "changes_requested",
+      "approved_at"
+    ]
+  }
+}

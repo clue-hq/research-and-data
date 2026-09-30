@@ -1,0 +1,107 @@
+{
+  "id": "asset_d4f65f4ffb224f420066",
+  "sha256": "d4f65f4ffb224f42006670c7a7cf428ee24ee6267383285a4165a0404258de61",
+  "path": "originals/asset_d4f65f4ffb224f420066.jpg",
+  "mime": "image/jpeg",
+  "byte_length": 1294,
+  "retrieved_at": "2026-09-19T21:52:41.048466+00:00",
+  "origins": [
+    {
+      "collection": "brand-provider",
+      "source_page": "https://conduit.ai/",
+      "provider": "brandfetch",
+      "logo_type": "icon",
+      "theme": "dark",
+      "alt": "Conduit",
+      "url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/100/h/100/theme/dark/icon.jpeg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf",
+      "resolved_url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/100/h/100/theme/dark/icon.jpeg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+    }
+  ],
+  "analysis_status": "completed",
+  "dimensions": {
+    "width": 100,
+    "height": 100,
+    "frames": 1,
+    "has_alpha_channel": false
+  },
+  "analysis": {
+    "id": "asset_d4f65f4ffb224f420066",
+    "name": "Provider-attributed Conduit chevron · dark variant",
+    "category": "icon",
+    "description": "Chevron symbol returned by Brandfetch for conduit.ai. Current usage alongside the website wordmark has not been confirmed.",
+    "observed": {
+      "composition": "Dark chevron centered on a light rounded rectangle. Simpler/smaller sibling of the teal tile mark. Frame appears fully opaque (no checkerboard).",
+      "colors": "White / off-white field; dark brown to near-black mark.",
+      "text": "None.",
+      "logo_placement": "Centered Conduit mark only. Not a customer logo or seal."
+    },
+    "guidance": {
+      "use_when": "Reference inspection only until the brand owner confirms this variant.",
+      "how_to_use": "Prefer the current website wordmark for draft concepts. Keep this provider original unchanged and pending approval.",
+      "avoid_when": "Do not use as the approved primary logo, recolor it, or assume it replaces the website wordmark.",
+      "crop_and_placement": "Do not crop the mark or the rounded square. Keep original padding; do not extract the chevron from the tile.",
+      "background_suitability": "Inspect the original on suitable contrast; brand owner must approve actual placement and variant usage."
+    },
+    "product_or_use_case": "Conduit UI icon / favicon-style mark",
+    "inferred_audience": "Product designers placing a compact brand glyph",
+    "uncertainties": [
+      "Whether the dark color is true black vs brown is hard to judge at this size.",
+      "Provider theme label says dark; the visible file is a light tile with a dark mark.",
+      "JPEG delivery may limit clean transparency use.",
+      "Provider domain attribution is verified; currency and approved use of this chevron variant are unresolved."
+    ],
+    "tags": [
+      "icon",
+      "logo-mark",
+      "chevron",
+      "light-tile"
+    ]
+  },
+  "analysis_model": "x-ai/grok-4.6",
+  "analysis_at": "2026-09-19T22:02:34.535568+00:00",
+  "brand_authority": "provider_attributed_current_usage_unconfirmed",
+  "analysis_revision": 2,
+  "human_approved": false,
+  "agent_context": {
+    "schema_version": 2,
+    "asset_id": "asset_d4f65f4ffb224f420066",
+    "approved_for_campaign": false,
+    "observed": {
+      "composition": "Dark chevron centered on a light rounded rectangle. Simpler/smaller sibling of the teal tile mark. Frame appears fully opaque (no checkerboard).",
+      "colors": "White / off-white field; dark brown to near-black mark.",
+      "text": "None.",
+      "logo_placement": "Centered Conduit mark only. Not a customer logo or seal."
+    },
+    "guidance_interpretation": {
+      "use_when": "Reference inspection only until the brand owner confirms this variant.",
+      "how_to_use": "Prefer the current website wordmark for draft concepts. Keep this provider original unchanged and pending approval.",
+      "avoid_when": "Do not use as the approved primary logo, recolor it, or assume it replaces the website wordmark.",
+      "crop_and_placement": "Do not crop the mark or the rounded square. Keep original padding; do not extract the chevron from the tile.",
+      "background_suitability": "Inspect the original on suitable contrast; brand owner must approve actual placement and variant usage."
+    },
+    "product_or_use_case": "Conduit UI icon / favicon-style mark",
+    "audience_hypothesis": "Product designers placing a compact brand glyph",
+    "related_document_keys": [],
+    "relationship_basis": "Keyword suggestions from visual analysis; verify against the linked product guide before campaign use.",
+    "uncertainties": [
+      "Whether the dark color is true black vs brown is hard to judge at this size.",
+      "Provider theme label says dark; the visible file is a light tile with a dark mark.",
+      "JPEG delivery may limit clean transparency use.",
+      "Provider domain attribution is verified; currency and approved use of this chevron variant are unresolved."
+    ],
+    "original_sha256": "d4f65f4ffb224f42006670c7a7cf428ee24ee6267383285a4165a0404258de61",
+    "source_origins": [
+      {
+        "collection": "brand-provider",
+        "source_page": "https://conduit.ai/",
+        "provider": "brandfetch",
+        "logo_type": "icon",
+        "theme": "dark",
+        "alt": "Conduit",
+        "url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/100/h/100/theme/dark/icon.jpeg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf",
+        "resolved_url": "https://cdn.brandfetch.io/id-QBB3_Yc/w/100/h/100/theme/dark/icon.jpeg?c=1bxdn5gyae48s3924gumqy5t9dwtfcJDvzf"
+      }
+    ],
+    "reuse_boundary": "Original published creative is a reference. Do not treat customer logos or result claims as permission, partnership or new-account proof."
+  }
+}

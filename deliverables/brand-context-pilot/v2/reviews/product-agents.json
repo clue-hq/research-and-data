@@ -1,0 +1,107 @@
+{
+  "issues": [
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "The product page FAQ “How much can Conduit's agents resolve on their own?” has no published answer in the captured page.",
+      "problem": "A cited capture of the same Agents URL already publishes a qualitative answer. Telling sellers the FAQ is unanswered is a false categorical negative and will produce incomplete copy.",
+      "source_ids": [
+        "src_75269914aa6b6dfd",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Quote the published answer: resolution share depends on guest requests, knowledge base, integrations, and escalation rules, and should be tracked via resolved conversations vs handoffs. Still forbid any invented resolution percentage."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "whether voice minutes inside Agents match the workflow Voice Agent Call rate (6 credits/minute) or the non-workflow voice rate (1 credit/minute)",
+      "problem": "Library credit sources already distinguish free inbox AI replies, AI voice at 8 credits/minute, regular voice at 1, and workflow Voice Agent Call at 6. Framing the gap as 6 vs 1 omits the rates a Messaging/Agents quote actually needs.",
+      "source_ids": [
+        "src_f599093e8cf0b47d",
+        "src_b4b8a8b99c077661",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "State the published meters: inbox AI replies consume 0 credits; regular voice is 1/min; AI voice is 8/min; a workflow Voice Agent Call is 6/min. Treat overage price as unpublished. Do not imply ordinary agent replies use a per-reply Agents SKU."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "page hero also says 90% of guest communication automated",
+      "problem": "The Flex 90% is a hero stat that conflicts with the 70%+ result and the CEO’s “very realistic” line; 80–90% also appears as a looking-ahead goal. Preserving both without that bound lets outbound treat 90% as a measured Agents outcome.",
+      "source_ids": [
+        "src_765674900bd1f4dd"
+      ],
+      "suggested_correction": "Use The Flex only as 70%+ / “70% automation of customer service is very realistic,” and label the hero 90% as inconsistent with the body and with the 80–90% future-product language. Do not put 90% in Agents proof."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "material",
+      "excerpt": "Higher bundles (Guest $30, Guest + Devices $36, Full Suite $48 per unit per month) add portals/devices/ops",
+      "problem": "The same library correctly marks Operations (housekeeping, maintenance, inspections) as coming soon. The pricing table still lists Full Suite ops items, so “add … ops” can be sold as GA.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Keep Full Suite’s published line items, but bound them: the standalone Operations product is still “Coming soon.” Do not promise AI-coordinated housekeeping/maintenance/inspections from the $48 card."
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "minor",
+      "excerpt": "Deployed March; story dated around December 2024 usage",
+      "problem": "Cascadia’s header is “USING CONDUIT SINCE: December 2024” while the body says they deployed in March. The draft invents a usage/story date instead of flagging the tenure conflict.",
+      "source_ids": [
+        "src_b2ab716efd97c239"
+      ],
+      "suggested_correction": "Mirror the HomeHop handling: leave Cascadia start date unresolved (header December 2024 vs body March deploy). Do not infer “December 2024 usage.”"
+    },
+    {
+      "document_key": "product-agents",
+      "severity": "minor",
+      "excerpt": "customer, internal, and voice agents",
+      "problem": "Docs name external, internal, and voice agents. “Customer agents” is not the product term and can drift into ICP/copy.",
+      "source_ids": [
+        "src_8f9aa404cff029a5",
+        "src_2a445232675660d9"
+      ],
+      "suggested_correction": "Use “external, internal, and voice agents.” If translating for buyers, say external/guest-facing, not a “customer agent” SKU."
+    },
+    {
+      "document_key": "product-portals",
+      "severity": "material",
+      "excerpt": "Regular voice is **1 credit per minute**; AI voice is **8 credits per minute**.",
+      "problem": "This doc’s own sources also publish workflow Voice Agent Call at 6 credits/minute. Quoting only 1 and 8 will mis-estimate overage when voice is a workflow action versus Voice AI minutes.",
+      "source_ids": [
+        "src_f599093e8cf0b47d",
+        "src_b4b8a8b99c077661"
+      ],
+      "suggested_correction": "Publish all three: regular voice 1/min, AI voice minutes 8/min, workflow Voice Agent Call 6/min. Ask which path the account will use before mapping Startup/Guest credits."
+    },
+    {
+      "document_key": "product-portals",
+      "severity": "minor",
+      "excerpt": "Published customer stories in this source set (Haven, Cascadia, Lauderdale, Cosmica, Bali Luxury Stays, and others)",
+      "problem": "Attached sources for this article include Haven and a Cosmica pricing quote, not Cascadia, Lauderdale, or Bali case studies. “This source set” overclaims coverage.",
+      "source_ids": [
+        "src_c1dd8d452a784c57",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Limit the Portals-proof negative to stories actually cited here (Haven; Cosmica as a non-portal quote). Keep the rule: no attached story isolates portal conversion, waiver, or in-portal GMV."
+    }
+  ],
+  "strengths": [
+    "Agents, Inbox, and Portals are separated by job-to-be-done, with Workflows and coming-soon Operations called out instead of bundled as one SKU.",
+    "The messaging-PMS vs data-only-PMS split (Guesty/Hostaway vs Opera/Mews/Cloudbeds, Airbnb primary-PMS rule, duplicate-OTA risk) is the right first qualification gate and matches setup docs over logo slogans.",
+    "Proof hygiene is generally strong: Haven 90%, Lauderdale $500k/NOI, Wynwood resolution time, Bocobay 80%, and portal-absent ROI are scoped to the right product or withheld.",
+    "Packaging is usable: no standalone Agents/Inbox/Portals list price; Messaging $18 / Guest $30 / Devices $36 / Full Suite $48 / Startup $899; Portals keeps the Guest bundle vs listing-count add-on contradiction instead of collapsing it.",
+    "Discovery questions are specific enough to pick a demo path (channel class, execute-vs-escalate, Stripe/locks, Unmapped routing, teach owner) without inventing ICP scores or headcount cutoffs.",
+    "Implementation limits are sales-usable: Unmapped routing, humans in the loop, knowledge/teach loop, lock/payment/write-back not implied by logos, inbox AI replies ≠ a resolution guarantee."
+  ],
+  "decision_usefulness": "A seller can choose lead product (Inbox vs Agents vs Guest/Portals), qualify PMS/channel design, and ask a concrete next question, but cannot yet draft safe credit/voice math or Flex 90% copy; Agents also misstates an answered FAQ. Fix those before this library is quote-ready. This is model review of the supplied captures, not independent verification.",
+  "reviewed_at": "2026-09-20T01:20:21.427982+00:00",
+  "document_keys": [
+    "product-agents",
+    "product-inbox",
+    "product-portals"
+  ],
+  "human_approval": false
+}

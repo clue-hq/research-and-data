@@ -1,0 +1,153 @@
+{
+  "key": "company-overview",
+  "title": "Company overview",
+  "summary": "Conduit is a San Francisco hospitality AI-agent company that grew out of HostAI and now sells Agents, Inbox, Portals, and Workflows for guest messaging, voice, and operations. Public brand-count, founding-year, and headcount figures conflict across Conduit, YC, LinkedIn, and PitchBook, so commercial use should treat named customer stories as attributed proof and homepage scale claims as unverified company reporting.",
+  "markdown": "# Company overview\n\n## Business at a glance\n\nConduit presents itself as an AI-agent platform for hospitality: on-brand agents that answer guest messages and calls, take action in connected systems, and coordinate work with human teams. The live product lineup on the marketing site is Agents, Inbox, Portals, and Workflows, with Operations labeled coming soon. Industries called out on the same pages are short-term rentals, independent hotels, and hotel groups. Copyright on the site is “© 2026 Conduit AI.” Primary go-to-market motion on the site is “Book demo,” not self-serve checkout. [Source](https://www.conduit.ai/)\n\nThe company page states the same positioning in one sentence: a fleet of agents that handles the guest journey across channels, converts inquiries, drives upsells, runs internal operations, and surfaces insights, connected to systems operators already use. That is a company promise, not independently audited performance. [Source](https://www.conduit.ai/company)\n\nPublic identity facts do not line up. Treat the table as a source map, not a reconciled corporate record.\n\n| Attribute | What a source says | Tension |\n| --- | --- | --- |\n| Brand and operating entity | Conduit / Conduit AI; the privacy notice identifies HostAI Labs, Inc. dba Conduit | [Privacy notice](https://www.conduit.ai/privacy), updated 2 December 2025; this is a company disclosure, not a registry check |\n| Prior name | HostAI (PitchBook; PhocusWire, 11 Apr 2025) | HostAI still appears in older YC launch copy |\n| Founded | PitchBook 2023; YC and LinkedIn 2024 | Unresolved |\n| HQ | San Francisco; PitchBook 230 California St, Suite 303 | Phone redacted in the PitchBook scrape |\n| Scale claim | Homepage and manifesto: 300+ brands, 120+ countries | YC and LinkedIn: “over 1000+” brands, 120+ countries |\n| Headcount | YC team size 15; PitchBook 30 employees; LinkedIn 51–200 and “26 employees” | Unresolved |\n\n[Source](https://www.conduit.ai/) [Source](https://www.ycombinator.com/companies/conduit-ai) [Source](https://pitchbook.com/profiles/company/548975-44) [Source](https://www.linkedin.com/company/useconduitai/)\n\nSecurity language on the homepage is company-reported: SOC 2 Type II, encryption, RBAC, PII protection, audit logs, SSO, and “Supports HIPAA workflows.” Do not treat those as third-party attestations from this corpus. G2 is cited as 4.7 / 5 on the site. [Source](https://www.conduit.ai/)\n\n## Origin and evolution\n\nActive founders listed by Y Combinator are Cole Rubin (Founder/CEO, real estate & tech) and Punn Kam (Founder/CTO, ex-Google). YC batch is Winter 2024, location San Francisco, status Active, primary partner Pete Koomen. A prior Launch YC post under HostAI described an all-in-one vacation-rental “operating system” (guest communication, payroll, maintenance, loyalty, IoT). That earlier surface area is not the current homepage catalog; whether payroll or loyalty still ship is unknown from these passages. [Source](https://www.ycombinator.com/companies/conduit-ai) [Source](https://www.ycombinator.com/launches/KTc-hostai-the-operating-system-for-vacation-rentals)\n\nPhocusWire (11 April 2025) reports the rename and a $3.1M seed: HostAI became Conduit after starting as automated STR guest messaging and once calling itself “Shopify for Travel.” Rubin is quoted that chaotic STR stacks and missing integrations pushed the company to build workarounds, then a broader AI operations layer for conversation-driven real estate (leasing, retention, maintenance, scheduling). Pi Labs led the round, with YC (Pete Koomen), a16z Scout, Jawed Karim, and Aaron King named as participants in investor commentary. PitchBook’s preview lists a 14 Dec 2023 accelerator at $500K, a May 2024 seed, the 10 Apr 2025 $3.1M seed, ~$3.6M raised to date, and “Formerly Known As HostAI.” Company pages also name YCombinator, PILABS, Unpopular Ventures, Transpose Platform, and yventures. [Source](https://www.phocuswire.com/hostai-conduit-strs-artificial-intelligence-investment) [Source](https://pitchbook.com/profiles/company/548975-44) [Source](https://www.conduit.ai/company)\n\nA LinkedIn post attributed to Punn Kam says the Conduit name came from exposed conduit on the ceiling of the founders’ first San Francisco apartment. That is founder storytelling, not a filing. [Source](https://www.linkedin.com/company/useconduitai/)\n\n## What Conduit sells\n\nObserved product architecture on the homepage, not a complete technical spec:\n\n| Layer | Stated job | Complements / replaces in customer stories |\n| --- | --- | --- |\n| Agents | Chat across email, WhatsApp, OTAs, social; voice for calls; internal agents on existing tools | Failed AI vendors, night shifts, copy-paste support |\n| Inbox | Messages, calls, and team handoffs in one place | Split OTA/WhatsApp/Intercom/Hostaway inboxes |\n| Portals | Upsell offers, guidebook, AI concierge; LinkedIn launch: check-in, ID, payments | Static upsell pages guests never open |\n| Workflows | Check-in to follow-ups and routine tasks | Manual SOPs living in people’s heads |\n| Operations | “Coming soon”: AI-coordinated housekeeping, maintenance, inspections | Not a current homepage SKU |\n\nSupporting claims on the same page: multilingual replies, native integrations or custom connectors, inspectable agent activity, scheduled workflows, performance reporting (automation rate, response time, resolution, satisfaction), API & MCP. Procedures, escalation handling, and “access internal systems” are marketed as how agents are tailored. LinkedIn also announces Portals, an iOS app, device control (locks/thermostats/sensors), Expedia messaging, a Mews connection, a Claude connector, and internal agents for upsell/review analysis. Those posts are product marketing, not proof of every action in every PMS. See [Product catalog & capability map](#knowledge/products-capabilities), [AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), and [Workflows](#knowledge/product-workflows). [Source](https://www.conduit.ai/) [Source](https://www.linkedin.com/company/useconduitai/)\n\nThe manifesto goes further: a coordination layer that answers guests, dispatches contractors, and can close a booking or push a refund. Company-reported manifesto metrics (50M+ conversations, $3B+ reservation value influenced, 87% autonomous resolution, 95% CSAT, sub-minute first reply, 140 languages) are not replicated on the homepage’s 300+ brand line and should stay attributed. [Source](https://www.conduit.ai/manifesto)\n\n## Who it serves\n\nConduit’s own industry nav is three buckets: short-term rentals, independent hotels, hotel groups. FAQ copy on customer pages says it is for hotel teams, serviced-apartment operators, and short-term rental managers. YC and PhocusWire still frame a wider housing/real-estate conversation layer (leasing, renewals). LinkedIn specialties include apartments. Do not collapse those into one ICP without a discovery call. Segment detail lives in [ICP strategy & segment priorities](#knowledge/ideal-customers), [ICP · hotel operators](#knowledge/icp-hotels), and [ICP · vacation-rental operators](#knowledge/icp-rentals). [Source](https://www.conduit.ai/) [Source](https://www.conduit.ai/customers/haven-2026)\n\nNamed customer stories in this corpus are mostly professional STR/villa/aparthotel operators plus at least one boutique hotel. Examples: Haven (~270 Smokies STRs), HomeHop (Cleveland/Akron, 40→108 listings), Cascadia Getaways (Oregon, acquisition integration), Canbnb (Canberra, 7→170 properties), Bocobay (Aruba/Curaçao luxury PM), Cosmica (Italy and Dubai), Wynwood House (seven countries), The Flex / Flex Living (London, SF, Dubai), Bali Luxury Stays / Easy BnB exit narrative, The Lauderdale Boutique Hotel. That is observed published proof, not a census of the book. [Source](https://www.conduit.ai/customers/haven-2026) [Source](https://www.conduit.ai/customers/lauderdale-hotel)\n\n## Business model\n\nConduit sells recurring software packages with monthly credits. The public pricing page lists starting rates of $18 per unit per month for Messaging, $30 for Guest, $36 for Guest + Devices and $48 for Full Suite. Included credits rise from 40 to 100 per unit per month across those tiers. A separate Startup offer is explicitly labeled for 0–25 units at $899 per month with 2,000 credits and no implementation fee. Package eligibility, the definition of a billable unit, credit consumption and any additional usage charges must be established for a real quote; a seller should not apply a per-unit headline rate to a small portfolio without checking the Startup rules. [Pricing](https://www.conduit.ai/pricing)\n\nThese packages combine capabilities: Messaging includes Inbox, Voice AI, PMS/OTA integrations, Operator, workflows, escalation and reporting; higher packages add portals, payments, devices and operational functions. They are not separately published licenses for each product guide. The site lists operational functions in Full Suite while its navigation marks Operations as coming soon. Confirm the exact feature and release availability in a proposal, rather than claiming the entire category is either fully shipped or unavailable. See [Pricing & packaging](#knowledge/pricing) and [Operator & internal AI availability](#knowledge/product-operator). [Pricing](https://www.conduit.ai/pricing)\n\nThe company uses demo and Get Started calls to action and a separate affiliate channel. Customer stories can explain economic motivation, but a customer's support-cost saving is not Conduit's subscription revenue or list price. Public evidence does not establish realized ACV, retention, total revenue or payback for a new customer. [Commercial model & market context](#knowledge/commercial-model) separates those questions from the published rate card.\n\n## Market position\n\nThe site maintains a “Conduit vs.” list spanning hospitality messaging (Canary, Akia, Revinate, Duve, Volara, Enso Connect, Besty AI, HiJiffy, Quicktext) and general desks (Zendesk, Salesforce Service Cloud, Freshdesk, Zoho Desk, Intercom). That is positioning, not a win/loss study. Observed displacement in stories: Bocobay left Intercom for a hospitality-shaped inbox; Lauderdale replaced Jurny PMS/call center and other call services; HomeHop replaced a failed AI vendor and Google Voice; Flex Living kept building its own PMS but refused to rebuild conversational AI and compared Conduit favorably to Front, Zendesk, and Trengo. Competitive framing for sellers is in [Alternatives & differentiation](#knowledge/alternatives) and [Positioning & brand promise](#knowledge/brand-messaging). [Source](https://www.conduit.ai/) [Source](https://www.conduit.ai/customers/bocobay) [Source](https://www.conduit.ai/customers/the-flex)\n\n## Customer evidence\n\nCompany-wide “300+” / “1000+” claims are marketing. Usable proof is named and attributed. Outcomes below are what Conduit’s customer pages say those operators reported—not a benchmark every account will hit. More cases: [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n| Account | Fit snapshot | Attributed result (company story) |\n| --- | --- | --- |\n| Haven Vacation Rentals | ~270 STRs; customer since Feb 2024 | 40%→90% automation; support need from ~25 people to two per shift; quality scores held | [Source](https://www.conduit.ai/customers/haven-2026) |\n| The Lauderdale Boutique Hotel | Boutique hotel; since Dec 2024 | Support $4,000→$600/mo; response 57 min→2 min; story claims ≥$3,400/mo NOI and >$500k asset value at an 8% cap | [Source](https://www.conduit.ai/customers/lauderdale-hotel) |\n| HomeHop | 40→108 listings; since Jun 2025 on the page | ~70% automation; no added guest-support hires; overnight voice 1–7 AM | [Source](https://www.conduit.ai/customers/homehop) |\n| Cascadia Getaways | ~100 properties, then acquisition | 60% automation; 4.9 communication score; 150 properties per support rep on shift | [Source](https://www.conduit.ai/customers/cascadia-getaways) |\n| Wynwood House | Seven countries; since Oct 2025 | Resolution 14–15 min→3 min; unified inbox vs Guesty + ChatGPT + sheets | [Source](https://www.conduit.ai/customers/wynwood-house) |\n| Bali / Easy BnB | Exit-oriented PM | ~$22k/mo labor savings; 75 units added; ~80–85% messaging automation | [Source](https://www.conduit.ai/customers/bali-luxury-stays) |\n| Canbnb | 170+ STRs; since Mar 2024 | ~1,500 messages/week, 60% AI; onboarding copy still says “HostAI” | [Source](https://www.conduit.ai/customers/canbnb) |\n| Cosmica | Italy + Dubai; late 2025 | No outsourced VAs for guest support; Dubai upsells “up to 5%” of revenue | [Source](https://www.conduit.ai/customers/cosmica) |\n| The Flex | Multi-city rentals; since Dec 2023 | CEO: 70% CS automation “very realistic”; 17 tools in the prior stack | [Source](https://www.conduit.ai/customers/the-flex) |\n\nInternal contradictions to preserve: HomeHop’s page says “USING CONDUIT SINCE: June 2025” and also “approximately two years”; Bali Luxury Stays is “FOUNDED: 2025” and “USING CONDUIT SINCE: December 2024.” Use quotes with dates, not blended timelines.\n\n## Commercial implications\n\nLead with a hospitality operations problem (after-hours volume, split OTA/WhatsApp/voice inboxes, VA/call-center cost, growth without linear headcount), not a generic “AI platform” pitch. Proof that lands is named STR and boutique-hotel work: automation rates, response time, night coverage, and in a few cases NOI or exit math. Do not promise 90% automation, $500k valuation lift, or 1000+ logos; those are specific stories or conflicting claims.\n\nQualify on whether the account is actually in the three published industries, already drowning in guest conversations, and willing to put knowledge/SOPs into the agent (Haven, Cascadia, HomeHop, Flex all describe documentation as the real implementation). Ask what system Conduit would sit beside (PMS, channel manager, Intercom/Zendesk, call center). Resolve availability at the specific feature level: devices and operational functions appear in the public packages, Operations is marked coming soon in navigation, and broader leasing/housing language comes from historical sources. Do not treat those as one uniform availability claim. [Pricing](https://www.conduit.ai/pricing) Pricing must be pulled from [Pricing & packaging](#knowledge/pricing) or a live quote. For messaging and voice, stay inside [Brand voice & language](#knowledge/brand-voice) and [Audience-to-message map](#knowledge/message-map); do not invent a relationship with a prospect.\n",
+  "source_ids": [
+    "src_0fe82516611ad5df",
+    "src_156a9e102c46da8e",
+    "src_2c11152848161ec3",
+    "src_2e2dd617ac3b5ae4",
+    "src_36bdd6a3aaaa9e16",
+    "src_37286663c1a57667",
+    "src_3af7171895425b61",
+    "src_471f8f07bdc83e12",
+    "src_5833d03e0af9b73d",
+    "src_5cb5674a725889a9",
+    "src_670b352acfa5edac",
+    "src_69eff34511b34337",
+    "src_765674900bd1f4dd",
+    "src_7c4526fa84e6106c",
+    "src_98f3111f126b26d0",
+    "src_9c6aa2bef5e4a30a",
+    "src_b2ab716efd97c239",
+    "src_c1dd8d452a784c57",
+    "src_c6cc2b292bccdae2",
+    "src_c8a1bb788be5b03f",
+    "src_c8e3a0604ce1e6d6",
+    "src_d097938bd9b8b088",
+    "src_e067203ca4528d4b",
+    "src_e84c3306650f8a0e",
+    "src_ec670ccb114e21b7"
+  ],
+  "open_questions": [
+    "Which published customer-count line is current: homepage/manifesto 300+ brands or YC/LinkedIn 1000+?",
+    "What is current headcount given YC 15, PitchBook 30, and LinkedIn 26 / 51–200?",
+    "Which HostAI-era modules (payroll, loyalty, leasing/housing) still ship versus hospitality Agents/Inbox/Portals/Workflows?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Homepage claims 300+ hospitality brands in 120+ countries.",
+      "source_id": "src_98f3111f126b26d0",
+      "quote": "Trusted by 300+ hospitality brands in 120+ countries"
+    },
+    {
+      "statement": "YC company profile claims 1000+ brands in 120+ countries, conflicting with the homepage.",
+      "source_id": "src_c6cc2b292bccdae2",
+      "quote": "Trusted by over 1000+ global hospitality brands across 120+ countries."
+    },
+    {
+      "statement": "PitchBook lists the company as formerly HostAI.",
+      "source_id": "src_9c6aa2bef5e4a30a",
+      "quote": "Formerly Known As HostAI"
+    },
+    {
+      "statement": "PhocusWire reports the HostAI-to-Conduit rename and $3.1M raise on 11 April 2025.",
+      "source_id": "src_2c11152848161ec3",
+      "quote": "Artificial intelligence-powered short-term rental (STR), hotel and housing platform HostAI has become Conduit and raised $3.1 million."
+    },
+    {
+      "statement": "Company page states the core product identity as an AI agent platform for hospitality.",
+      "source_id": "src_0fe82516611ad5df",
+      "quote": "Conduit is the AI agent platform for hospitality."
+    },
+    {
+      "statement": "YC lists Cole Rubin as Founder/CEO and Punn Kam as Founder/CTO.",
+      "source_id": "src_c6cc2b292bccdae2",
+      "quote": "Cole Rubin Founder/CEO real estate & tech"
+    },
+    {
+      "statement": "Haven customer story attributes 90% automation across about 270 properties.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Reached 90 percent automation across 270 properties, up from 40 percent in a few months"
+    },
+    {
+      "statement": "Lauderdale hotel story attributes more than $500,000 of real-estate value gain.",
+      "source_id": "src_37286663c1a57667",
+      "quote": "A hotel with better reviews, faster support, and more than $500,000 gain in real estate value."
+    },
+    {
+      "statement": "The privacy notice names HostAI Labs, Inc. dba Conduit.",
+      "source_id": "src_5833d03e0af9b73d",
+      "quote": "This Privacy Notice for HostAI Labs, Inc. dba Conduit"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Drafting first-touch commercial context on who Conduit is and is not",
+      "Briefing ABM or SDRs before a hospitality demo",
+      "Separating named customer proof from homepage scale claims",
+      "Checking whether a prospect’s stack looks like a replace (inbox/call center) or complement (PMS) motion"
+    ],
+    "decisions_supported": [
+      "Whether an account is in the published hospitality segments vs leftover housing/leasing language",
+      "Which product layers to mention as live (Agents, Inbox, Portals, Workflows) vs coming soon (Operations)",
+      "Which customer stories are safe to cite with attribution and which metrics must stay account-specific",
+      "When to halt and ask for pricing, legal entity, or current logo count instead of inventing them"
+    ],
+    "do_not_infer": [
+      "A reconciled employee count, founding year, or 300 vs 1000 brand total",
+      "That every customer reaches Haven- or Lauderdale-level outcomes",
+      "That an integration logo or LinkedIn launch equals a supported action in a given PMS",
+      "Standalone prices from a customer’s monthly support spend or a seed-round size",
+      "That HostAI payroll/loyalty or PhocusWire leasing features are current SKUs"
+    ],
+    "document_key": "company-overview",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_0fe82516611ad5df",
+      "src_156a9e102c46da8e",
+      "src_2c11152848161ec3",
+      "src_2e2dd617ac3b5ae4",
+      "src_36bdd6a3aaaa9e16",
+      "src_37286663c1a57667",
+      "src_3af7171895425b61",
+      "src_471f8f07bdc83e12",
+      "src_5833d03e0af9b73d",
+      "src_5cb5674a725889a9",
+      "src_670b352acfa5edac",
+      "src_69eff34511b34337",
+      "src_765674900bd1f4dd",
+      "src_7c4526fa84e6106c",
+      "src_98f3111f126b26d0",
+      "src_9c6aa2bef5e4a30a",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c6cc2b292bccdae2",
+      "src_c8a1bb788be5b03f",
+      "src_c8e3a0604ce1e6d6",
+      "src_d097938bd9b8b088",
+      "src_e067203ca4528d4b",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "company",
+  "revision": 2,
+  "created_at": "2026-09-20T00:40:41.044116+00:00",
+  "status": "research_draft",
+  "input_hash": "cf7e5534195bafe18b9f75b8cc6de35e73260a903b5754f08494f035828cb838",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T00:51:27.351485+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T00:51:27.351493+00:00",
+      "reason": "Read official privacy and pricing passages directly; correct missing legal identity, omitted business model and an overbroad availability inference.",
+      "human_approved": false
+    }
+  ]
+}

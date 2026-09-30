@@ -1,0 +1,7 @@
+{
+  "summary": "Read-only platform comparison: existing Conduit onboarding already had separate detailed product reports, while the first pilot collapsed them. This rework restores product-specific depth, adds commercial and messaging guides, and makes audience decisions depend on product/proof evidence. The current platform has title/description/usage_note but no separate structured Agent context field; that remains a proposed integration contract.",
+  "snapshot_document_count": 12,
+  "baseline_not_used_as_evidence": true,
+  "remaining_risk": "The standalone draft still needs human confirmation of necessary criteria; publicly named customer jobs do not establish commercial fit or willingness to buy.",
+  "original_pilot_summary": "The cloned onboarding snapshot contains 12 documents, including one proposed hotel/resort ICP and no separate buyer-persona document. Its ICP contains meaningful jobs and some uncertainty handling, but cites internal document names rather than traceable public passages. It hard-excludes STR managers into a separate profile that is absent in this snapshot. The standalone draft instead starts with guest-operations buying situations, retains STR evidence, links public sources and separates fit, readiness and urgency. This is a qualitative comparison of saved outputs, not a controlled same-model benchmark."
+}

@@ -1,0 +1,131 @@
+{
+  "key": "alternatives",
+  "title": "Alternatives & differentiation",
+  "summary": "Hospitality buyers typically compare Conduit with status-quo VAs and inboxes, PMS-native messaging, guest-journey suites, general helpdesks, STR overlays or all-in-one PMS platforms, and custom LLM builds. Use Conduit product pages for what Conduit says it does, treat Conduit vs. Canary and build-vs-buy copy as company positioning, and pull competitor limits only from those vendors’ own pages.",
+  "markdown": "Buyers rarely start from a named vendor. They start from night-shift volume, a PMS inbox, a guest-journey suite, a corporate helpdesk, or a prototype on ChatGPT. This note compares those paths using only the supplied public pages. Conduit-authored competitor copy is Conduit’s argument, not a third-party bake-off. Related product detail: [AI Agents](#knowledge/product-agents), [Inbox](#knowledge/product-inbox), [Guest Portals](#knowledge/product-portals), [Workflows](#knowledge/product-workflows), [Integrations & implementation readiness](#knowledge/integrations).\n\n## Alternatives buyers consider\n\n**Do nothing, spreadsheets, or a VA desk.** Conduit groups a VA team or spreadsheets as manual and one-off: they scale by headcount, context leaks when a thread hops apps, and the pager never sleeps. [Source](https://www.conduit.ai/build-vs-buy) Ersona describes the same operating picture on Hostaway and Guesty: hundreds of weekly conversations across Airbnb, Booking.com, WhatsApp and email, VAs answering from templates without the booking in front of them, and field teams learning about requests late. [Source](https://ersona.co/solutions/vacation-rentals)\n\n**PMS-native or PMS-inbox overlays.** Many STR operators already live in Hostaway, Guesty, or Airbnb threads. Ersona sits on Hostaway or Guesty, replies into the same conversation (including relayed OTA threads), can offer extras on a hosted checkout, create tasks for cleaners and maintenance, and open booking enquiries on the operator’s engine. It states it does not change reservations, rates, or calendars. [Source](https://ersona.co/solutions/vacation-rentals) ProhostAI connects to Airbnb, Hostaway, Hospitable, or Guesty inboxes and offers suggestion review or Autopilot. [Source](https://www.prohost.ai/messaging) Conduit Inbox says it brings SMS, WhatsApp, email, calls, social messages, and connected OTA threads into one workspace, with stay history and booking details from connected PMS and OTA accounts. [Source](https://www.conduit.ai/product/inbox) What Opera, Mews, Cloudbeds, or other PMS-native messaging can do *without* a third party is not in these sources.\n\n**Hospitality point solutions / guest-journey suites.** Conduit’s product footers list Canary, Akia, Revinate, Duve, Volara, Enso Connect, Besty AI, HiJiffy, and Quicktext. [Source](https://www.conduit.ai/product/agents) Only Canary has a supplied Conduit alternative page. That page calls Canary a strong, broad guest-management suite (contactless check-in, upsells, digital tipping, messaging, AI Voice, Agent Studio) and positions Conduit as agentic infrastructure that writes back across systems. It also says Canary is a mature fit when a packaged enterprise guest-management suite is the primary need. [Source](https://www.conduit.ai/alternatives/canary-technologies) Do not treat that page as independent evidence of Canary’s product.\n\n**General helpdesks.** The same footers list Zendesk, Salesforce Service Cloud, Freshdesk, Zoho Desk, and Intercom. [Source](https://www.conduit.ai/product/inbox) No capability comparison of those products appears in the supplied passages.\n\n**Custom build or ChatGPT/Claude + Zapier.** Conduit’s landscape calls ChatGPT or Claude + Zapier broad but shallow: it drafts a reply, forgets SOPs, and cannot book a room, push a refund, or dispatch a contractor. In-house build is framed as deep but rigid, with every workflow its own engineering project. [Source](https://www.conduit.ai/build-vs-buy)\n\n**AI-native all-in-one STR PMS.** Jurny markets jOS powered by NIA as an all-in-one AI property management system: unified inbox across Airbnb, Vrbo, Booking and other channels, channel manager, reservations, housekeeping, branded guest web app (no download required), and specialized agents. That is a platform replacement, not an overlay. [Source](https://www.jurny.com/solutions/short-term-rentals)\n\n| Class | Buyer intent in sources | Example | Tradeoff visible in public copy |\n| --- | --- | --- | --- |\n| Manual / VA | Cover volume with people | VA/spreadsheets; Ersona’s VA baseline | Scales with headcount; night coverage stays human |\n| Overlay on current PMS | Keep PMS, add AI | Conduit; Ersona; ProhostAI | Write-back depth is vendor-specific |\n| Guest-journey suite | Packaged check-in/upsell | Canary (Conduit’s description) | Suite modules vs claimed cross-system agent |\n| All-in-one STR PMS | Collapse the stack | Jurny | Migration cost vs unified PMS |\n| Helpdesk or DIY LLM | Reuse IT or engineers | Footer helpdesks; ChatGPT + Zapier | Hospitality actions not evidenced here |\n\n## Decision criteria\n\nUse these as discovery questions. Missing evidence means investigate, not reject. An integration name is not a supported action. A bundle is not a line-item price—see [Pricing & packaging](#knowledge/pricing).\n\n| Criterion | Why it shows up in deals | Ask every vendor |\n| --- | --- | --- |\n| Channels + history | Guests hop WhatsApp, SMS, email, voice, OTA | Which channels are live? Same conversation history? |\n| Draft vs action | A good paragraph still needs a human to execute | Update booking, charge, create task—in which PMS? |\n| Write-back limits | Overlay that cannot change a reservation still needs staff | Explicit read vs write list per connector |\n| Escalation / review | Wrong auto-send is a brand incident | Holds, trainable review, who owns exceptions |\n| Guest self-serve | FAQs and extras should not require a new app | One stay link: access, pay, upgrades, Q&A? |\n| Ops after the message | Early check-in and broken heaters create work | Agent dispatch vs route-to-staff |\n| Time-to-live and API drift | DIY hits WhatsApp/OTA/PMS change calendars | Who monitors connectors? |\n| Proof definition | “Resolved” and “automation” are marketing words | Named properties, period, numerator/denominator |\n\nConduit Agents describe answering messages and calls with property information and reservation data, taking action through supported integrations (check bookings, reservation changes, payments, tasks), applying rules the operator sets, and escalating when needed. Channels listed: voice, chat, email, WhatsApp, and connected OTA messages with conversation history. [Source](https://www.conduit.ai/product/agents) Workflows add a visual builder for PMS-event messages, follow-ups, and conditional offers such as early check-in, gap nights, and room upgrades. [Source](https://www.conduit.ai/product/workflows) Portals give guests one branded stay link (no app) for stay details, identity checks, agreements, fees, upgrades, access, and an AI concierge. [Source](https://www.conduit.ai/product/portals)\n\n## Conduit differentiators and evidence\n\n**Observed Conduit product claims.** Purpose-built pages for short-term rentals, independent hotels, and hotel groups; agents that retrieve context and act in connected tools; unified inbox with human handoff; portals and workflows as separate products. [Source](https://www.conduit.ai/product/agents)\n\n**Build-vs-buy claims (Conduit-reported, not independently verified).** Time to live of days versus 6+ months and 3–5 engineers; hospitality context from 50M+ guest conversations; channels including WhatsApp, SMS, email, phone, Airbnb, Booking; named PMS connectors (Guesty, Hostaway, Mews, Cloudbeds, Opera…); action described as books, refunds, dispatches, upsells; 24/7, 140 languages, under a minute to first reply; SOC 2 Type II; 87% of guest messages resolved autonomously; 95% guest CSAT; 300+ hospitality brands; $3B+ reservation value influenced. [Source](https://www.conduit.ai/build-vs-buy) The Canary comparison adds security language beyond the homepage’s SOC 2 Type II and HIPAA-workflow assertions. Confirm current attestations before repeating its HIPAA/GDPR/ISO certification language. It also claims 95% automation for Haven, while Haven’s own customer story says 90%; keep the conflicting 95% out of campaign proof. [Comparison](https://www.conduit.ai/alternatives/canary-technologies) [Haven story](https://www.conduit.ai/customers/haven-2026) [Homepage](https://www.conduit.ai/) Do not convert those figures into guarantees or all-customer outcomes. Usable proof lives in [Customer evidence & usable proof](#knowledge/customer-evidence).\n\n**Preserve a Conduit contradiction on operations.** Product navigation still lists Operations as coming soon: AI-coordinated housekeeping, maintenance and inspections. [Source](https://www.conduit.ai/product/agents) The Canary alternative page describes Conduit Ops as an internal layer the agent operates (housekeeping, maintenance, tasks, supplies, door locks). [Source](https://www.conduit.ai/alternatives/canary-technologies) Do not tell a buyer Ops is generally available without current product confirmation. See [Operator & internal AI availability](#knowledge/product-operator).\n\n**Versus suites (Conduit’s framing).** Conduit says the useful axis is an agent that reasons and acts across the stack versus templated flows inside one guest-experience surface, and that Canary remains appropriate for a packaged suite. [Source](https://www.conduit.ai/alternatives/canary-technologies)\n\n**Versus STR overlays (competitor pages).** Ersona’s own limit—no reservation, rate, or calendar changes—is a concrete contrast *if* Conduit’s “update bookings” claim is live for that PMS. [Source](https://ersona.co/solutions/vacation-rentals) ProhostAI’s messaging page emphasizes contextual drafts, Autopilot, confidence thresholds, and learning from history, not PMS write-back. [Source](https://www.prohost.ai/messaging) Versus Jurny, the decision is overlay on the current PMS versus adopting an AI-native PMS. [Source](https://www.jurny.com/solutions/short-term-rentals)\n\n## Objections and honest responses\n\n**“We’ll connect the PMS to ChatGPT.”** Conduit’s published answer is three walls: context (history, listings, SOPs, maintenance logs will not fit a prompt), action (a chatbot drafts; it cannot book or refund), and maintenance (APIs drift). [Source](https://www.conduit.ai/build-vs-buy) Ask whether their prototype already updates a reservation and who owns WhatsApp/OTA breakage.\n\n**“We have engineers.”** Conduit argues DIY rebuilds when the operation changes and competes with the real roadmap. [Source](https://www.conduit.ai/build-vs-buy) Unique edge workflows may still need [Developer platform & custom workflows](#knowledge/product-developers). Engineering hours for *this* account are unknown.\n\n**“Canary already has AI Voice and Agent Studio.”** Conduit’s page concedes the suite and differentiates on multi-step resolution across systems. [Source](https://www.conduit.ai/alternatives/canary-technologies) Do not recite that as fact about Canary. Demo the same early check-in, refund, and 2am maintenance path on both products.\n\n**“PMS Autopilot / our inbox is enough.”** If most volume is FAQ replies, an overlay that drafts or auto-sends may be enough. If the job includes booking changes, payments, and ops dispatch, demand a write-back matrix. Ersona is explicit that reservations stay in the PMS. [Source](https://ersona.co/solutions/vacation-rentals)\n\n**“We’ll move to an all-in-one PMS.”** That is Jurny’s offer. [Source](https://www.jurny.com/solutions/short-term-rentals) Switching cost, hotel vs STR fit, and channel-manager lock-in are not quantified here.\n\n**“We already own Zendesk / Service Cloud.”** Listed as alternatives only. These sources do not show live PMS context or hospitality actions in those helpdesks.\n\n## Proof to request\n\nAsk Conduit and any shortlisted alternative for the same artifacts: live channel list by property; read/write matrix per PMS and OTA; a recorded multi-step resolution (not a drafted reply); definition, period, and sample size for automation or CSAT; named references in the same segment; current security attestations; whether housekeeping/ops is GA or coming soon; and whether agents, inbox, portals, and workflows are one commercial bundle.\n\nDraft evaluation script (not a claim of fit): run identical threads—policy FAQ, paid early check-in, refund, after-hours maintenance—on the current stack, Conduit, and one overlay or suite. Record who executed the PMS change and who spoke to the guest.",
+  "source_ids": [
+    "src_36bdd6a3aaaa9e16",
+    "src_54c03b95f90b1e68",
+    "src_654dffae90142089",
+    "src_6eff9afc29aa8e32",
+    "src_75269914aa6b6dfd",
+    "src_7bc35ef1f73d36e7",
+    "src_8263cdab2378c09a",
+    "src_85ee63cd368efc44",
+    "src_9078cb1971869041",
+    "src_98f3111f126b26d0",
+    "src_a649d4d3ab5f59f5",
+    "src_c1dd8d452a784c57",
+    "src_c8e3a0604ce1e6d6",
+    "src_e805a9592ee44f73"
+  ],
+  "open_questions": [
+    "Is Conduit Ops generally available, or still “Coming soon” as on product navigation while the Canary page describes it as live?",
+    "What is the current, connector-level read vs write matrix (especially reservation, rate, calendar, payment, and task write-back) versus Ersona, ProhostAI, and named PMS-native inboxes?",
+    "Which of Conduit’s company-reported figures (87% autonomous resolve, 95% CSAT, 50M+ conversations) can be tied to a named customer, period, and definition?",
+    "What can hotel PMS-native messaging and the listed helpdesks (Zendesk, Service Cloud, Intercom, and others) actually do for hospitality actions? Those products are named in footers only.",
+    "Which equivalent competitor package and implementation scope should be compared with Conduit’s published bundles for this account?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Conduit Agents are described as answering guest messages and calls, taking action in connected tools, and escalating to the team when needed.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Answer messages and calls, retrieve context, and take action in your connected tools. Agents escalate to your team when they’re needed."
+    },
+    {
+      "statement": "Conduit product navigation still lists Operations as coming soon for housekeeping, maintenance, and inspections.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Operations\nComing soon\nAI-coordinated housekeeping, maintenance and inspections."
+    },
+    {
+      "statement": "Conduit Inbox is described as unifying SMS, WhatsApp, email, calls, social messages, and connected OTA threads.",
+      "source_id": "src_a649d4d3ab5f59f5",
+      "quote": "Conduit brings SMS, WhatsApp, email, calls, social messages, and connected OTA threads into one workspace."
+    },
+    {
+      "statement": "On its build-vs-buy page, Conduit claims 87% of guest messages resolved autonomously.",
+      "source_id": "src_85ee63cd368efc44",
+      "quote": "87%\nOf guest messages resolved autonomously"
+    },
+    {
+      "statement": "Conduit contrasts its time-to-live of days with a 6+ month, 3–5 engineer in-house build.",
+      "source_id": "src_85ee63cd368efc44",
+      "quote": "Time to live\nDays\n6+ months, 3–5 engineers"
+    },
+    {
+      "statement": "Conduit’s own Canary comparison says Canary is a fit when the buyer primarily wants a packaged enterprise guest-management suite.",
+      "source_id": "src_654dffae90142089",
+      "quote": "If you primarily want a packaged, enterprise guest-management suite, contactless check-in, digital tipping, upsell modules, with AI layered across them, Canary is a mature, well-supported choice."
+    },
+    {
+      "statement": "Ersona states it does not change reservations, rates, or calendars in the PMS.",
+      "source_id": "src_7bc35ef1f73d36e7",
+      "quote": "Ersona doesn’t change reservations, rates or calendars in your PMS; those stay where they are."
+    },
+    {
+      "statement": "ProhostAI messaging connects to Airbnb, Hostaway, Hospitable, or Guesty inboxes and can review suggestions or use Autopilot.",
+      "source_id": "src_54c03b95f90b1e68",
+      "quote": "ProhostAI connects to your Airbnb, Hostaway, Hospitable, or Guesty inbox and drafts context-aware replies in seconds. With Autopilot on, high-confidence answers send automatically 24/7, while anything sensitive is held for your approval."
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "Competitive or bake-off conversations against VAs, PMS inboxes, guest-journey suites, helpdesks, STR overlays, all-in-one PMS, or DIY LLM stacks",
+      "Build-vs-buy discussions with operators and engineering stakeholders",
+      "Discovery when the account already named Canary, Ersona, ProhostAI, Jurny, Zendesk-class tools, or ChatGPT+Zapier"
+    ],
+    "decisions_supported": [
+      "Whether to shortlist Conduit as overlay versus suite, PMS replacement, DIY, or status quo",
+      "Which proof artifacts to demand from Conduit and named alternatives",
+      "How to state differentiators without treating Conduit marketing pages as independent benchmarks"
+    ],
+    "do_not_infer": [
+      "Independent superiority, win rates, or feature parity with Canary, Ersona, ProhostAI, Jurny, or listed helpdesks",
+      "That Conduit Ops is generally available despite the Canary alternative page",
+      "That footer “Conduit vs.” names imply documented product comparisons",
+      "That 87% resolve, 95% CSAT, Haven 95%, 50M+ conversations, or $3B+ influenced are verified outcomes",
+      "Pricing, packaging, or supported write-back actions from logos or competitor slogans"
+    ],
+    "document_key": "alternatives",
+    "depends_on": [],
+    "status": "research_draft",
+    "source_ids": [
+      "src_36bdd6a3aaaa9e16",
+      "src_54c03b95f90b1e68",
+      "src_654dffae90142089",
+      "src_6eff9afc29aa8e32",
+      "src_75269914aa6b6dfd",
+      "src_7bc35ef1f73d36e7",
+      "src_8263cdab2378c09a",
+      "src_85ee63cd368efc44",
+      "src_9078cb1971869041",
+      "src_98f3111f126b26d0",
+      "src_a649d4d3ab5f59f5",
+      "src_c1dd8d452a784c57",
+      "src_c8e3a0604ce1e6d6",
+      "src_e805a9592ee44f73"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "proof",
+  "revision": 3,
+  "created_at": "2026-09-20T00:49:35.474793+00:00",
+  "status": "research_draft",
+  "input_hash": "deba27766d664c76bbf91875b0978cd43e6749c5ad33c3c551c0ca41b4be4d35",
+  "depends_on": [],
+  "model": "x-ai/grok-4.6",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:38:57.879038+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:25:08.892118+00:00",
+      "reason": "Resolve brand/proof review findings with specific source attribution; preserve conflicting results and separate product, packaging and target-entity meanings.",
+      "human_approved": false
+    },
+    {
+      "at": "2026-09-20T01:38:57.879044+00:00",
+      "reason": "Cross-document editorial pass: propagate Easy BnB attribution and Cascadia expectation boundaries, clarify security comparisons, and repair prose after source corrections.",
+      "human_approved": false
+    }
+  ]
+}

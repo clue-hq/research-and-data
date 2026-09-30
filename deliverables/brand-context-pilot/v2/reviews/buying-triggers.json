@@ -1,0 +1,84 @@
+{
+  "issues": [
+    {
+      "document_key": "buying-triggers",
+      "severity": "material",
+      "excerpt": "Proceed | In-category stays + connectable path + named knowledge/escalation owner + at least one confirmed timing situation",
+      "problem": "Urgency is correctly labeled a hypothesis elsewhere, then made a proceed requirement. Sources do not say a live volume/overnight/acquisition/cost situation is required to be in-category or implementation-ready; this invents an ICP gate a seller will use to hold otherwise qualified accounts.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_c1dd8d452a784c57",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep proceed = in-category stays + connectable message/reservation path + named knowledge/escalation owner. Treat timing as optional discovery context that chooses analog and urgency language, not a fourth necessary gate."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "material",
+      "excerpt": "Bali ~$22k/month and 11 VAs replaced",
+      "problem": "Wrong customer entity. The ~$22k/month and eleven-VA replacement are Easy BnB’s attributed P&L story on the Bali Luxury Stays URL; Bali Luxury is the later AI-first venture, not the measured cost-takeout account.",
+      "source_ids": [
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Write “Easy BnB (told on the Bali Luxury Stays page): ~$22k/month labor savings and 11 VAs replaced. Do not attribute those figures to Bali Luxury Stays.”"
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "material",
+      "excerpt": "Scenario 2 — Boutique hotel as a hands-off asset.",
+      "problem": "Cascadia is nested under the boutique-hotel scenario. Cascadia Getaways is a vacation-rental PM acquisition story, so a seller can attach STR proof to a hotel motion.",
+      "source_ids": [
+        "src_b2ab716efd97c239",
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep Scenario 2 to Lauderdale only. Move Cascadia under STR growth/acquisition, labeled as PM-company integration proof, not hotel-group or boutique-hotel P&L."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "minor",
+      "excerpt": "leadership saying they could add that company’s properties without extra guest-service hires",
+      "problem": "Ryan’s line is confidence during integration week (“feels pretty good”), not a measured post-absorption headcount result. A named expectation quote is being packaged with 60% / 4.9 as if it were achieved staffing math.",
+      "source_ids": [
+        "src_b2ab716efd97c239"
+      ],
+      "suggested_correction": "Cite 60% automation and 4.9 communication score across 100 properties as attributed results. Quote the hire-avoidance line only as leadership expectation, not as a completed staffing outcome."
+    },
+    {
+      "document_key": "buying-triggers",
+      "severity": "minor",
+      "excerpt": "devices, or Full Suite operations lines?",
+      "problem": "Does not disambiguate Messaging’s live “Operator, workflows, escalation” line, the priced Full Suite package (tasks/workforce/operations workflows), and nav “Operations · Coming soon.” A seller cannot tell whether to quote Full Suite, recast to Inbox/Agents/Workflows, or hold.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_f0d546128c30936b"
+      ],
+      "suggested_correction": "Add an explicit map: Messaging/Guest/Devices are sellable packages; Operator ≠ Operations; Full Suite may be quoted only for guest/devices/tasks already in that card; housekeeping/maintenance/inspections stay “coming soon” and are research/hold, not a live operations sale."
+    },
+    {
+      "document_key": "customer-jobs",
+      "severity": "minor",
+      "excerpt": "Agents on voice, chat, email, WhatsApp, OTA with reservation context",
+      "problem": "States OTA-plus-reservation action as the job’s capability without the live-connector caveats the qualification playbook already uses (Booking.com/VRBO coming soon; Opera context-only, no messaging through that integration). Copy drafted from this table will over-promise setup as action support.",
+      "source_ids": [
+        "src_a2a67d2faa01de13",
+        "src_dae2c4b0bd94e5a6",
+        "src_e6200582a2004292"
+      ],
+      "suggested_correction": "Say “connected OTA/PMS threads where the connector is live; confirm Booking.com/VRBO status; Opera supplies reservation/profile context, not messaging routing.”"
+    }
+  ],
+  "strengths": [
+    "Fit vs readiness vs timing is explicit, and unit counts / automation % / NOI / cap-rate are refused as qualification bars.",
+    "Logo ≠ write path is enforced (Opera messaging, Airbnb verify, Booking.com/VRBO coming soon).",
+    "Customer figures are mostly named and attributed; Flex 70% vs 90% and Bocobay header stats are correctly blocked as campaign leads.",
+    "Haven install-at-40% is used to separate curiosity install from knowledge/escalation readiness.",
+    "Hotel-group and serviced-apartment proof gaps are logged as research, not turned into exclusions or invented metrics."
+  ],
+  "decision_usefulness": "A seller can usually decide in-category vs hold, pick hotel vs STR analog, and ask channel/PMS/knowledge questions without treating story KPIs as SLAs. Product selection still breaks on Full Suite vs Operations-coming-soon, and proof selection still breaks if Cascadia or Bali/Easy BnB is used as the analog. Fix those before this pack is safe for outbound copy.",
+  "reviewed_at": "2026-09-20T01:26:43.847344+00:00",
+  "document_keys": [
+    "buying-triggers",
+    "customer-jobs"
+  ],
+  "human_approval": false
+}

@@ -1,0 +1,104 @@
+{
+  "issues": [
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "The Lauderdale Boutique Hotel (using Conduit since Dec 2024): support $4,000→$600/mo; avg reply 57 min→2 min; owner models ≥$3,400/mo NOI and >$500k asset value at 8% cap—not an appraisal or closed sale",
+      "problem": "The proof cell attaches those figures to Agents/Inbox after-hours coverage but omits the story’s explicit mechanism: replacing a call center with Conduit’s AI-powered support platform and a 24/7 staffed support team. A seller could present the cost/NOI math as a pure Agents result.",
+      "source_ids": [
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "Keep the staffed-support clause in the same sentence as the figures, e.g. Lauderdale (since Dec 2024) reports $4,000→$600/mo support cost and 57→2 min replies after replacing a call center with Conduit’s AI support platform and 24/7 staffed support team; owner translates ≥$3,400/mo NOI to >$500k at 8% cap—not an appraisal, closed sale, or Agents-only outcome."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "Bali ~$22k/mo labor, 75 units, 0 extra FTE",
+      "problem": "Target-entity error. The Bali Luxury Stays page brands those results on Bali (founded 2025) while the body attributes replacing 11 VAs, ~$22k/mo, and 75 units with 0 extra FTE to Easy BnB, then says Bali is a new venture copying the playbook. Outbound would mis-name the customer that produced the P&L.",
+      "source_ids": [
+        "src_e84c3306650f8a0e"
+      ],
+      "suggested_correction": "Cite as Easy BnB results on the Bali Luxury Stays page (11 VAs replaced, ~$22k/mo labor, 75 units, 0 extra FTE); do not treat Bali Luxury Stays as the entity that recorded those figures. Keep the founded-2025 vs using-Conduit-since-Dec-2024 contradiction beside any use."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "material",
+      "excerpt": "Audiences Conduit already names: Short-term rentals, Independent Hotels, and Hotel Groups. Do not invent extra segments.",
+      "problem": "Nav industries are not the full published ICP. The pricing FAQ names hotel teams, serviced-apartment operators, and short-term rental managers. Telling sellers not to invent extra segments will drop an in-category operator type the company already names.",
+      "source_ids": [
+        "src_156a9e102c46da8e",
+        "src_e805a9592ee44f73"
+      ],
+      "suggested_correction": "Treat nav industries (STR, independent hotels, hotel groups) as the three landing-page motions, and separately allow serviced-apartment operators as FAQ-named in-category accounts. Do not invent beyond those four labels; do not reject serviced apartments for lacking an industry page or case body."
+    },
+    {
+      "document_key": "writing-examples",
+      "severity": "material",
+      "excerpt": "The Lauderdale Boutique Hotel write-up may be cited only as a named, Conduit-attributed story (support costs reported from $4,000 to $600/month; average reply 57 minutes to 2 minutes; owner-modeled ≥$3,400 monthly NOI and more than $500,000 asset value at an 8% cap rate)—not as this hotel’s outcome.",
+      "problem": "The allowed-citation recipe still ships the P&L numbers without the printed 24/7 staffed support team. The later Portals warning mentions that team only to block SKU misattribution, so campaign copy can still imply Agents/Inbox alone produced the result.",
+      "source_ids": [
+        "src_37286663c1a57667"
+      ],
+      "suggested_correction": "If Lauderdale numbers are used, require this clause in the same sentence: Conduit-attributed after replacing a traditional call center with its AI-powered support platform and 24/7 staffed support team; $3,400/mo NOI is the printed ‘at least’ figure (cost plus fewer refunds); $500k is an 8% cap-rate model, not this prospect’s outcome and not a Portals result."
+    },
+    {
+      "document_key": "writing-examples",
+      "severity": "minor",
+      "excerpt": "HomeHop’s path from about 40 to 108 listings without extra guest-support hires and 70 percent automation is a separate story",
+      "problem": "The 40→108 and 70% figures are given without the printed window the doc’s own rules require. The page says using Conduit since June 2025 and also ‘approximately two years,’ while portfolio growth is described as two years—so tenure and 3x growth can be conflated.",
+      "source_ids": [
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Write HomeHop (page: using Conduit since June 2025; also ‘approximately two years’) grew ~40→108 listings without extra guest-support hires and reports 70% automation; keep the tenure contradiction in the sentence and do not state that Conduit spanned the entire two-year 3x."
+    },
+    {
+      "document_key": "ideal-customers",
+      "severity": "material",
+      "excerpt": "Guest communication that can be organized by property or team across connected channels",
+      "problem": "Marked necessary fit, but that is a product capability, not an account test. A single-property operator (Lauderdale) is a named hotel customer; unknown channel mix is already ‘investigate, not reject.’ As written, sellers may fail fit for boutique/single-asset hotels.",
+      "source_ids": [
+        "src_a649d4d3ab5f59f5",
+        "src_37286663c1a57667",
+        "src_156a9e102c46da8e"
+      ],
+      "suggested_correction": "Move to readiness/preference: guest conversations exist on channels Conduit unifies. Property-or-team inbox views are how the product is demoed, not a minimum property count. Single-property hotels remain in-category; split inboxes are a discovery prompt, not a necessary gate."
+    },
+    {
+      "document_key": "ideal-customers",
+      "severity": "minor",
+      "excerpt": "Haven, HomeHop, and Canbnb describe scale without proportional guest-support hiring",
+      "problem": "Haven and HomeHop support the no-extra-guest-support-hire claim. Canbnb reports 7→170 properties, ~1,500 messages/week with 60% handled by AI, and reps becoming ‘10x more impactful,’ not that headcount stayed flat. Bundling Canbnb into a hiring-ratio proof overreaches.",
+      "source_ids": [
+        "src_5cb5674a725889a9",
+        "src_c1dd8d452a784c57",
+        "src_d097938bd9b8b088"
+      ],
+      "suggested_correction": "Keep Haven and HomeHop as named no-proportional-hire stories. Recast Canbnb as volume/process evidence (~1,500 messages sent/week, 60% handled by AI, guest/owner/vendor inboxes)—not as a documented hiring freeze."
+    },
+    {
+      "document_key": "message-map",
+      "severity": "minor",
+      "excerpt": "Canbnb ~1,500 messages/week with 60% handled by AI",
+      "problem": "Source is that Conduit helps Canbnb send roughly 1,500 messages per week, with 60% handled by AI—not an inbound-volume or resolution denominator. Collapsing ‘send’ invites mixing this 60% with Haven/HomeHop automation rates.",
+      "source_ids": [
+        "src_5cb5674a725889a9"
+      ],
+      "suggested_correction": "Quote as Canbnb: Conduit helps send ~1,500 messages/week, 60% handled by AI (printed send volume, not a cross-customer automation rate)."
+    }
+  ],
+  "strengths": [
+    "Proof rules are operational: one named story, dates/caveats, no blended automation rates, manifesto/G2/Guest Favorite barred as campaign KPIs.",
+    "Product split is usable in the field: Agents vs Inbox vs Workflows vs Portals, with Operations labeled coming soon and logos not treated as write-back.",
+    "Industry motions match public pages (independent-hotel after-hours, group brand+per-property, STR OTA inbox) and hotel-group copy is correctly treated as under-evidenced, not as a negative ICP.",
+    "ideal-customers mostly separates fit vs readiness vs urgency, refuses invented employee/revenue/unit gates, and keeps Full Suite workforce lines vs Operations-coming-soon visible.",
+    "CTAs stay at book-a-demo; proposed campaign blocks are labeled drafts and generally restate published capabilities instead of diagnosing unresearched pain."
+  ],
+  "decision_usefulness": "Usable for picking an STR vs independent-hotel vs hotel-group motion, pairing one attributed story, and asking a demo question on channels/PMS/voice—after fixing Lauderdale staffed-support, Easy BnB vs Bali, serviced-apartment routing, and the over-tight property/team fit gate. A seller still cannot treat hotel-group or serviced-apartment outcomes as proven, cannot quote a typical automation rate, and must open Pricing/Integrations before promising package SKUs or write-back. Longer copy is already sufficient; the gaps are entity, caveat, and gate errors, not missing encyclopedic detail.",
+  "reviewed_at": "2026-09-20T01:25:03.307187+00:00",
+  "document_keys": [
+    "message-map",
+    "writing-examples",
+    "ideal-customers"
+  ],
+  "human_approval": false
+}

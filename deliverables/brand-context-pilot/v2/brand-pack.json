@@ -1,0 +1,68 @@
+{
+  "slots": [
+    {
+      "title": "Wordmark on light",
+      "background": "light",
+      "asset_id": "asset_761b0b47f1b7c604d186",
+      "status": "Official transparent SVG",
+      "note": "Original dark wordmark from the company website."
+    },
+    {
+      "title": "Wordmark on dark",
+      "background": "dark",
+      "asset_id": "asset_761b0b47f1b7c604d186",
+      "css_filter": "brightness(0) invert(1)",
+      "status": "Observed website treatment",
+      "note": "Same original SVG; the website’s footer applies this filter. A separate white master was not found."
+    },
+    {
+      "title": "Icon on dark",
+      "background": "dark",
+      "asset_id": "asset_b8d066fe19fbc0e24e47",
+      "status": "Official transparent PNG · 512px",
+      "note": "Original icon discovered in the live website DOM, with transparency verified from the file."
+    },
+    {
+      "title": "Icon on light",
+      "background": "light",
+      "asset_id": "asset_d4f65f4ffb224f420066",
+      "status": "Incomplete · opaque provider tile",
+      "note": "The available dark icon is a 100px JPEG. An official transparent dark master remains missing."
+    }
+  ],
+  "colors": [
+    {
+      "hex": "#29251E",
+      "use": "Observed website text / identity ink"
+    },
+    {
+      "hex": "#FFFFFF",
+      "use": "Observed website canvas"
+    },
+    {
+      "hex": "#28241E",
+      "use": "Observed primary button background"
+    },
+    {
+      "hex": "#F3F1EC",
+      "use": "Brandfetch palette candidate; not a complete semantic token system"
+    },
+    {
+      "hex": "#77D4FF",
+      "use": "Brandfetch accent candidate; placement requires brand review"
+    }
+  ],
+  "color_note": "Website observations and provider palette candidates are distinguished. These are not inferred platform success/error/focus tokens.",
+  "typography_note": "Official CSS maps bodyFont to Neue Montreal and seasonFont to Season Mix. Arial and Inter appear as fallbacks/other faces, not substitutes for the primary brand typography. Font binaries are not copied into this review package.",
+  "gaps": [
+    "Official transparent dark icon master",
+    "Separate reverse wordmark master if the export pipeline cannot preserve the observed website treatment",
+    "Brand-owner confirmation of logo spacing, palette roles and font-use permissions"
+  ],
+  "source_ids": [
+    "src_98f3111f126b26d0",
+    "src_36bdd6a3aaaa9e16",
+    "src_6c398213f32eba5f",
+    "src_d0b759265293bc83"
+  ]
+}

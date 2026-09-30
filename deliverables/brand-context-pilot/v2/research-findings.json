@@ -1,0 +1,337 @@
+{
+  "created_at": "2026-09-19T21:51:13.292119+00:00",
+  "identity": {
+    "canonical_name": "Conduit",
+    "legal_entity": "HostAI Labs, Inc. dba Conduit",
+    "website": "https://www.conduit.ai/ (https://conduit.ai/ redirects here)",
+    "former_name": "HostAI",
+    "hq": "San Francisco, CA",
+    "founders": "Cole Rubin (CEO), Punn Kam (CTO)",
+    "yc": "Winter 2024",
+    "not_confused_with": [
+      "conduit.xyz payments",
+      "other LinkedIn companies named Conduit"
+    ],
+    "linkedin": {
+      "url_on_official_site": "https://www.linkedin.com/company/useconduitai/",
+      "independent_match": "LinkedIn about lists website https://conduit.ai and tagline AI agents for hospitality",
+      "numeric_company_id": "96574094 appears as f_C on LinkedIn jobs URL on the company page; not a Facebook page ID",
+      "followers_observed": "4,255",
+      "employees_on_linkedin_page": "Discover all 26 employees vs company size 51-200"
+    },
+    "logo_wordmark": "https://www.conduit.ai/figma/conduit-wordmark.svg",
+    "linkedin_logo": "https://media.licdn.com/dms/image/v2/D4E0BAQE-zAPNjjUWqg/company-logo_200_200/B4EZ7xhey.HoAE-/0/1782168546744/useconduitai_logo"
+  },
+  "positioning": {
+    "one_liner": "AI agents for hospitality: answer guest messages and calls, handle requests end to end, coordinate work across teams.",
+    "category": "Hospitality AI agent platform / guest communication + ops coordination, sitting on top of PMS rather than replacing it.",
+    "current_scope": "Live site is hospitality-only: STR, independent hotels, hotel groups, plus resorts, aparthotels, villas, serviced apartments. YC launch historically mentioned housing/leasing; PhocusWire still frames real-estate operations. Do not treat housing as current primary website audience.",
+    "claims_company_assertions": [
+      "300+ brands / 120+ countries on homepage vs 1000+ on YC and LinkedIn",
+      "50M+ conversations, $3B+ reservation value influenced, 87% autonomous, 95% CSAT, <1 min first reply",
+      "G2 4.7/5 (G2 page 403 during research; Stork.AI third-party cites 4.7 from 69 reviews)",
+      "SOC 2 Type II, HIPAA, enterprise controls; alternatives page also claims GDPR and ISO 27001"
+    ]
+  },
+  "product": {
+    "modules": [
+      "Agents (chat, voice, internal)",
+      "Inbox (omnichannel + handoffs)",
+      "Portals (guest link: guidebook, upsells, payments, ID/waivers, AI concierge)",
+      "Workflows (journey automation, upsells, win-back)",
+      "Operations labeled Coming soon",
+      "Devices (locks/thermostats/sensors) in pricing and LinkedIn posts",
+      "iOS app; Google Play coming soon per LinkedIn",
+      "API, MCP, Claude connector"
+    ]
+  },
+  "capabilities": [
+    "Reply across email, WhatsApp, SMS, social, voice, connected OTAs",
+    "Act in connected PMS: bookings, payments, tasks",
+    "Knowledge base + procedures + escalation review/backtesting",
+    "Multilingual",
+    "Performance reporting: automation rate, response time, resolution, CSAT",
+    "Smart home: August, Yale, Schlage, Kwikset, ecobee, Minut claimed on LinkedIn"
+  ],
+  "integrations": {
+    "count_listed": 43,
+    "pms_examples": [
+      "Guesty",
+      "Hostaway",
+      "Mews",
+      "Cloudbeds",
+      "Opera Cloud",
+      "OwnerRez",
+      "Lodgify",
+      "Streamline",
+      "Escapia",
+      "Apaleo",
+      "StayNTouch",
+      "RMS Cloud",
+      "Hostfully",
+      "Hostify",
+      "HomHero",
+      "Track",
+      "Bed24",
+      "Resly",
+      "Smily"
+    ],
+    "channels": [
+      "Airbnb listed live",
+      "Expedia listed",
+      "Twilio",
+      "WhatsApp",
+      "Email",
+      "Booking.com Coming soon",
+      "VRBO Coming soon"
+    ],
+    "other": [
+      "HubSpot",
+      "Salesforce",
+      "Slack",
+      "Notion",
+      "Google Drive/Docs/Sheets/Calendar",
+      "Asana",
+      "ClickUp",
+      "Wheelhouse"
+    ],
+    "caveat": "Listing an integration is not evidence every customer uses it. Copy still says HostAI on Email/WhatsApp cards."
+  },
+  "limits": [
+    "Not a PMS, channel manager, or pricing engine",
+    "Operations module still Coming soon on nav despite Conduit Ops claims on alternatives pages",
+    "Booking.com and VRBO marked coming soon on integrations page while industry copy claims those channels",
+    "Agent quality depends on knowledge-base quality and SOPs",
+    "HIPAA is claimed; hospitality use-case for HIPAA is unexplained publicly",
+    "Public G2 scrape failed (403)"
+  ],
+  "pricing": {
+    "public": "Per-unit starting rates: Messaging $18, Guest $30, Guest+Devices $36, Full Suite $48; credits 40/60/80/100 per unit/mo; scales beyond 50 listings. Startup 0-25 units $899/mo, 2000 credits, no implementation fee. Full Suite Talk to Sales.",
+    "not_established": "Absence of list price for large portfolios is not evidence of being free or expensive. Third-party reviews citing ~$500-$649/mo appear to describe older or different packaging."
+  },
+  "customers_examples": {
+    "published_stories_are_company_assertions": true,
+    "examples": [
+      {
+        "name": "Haven Vacation Rentals",
+        "type": "STR ~270 units Smokies",
+        "claimed": "90% automation; 25 support staff to 2/shift; Airbnb Guest Favorite"
+      },
+      {
+        "name": "Cascadia Getaways",
+        "type": "Oregon STR ~100 properties",
+        "claimed": "60% automation; 4.9 comms score; acquisition without extra GS hires"
+      },
+      {
+        "name": "HomeHop",
+        "type": "Cleveland/Akron STR 40 to 108",
+        "claimed": "70% automation; no new GS hires; prior AI vendor failed"
+      },
+      {
+        "name": "Wynwood House",
+        "type": "LatAm/Europe hospitality-real estate, 7 countries",
+        "claimed": "resolution 15 min to 3; multilingual; Mayra Global Head of CX"
+      },
+      {
+        "name": "The Lauderdale Boutique Hotel",
+        "type": "independent boutique hotel / investor-operator",
+        "claimed": "$4k to $600 support cost; 57 min to 2 min; $500k asset-value framing"
+      },
+      {
+        "name": "Bocobay",
+        "type": "luxury STR Aruba/Curacao",
+        "claimed": "left Intercom; unified WhatsApp/email/Hostaway"
+      },
+      {
+        "name": "Cosmica",
+        "type": "Italy + Dubai hospitality brands",
+        "claimed": "no VAs; upsells up to 5% Dubai revenue"
+      },
+      {
+        "name": "Bali Luxury Stays / Easy BnB",
+        "type": "villa PM, exit-oriented",
+        "claimed": "replaced 11 VAs; ~$22k/mo savings; +75 units"
+      }
+    ]
+  },
+  "jobs_pains_outcomes": {
+    "current_workflows": [
+      "PMS native inboxes (Guesty, Hostaway)",
+      "Intercom or generic desks",
+      "ChatGPT + translation tools + Google Sheets",
+      "VA/offshore teams and night shifts",
+      "Google Voice / call centers (Jurny cited at Lauderdale)",
+      "scattered WhatsApp + email + OTA inboxes"
+    ],
+    "pains": [
+      "message volume grows with doors",
+      "after-hours / 2am lockouts",
+      "fragmented channels",
+      "slow replies and refunds",
+      "hiring lag vs growth and acquisitions",
+      "inconsistent knowledge in people's heads",
+      "staff fear AI will take jobs",
+      "burn from prior AI vendors"
+    ],
+    "desired_outcomes": [
+      "automation rate without score drop",
+      "headcount-light growth",
+      "faster first response",
+      "upsells (early check-in, late checkout, chef, gap nights)",
+      "direct booking conversion",
+      "owner comms",
+      "hands-off valuation for investor-operators"
+    ]
+  },
+  "suggested_segment_distinctions": [
+    {
+      "segment": "Scaling STR / vacation rental PMs (core evidence density)",
+      "fit": "High. Most case studies, PMS integrations, per-unit pricing, Airbnb/voice/lockouts.",
+      "typical_size": "Tens to a few hundred listings (HomeHop 108, Cascadia 100, Haven 270).",
+      "buyers": "Founder/CEO, Head of Guest Services/Revenue, Guest Services Manager, sometimes CTO.",
+      "urgency_triggers": "Adding doors, acquisition integration, peak season, VA cost, failed chatbot, overnight coverage."
+    },
+    {
+      "segment": "Independent / boutique hotels and small hotel owners",
+      "fit": "Medium-high on site; fewer deep stories. Lauderdale is the main hotel story; after-hours receptionist and Opera/Mews/Cloudbeds are the pitch.",
+      "buyers": "Owner-operator, GM, front office.",
+      "urgency_triggers": "Night coverage cost, call-center spend, investor sale/OM, desk overwhelm."
+    },
+    {
+      "segment": "Multi-market STR / serviced-stay groups",
+      "fit": "High for multilingual omnichannel (Wynwood, Cosmica, Bocobay).",
+      "buyers": "Global Head of CX, founder.",
+      "urgency_triggers": "New countries/languages, shift handoffs, tool sprawl."
+    },
+    {
+      "segment": "Hotel groups / brands (Marriott/Nobu logos)",
+      "fit": "Aspirational on site; enterprise security, Opera, Salesforce, loyalty/upsell pages. Independent proof of Marriott/Hilton/Fairmont as paying customers was not established.",
+      "buyers": "Brand ops, digital guest experience, cluster managers.",
+      "readiness": "Likely longer security/IT cycle; Operations coming soon may matter."
+    },
+    {
+      "segment": "Tiny hosts / sub-startup portfolios",
+      "fit": "Possible via $899/25-unit Startup plan, but independent reviews say best value 20-50+ listings; PMS-native AI may suffice."
+    }
+  ],
+  "buyer_roles": {
+    "economic": [
+      "Founder/CEO of PMCs",
+      "Hotel owner / investor-operator"
+    ],
+    "champion": [
+      "Head of Guest Services / CX",
+      "Revenue + guest services",
+      "Guest services manager becoming 'conversational engineer'"
+    ],
+    "influencer": [
+      "CTO/ops tech (Renjoy)",
+      "Property managers and night staff (fear/morale)"
+    ],
+    "priorities": [
+      "automation without review-score drop",
+      "PMS write-back not just drafts",
+      "unified inbox",
+      "voice after hours",
+      "implementation help vs DIY knowledge base",
+      "no-layoff narrative internally"
+    ],
+    "objections": [
+      "AI will sound robotic or hurt Superhost scores",
+      "Prior AI vendor failed",
+      "Staff replacement fear",
+      "Build vs buy / ChatGPT+Zapier demo looks enough",
+      "Price vs VA cost",
+      "Knowledge-base grind (Haven: don't finish in two weeks)",
+      "Not a replacement for PMS"
+    ]
+  },
+  "alternatives": {
+    "status_quo": [
+      "VA teams",
+      "PMS messaging modules",
+      "Intercom/Zendesk",
+      "call centers",
+      "DIY ChatGPT"
+    ],
+    "hospitality_suites": [
+      "Canary",
+      "Akia",
+      "Revinate",
+      "Duve",
+      "Volara",
+      "Enso Connect",
+      "HiJiffy",
+      "Quicktext"
+    ],
+    "str_ai_peers": [
+      "ProhostAI",
+      "HostBuddy AI",
+      "Ersona",
+      "Hostrexa",
+      "Stay (gostay.ai)",
+      "Jurny NIA",
+      "SympleHost"
+    ],
+    "positioning_vs_them": "Conduit argues agents that act across systems (PMS write-back, payments, dispatch) vs templated guest-journey suites or draft-only chatbots."
+  },
+  "brand_visual": {
+    "voice": "Operator-serious, manifesto/historical, numbered product UI, 'purpose-built', 'agentic infrastructure', demo-led CTAs.",
+    "visual": "Wordmark, product screenshots of inbox/workflows/portals, trust-logo row, SOC2/HIPAA seals, dark product photography.",
+    "cta": "Book demo / Get started; Sign in at base.conduit.ai"
+  },
+  "contradictions_unknowns": [
+    "300+ vs 1000+ brands",
+    "YC team size 15 vs LinkedIn 26 employees vs 51-200 size vs PitchBook 30",
+    "Founded 2023 PitchBook vs 2024 YC/LinkedIn",
+    "Operations Coming soon vs Conduit Ops as live",
+    "Haven 90% vs alternatives page 95%",
+    "HomeHop using since June 2025 vs 'customer ~two years' in same story",
+    "Booking.com/VRBO coming soon vs channel claims",
+    "Product Hunt claims Marriott, Hilton, Nobu, Fairmont; logos only prove Marriott/Nobu marks on site",
+    "HIPAA relevance unclear",
+    "Independent G2 review bodies not directly readable",
+    "ACV/revenue/headcount should not be invented"
+  ],
+  "founder_questions": [
+    "Which logos are paying customers vs design examples (Marriott, Nobu, Hilton, Fairmont)?",
+    "Is 300+ or 1000+ the number to use?",
+    "Is Operations generally available or coming soon?",
+    "Current Booking.com and VRBO status?",
+    "What share of revenue is STR vs hotels vs groups?",
+    "Who is the primary closer: founder, GS lead, or hotel GM?",
+    "Typical sales cycle and implementation length?",
+    "Is housing/multifamily still a market or sunset?",
+    "HIPAA: which customers actually need it?",
+    "Preferred competitive knockouts vs Canary vs PMS-native AI vs Intercom?"
+  ],
+  "source_coverage": {
+    "official_read": [
+      "homepage",
+      "about/company",
+      "pricing",
+      "customers hub + 8 stories",
+      "agents/inbox/portals/workflows",
+      "3 industry pages",
+      "integrations",
+      "build-vs-buy",
+      "Canary alternative",
+      "careers",
+      "privacy",
+      "manifesto"
+    ],
+    "independent": [
+      "Y Combinator",
+      "LinkedIn company page",
+      "PhocusWire HostAI rebrand + $3.1M",
+      "PitchBook preview",
+      "STR Specialist review",
+      "Product Hunt",
+      "category alternatives (Ersona, ProhostAI, Jurny, etc.)"
+    ],
+    "failed": [
+      "G2 HTML 403"
+    ],
+    "quality_note": "Customer metrics are company-published assertions unless noted. Exact evidence quality prioritized over filling every field."
+  }
+}

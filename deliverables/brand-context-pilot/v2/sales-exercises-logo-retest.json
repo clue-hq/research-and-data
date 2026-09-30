@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "id": "account-logo",
+      "answer": "Decision: hand off original Conduit files as separate unaltered layers on the dark field. Do not redraw marks, recolor, or present a Conduit–Hyatt partnership.\n\nFacts: No Hyatt logo is in this library. Dark-background Conduit originals are the pale transparent 512px website icon (asset_b8d066fe19fbc0e24e47) and the official dark wordmark SVG (asset_761b0b47f1b7c604d186). The site’s white wordmark is an observed footer CSS treatment (brightness(0) invert(1)), not a downloaded white master. Opaque site/touch tiles and the Brandfetch JPEG must not replace the transparent icon. Assets are not campaign-approved.\n\nProposal: place the original pale icon unchanged. Use the original SVG with the recorded invert only if export preserves it; otherwise wait for a reverse master. Align optical height; clear-space is unpublished.\n\nUnavailable: verified Hyatt logo; reverse wordmark master; campaign approval; confirmed spacing, palette roles, and font permissions.",
+      "document_keys": [
+        "visual-identity"
+      ],
+      "source_urls": [
+        "https://www.conduit.ai/",
+        "https://www.conduit.ai/figma/conduit-wordmark.svg",
+        "https://www.conduit.ai/conduit-icon.png"
+      ],
+      "asset_ids": [
+        "asset_b8d066fe19fbc0e24e47",
+        "asset_761b0b47f1b7c604d186"
+      ],
+      "unresolved": [
+        "verified Hyatt logo",
+        "separate reverse wordmark master",
+        "campaign approval",
+        "published clear-space rule",
+        "palette-role and font-permission confirmation"
+      ],
+      "assessment": {
+        "verdict": "Passed focused retest",
+        "reason": "Initial answer selected the safe original icon but underused the observed white-wordmark treatment. Structured asset context was improved; the focused retest names the exact SVG treatment, export dependency and missing Hyatt master.",
+        "reviewer": "Parent agent; not human approval"
+      }
+    }
+  ],
+  "created_at": "2026-09-20T01:38:26.413940+00:00",
+  "assessment": "Model answers from deliberately selected document bundles. Parent-agent assessment follows; not human approval or a general retrieval benchmark."
+}

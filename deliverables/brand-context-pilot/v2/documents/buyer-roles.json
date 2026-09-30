@@ -1,0 +1,149 @@
+{
+  "key": "buyer-roles",
+  "title": "Buying committee & professional personas",
+  "summary": "Named Conduit stories show founders and CEOs as economic buyers and guest-experience or communications managers as champions, while public pages address hotel, serviced-apartment, and short-term rental teams rather than a published RACI. Trust, control, and job-change attitudes are taken from those write-ups; ages, income, security evaluators, and unstated hotel-group titles are not inferred.",
+  "markdown": "Conduit’s site names the audience as hotel teams, serviced-apartment operators, and short-term rental managers, not a published buying committee. Named stories mostly put founders or CEOs on the commercial decision and guest-experience or communications leads on daily configuration. Titles below are observed in those pages or in industry copy; they are not a confirmed org chart. Pair this with [Customer evidence & usable proof](#knowledge/customer-evidence), [ICP · hotel operators](#knowledge/icp-hotels), and [ICP · vacation-rental operators](#knowledge/icp-rentals).\n\n## Buying roles and title map\n\nCommittee labels are a working overlay. Only titles in the observed column appear in the supplied sources.\n\n| Function | Observed titles | Remit / scope in sources | Product surface they actually used |\n| --- | --- | --- | --- |\n| Economic buyer | CEO (Haven, The Flex); Founder (Lauderdale, Cosmica, Bali Luxury Stays); Co-Founder (Bocobay, HomeHop) | Headcount, NOI or exit math, whether listing growth needs more support staff | Platform as a whole vs call center, VAs, or Intercom |\n| Champion / process owner | Process and Communication Manager (Canbnb); Revenue & Guest Services (Cascadia); Global Head of Customer Experience (Wynwood); guest services manager (Haven) | Inbox design, knowledge, automation rate without dropping scores | [Inbox](#knowledge/product-inbox), [AI Agents](#knowledge/product-agents), [Workflows](#knowledge/product-workflows) |\n| Operational user (can block) | Guest-services reps, VA teams, night shift, front-desk staff; remaining “conversational engineers” | Takeovers, teaching replies, owner/vendor threads | Handoffs, notes/tags, after-hours voice |\n| Technical / build evaluator | The Flex: homegrown PMS, with communications AI bought separately; HomeHop: SuiteOP as an adjacent system; Easy BnB founder: abandoned in-house messaging AI (story on Bali Luxury Stays page) | Stack fit, knowledge quality, when writes are allowed | [Integrations & implementation readiness](#knowledge/integrations), [Developer platform & custom workflows](#knowledge/product-developers) |\n\nIndependent-hotel copy is a desk team covering calls after hours while people remain at the desk. Hotel-group copy is shared brand standards plus per-property policies. STR copy is per-listing knowledge and OTA inboxes. None of those pages maps to GM, cluster manager, or CISO as buyers. [Source](https://www.conduit.ai/industry/independent-hotels) [Source](https://www.conduit.ai/industry/hotel-groups) [Source](https://www.conduit.ai/industry/short-term-rentals)\n\nA security evaluator is not named here. API/MCP is a workspace capability, not proof that engineering always sits on the committee. [Source](https://www.conduit.ai/developers)\n\n### Roles to test during discovery\n\nThe following title hypotheses make the committee map actionable; they are suggested search roles, not confirmed Conduit buyers or required titles.\n\n| Buying role | Titles to test | Decision and practical question |\n| --- | --- | --- |\n| Independent-hotel sponsor | Owner, general manager, operations director | Owns staffing and guest-service economics. Who can approve a change to night coverage and its budget? |\n| Group-level sponsor | COO, VP/Director of Operations, guest-experience leader | Owns shared service standards and rollout. Is purchasing centralized, property-led, or franchise-controlled? |\n| Operational champion | Front Office Manager, reservations lead, guest-services/CX manager | Owns queues, knowledge and escalation. Who can maintain policies and measure response quality after launch? |\n| Technical evaluator | IT director, business-systems/PMS administrator, integration owner | Confirms reservation data, channel routing and permitted actions. Which connection path and write permissions are actually available? |\n| Risk and commercial reviewers | Security/privacy reviewer, procurement or finance owner when required | Confirms guest-data handling, contract and usage economics. Who approves access, billing assumptions and vendor onboarding? |\n\nRole seniority and property-versus-group remit are relevant professional demographics. Age, gender and personal income are not needed for these buying decisions. Validate the role map with the account instead of assuming that every company has every department.\n\n## Priorities and desired results\n\n| Observed role | Job in the stories | Result they cited | Proof they pointed at |\n| --- | --- | --- | --- |\n| Founder / CEO / owner | Stop linear hiring; raise NOI or EBITDA; absorb an acquisition | Automation %, support cost, listings per rep, modeled asset value | Lauderdale support $4,000→$600/mo and ≥$3,400/mo NOI; Haven’s support staffing need ~25 people → two per shift, alongside its no-AI-layoff pledge and staff retraining; HomeHop 40→108 listings without extra guest-support hires |\n| CX / guest services lead | One inbox, faster resolution, multilingual quality, shift handoffs | Resolution time, communication score, AI/human indistinguishability | Wynwood 14–15 min → 3 min; Cascadia 4.9 communication score; Canbnb ~1,500 messages/week, 60% AI |\n| Revenue + guest services | Free people for upsells and proactive calls | Upsell share, pre-arrival programs | Cosmica ~5% of Dubai revenue from upsells/cross-sells at peak; Cascadia concierge and pre-arrival calls |\n| Ops / process manager | Virtual vs on-site coordination; brand-consistent replies | Queue control, fewer tool switches | Canbnb guest/owner/vendor inboxes; Bocobay leaving Intercom |\n\nAgents are evaluated as answering with property information and reservation data, acting in connected tools, and escalating on procedures the operator sets—not as a guaranteed resolution rate. [Source](https://www.conduit.ai/product/agents)\n\n## Buying attitudes and objections\n\n**Trust.** Wynwood’s CX lead said guests cannot tell an AI agent from a human. Cascadia’s Ryan said guests think they are talking to someone local. Haven’s CEO had the agent say it needs a moment and will follow up in two or three minutes rather than guess. [Source](https://www.conduit.ai/customers/wynwood-house) [Source](https://www.conduit.ai/customers/cascadia-getaways) [Source](https://www.conduit.ai/customers/haven-2026)\n\n**Control.** Site copy stresses rules you set and requests the team should handle. HomeHop wanted to approve messages or run autopilot after a failed vendor. The Flex’s CEO delayed turning AI on until he understood it would not answer without knowledge. [Source](https://www.conduit.ai/product/agents) [Source](https://www.conduit.ai/customers/homehop) [Source](https://www.conduit.ai/customers/the-flex)\n\n**Change.** Haven’s CEO held three meetings, pledged no AI layoffs, and moved people into workflow building. Cascadia told the team AI would not take their jobs and expanded people into SEO, revenue, and concierge. Easy BnB, in the Bali Luxury Stays story, is the contrary case: eleven VAs replaced for an exit. Do not treat one staffing model as the category. [Source](https://www.conduit.ai/customers/haven-2026) [Source](https://www.conduit.ai/customers/cascadia-getaways) [Source](https://www.conduit.ai/customers/bali-luxury-stays)\n\n**Fit skepticism.** Canbnb’s process manager was unconvinced AI would fit operations. HomeHop’s co-founder was leery after a chatbot that did not work. Bocobay’s objection was Intercom versus guest, owner, and ground operations in one place. [Source](https://www.conduit.ai/customers/canbnb) [Source](https://www.conduit.ai/customers/bocobay)\n\n## Decision process\n\nThese pages describe implementations, not a standard RFP.\n\n1. **The trigger is operational scale:** Canbnb’s 630-message backlog, Lauderdale’s call-center cost and ~57-minute replies, Bocobay’s dual inboxes, The Flex’s 17 SaaS tools, Haven/HomeHop growth without proportional support, Cascadia’s first PM acquisition.\n2. **Economic buyer plus an operator** show up together (Jack and Jonathan; Jo-Anne and Dan; Dan Mitchen and Nate; Mayra as global CX). The Flex later said knowledge setup should have been founder-led.\n3. **Proof is control, then measured automation.** Haven tied incentives to automation *and* scores. Bocobay moved email, then WhatsApp, then phone, then live chat. A security questionnaire is not documented.\n4. **Comparisons named in stories:** Intercom, Jurny and other call services, a failed AI vendor, Google Voice, in-house messaging AI. That is not a complete shortlist.\n\nHotel-group buying (loyalty, cluster reporting, shared KB) appears on the industry page, not in a named hotel-group case in this pack. [Source](https://www.conduit.ai/industry/hotel-groups)\n\n## Questions by role\n\n**Founder / CEO / owner.** What support cost, refund, or night coverage stops scaling linearly? If this is an acquisition or exit, which operating metric belongs in the OM? Who owns knowledge-base truth after go-live?\n\n**CX / process champion.** Which channels must share one workspace? What must never be automated, and who trains exceptions? How will you count resolved versus handed-off conversations without dropping communication scores?\n\n**Operational users.** How do property views, routing, and notes work on shift handoff? What is handled at 2am (access codes, voice) versus what still pages a person?\n\n**Technical evaluator (when present).** Messaging versus reservation-only PMS path, and duplicate-thread risk? Which writes (booking change, payment, task) are enabled for this stack? Is API/MCP in scope, or only the four marketed products in [Product catalog & capability map](#knowledge/products-capabilities)?\n\nIf a title is missing, ask. Do not invent ages, gender, income, or a fixed hotel-group committee. Related jobs live in [Buyer problems & desired results](#knowledge/customer-jobs).",
+  "source_ids": [
+    "src_37286663c1a57667",
+    "src_3e7552876a098bb0",
+    "src_5a71a6776ae43f4d",
+    "src_5cb5674a725889a9",
+    "src_5eb74e069d5f7cb9",
+    "src_75269914aa6b6dfd",
+    "src_765674900bd1f4dd",
+    "src_a649d4d3ab5f59f5",
+    "src_b2ab716efd97c239",
+    "src_c1dd8d452a784c57",
+    "src_c8a1bb788be5b03f",
+    "src_d097938bd9b8b088",
+    "src_d30d1770ff08e6a4",
+    "src_e067203ca4528d4b",
+    "src_e6200582a2004292",
+    "src_e805a9592ee44f73",
+    "src_e84c3306650f8a0e",
+    "src_ec670ccb114e21b7",
+    "src_f09009069a2d197f"
+  ],
+  "open_questions": [
+    "Who actually sits on hotel-group evaluations (brand, property GM, IT, security) when this pack has no named hotel-group case?",
+    "When is a technical or security reviewer required versus founder-led knowledge setup?",
+    "How often operational users can slow or veto autopilot after job-threat concerns, versus economic buyers who already chose VA reduction?",
+    "Which titles specifically sponsor Portals, voice numbers, or API/MCP rather than inbox-plus-agents?"
+  ],
+  "evidence_notes": [
+    {
+      "statement": "Public FAQ copy names Conduit’s audience as hotel teams, serviced-apartment operators, and short-term rental managers.",
+      "source_id": "src_f09009069a2d197f",
+      "quote": "Conduit is for hotel teams, serviced-apartment operators, and short-term rental managers."
+    },
+    {
+      "statement": "Agents are marketed as following operator-defined procedures and escalating named request types to the team.",
+      "source_id": "src_e805a9592ee44f73",
+      "quote": "Define the procedures agents follow and the requests your team should handle."
+    },
+    {
+      "statement": "Haven’s CEO publicly pledged that AI would not be used to lay people off and reframed support jobs around improving the AI.",
+      "source_id": "src_c1dd8d452a784c57",
+      "quote": "Your new job is gonna get as good as this as possible. We're not gonna lay anyone off. That's not happening."
+    },
+    {
+      "statement": "Lauderdale’s founder framed Conduit as a valuation lever via a more hands-off operating model.",
+      "source_id": "src_37286663c1a57667",
+      "quote": "The more hands-off the property, the higher the valuation. We choose Conduit for that."
+    },
+    {
+      "statement": "Cascadia’s revenue and guest-services lead stated an AI-first rule for work that is not on-property or guest-facing.",
+      "source_id": "src_b2ab716efd97c239",
+      "quote": "Our long-term mission is that if you're not boots on the property or interacting with a guest, you're AI"
+    },
+    {
+      "statement": "Wynwood’s global CX lead claimed guests cannot distinguish Conduit AI replies from human agents.",
+      "source_id": "src_e067203ca4528d4b",
+      "quote": "You cannot tell the difference between an AI agent and a human agent."
+    },
+    {
+      "statement": "HomeHop’s co-founder was skeptical of guest-messaging AI after a prior vendor failure.",
+      "source_id": "src_d097938bd9b8b088",
+      "quote": "I was a little leery, just to be completely honest, just because the whole AI thing didn't work for us before"
+    },
+    {
+      "statement": "Bocobay’s co-founder needed one system covering guests, owners, and on-the-ground operations, not a generic inbox.",
+      "source_id": "src_ec670ccb114e21b7",
+      "quote": "We needed a system that could handle the complexity of guest interactions, owner relations, and on-the-ground operations—all in one place"
+    }
+  ],
+  "agent_context": {
+    "use_when": [
+      "mapping stakeholders before an ABM sequence or demo",
+      "writing role-specific copy without inventing demographics",
+      "choosing which named customer story to put in front of a founder vs a CX lead"
+    ],
+    "decisions_supported": [
+      "who to contact first when only public titles are known",
+      "which objections (job threat, failed AI, Intercom misfit, control of autopilot) belong to which observed role",
+      "when to stop and ask for missing hotel-group or security stakeholders"
+    ],
+    "do_not_infer": [
+      "ages, gender, income, education, or personality types",
+      "that observed titles are the committee at every hotel or PMC",
+      "that use-case copy about cluster managers or GMs identifies buyers",
+      "a security-review or procurement process not in the sources",
+      "that Haven’s no-layoff pledge or Bali’s VA reductions apply to all customers"
+    ],
+    "document_key": "buyer-roles",
+    "depends_on": [
+      "products-capabilities",
+      "integrations",
+      "customer-evidence"
+    ],
+    "status": "research_draft",
+    "source_ids": [
+      "src_37286663c1a57667",
+      "src_3e7552876a098bb0",
+      "src_5a71a6776ae43f4d",
+      "src_5cb5674a725889a9",
+      "src_5eb74e069d5f7cb9",
+      "src_75269914aa6b6dfd",
+      "src_765674900bd1f4dd",
+      "src_a649d4d3ab5f59f5",
+      "src_b2ab716efd97c239",
+      "src_c1dd8d452a784c57",
+      "src_c8a1bb788be5b03f",
+      "src_d097938bd9b8b088",
+      "src_d30d1770ff08e6a4",
+      "src_e067203ca4528d4b",
+      "src_e6200582a2004292",
+      "src_e805a9592ee44f73",
+      "src_e84c3306650f8a0e",
+      "src_ec670ccb114e21b7",
+      "src_f09009069a2d197f"
+    ]
+  },
+  "icp_criteria": [],
+  "folder": "audience",
+  "revision": 3,
+  "created_at": "2026-09-20T01:08:59.759551+00:00",
+  "status": "research_draft",
+  "input_hash": "1dfde3a31a31cc5f1edb7e8875aad300c582865cd85ce8700c6a575a09beac71",
+  "depends_on": [
+    "products-capabilities",
+    "integrations",
+    "customer-evidence"
+  ],
+  "model": "x-ai/grok-4.6",
+  "prompt_hash": "b193eab458606508fd5482542d0d15cece85d2d305ddc7294d6c2d4e8536e8d5",
+  "evidence_validation": "Exact passages checked; interpretation and proposed policies require review.",
+  "edited_at": "2026-09-20T01:28:36.649864+00:00",
+  "editorial_reviews": [
+    {
+      "at": "2026-09-20T01:16:32.023370+00:00",
+      "reason": "Add usable professional title hypotheses with remit and discovery questions, kept distinct from observed customer titles.",
+      "human_approved": false
+    },
+    {
+      "at": "2026-09-20T01:28:36.649870+00:00",
+      "reason": "Resolve final audience review: optional urgency, hotel versus rental evidence, named-customer attribution, and conditional connector readiness.",
+      "human_approved": false
+    }
+  ]
+}
