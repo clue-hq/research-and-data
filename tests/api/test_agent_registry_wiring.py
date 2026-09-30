@@ -169,7 +169,9 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # stage0-interview@v40 and manual-*@v13 repointed.
         # v68 (2026-09-29): three retired-lane tools dropped; stage0-interview@v41, manual-*@v14.
         # v69 (2026-09-29): 4 MB workspace files for offloaded history; stage0@v42, manual@v15.
-        AgentRole.HEAD_OF_ABM: ("092fe5f8afa4cdfcbb277d53378ca57b8fff387e56bcd06161099f5142e40209"),
+        # v70 (2026-09-30): the agent writes the discovery brief — `launch_arv2_discovery@2` and
+        # `read_discovery_run@3`; stage0@v43 (section 7b), manual@v16.
+        AgentRole.HEAD_OF_ABM: ("9bd1154743b9db2ea8f668a90595110085f9b2bea59ad9cd541d7b34d4d00488"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
@@ -205,14 +207,11 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
                 == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             )
             assert resolved.profile.model.model_id == PROJECT_CONVERSATION_MODEL_ID
-        # Two names are granted at an address other than their name-only default:
-        # `research_account_gaps@2`, and `launch_arv2_discovery@1`, which `head-of-abm@v69` still
-        # pins while the default has moved to the agent-authored `@2` (the v70 bump moves it).
+        # One name is granted at an address other than its name-only default:
+        # `research_account_gaps@2`. (`head-of-abm@v70` pins the defaults of
+        # `launch_arv2_discovery` and `read_discovery_run`, `@2` and `@3`.)
         pinned_away_from_default = {
             "research_account_gaps": "research_account_gaps@2",
-            "launch_arv2_discovery": "launch_arv2_discovery@1",
-            # `read_discovery_run@3` holds the default; v69 still pins `@2` (v70 moves it).
-            "read_discovery_run": "read_discovery_run@2",
         }
         expected_tools = {
             pinned_away_from_default.get(name, f"{name}@{toolbelt.descriptor(name).version}")
@@ -304,13 +303,14 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
     # Agent-authored discovery (2026-09-30) installs `launch_arv2_discovery@2` beside the retired
-    # `@1` (166 -> 167); v69 still pins `@1`, so `@2` is role-unavailable until v70 pins it.
-    # `read_discovery_run@3` (summary, end reason, exclusions) installs beside `@2` (167 -> 168);
-    # v69 still pins `@2`, so `@3` is role-unavailable until v70 pins it.
+    # `@1` (166 -> 167), and `read_discovery_run@3` (summary, end reason, exclusions) beside `@2`
+    # (167 -> 168). `head-of-abm@v70` pins both new addresses, so they are available and the
+    # addresses they replace drop to role-unavailable.
     assert len(by_address) == 168
-    assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["read_discovery_run@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["read_discovery_run@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
@@ -426,8 +426,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
     # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
-    # launch_arv2_discovery@2 (2026-09-30), ungranted until v70 (166 -> 167), and
-    # read_discovery_run@3 on the same terms (167 -> 168).
+    # launch_arv2_discovery@2 (2026-09-30) (166 -> 167) and read_discovery_run@3 (167 -> 168),
+    # both granted at head-of-abm@v70.
     assert len(by_address) == 168
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
@@ -520,10 +520,15 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # Multi-artifact legs move one: `open_design_leg` is available at `@5` — `head-of-abm@v59`
     # pins that exact contract, whose input carries an `artifacts` list instead of one `title` —
     # so `@4` drops to ROLE_UNAVAILABLE beside the other superseded addresses.
+    #
+    # Agent-authored discovery moves two: the Head of ABM writes the discovery brief, so
+    # `launch_arv2_discovery` is available at `@2` (the brief in its input) and `read_discovery_run`
+    # at `@3` (summary, end reason, exclusions) — `head-of-abm@v70` pins both exact contracts —
+    # and `@1` / `@2` drop to ROLE_UNAVAILABLE. Taught by stage0-interview v43 section 7b.
     assert available == {
         "inspect_statement_history@1",
         "launch_arv2_account_research@1",
-        "launch_arv2_discovery@1",
+        "launch_arv2_discovery@2",
         "launch_arv2_person_research@1",
         "open_design_leg@5",
         "configure_project_targeting@1",
@@ -533,7 +538,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "read_artifact@1",
         "read_arv2_account_research_run@1",
         "read_claims@1",
-        "read_discovery_run@2",
+        "read_discovery_run@3",
         "read_project_accounts@1",
         "record_interview_answer@1",
         "run_python@1",
@@ -606,9 +611,9 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v69"
+    assert production.profile_ref.address == "profile:head-of-abm@v70"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v42"
+        "skill:stage0-interview@v43"
     )
     # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
     # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
@@ -638,6 +643,30 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
 
+def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
+    registry: AgentProfileRegistry,
+) -> None:
+    """`head-of-abm@v70` is where the agent starts writing the discovery brief.
+
+    It grants `launch_arv2_discovery@2` (the brief in the input) and `read_discovery_run@3`
+    (summary, end reason, exclusions) and neither address they replace, and it pins the
+    stage0-interview version whose section 7b teaches how to write the brief.
+    """
+
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v70"
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    granted = {pin.address for pin in head.profile.tools}
+    assert "launch_arv2_discovery@2" in granted
+    assert "launch_arv2_discovery@1" not in granted
+    assert "read_discovery_run@3" in granted
+    assert "read_discovery_run@2" not in granted
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v43"
+    body = head.open_skill("skill:stage0-interview@v43")
+    assert "## 7b. Discover accounts for this project" in body
+    assert "`must_not`" in body
+    assert "discovery_in_progress" in body
+
+
 def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents() -> None:
     """The honest empty state replaces S4-E's missing-Product-KB carve-out.
 
@@ -655,7 +684,7 @@ def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents(
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v42")
+    body = production.open_skill("skill:stage0-interview@v43")
 
     assert "onboarding has not produced knowledge for this brand yet" in body
     assert "brand onboarding runs from the workspace's onboarding flow" in body
@@ -715,7 +744,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
     # procedure, each granting no tool.
     assert [item.resource.address for item in disclosures] == [
-        "skill:stage0-interview@v42",
+        "skill:stage0-interview@v43",
         # v55 adds the three document skills between the procedure and the reference shelf: each
         # one is the whole procedure for one document written under `project/`, and grants no tool.
         "skill:account-research-briefing@v3",
@@ -725,7 +754,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v15" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v16" for name in MANUAL_CHAPTERS),
     ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
@@ -735,7 +764,7 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     assert briefing_path in body
     assert briefing_path in head.prompt_body
     assert briefing_path in launch.model_description
-    assert briefing_path in head.open_skill("skill:manual-tools@v15")
+    assert briefing_path in head.open_skill("skill:manual-tools@v16")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -831,7 +860,7 @@ def test_c67_account_deepagent_profile_is_historical_only(
         ("read_the_artifact_before_describing_it", "**What a gallery artifact is or says:**"),
         ("read_every_page_before_counting", "read again with `offset: next_offset` before you"),
         ("a_spilled_result_is_read_from_its_file", "the receipt says `spilled_to`"),
-        ("read_discovery_before_relaunching", "call `read_discovery_run` for this project"),
+        ("read_discovery_before_relaunching", "call `read_discovery_run` first"),
         ("prose_is_not_a_receipt", "ordinary file writes do not move a pin."),
         ("contradictory_correction", "**Corrections carry lineage.**"),
         ("upload", "goes through `submit_ingestion` with its material context"),
@@ -848,7 +877,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v42")
+    body = head.open_skill("skill:stage0-interview@v43")
 
     assert required_guidance in body
 
@@ -902,7 +931,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     # procedure uncallable. What it can make is a chapter that over-describes the narrowed
     # surface, which is the manual's honesty problem, not the ceiling's.
     remaining = [item.resource.address for item in head.skill_disclosures()]
-    assert "skill:stage0-interview@v42" not in remaining
+    assert "skill:stage0-interview@v43" not in remaining
     # v55's three document skills survive with the manual chapters, and for the same reason: a
     # skill that requires no tool cannot be made uncallable by withdrawing one.
     assert remaining == [
@@ -913,7 +942,7 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         # v58 adds the sandbox skill after them and before the reference shelf: the whole
         # procedure for `run_python@1`, which it is the one disclosed skill to require.
         "skill:code-execution@v1",
-        *(f"skill:manual-{name}@v15" for name in MANUAL_CHAPTERS),
+        *(f"skill:manual-{name}@v16" for name in MANUAL_CHAPTERS),
     ]
 
 

@@ -79,8 +79,10 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     # ARV2 Track R, R4 (added in recipe0-stage0@23): verified account discovery for the project,
     # granted at `head-of-abm@v45`. It declares the same ``project`` pin as its launch siblings —
     # the spine row the execution is bound to — which is what this audit requires of every
-    # standing address.
-    "launch_arv2_discovery@1",
+    # standing address. Agent-authored discovery (recipe0-stage0@33) RE-PINS it at ``@2``, whose
+    # input is the brief the Head of ABM writes; ``@1`` leaves (one version per ``(kind, key)``)
+    # and stays registered only to refuse ``discovery_tool_retired`` on replay.
+    "launch_arv2_discovery@2",
     "read_arv2_account_research_run@1",
     # ``author_icp_document@1`` (added in @24), ``request_persona_synthesis@1`` (@24) and
     # ``write_project_document@1`` (@25) were retired at recipe0-stage0@27: the documents they
@@ -107,7 +109,9 @@ RECIPE_0_TOOL_ADDRESSES: tuple[str, ...] = (
     "read_account_research@2",
     "read_claims@1",
     "read_artifact@1",
-    "read_discovery_run@2",
+    # recipe0-stage0@33 re-pins the discovery read at ``@3`` (summary, end reason, exclusions),
+    # the contract `head-of-abm@v70` grants; ``@2`` leaves the standing set and stays registered.
+    "read_discovery_run@3",
     # The code sandbox (recipe0-stage0@29): one short Python script per call, in a container with
     # no network, over the turn's own workspace. Granted for the first time at `head-of-abm@v58`
     # and admitted to the interaction slot in the same revision. It is a WRITE, so unlike its

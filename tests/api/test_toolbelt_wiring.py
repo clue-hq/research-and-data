@@ -1609,8 +1609,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     assert registry.descriptor("read_account_research").version == "2"
     assert registry.descriptor("read_account_research", "1").version == "1"
     # Agent-authored discovery (2026-09-30): `read_discovery_run@3` owns the name-only alias, as
-    # `launch_arv2_discovery@2` does; `@2` stays resolvable by exact address, and granted, while
-    # `head-of-abm@v69` pins it.
+    # `launch_arv2_discovery@2` does; `@2` stays resolvable by exact address for replay, and
+    # `head-of-abm@v70` grants `@3`.
     assert registry.descriptor("read_discovery_run").version == "3"
     assert registry.descriptor("read_discovery_run", "2").version == "2"
     assert registry.descriptor("read_discovery_run", "1").version == "1"

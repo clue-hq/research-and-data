@@ -103,17 +103,25 @@ launch_arv2_account_research:
     product_selection_version_unknown: Name a product-set version the message lists as confirmed, or omit it and let the current confirmation speak.
 
 launch_arv2_discovery:
+  # The builder renders no pre-call key, so the spec's `before` pointer (spec 2026-09-30 §6.2) is
+  # the first sentence of `afterwards` instead.
   afterwards: >-
-    A discovery run is queued against the ICP version the project pinned. It searches for exactly
-    target_count companies, and every company it checks joins this project's accounts with its fit
-    and its gate verdicts. Each new ask is a new run that skips every company this project's
-    earlier discoveries found. Read it back with read_discovery_run before proposing another.
-  skill_section: stage0-interview v42 section 7b, "Discover accounts for this project".
+    If you have not read section 7b of the stage0-interview skill ("Discover accounts for this
+    project") in this conversation, read it before you call this tool. It says how to write the
+    query, the criteria and the gates.
+    A discovery run is queued with the brief you wrote. It checks every company against your
+    gates, adds the ones that pass to this project's accounts, and searches again with the same
+    brief for any shortfall, up to three more times. This conversation is busy until it ends;
+    you then get a turn that starts with its summary.
+  skill_section: stage0-interview v43 section 7b, "Discover accounts for this project".
   see_also: [discovery, siblings, gates-authority]
   refusals:
     arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
     launch_action_ref_missing: Do not retry from an earlier message. Ask the human, in this turn, to confirm they want accounts discovered.
     lane_disabled: Tell the human discovery is switched off on this deployment, and say no run started.
+    discovery_in_progress: A discovery is already running in another conversation of this project. Tell the human, and do not retry.
+    brief_invalid: Fix the field the message names and call again.
+    discovery_tool_retired: Do not retry this address; call the current launch_arv2_discovery with the brief you wrote.
     target_count_invalid: Ask for at least one company and call again.
     project_not_found: Take the project id from your project card and call again; do not guess one.
     project_icp_not_pinned: Confirm an ICP at the ICP gate first; discovery searches against the version this project pinned and nothing else.
@@ -121,7 +129,6 @@ launch_arv2_discovery:
     icp_artifact_not_confirmed: Confirm the ICP at the gate first; discovery does not search against a proposal.
     icp_digest_mismatch: Tell the human the pinned ICP has changed since it was pinned, and that it must be confirmed again before discovery runs.
     icp_front_matter_invalid: Tell the human which front-matter field the pinned ICP document is missing; it has to be authored and confirmed again.
-    unknown_criteria_gate_key: Tell the human the pinned ICP's hard gates cannot be compiled into a search, and quote the gate the message names.
 
 launch_arv2_person_research:
   afterwards: >-
@@ -299,7 +306,7 @@ read_discovery_run:
     Nothing changes. You hold what the last discovery asked for, found, verified and showed. Say
     that before proposing another run; do not launch one to answer a question this read already
     answers.
-  skill_section: stage0-interview v40 sections 7b and 7c.
+  skill_section: stage0-interview v43 sections 7b and 7c.
   see_also: [discovery, accounts-research]
   refusals:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.

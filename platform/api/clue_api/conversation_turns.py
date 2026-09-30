@@ -199,7 +199,13 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # resolves, so both at once is a ``conflicting_requirement``. ``run_python@1`` stays where
 # revision 29 put it. v29 stays the exact replay input for turns pinned to it.
 # Revision 32 (web search, 2026-09-22) admits one address and removes none: ``web_search@1``.
-CONVERSATION_RECIPE_VERSION = 32
+# Revision 33 (agent-authored discovery, 2026-09-30) RE-PINS two addresses and adds none:
+# ``launch_arv2_discovery`` moves to ``@2`` (the brief the Head of ABM writes) and
+# ``read_discovery_run`` to ``@3`` (summary, end reason, exclusions), the contracts
+# `head-of-abm@v70` grants. The old versions leave rather than stand beside them (one version
+# per ``(kind, key)``); they stay registered, so v32 stays the exact replay input for turns
+# pinned to it.
+CONVERSATION_RECIPE_VERSION = 33
 
 #: What the human calls a document written *before* the free-flowing writer landed. A plan-3
 #: receipt carries no title on its refs — the field did not exist — and its three object types were

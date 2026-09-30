@@ -83,6 +83,13 @@ SYSTEM_RECIPE_FILENAMES: tuple[str, ...] = (
     # nothing leaves: v32 is v31 plus that address; v31 stays the exact replay input for turns
     # pinned to it.
     "recipe0-stage0-v32.json",
+    # Agent-authored discovery (spec 2026-09-30): two addresses RE-PINNED, none added —
+    # `launch_arv2_discovery@2` (the brief the Head of ABM writes) and `read_discovery_run@3`
+    # (summary, end reason, exclusions), the contracts `head-of-abm@v70` grants. The old versions
+    # leave rather than stand beside them (one version per (kind, key)); both stay registered, so
+    # v32 still promotes on a fresh database and stays the exact replay input for turns pinned to
+    # it.
+    "recipe0-stage0-v33.json",
     "recipe1-classic-v1.json",
     "recipe1-classic-v2.json",
     # ARV2 onboarding O4: the one-gate synthesis unit. Its slot admits exactly
