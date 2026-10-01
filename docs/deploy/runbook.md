@@ -48,8 +48,11 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`. Its build now runs the editor wasm
    check in strict mode (`WASM_PREFLIGHT_STRICT=1`): a stale browser engine fails the build.
 6. Variables for `platform-api` and `design-api`: every key in `.env.example` with its production
-   value (spec §10). **Leave out `CLUE_ARV2_RAW_ROOT`** (here and on the VM): the image sets an
-   absolute, writable path, and the example's relative default would break podcast downloads. `CLUE_DATABASE_URL` and `CLUE_REDIS_URL` use Railway's **private** hostnames.
+   value (spec §10). **Leave out the three paths the image sets** (here and on the VM):
+   `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT`. Any line for them —
+   even an empty one — overrides the image: a blank helper falls back to `cargo run` (not in the
+   image, so every design render fails), the font path is a checkout placeholder, and the raw root
+   is relative (podcast downloads fail). `check_prod_env.py` refuses them. `CLUE_DATABASE_URL` and `CLUE_REDIS_URL` use Railway's **private** hostnames.
    Before saving, paste each service's variables into a local file and check it:
    ```bash
    python3 deploy/check_prod_env.py platform-api /path/to/platform-api.env
@@ -84,7 +87,8 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    - `CLUE_REDIS_URL` = the Railway Redis proxy URL.
    - `CLUE_SANDBOX_ENABLED=true` (`deploy.sh` sets `CLUE_SANDBOX_IMAGE` on every deploy).
    - **Do not** set `CLUE_FLEET_WORKER_KINDS` here — `compose.yaml` sets it per pool.
-   - **Do not** copy `CLUE_ARV2_RAW_ROOT` from the example — the image sets `/var/lib/clue/arv2-raw`.
+   - **Do not** copy `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH` or `CLUE_ARV2_RAW_ROOT`
+     from the example — the image sets all three.
    Check it: `python3 /srv/clue/app/deploy/check_prod_env.py worker /srv/clue/env` → `OK`.
 5. Fill `/srv/clue/pgbouncer.env` (the `edoburu/pgbouncer` image turns these into its config — confirm
    the names against the image README for tag `v1.23.1-p3`):

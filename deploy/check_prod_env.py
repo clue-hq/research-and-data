@@ -21,6 +21,15 @@ EXACT = {
     "CLUE_SCRAPE_BACKEND": "scrapling",
     "CLUE_STAGE0_PAGE_FETCHER": "scrapling",
 }
+#: Paths the backend image sets (docker/backend/Dockerfile ENV) to what is actually inside it. A
+#: production env must leave them out: .env.example's values are lane values (a blank
+#: LUMEN_CORE_HELPER falls back to `cargo run`, which the image lacks; a relative
+#: CLUE_ARV2_RAW_ROOT lands under the root-owned /app; the font path is a checkout placeholder).
+IMAGE_OWNED = {
+    "CLUE_ARV2_RAW_ROOT": "podcast downloads, writable by uid 1000",
+    "LUMEN_CORE_HELPER": "the design engine helper binary",
+    "LUMEN_FONT_LIBRARY_MANIFEST_PATH": "the font library manifest",
+}
 #: names that must be set to something non-empty.
 REQUIRED = (
     "CLUE_DATABASE_URL",
@@ -62,13 +71,12 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         value = env.get(name, "")
         if "localhost" in value or "127.0.0.1" in value:
             found.append(f"{name} points at localhost")
-    raw_root = env.get("CLUE_ARV2_RAW_ROOT", "")
-    if raw_root and not raw_root.startswith("/"):
-        found.append(
-            f"CLUE_ARV2_RAW_ROOT={raw_root!r} is relative: in the image it lands under the "
-            "root-owned /app and podcast downloads fail. Remove the line (the image sets "
-            "/var/lib/clue/arv2-raw) or give an absolute, writable path"
-        )
+    for name, reason in IMAGE_OWNED.items():
+        if name in env:
+            found.append(
+                f"{name} must not be set: the backend image sets it ({reason}), and any env "
+                f"line — even an empty one — overrides it (is {env[name]!r})"
+            )
     if role == "design-api" and env.get("LUMEN_EMBEDDED_FLEET_WORKER") != "0":
         found.append(
             "LUMEN_EMBEDDED_FLEET_WORKER must be 0 on Railway (design jobs belong to the VM)"

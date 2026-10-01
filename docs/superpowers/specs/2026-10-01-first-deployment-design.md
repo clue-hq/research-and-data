@@ -218,10 +218,12 @@ Founder ask 2026-10-01: catch a broken build before it reaches a server, not aft
   - dev-only switches off, e.g. `CLUE_CHAT_REASONING_TRACE_MODE` not `raw`
   - Sentry and Langfuse environment = `production`
   - `CLUE_ARV2_DISCOVERY_MAX_TOPUPS=3` (as on the lane)
-  - `CLUE_ARV2_RAW_ROOT` **left out**: the image sets `/var/lib/clue/arv2-raw` (owned by uid
-    1000). The `.env.example` default is relative and would land under the root-owned `/app`,
-    so podcast downloads would fail; `check_prod_env.py` refuses a relative value. The audio
-    is deleted once transcribed, so nothing accumulates there.
+  - **Paths the image sets are left out** of every production env: `LUMEN_CORE_HELPER`,
+    `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT` (`/var/lib/clue/arv2-raw`, owned by
+    uid 1000; podcast audio there is deleted once transcribed). Their `.env.example` values are
+    lane values — a blank helper means `cargo run`, the font path is a checkout placeholder, the
+    raw root is relative under the root-owned `/app` — and any env line, even empty, overrides
+    the image. `check_prod_env.py` refuses all three.
 - Model settings stay env-only, per the repo's agent model configuration block.
 
 ## 11. Domains and monitoring

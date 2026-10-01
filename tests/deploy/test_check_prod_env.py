@@ -110,23 +110,36 @@ def test_the_railway_services_do_not_need_the_controller_url() -> None:
     assert check.problems(GOOD_COMMON, "platform-api") == []
 
 
+IMAGE_OWNED = ("CLUE_ARV2_RAW_ROOT", "LUMEN_CORE_HELPER", "LUMEN_FONT_LIBRARY_MANIFEST_PATH")
+
+
 @pytest.mark.parametrize("role", ["platform-api", "design-api", "worker"])
-def test_a_relative_arv2_raw_root_is_refused(role: str) -> None:
-    """The .env.example default (.artifacts/arv2) resolves under /app in the image, which the
-    non-root user cannot write: the first podcast download would fail at mkdir. The image sets an
-    absolute writable path; an env line can only break it."""
-    env = {
-        **GOOD_WORKER,
-        "LUMEN_EMBEDDED_FLEET_WORKER": "0",
-        "CLUE_ARV2_RAW_ROOT": ".artifacts/arv2",
-    }
-    assert any("CLUE_ARV2_RAW_ROOT" in p for p in check.problems(env, role))
+@pytest.mark.parametrize("name", IMAGE_OWNED)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",  # LUMEN_CORE_HELPER= as in .env.example: blank means `cargo run`
+        ".artifacts/arv2",  # relative: lands under the root-owned /app
+        "/absolute/path/to/your/checkout/subsystems/clue-design/apps/api/font-library/manifest.json",
+        "/opt/somewhere/else",  # a path the image does not have
+    ],
+)
+def test_an_env_line_for_an_image_owned_path_is_refused(role: str, name: str, value: str) -> None:
+    """Any env line, even an empty one, overrides the image's ENV; the image's value is the
+    only one that matches what is actually inside it."""
+    env = {**GOOD_WORKER, "LUMEN_EMBEDDED_FLEET_WORKER": "0", name: value}
+    assert any(p.startswith(f"{name} must not be set") for p in check.problems(env, role))
 
 
-def test_an_absent_or_absolute_arv2_raw_root_is_fine() -> None:
-    absolute = {**GOOD_WORKER, "CLUE_ARV2_RAW_ROOT": "/var/lib/clue/arv2-raw"}
-    assert check.problems(absolute, "worker") == []
+def test_leaving_the_image_owned_paths_out_is_fine() -> None:
     assert check.problems(GOOD_WORKER, "worker") == []
+
+
+def test_the_image_sets_every_path_the_check_keeps_out_of_env_files() -> None:
+    dockerfile = (_PATH.parents[1] / "docker" / "backend" / "Dockerfile").read_text("utf-8")
+    for name in IMAGE_OWNED:
+        assert f"{name}=/" in dockerfile, name
+    assert set(check.IMAGE_OWNED) == set(IMAGE_OWNED)
 
 
 def test_workers_must_not_pick_their_own_kinds_in_the_shared_env_file() -> None:
