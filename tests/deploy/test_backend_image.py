@@ -37,3 +37,22 @@ def test_the_arv2_raw_root_is_created_for_uid_1000_before_the_user_switch() -> N
 def test_the_smoke_test_writes_to_the_arv2_raw_root_as_the_image_user() -> None:
     assert "CLUE_ARV2_RAW_ROOT" in SMOKE
     assert "ok: arv2 raw root writable" in SMOKE
+
+
+def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tags() -> None:
+    """A release PR into main proves its images build, handshake and boot before the merge; the
+    `production` tags the VM pulls move only once the code is on main."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "deploy-images.yml").read_text(encoding="utf-8")
+    )
+    triggers = workflow[True]  # YAML 1.1 reads the bare key `on` as True
+    assert triggers["push"]["branches"] == ["main"]
+    assert triggers["pull_request"]["branches"] == ["main"]
+    steps = workflow["jobs"]["images"]["steps"]
+    movers = [s for s in steps if "production" in s.get("run", "") and "imagetools" in s["run"]]
+    assert len(movers) == 1 and movers[0] is steps[-1]
+    assert movers[0]["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    for step in steps[:-1]:
+        assert "if" not in step, f"every check must run on PRs too: {step.get('name')}"

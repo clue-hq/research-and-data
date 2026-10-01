@@ -1,9 +1,12 @@
 name: deploy-images
-# First deployment spec §9.1, §9.5: build the backend and sandbox images for every push to main (the
-# deployment branch), prove they boot, then — and only then — move the `production` tags the VM and
-# Railway deploy from. No test suite runs here: these are boot checks, minutes long.
+# First deployment spec §9.1, §9.5: build the backend and sandbox images, prove they boot, then —
+# only on a push to main (the deployment branch) — move the `production` tags the VM deploys from.
+# A pull request into main runs every check without moving the tags, so a release PR proves its
+# images before it can be merged. No test suite runs here: these are boot checks, minutes long.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
@@ -84,6 +87,7 @@ jobs:
           PGPASSWORD=clue psql -h 127.0.0.1 -U clue -d clue -c "CREATE EXTENSION IF NOT EXISTS vector"
           docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
       - name: Move the production tags (only after every check above passed)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker buildx imagetools create -t "$BACKEND:production" "$BACKEND:${{ github.sha }}"
           docker buildx imagetools create -t "$SANDBOX:production" "$SANDBOX:${{ github.sha }}"
