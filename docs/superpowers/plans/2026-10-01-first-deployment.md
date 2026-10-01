@@ -4,7 +4,7 @@
 
 **Goal:** Put the complete Clue app on hosted infrastructure — web tier, Postgres and Redis on Railway, a stateless OVHcloud worker VM, files in Cloudflare R2 — shipped from a `production` branch.
 
-**Architecture:** One backend container image runs every Python service (platform API, design API, fleet worker pools, ingestion pool, migrations) with different commands. Railway runs the web services plus Postgres 16 + pgvector and Redis 7; the VM runs three worker pools (chat 1×10, design 1×8, batch 3×10), the ingestion pool, PgBouncer and the Docker code sandbox from one docker compose file, reaching Postgres/Redis through Railway's TLS TCP proxy. GitHub Actions builds and pushes images on every push to `production`.
+**Architecture:** Every image is booted in CI before it can be deployed: both APIs must answer `/healthz`, a worker must register its handlers and start, and the sandbox must run a trivial script. One backend container image runs every Python service (platform API, design API, fleet worker pools, ingestion pool, migrations) with different commands. Railway runs the web services plus Postgres 16 + pgvector and Redis 7; the VM runs three worker pools (chat 1×10, design 1×8, batch 3×10), the ingestion pool, PgBouncer and the Docker code sandbox from one docker compose file, reaching Postgres/Redis through Railway's TLS TCP proxy. GitHub Actions builds and pushes images on every push to `production`.
 
 **Tech Stack:** Docker (multi-stage), uv (Python 3.12), Rust/cargo (`lumen-api-helper`), Node 24 (design editor Tailwind toolchain), Playwright Chromium, docker compose, PgBouncer, GitHub Actions + GHCR, Railway, OVHcloud VPS, Cloudflare R2.
 
@@ -52,7 +52,8 @@
 | `deploy/check_prod_env.py`, `tests/deploy/test_check_prod_env.py` | production env validator | 5 |
 | `deploy/vm/backup_db.sh`, `deploy/vm/restore_check.sh`, `deploy/vm/watchdog.sh`, `deploy/vm/systemd/*` | backups, restore rehearsal, VM alerts | 6 |
 | `deploy/vm/bootstrap.sh`, `deploy/vm/deploy.sh` | VM provisioning and deploys | 7 |
-| `.github/workflows/deploy-images.yml` | build + push images on `production` | 8 |
+| `platform/api/clue_api/projections_app.py`, `subsystems/clue-design/apps/api/lumen_api/main.py` | `/healthz` on both APIs | 4A |
+| `docker/backend/boot_smoke.sh`, `.github/workflows/deploy-images.yml` | boot every service in CI; publish `production` tags only after it passes | 8 |
 | `docs/deploy/runbook.md` | the whole founder-facing runbook (Railway, Cloudflare, OVHcloud, first ship, rollback, AWS move) | 9 |
 | `_memory/2026-10-01-first-deployment.md` | session record | 10 |
 
@@ -644,6 +645,79 @@ git commit -m "One backend image for every Python service, with a smoke test"
 
 ---
 
+### Task 4A: `/healthz` on the platform API and the design API
+
+Neither API has a health route today (only the page origin does — `platform/page_origin/clue_page_origin/routes.py:78`). The boot smoke test (Task 8), Railway's health check and the uptime monitors (Task 9) all need one.
+
+**Files:**
+- Modify: `platform/api/clue_api/projections_app.py` (`create_projections_app`, after `app = FastAPI(` ~line 898)
+- Modify: `subsystems/clue-design/apps/api/lumen_api/main.py` (`create_app`, after `app = FastAPI(` ~line 776)
+- Test: `tests/api/test_projections_app.py`, `subsystems/clue-design/apps/api/tests/test_healthz.py`
+
+**Interfaces:**
+- Produces: `GET /healthz` → `200 {"status": "ok"}` on both APIs, with **no** auth header and **no** `X-Workspace-Id`, and no database or Redis call (a health check must not fail because a dependency is slow — dependency failures surface in the boot smoke and the logs).
+
+- [ ] **Step 1: Write the failing platform test** — append to `tests/api/test_projections_app.py`:
+
+```python
+def test_healthz_answers_without_auth_or_workspace() -> None:
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            async with _client(_app(conn)) as client:
+                response = await client.get("/healthz")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    run_async(_run())
+```
+
+- [ ] **Step 2: Write the failing design test** — `subsystems/clue-design/apps/api/tests/test_healthz.py`:
+
+```python
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+
+def test_healthz_answers_without_a_workspace_header(tmp_path, design_storage) -> None:
+    from lumen_api.main import create_app
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    with TestClient(app) as client:  # deliberately NOT make_client: no X-Workspace-Id header
+        response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+```
+
+- [ ] **Step 3: Run both to verify they fail**
+
+Run: `uv run pytest tests/api/test_projections_app.py -k healthz -v` and
+`(set -a; source .env; set +a; cd subsystems/clue-design && LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 uv run pytest apps/api/tests/test_healthz.py -v)`
+Expected: both FAIL with 404 (the design one may be 401 if a workspace guard runs first — still a failure).
+
+- [ ] **Step 4: Add the route to both apps** — immediately after each `app = FastAPI(...)` line:
+
+```python
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Liveness for Railway's health check, the uptime monitors and the boot smoke test.
+        Touches no database or Redis, and needs no auth or workspace header."""
+        return {"status": "ok"}
+```
+
+- [ ] **Step 5: Run both to verify they pass**
+
+Same commands as Step 3. Expected: PASS. If either still returns 401/403, an app-wide auth or workspace middleware runs before routing: find it (`grep -n "add_middleware\|@app.middleware" <file>`) and add `/healthz` to that middleware's existing exemption list (the page origin's edge gate exempts `/healthz` the same way — `platform/page_origin/clue_page_origin/routes.py:3`). Do not weaken the middleware for any other path.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add platform/api/clue_api/projections_app.py subsystems/clue-design/apps/api/lumen_api/main.py tests/api/test_projections_app.py subsystems/clue-design/apps/api/tests/test_healthz.py
+git commit -m "Add /healthz to the platform API and the design API"
+```
+
+---
+
 ### Task 5: Production env validator (`deploy/check_prod_env.py`)
 
 **Files:**
@@ -1076,15 +1150,80 @@ git commit -m "VM bootstrap and one-command deploy (env check, migrate, restart 
 
 ---
 
-### Task 8: GitHub Actions — build and push images on `production`
+### Task 8: GitHub Actions — build, boot-smoke, then publish images on `production`
+
+The images are pushed under their commit SHA first; the `production` tag moves only after **both** smoke tests pass, so a broken build never becomes the tag anything deploys from. No test suite runs here — this is a boot check, minutes long.
 
 **Files:**
+- Create: `docker/backend/boot_smoke.sh`
 - Create: `.github/workflows/deploy-images.yml`
 
 **Interfaces:**
-- Produces: `ghcr.io/clue-hq/clue-backend:<sha>` and `:production`; `ghcr.io/clue-hq/clue-agent-sandbox:<sha>` and `:production` on every push to `production`.
+- Consumes: the image entrypoint commands (Task 4), `/healthz` (Task 4A), the worker's boot log events `"event": "fleet.boot.handlers_registered"` and `"event": "worker.start"` (emitted by `clue_api.fleet_main` today), `clue_api.sandbox.docker_runner.docker_available(image) -> tuple[bool, str]`.
+- Produces: `ghcr.io/clue-hq/clue-backend:<sha>` and `ghcr.io/clue-hq/clue-agent-sandbox:<sha>` on every push; `:production` on both only after the smoke tests pass.
 
-- [ ] **Step 1: Write the workflow:**
+- [ ] **Step 1: Write `docker/backend/boot_smoke.sh`:**
+
+```bash
+#!/usr/bin/env bash
+# Boot every service from the built image against throwaway Postgres (pgvector) + Redis and check
+# it comes up: both APIs answer /healthz, the worker registers its handlers and starts, and the
+# sandbox runs a trivial script through the image's Docker CLI. Catches a broken build before it
+# reaches a server. Usage: boot_smoke.sh <backend-image> <sandbox-image>
+# Expects Postgres on 127.0.0.1:5432 (clue/clue/clue, vector extension created) and Redis on :6379.
+set -Eeuo pipefail
+IMAGE="${1:?usage: boot_smoke.sh <backend-image> <sandbox-image>}"
+SANDBOX="${2:?usage: boot_smoke.sh <backend-image> <sandbox-image>}"
+DOCKER_GID="$(stat -c %g /var/run/docker.sock)"
+ENVF="$(mktemp)"
+cat > "$ENVF" <<ENV
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:5432/clue
+CLUE_REDIS_URL=redis://127.0.0.1:6379/0
+CLUE_STORAGE_BACKEND=fs
+CLUE_STORAGE_FS_ROOT=/tmp/artifacts
+CLUE_AGENT_WORKSPACE_ROOT=/tmp/clue-workspaces
+CLUE_DESIGN_RUNTIME_ENABLED=1
+CLUE_SANDBOX_ENABLED=true
+CLUE_SANDBOX_IMAGE=$SANDBOX
+LUMEN_EMBEDDED_FLEET_WORKER=0
+ENV
+cleanup() { docker rm -f smoke-platform smoke-design smoke-worker >/dev/null 2>&1 || true; rm -f "$ENVF"; }
+trap cleanup EXIT
+start() { docker run -d --name "$1" --network host --env-file "$ENVF" "${@:2}"; }
+wait_http() {  # wait_http URL CONTAINER
+  for _ in $(seq 1 90); do curl -fsS "$1" >/dev/null 2>&1 && { echo "ok: $1"; return 0; }; sleep 2; done
+  echo "FAILED: $1 never answered"; docker logs --tail 100 "$2"; return 1
+}
+wait_log() {  # wait_log CONTAINER EVENT
+  for _ in $(seq 1 90); do docker logs "$1" 2>&1 | grep -q "\"event\": \"$2\"" && { echo "ok: $1 $2"; return 0; }; sleep 2; done
+  echo "FAILED: $1 never logged $2"; docker logs --tail 100 "$1"; return 1
+}
+
+docker run --rm --network host --env-file "$ENVF" "$IMAGE" migrate
+start smoke-platform -e PORT=18020 "$IMAGE" platform-api
+start smoke-design -e PORT=18010 "$IMAGE" design-api
+wait_http http://127.0.0.1:18020/healthz smoke-platform
+wait_http http://127.0.0.1:18010/healthz smoke-design
+
+start smoke-worker --group-add "$DOCKER_GID" -v /var/run/docker.sock:/var/run/docker.sock "$IMAGE" fleet-worker
+wait_log smoke-worker fleet.boot.handlers_registered
+wait_log smoke-worker worker.start
+
+docker run --rm --network host --group-add "$DOCKER_GID" -v /var/run/docker.sock:/var/run/docker.sock \
+  -e SANDBOX="$SANDBOX" "$IMAGE" shell -c '
+    set -e
+    python -c "from clue_api.sandbox.docker_runner import docker_available; ok, why = docker_available(\"$SANDBOX\"); assert ok, why; print(\"ok: docker_available\")"
+    out=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+          --user 1000:1000 "$SANDBOX" python -c "print(2 + 2)")
+    [ "$out" = "4" ] && echo "ok: sandbox ran python"'
+echo "BOOT SMOKE PASSED"
+```
+
+`chmod +x docker/backend/boot_smoke.sh`.
+
+**If a service refuses to boot because a setting or key is missing**, that is the finding this test exists for. For each one decide, and record in the commit message: either boot genuinely requires it (add it to the smoke env with a dummy value and to the runbook's required list), or boot should not require it (fix the code to start without it and fail only when the feature is used).
+
+- [ ] **Step 2: Write `.github/workflows/deploy-images.yml`:**
 
 ```yaml
 name: deploy-images
@@ -1097,10 +1236,24 @@ permissions:
   contents: read
   packages: write
 
+env:
+  BACKEND: ghcr.io/clue-hq/clue-backend
+  SANDBOX: ghcr.io/clue-hq/clue-agent-sandbox
+
 jobs:
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: clue, POSTGRES_PASSWORD: clue, POSTGRES_DB: clue }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U clue" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -1109,6 +1262,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sandbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/agent-sandbox
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.SANDBOX }}:${{ github.sha }}
       - name: Backend image
         uses: docker/build-push-action@v6
         with:
@@ -1116,41 +1276,44 @@ jobs:
           file: docker/backend/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/clue-hq/clue-backend:${{ github.sha }}
-            ghcr.io/clue-hq/clue-backend:production
+          tags: ${{ env.BACKEND }}:${{ github.sha }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
-      - name: Smoke-test the backend image
+      - name: Pull the images just built
         run: |
-          docker pull ghcr.io/clue-hq/clue-backend:${{ github.sha }}
-          docker/backend/smoke.sh ghcr.io/clue-hq/clue-backend:${{ github.sha }}
-      - name: Sandbox image
-        uses: docker/build-push-action@v6
-        with:
-          context: docker/agent-sandbox
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/clue-hq/clue-agent-sandbox:${{ github.sha }}
-            ghcr.io/clue-hq/clue-agent-sandbox:production
+          docker pull "$BACKEND:${{ github.sha }}"
+          docker pull "$SANDBOX:${{ github.sha }}"
+      - name: Static smoke (contents)
+        run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
+      - name: Boot smoke (services start)
+        run: |
+          PGPASSWORD=clue psql -h 127.0.0.1 -U clue -d clue -c "CREATE EXTENSION IF NOT EXISTS vector"
+          docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
+      - name: Move the production tags (only after both smoke tests passed)
+        run: |
+          docker buildx imagetools create -t "$BACKEND:production" "$BACKEND:${{ github.sha }}"
+          docker buildx imagetools create -t "$SANDBOX:production" "$SANDBOX:${{ github.sha }}"
 ```
 
-- [ ] **Step 2: Lint the workflow**
+- [ ] **Step 3: Lint**
 
-Run: `brew install actionlint 2>/dev/null; actionlint .github/workflows/deploy-images.yml`
+Run: `shellcheck docker/backend/boot_smoke.sh && actionlint .github/workflows/deploy-images.yml`
 Expected: no errors.
 
-- [ ] **Step 3: Confirm the sandbox build context**
+- [ ] **Step 4: Run the boot smoke locally once (Linux semantics differ on a Mac)**
 
-Run: `ls docker/agent-sandbox/ && grep -n "sandbox-image" Makefile`
-Expected: a `Dockerfile` in `docker/agent-sandbox/` and the Makefile target builds from that directory. If the Makefile passes extra build args, copy them into the workflow's `build-args`.
+On the Mac, `--network host` does not expose the host's ports the same way, so run the local check inside a Linux VM or skip it and rely on the first `workflow_dispatch` run: push the branch to a throwaway branch name **only with the founder's go-ahead**, trigger `deploy-images` by hand (`gh workflow run deploy-images --ref <branch>`), and read the job log. Expected: `SMOKE PASSED`, `BOOT SMOKE PASSED`, and the production tags moved. (The `production` tag moves on a `workflow_dispatch` run too — on a throwaway branch, comment out the last step for that run or accept that `:production` then points at that commit until the real first ship.)
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Confirm the sandbox build context**
+
+Run: `ls docker/agent-sandbox/ && grep -n "sandbox-image" -A3 Makefile`
+Expected: a `Dockerfile` in `docker/agent-sandbox/`; if the Makefile passes build args, add them under the sandbox step's `build-args`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add .github/workflows/deploy-images.yml
-git commit -m "Build and push the backend and sandbox images on every push to production"
+git add docker/backend/boot_smoke.sh .github/workflows/deploy-images.yml
+git commit -m "CI: build images, boot-smoke every service, then move the production tags"
 ```
 
 ---
@@ -1303,6 +1466,6 @@ This task is executed **with the founder**, following `docs/deploy/runbook.md`. 
 
 ## Self-review
 
-- **Spec coverage:** §3/§5 hosting and sizing → Tasks 3, 9; §5.1 embedded worker off → Tasks 5, 9; §5.2 pools → Tasks 1, 3; §6 stateless VM → Tasks 3, 7; §7 connections/PgBouncer/least-privilege role → Tasks 3, 9; §8 backups/rehearsal → Task 6; §9.1 one image → Task 4; §9.2 production branch → Tasks 8, 9, 10; §9.3 deploy order → Tasks 7, 9; §9.4 sandbox socket/paths/non-root → Tasks 3, 4, 7; §10 config → Tasks 2, 5, 9; §11 domains/monitoring → Tasks 6, 9; §12 spend caps → Task 9 §5; §13 AWS path → Task 9 §10; §15 app changes → Tasks 1, 2, 4 (the localhost/local-disk audit is covered by `check_prod_env.py` for URLs and by the image's baked `LUMEN_*` paths; anything else surfaces in the Task 4 smoke test and the Task 10 walk); §16 acceptance → Task 10.
+- **Spec coverage:** §3/§5 hosting and sizing → Tasks 3, 9; §5.1 embedded worker off → Tasks 5, 9; §5.2 pools → Tasks 1, 3; §6 stateless VM → Tasks 3, 7; §7 connections/PgBouncer/least-privilege role → Tasks 3, 9; §8 backups/rehearsal → Task 6; §9.1 one image → Task 4; §9.2 production branch → Tasks 8, 9, 10; §9.3 deploy order → Tasks 7, 9; §9.4 sandbox socket/paths/non-root → Tasks 3, 4, 7; §10 config → Tasks 2, 5, 9; §11 domains/monitoring → Tasks 6, 9; §12 spend caps → Task 9 §5; §13 AWS path → Task 9 §10; §15 app changes → Tasks 1, 2, 4 (the localhost/local-disk audit is covered by `check_prod_env.py` for URLs and by the image's baked `LUMEN_*` paths; anything else surfaces in the Task 4 smoke test and the Task 10 walk); §16 acceptance → Task 10; boot-before-deploy (founder ask 2026-10-01) → Tasks 4A, 8.
 - **Known risk carried into execution:** PgBouncer transaction pooling vs session advisory locks — Task 3 Step 3 decides `transaction` vs `session` from a grep before anything ships.
 ````
