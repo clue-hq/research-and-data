@@ -1,0 +1,41 @@
+# 2026-10-01 — First deployment: spec, plan, implementation (Tasks 1–9)
+
+Branch `deploy/first-deployment` (off `research-streaming` at `e2e629684`). Spec
+`docs/superpowers/specs/2026-10-01-first-deployment-design.md`, plan
+`docs/superpowers/plans/2026-10-01-first-deployment.md`, runbook `docs/deploy/runbook.md`.
+Ledger with every ruling: `.superpowers/sdd/2026-10-01-first-deployment/progress.md` (git-ignored).
+
+## Founder decisions (2026-09-30 → 10-01)
+- Audience internal + first pilots; US East; pre-funding budget (~$60–70/month infra).
+- Web tier + Postgres 16/pgvector + Redis 7 on **Railway**; one stateless **OVHcloud VPS-4**
+  (8 vCores/24 GB, $23.37) for workers; files in **Cloudflare R2**; nightly pg_dump to R2.
+- Pools: chat `agent_turn` 1×10, design `design_job` 1×8, batch 3×10. Workspace fairness/rate limits
+  deferred until after the credit system.
+- **`main` is the deployment branch; `research-streaming` is staging.** Releasing = PR rs → main.
+- CI boots every service before the `production` image tag moves; engine handshake gate (Task 4B).
+- Deploy-window frontend/design-API engine mismatch accepted **only for now**.
+- Measured sizing (lane, 2026-09-30): research slot +25–90 MB, ~0.05 core; website design slot
+  ~1 GB peak (Chromium 524 MB, alive ~18% of the run); worker process 363–390 MB idle.
+- Rejected with reasons: AWS-now, Postgres on the VM, Neon (third provider), Convex (not Postgres),
+  Hetzner US (now $165.99 for 8/32 after its June 2026 price rise).
+
+## Built (commits e431f36..f9ef87d)
+1 `CLUE_FLEET_WORKER_KINDS` · 2 S3 env guard (they already existed — my grep missed the digit in
+S3) · 3 VM compose (ingestion pool bypasses PgBouncer: its controller holds the one session-level
+advisory lock) · 4 backend image (**unbuilt**) · 4A `/healthz` on both APIs (live-verified on the
+lane) · 4B strict wasm preflight + helper-in-image handshake (copy-design-vendor swallowed failures
+too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehearsed for real: lane DB
+137 MB, counts matched) · 7 bootstrap/deploy.sh · 8 deploy-images workflow + boot_smoke.sh · 9 runbook.
+
+## Owed
+- **Task 4 build + `docker/backend/smoke.sh`**, and a first run of `boot_smoke.sh` — Docker Desktop
+  20.10.22 here cannot pull any image (registries answer the host in <1s; daemon pulls hang).
+  Needs a Docker Desktop restart (interrupts other lanes' containers) or a CI run (needs a push).
+- Task 10 with the founder: runbook §1–§5 dashboards, PR rs → main, acceptance walk, restore check.
+- The final review was a self-review (founder rule: no reviewer subagents).
+
+## Found along the way (task chips raised)
+- The fleet orphan sweep deleted 37 committed files under `.artifacts/` (storage root) at 06:53 UTC;
+  restored from git; they return to deletion on the next sweep. Chip: "Move committed reports out of
+  the storage root".
+- The clue-design Python suite takes hours. Chip: "Speed up the clue-design Python test suite".
