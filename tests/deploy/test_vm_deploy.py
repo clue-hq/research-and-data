@@ -67,7 +67,11 @@ def vm(tmp_path: Path) -> dict[str, str]:
 
 def _deploy(env: dict[str, str], **extra: str) -> tuple[int, str, list[str]]:
     result = subprocess.run(
-        ["bash", str(DEPLOY), SHA], env={**env, **extra}, capture_output=True, text=True, check=False
+        ["bash", str(DEPLOY), SHA],
+        env={**env, **extra},
+        capture_output=True,
+        text=True,
+        check=False,
     )
     log = Path(env["CALLS_LOG"])
     calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
@@ -114,7 +118,9 @@ def test_a_database_behind_head_refuses_and_never_restarts(vm: dict[str, str]) -
 
 def test_a_bad_env_file_stops_before_anything_is_pulled(vm: dict[str, str]) -> None:
     env_file = Path(vm["CLUE_ENV_FILE"])
-    env_file.write_text(GOOD_ENV.replace("CLUE_STORAGE_BACKEND=s3", "CLUE_STORAGE_BACKEND=fs"), "utf-8")
+    env_file.write_text(
+        GOOD_ENV.replace("CLUE_STORAGE_BACKEND=s3", "CLUE_STORAGE_BACKEND=fs"), "utf-8"
+    )
     code, out, calls = _deploy(vm)
     assert code != 0
     assert "CLUE_STORAGE_BACKEND" in out
