@@ -49,6 +49,9 @@ ALLOWLIST: dict[Tuple[str, str], str] = {
     # D7 run-event stream: EventSource-style consumers cannot send headers;
     # authenticated by a single-use stream token whose MINT is header-gated.
     ("GET", "/agent/runs/{run_id}/events"): "single-use stream token carries tenancy",
+    # Liveness for Railway's health check, the uptime monitors and the CI boot smoke test
+    # (first deployment spec §9.5): answers before any workspace exists and touches no tenant state.
+    ("GET", "/healthz"): "process liveness, no tenant state",
 }
 
 _PARAM = re.compile(r"{[^}]+}")

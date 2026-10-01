@@ -900,6 +900,12 @@ def create_projections_app(
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Liveness for Railway's health check, the uptime monitors and the boot smoke test
+        (first deployment spec §9.5). Touches no database or Redis; needs no auth or workspace."""
+        return {"status": "ok"}
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
     app.state.project_library_closer = project_library_closer

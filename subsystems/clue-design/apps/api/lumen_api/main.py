@@ -774,6 +774,12 @@ def create_app(
                         await task
 
     app = FastAPI(title="ABM Design Engine Persistence API", lifespan=lifespan)
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Liveness for Railway's health check, the uptime monitors and the boot smoke test
+        (first deployment spec §9.5). Touches no database or Redis; needs no auth or workspace."""
+        return {"status": "ok"}
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins(),
