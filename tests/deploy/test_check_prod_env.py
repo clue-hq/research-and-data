@@ -32,6 +32,12 @@ GOOD_COMMON = {
     "CLUE_STAGE0_PAGE_FETCHER": "scrapling",
     "CLUE_CHAT_REASONING_TRACE_MODE": "",
 }
+GOOD_WORKER = {
+    **GOOD_COMMON,
+    "LUMEN_INGESTION_CONTROLLER_DATABASE_URL": (
+        "postgresql+asyncpg://clue_worker:p@proxy.example:41234/railway?ssl=require"
+    ),
+}
 
 
 def test_a_correct_design_api_env_has_no_problems() -> None:
@@ -40,7 +46,7 @@ def test_a_correct_design_api_env_has_no_problems() -> None:
 
 
 def test_a_correct_worker_env_has_no_problems() -> None:
-    assert check.problems(GOOD_COMMON, "worker") == []
+    assert check.problems(GOOD_WORKER, "worker") == []
 
 
 def test_the_embedded_design_worker_must_be_off_on_railway() -> None:
@@ -77,6 +83,33 @@ def test_missing_secrets_are_caught() -> None:
     )
 
 
+def test_the_worker_env_needs_the_ingestion_controllers_direct_url() -> None:
+    env = {k: v for k, v in GOOD_WORKER.items() if k != "LUMEN_INGESTION_CONTROLLER_DATABASE_URL"}
+    assert any(
+        "LUMEN_INGESTION_CONTROLLER_DATABASE_URL must be set" in p
+        for p in check.problems(env, "worker")
+    )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://clue_worker:p@pgbouncer:6432/railway",
+        "postgresql+asyncpg://clue_worker:p@localhost:5432/railway",
+    ],
+)
+def test_the_controllers_url_must_be_direct_and_remote(url: str) -> None:
+    env = {**GOOD_WORKER, "LUMEN_INGESTION_CONTROLLER_DATABASE_URL": url}
+    assert any(
+        "LUMEN_INGESTION_CONTROLLER_DATABASE_URL" in p for p in check.problems(env, "worker")
+    )
+
+
+def test_the_railway_services_do_not_need_the_controller_url() -> None:
+    assert check.problems({**GOOD_COMMON, "LUMEN_EMBEDDED_FLEET_WORKER": "0"}, "design-api") == []
+    assert check.problems(GOOD_COMMON, "platform-api") == []
+
+
 def test_workers_must_not_pick_their_own_kinds_in_the_shared_env_file() -> None:
     """Pool kinds live in compose.yaml; a kinds line in the shared env file would override them."""
     env = {**GOOD_COMMON, "CLUE_FLEET_WORKER_KINDS": "agent_turn"}
@@ -108,7 +141,7 @@ def test_the_cli_exits_1_and_names_each_problem(tmp_path: Path) -> None:
 
 def test_the_cli_exits_0_on_a_clean_file(tmp_path: Path) -> None:
     env_file = tmp_path / "env"
-    env_file.write_text("".join(f"{k}={v}\n" for k, v in GOOD_COMMON.items()), encoding="utf-8")
+    env_file.write_text("".join(f"{k}={v}\n" for k, v in GOOD_WORKER.items()), encoding="utf-8")
     result = subprocess.run(
         [sys.executable, str(_PATH), "worker", str(env_file)],
         capture_output=True,

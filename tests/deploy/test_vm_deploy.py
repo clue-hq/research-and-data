@@ -29,6 +29,7 @@ echo "git $*" >> "$CALLS_LOG"
 GOOD_ENV = "\n".join(
     [
         "CLUE_DATABASE_URL=postgresql+asyncpg://u:p@proxy.rlwy.net:5432/railway",
+        "LUMEN_INGESTION_CONTROLLER_DATABASE_URL=postgresql+asyncpg://u:p@proxy.rlwy.net:5432/railway",
         "CLUE_MIGRATE_DATABASE_URL=postgresql+asyncpg://owner:p@proxy.rlwy.net:5432/railway",
         "CLUE_REDIS_URL=rediss://default:p@proxy.rlwy.net:6379/0",
         "CLUE_STORAGE_BACKEND=s3",

@@ -66,6 +66,17 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         found.append(
             "LUMEN_EMBEDDED_FLEET_WORKER must be 0 on Railway (design jobs belong to the VM)"
         )
+    if role == "worker":
+        controller = env.get("LUMEN_INGESTION_CONTROLLER_DATABASE_URL", "")
+        if not controller:
+            found.append(
+                "LUMEN_INGESTION_CONTROLLER_DATABASE_URL must be set (the direct Railway proxy "
+                "URL: the ingestion controller's session lock cannot go through PgBouncer)"
+            )
+        elif "pgbouncer" in controller or ":6432" in controller:
+            found.append("LUMEN_INGESTION_CONTROLLER_DATABASE_URL must bypass PgBouncer")
+        elif "localhost" in controller or "127.0.0.1" in controller:
+            found.append("LUMEN_INGESTION_CONTROLLER_DATABASE_URL points at localhost")
     if role == "worker" and env.get("CLUE_FLEET_WORKER_KINDS"):
         found.append(
             "CLUE_FLEET_WORKER_KINDS must not be set in the shared env file "

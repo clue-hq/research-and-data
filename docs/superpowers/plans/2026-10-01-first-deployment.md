@@ -381,15 +381,33 @@ def test_workers_reach_postgres_only_through_pgbouncer() -> None:
 Run: `uv run pytest tests/deploy/test_vm_compose.py -v`
 Expected: FAIL — `FileNotFoundError: …/deploy/vm/compose.yaml`. (If `import yaml` fails, run with `uv run --with pyyaml pytest …`.)
 
-- [ ] **Step 3: Decide PgBouncer's pool mode from the code**
+- [ ] **Step 3: PgBouncer in transaction mode; the one session lock connects directly**
 
-Transaction pooling breaks session-level advisory locks and named prepared statements. Run:
+Transaction pooling breaks session-level advisory locks (and named prepared statements — PgBouncer
+≥1.21 handles those with `MAX_PREPARED_STATEMENTS`). Find the session locks:
 
 ```bash
-grep -rn "pg_advisory_lock\b\|pg_try_advisory_lock\b" platform libs subsystems --include='*.py' | grep -v /tests/ | wc -l
+grep -rn "pg_advisory_lock\b\|pg_try_advisory_lock\b" platform libs subsystems --include='*.py' | grep -v /tests/
 ```
 
-If the count is **0**, use `POOL_MODE=transaction` and `DEFAULT_POOL_SIZE=20`. If it is **non-zero** (session-level locks exist), use `POOL_MODE=session` and `DEFAULT_POOL_SIZE=60`. Put the chosen values into the runbook's `pgbouncer.env` list (Task 9) and state the decision and the count in this task's commit message.
+Found (2026-10-01): exactly one — the ingestion pool's controller
+(`subsystems/clue-design/apps/api/lumen_api/ingestion_pool.py`), which holds it across commits as
+its leadership claim. Everything else (59 sites) is `pg_advisory_xact_lock`. Ruling (founder,
+2026-10-01): **PgBouncer stays `POOL_MODE=transaction`, `DEFAULT_POOL_SIZE=20` for every fleet
+worker and for the ingestion children; only the controller reaches Postgres directly** through
+Railway's TCP proxy — one connection, needs no pooling, and its session lock behaves correctly.
+Never session mode for the whole VM. (The rejected alternative: a second, session-mode PgBouncer
+pool used by the controller alone — more moving parts for one connection.)
+
+Mechanism: a new setting `LUMEN_INGESTION_CONTROLLER_DATABASE_URL` (default empty = use
+`CLUE_DATABASE_URL`), read only by `ingestion_pool.controller_engine()`. The ingestion container's
+`CLUE_DATABASE_URL` is the PgBouncer one (from `x-worker-env`), which the children inherit; the
+env file carries the direct URL under the controller's name. `check_prod_env.py worker` requires it
+and refuses one pointing at PgBouncer or localhost. Tests:
+`subsystems/clue-design/apps/api/tests/test_ingestion_pool_database_url.py` (controller uses the
+override; falls back when unset; children get no rewritten env; the env name loads) and
+`tests/deploy/test_vm_compose.py` / `test_check_prod_env.py`. Document the name with an empty default
+in both `.env.example` files.
 
 - [ ] **Step 4: Write `deploy/vm/compose.yaml`:**
 

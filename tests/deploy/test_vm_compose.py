@@ -68,7 +68,36 @@ def test_worker_pools_reach_postgres_through_pgbouncer() -> None:
         assert "@pgbouncer:6432/" in _env(services[name])["CLUE_DATABASE_URL"], name
 
 
-def test_the_ingestion_pool_bypasses_pgbouncer() -> None:
-    """Its controller holds a SESSION-level advisory lock (lumen_api/ingestion_pool.py), which
-    transaction pooling would release mid-session; it uses the env file's direct database URL."""
-    assert "CLUE_DATABASE_URL" not in _env(_services()["ingestion"])
+def test_the_ingestion_children_reach_postgres_through_pgbouncer() -> None:
+    """The coordinator and analysis children are ordinary fleet workers (transaction-scoped
+    locks only), so the ingestion container's CLUE_DATABASE_URL is the PgBouncer one."""
+    ingestion = _services()["ingestion"]
+    assert "@pgbouncer:6432/" in _env(ingestion)["CLUE_DATABASE_URL"]
+    assert "pgbouncer" in ingestion["depends_on"]
+
+
+def test_only_the_ingestion_controller_gets_a_direct_database_url() -> None:
+    """The controller's SESSION advisory lock (lumen_api/ingestion_pool.py) needs a direct
+    connection; it reads LUMEN_INGESTION_CONTROLLER_DATABASE_URL from the env file. No service may
+    override that name, and no service but ingestion runs the controller."""
+    services = _services()
+    for name, service in services.items():
+        assert "LUMEN_INGESTION_CONTROLLER_DATABASE_URL" not in _env(service), name
+    assert [n for n, s in services.items() if s.get("command") == ["ingestion-pool"]] == [
+        "ingestion"
+    ]
+
+
+def test_the_ingestion_pool_gets_no_docker_socket() -> None:
+    """It runs no sandboxes; fewer containers that can drive the host's Docker."""
+    ingestion = _services()["ingestion"]
+    assert not any("docker.sock" in str(v) for v in ingestion["volumes"])
+    assert "group_add" not in ingestion
+
+
+def test_the_controller_url_is_documented_with_an_empty_default() -> None:
+    """Env parity rule: a LUMEN_* name goes in the root and the design subsystem's .env.example."""
+    root = Path(__file__).resolve().parents[2]
+    for example in (root / ".env.example", root / "subsystems/clue-design/.env.example"):
+        lines = example.read_text(encoding="utf-8").splitlines()
+        assert "LUMEN_INGESTION_CONTROLLER_DATABASE_URL=" in lines, example

@@ -1,7 +1,9 @@
 # Worker VM (OVHcloud VPS-4) — first deployment spec §5.2, §7, §9.4. Holds no customer data.
 # Compose variables come from /srv/clue/compose.env (BACKEND_IMAGE, DOCKER_GID,
-# PGBOUNCER_CLIENT_PASSWORD); the application env from /srv/clue/env (mode 0600), whose
-# CLUE_DATABASE_URL is the DIRECT Railway proxy URL for the clue_worker role.
+# PGBOUNCER_CLIENT_PASSWORD); the application env from /srv/clue/env (mode 0600). Every container
+# here reaches Postgres through PgBouncer (transaction mode) except the ingestion pool's
+# CONTROLLER, which reads the env file's LUMEN_INGESTION_CONTROLLER_DATABASE_URL (the direct
+# Railway proxy URL for the clue_worker role).
 # Run: docker compose --env-file /srv/clue/compose.env -f compose.yaml up -d
 
 x-worker: &worker
@@ -57,9 +59,11 @@ services:
   batch2: *batch
   batch3: *batch
 
-  # The ingestion pool's controller holds a SESSION-level advisory lock
-  # (lumen_api/ingestion_pool.py), so it bypasses PgBouncer and uses the env file's direct
-  # CLUE_DATABASE_URL. It runs no sandboxes, so it gets no Docker socket.
+  # Its children (coordinator + analysis workers) are ordinary fleet workers and go through
+  # PgBouncer like every pool. Only the controller — one connection, holding a SESSION advisory
+  # lock that transaction pooling would strand — connects directly, via the env file's
+  # LUMEN_INGESTION_CONTROLLER_DATABASE_URL (lumen_api/ingestion_pool.py::controller_engine).
+  # Written out rather than built from x-worker so it gets no Docker socket: it runs no sandboxes.
   ingestion:
     image: ${BACKEND_IMAGE}
     command: ["ingestion-pool"]
@@ -67,9 +71,9 @@ services:
     user: "1000:1000"
     restart: unless-stopped
     stop_grace_period: 60s
+    depends_on: [pgbouncer]
     volumes:
       - /srv/clue/workspaces:/srv/clue/workspaces
       - /srv/clue/engine-cache:/srv/clue/engine-cache
     environment:
-      CLUE_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces
-      LUMEN_ASSET_STORE_ROOT: /srv/clue/engine-cache
+      <<: *worker-env

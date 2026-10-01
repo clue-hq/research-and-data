@@ -39,3 +39,17 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   restored from git; they return to deletion on the next sweep. Chip: "Move committed reports out of
   the storage root".
 - The clue-design Python suite takes hours. Chip: "Speed up the clue-design Python test suite".
+
+## 2026-10-01 — PgBouncer split (founder ruling)
+- PgBouncer stays `POOL_MODE=transaction` for every fleet pool AND the ingestion children; only the
+  ingestion **controller** (one connection, session advisory lock `CONTROLLER_LOCK`) connects
+  directly, via new `LUMEN_INGESTION_CONTROLLER_DATABASE_URL` (empty default = CLUE_DATABASE_URL),
+  read only by `lumen_api/ingestion_pool.py::controller_engine()`. Never session mode for the VM.
+- compose: ingestion now uses `x-worker-env` (PgBouncer CLUE_DATABASE_URL) + `depends_on: pgbouncer`,
+  still no Docker socket. `check_prod_env.py worker` requires the controller URL, refuses PgBouncer/localhost.
+- Tests: design `apps/api/tests/test_ingestion_pool_database_url.py` (4), deploy suites 78 pass.
+- Lane DB on 55040 was DOWN this session (design healthz test fails on connect — environmental).
+- Pre-existing ruff I001/SIM105 in ingestion_pool.py left alone (not this change).
+- Still open from the `.artifacts` discussion: backups share `clue-prod` with the orphan sweep
+  (would be deleted within ~24h) → proposed separate `clue-backups` bucket; `CLUE_ARV2_RAW_ROOT`
+  relative default is unwritable in the image (uid 1000, /app root-owned). Awaiting founder go-ahead.

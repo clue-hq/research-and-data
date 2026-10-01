@@ -121,7 +121,10 @@ file is restored, and work resumes — leases and retries already survive a work
 - **Railway services** reach Postgres and Redis over Railway's private network.
 - **The VM** reaches them through Railway's **TCP proxy**: TLS required, long random passwords, a
   least-privilege database role for the workers. PgBouncer (transaction pooling) on the VM gives the
-  ~50 worker slots a small, fixed set of real connections.
+  ~50 worker slots and the ingestion workers a small, fixed set of real connections. The one
+  process that holds a session-level lock — the ingestion pool's controller, a single connection —
+  bypasses it and connects directly (`LUMEN_INGESTION_CONTROLLER_DATABASE_URL`; founder ruling
+  2026-10-01: never session mode for the whole VM).
 - The public proxy endpoint is the accepted exposure. If it needs closing later, a private tunnel
   (Tailscale or WireGuard) replaces it without app changes.
 - `max_connections` on Postgres is set to cover the platform API, design API, page origin and

@@ -70,9 +70,14 @@ Releasing = merging a pull request from `research-streaming` into `main`.
 3. As `clue`: `docker login ghcr.io` with the read-only token.
 4. Fill `/srv/clue/env`: every `.env.example` key with production values, plus:
    - `CLUE_DATABASE_URL` = the **direct** Railway TCP-proxy URL for `clue_worker`
-     (`postgresql+asyncpg://clue_worker:<pw>@<proxy-host>:<port>/railway?ssl=require`). The worker
-     pools override it to go through PgBouncer; the **ingestion pool uses it directly**, because its
-     controller holds a session-level advisory lock that transaction pooling would break.
+     (`postgresql+asyncpg://clue_worker:<pw>@<proxy-host>:<port>/railway?ssl=require`). Every
+     container in `compose.yaml` overrides it with the PgBouncer URL; it is only what a one-off
+     `docker run --env-file /srv/clue/env …` shell sees.
+   - `LUMEN_INGESTION_CONTROLLER_DATABASE_URL` = the **same direct URL**. Only the ingestion pool's
+     controller reads it — one connection, holding a session-level advisory lock that PgBouncer's
+     transaction pooling would break. Its coordinator and analysis children, like every pool, go
+     through PgBouncer. `check_prod_env.py` refuses the file without it, or with it pointing at
+     PgBouncer.
    - `CLUE_MIGRATE_DATABASE_URL` = the direct proxy URL for the **owner** role (used only to check
      the schema is at head before a deploy).
    - `CLUE_REDIS_URL` = the Railway Redis proxy URL.
@@ -92,9 +97,11 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    LISTEN_PORT=6432
    ```
    Put the same `clue_worker` password in `/srv/clue/compose.env` as `PGBOUNCER_CLIENT_PASSWORD`.
-   (Transaction pooling is safe for the worker pools: all 59 of their advisory locks are
-   transaction-scoped. If anything misbehaves under load, `POOL_MODE=session` with
-   `DEFAULT_POOL_SIZE=60` is the no-code fallback.)
+   (Transaction pooling is safe for everything behind it: all 59 of the workers' advisory locks
+   are transaction-scoped; the one session-level lock, the ingestion controller's, bypasses
+   PgBouncer. If something else turns out to need session state, give that process its own
+   direct URL the same way, or a second session-mode PgBouncer pool for it alone — never
+   `POOL_MODE=session` for the whole VM.)
 6. Fill `/srv/clue/backup.env`:
    ```
    PGURL=postgresql://<owner>:<pw>@<proxy-host>:<port>/railway?sslmode=require

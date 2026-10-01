@@ -153,12 +153,19 @@ async def supervise(conn, processes, stopped, *, now=time.monotonic):
             pass
 
 
+def controller_engine():
+    """The controller's engine: its own direct URL when one is configured (the session lock
+    must not pass through a transaction pooler), else CLUE_DATABASE_URL. Children never call
+    this; they keep the container's CLUE_DATABASE_URL."""
+    return create_engine(settings.lumen_ingestion_controller_database_url or None)
+
+
 async def controller():
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stopped.set)
-    engine = create_engine()
+    engine = controller_engine()
     processes = LocalProcesses()
     try:
         async with engine.connect() as conn:
