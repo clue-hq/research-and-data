@@ -31,3 +31,9 @@
 docs/specs/**/*.mov
 docs/specs/**/*.png
 subsystems/clue-design/apps/editor-openai-demo
+
+# Session/agent state is never part of any image (backend image, first deployment 2026-10-01).
+.claude
+_memory
+.context
+.artifacts

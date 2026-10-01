@@ -209,6 +209,12 @@ class Settings(BaseSettings):
     # queue — this knob is per process. 1 is the single loop the fleet shipped with.
     # Env: ``CLUE_FLEET_WORKER_CONCURRENCY``.
     fleet_worker_concurrency: int = Field(default=1, ge=1)
+    # Which task kinds THIS worker process claims (first deployment, 2026-10-01): a comma-separated
+    # list of ``FleetTaskKind`` values, blank = every kind (the behaviour before this setting). It
+    # is how one VM runs separate pools — chat (``agent_turn``), design (``design_job``) and batch
+    # — so a long research job can never hold the slot a chat turn needs.
+    # Env: ``CLUE_FLEET_WORKER_KINDS``.
+    fleet_worker_kinds: str = ""
     # Per-run driver-lease TTL: a killed driver's run is re-drivable after this long. Must be
     # comfortably larger than the heartbeat interval. Env: ``CLUE_FLEET_LEASE_TTL_S``.
     fleet_lease_ttl_s: float = 30.0
@@ -379,9 +385,11 @@ class Settings(BaseSettings):
     # Above this duration a media item is not eligible for the cheap short-model pass.
     # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
     arv2_media_short_max_seconds: int = 600
-    # Where the file raw sink and the JSONL ledger write in development and tests. Production
-    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``
-    # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
+    # Where the file raw sink and the JSONL ledger write in development and tests (production
+    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``),
+    # and — in every environment — where research downloads podcast audio, deleted once
+    # transcribed. Relative paths resolve against the working directory; the backend image sets
+    # an absolute, writable one. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
 
     # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------

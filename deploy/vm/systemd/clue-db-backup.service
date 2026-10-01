@@ -1,0 +1,8 @@
+[Unit]
+Description=Clue nightly Postgres dump to R2 (first deployment spec §8)
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/clue/app/deploy/vm/backup_db.sh

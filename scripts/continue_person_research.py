@@ -10,7 +10,9 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import shutil
+import subprocess
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,9 +37,7 @@ from clue_api.arv2.gemini_media_client import (
     MediaBudget,
     SpeakerContext,
 )
-from clue_api.arv2.media_acquisition import duration_of
 from clue_api.arv2.media_resolution import PublicMediaTransport, fetch, public_url, resolve
-from clue_api.arv2.quality_source_navigation import source_navigation
 from clue_api.arv2.quality_views import _passage
 from clue_api.arv2.sinks import FileRawSink, JsonlLedger
 from clue_api.arv2.transport import HttpxTransport
@@ -65,6 +65,33 @@ SCHEMAS = {
     "read_media": ReadMedia,
 }
 EXA_EXTRAS = {"links": 10, "imageLinks": 3}
+
+
+def source_navigation(rows: list[dict]) -> dict:
+    """Navigation over THIS trial's own files: ``EvidenceFiles`` mounts each source at
+    ``/evidence/<source_id>/<page>.json`` and the index at ``/evidence/index/<offset>.json``.
+
+    The app's ``quality_source_navigation.source_navigation`` emitted exactly this until
+    2026-09-25 (bedafc72d), when production evidence moved to database-served
+    ``/evidence/<revision>-<slug>.json`` handles that no file here would answer."""
+    return {
+        "evidence_index_path": "/evidence/index/0.json",
+        "sources": [
+            {
+                "source_id": row["source_id"],
+                "path": f"/evidence/{row['source_id']}/0.json",
+                "kind": row["kind"],
+                "url": row.get("source_url"),
+                "origin_locator": row["origin_locator"],
+                "title": row.get("metadata", {}).get("title"),
+                "content_kind": row.get("metadata", {}).get("content_kind"),
+                "published_at": row.get("metadata", {}).get("published_at"),
+            }
+            for row in rows
+            if row.get("available")
+        ],
+        "unavailable_source_count": sum(not row.get("available") for row in rows),
+    }
 
 
 class EvidenceFiles:
@@ -141,6 +168,34 @@ class EvidenceFiles:
                     else None,
                 },
             )
+
+
+def duration_of(path: Path) -> int | None:
+    """A downloaded recording's length in whole seconds, via ffprobe; ``None`` when unreadable.
+
+    The app dropped this when its recordings moved to Deepgram (fa2403255). This trial still
+    uploads recordings to Gemini, which prices by media seconds, so it keeps its own copy."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=True,
+        )
+        duration = float(json.loads(result.stdout)["format"]["duration"])
+        return math.ceil(duration) if math.isfinite(duration) and duration > 0 else None
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return None
 
 
 def prepare(context: Path, response: Path, out: Path):

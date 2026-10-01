@@ -22,6 +22,7 @@ decides nothing about a value it is handed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
@@ -1730,6 +1731,13 @@ class _MediaItem:
     costs: tuple[CallCost | None, ...]
 
 
+def _discard_audio(path: Path) -> None:
+    """Delete a downloaded episode, then its job folder if that left it empty."""
+    path.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        path.parent.rmdir()
+
+
 def _podcast_hop(
     runtime: ToolRuntime, args: ReadMediaFeedsArgs, feed_url: str
 ) -> Callable[[ProviderCaller], _MediaItem]:
@@ -1765,52 +1773,62 @@ def _podcast_hop(
             caller,
             max_bytes=max_bytes,
         )
-        transcribable = transcription_input_from_enclosure(
-            audio, display_name=_safe_name(f"{args.person_name}-{episode.title}")
-        )
-        named = args.person_name.lower() in f"{episode.title} {episode.description or ''}".lower()
-        context = SpeakerContext(
-            person_name=args.person_name,
-            person_role=args.person_role,
-            organisation=scope.account_name,
-            named_in_metadata=named,
-        )
-        media = runtime.clients.media(caller, runtime.ledger_of(caller))
-        transcript = (
-            media.transcribe_short(transcribable, context=context)
-            if transcribable.duration_s <= runtime.settings.arv2_media_short_max_seconds
-            else media.transcribe_long(transcribable, context=context)
-        )
-        verdict = verify_speaker(transcript, context)
-        costs: list[CallCost | None] = [podcast.cost, audio.cost, transcript.cost]
-        costs.extend(transcript.upload_costs)
-        quotes: tuple[dict[str, Any], ...] = ()
-        if verdict.verified:
-            mined = media.mine_quotes(transcript.text, context=context, n=6, speaker_verified=True)
-            costs.append(mined.cost)
-            quotes = tuple(
-                {
-                    "text": quote.text,
-                    "timestamp": quote.ts_s,
-                    "why": quote.why,
-                    "verbatim": quote.verdict,
-                    "usable": quote.usable,
-                }
-                for quote in mined.quotes
+        # The audio is only transcription's input — the transcript and quotes are what is kept —
+        # so it never outlives the hop, whatever happens in between (a fleet worker's disk
+        # would otherwise gain an episode per lookup, forever).
+        try:
+            transcribable = transcription_input_from_enclosure(
+                audio, display_name=_safe_name(f"{args.person_name}-{episode.title}")
             )
-        return _MediaItem(
-            kind="podcast",
-            url=episode.enclosure_url or episode.link or feed_url,
-            title=episode.title,
-            duration_s=transcribable.duration_s,
-            transcript_model=transcript.model,
-            transcript_text=transcript.text,
-            speaker_verified=verdict.verified,
-            speaker_evidence=verdict.evidence,
-            quotes=quotes,
-            words=None,
-            costs=tuple(costs),
-        )
+            named = (
+                args.person_name.lower() in f"{episode.title} {episode.description or ''}".lower()
+            )
+            context = SpeakerContext(
+                person_name=args.person_name,
+                person_role=args.person_role,
+                organisation=scope.account_name,
+                named_in_metadata=named,
+            )
+            media = runtime.clients.media(caller, runtime.ledger_of(caller))
+            transcript = (
+                media.transcribe_short(transcribable, context=context)
+                if transcribable.duration_s <= runtime.settings.arv2_media_short_max_seconds
+                else media.transcribe_long(transcribable, context=context)
+            )
+            verdict = verify_speaker(transcript, context)
+            costs: list[CallCost | None] = [podcast.cost, audio.cost, transcript.cost]
+            costs.extend(transcript.upload_costs)
+            quotes: tuple[dict[str, Any], ...] = ()
+            if verdict.verified:
+                mined = media.mine_quotes(
+                    transcript.text, context=context, n=6, speaker_verified=True
+                )
+                costs.append(mined.cost)
+                quotes = tuple(
+                    {
+                        "text": quote.text,
+                        "timestamp": quote.ts_s,
+                        "why": quote.why,
+                        "verbatim": quote.verdict,
+                        "usable": quote.usable,
+                    }
+                    for quote in mined.quotes
+                )
+            return _MediaItem(
+                kind="podcast",
+                url=episode.enclosure_url or episode.link or feed_url,
+                title=episode.title,
+                duration_s=transcribable.duration_s,
+                transcript_model=transcript.model,
+                transcript_text=transcript.text,
+                speaker_verified=verdict.verified,
+                speaker_evidence=verdict.evidence,
+                quotes=quotes,
+                words=None,
+                costs=tuple(costs),
+            )
+        finally:
+            _discard_audio(audio.path)
 
     return hop
 

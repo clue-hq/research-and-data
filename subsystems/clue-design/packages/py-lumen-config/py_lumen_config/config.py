@@ -225,6 +225,12 @@ class Settings(BaseSettings):
     lumen_ingestion_worker_concurrency: int = Field(default=10, ge=1, le=32)
     lumen_ingestion_pool_idle_seconds: int = Field(default=60, ge=1)
     lumen_ingestion_pool_poll_seconds: float = Field(default=2, gt=0)
+    # The ingestion pool CONTROLLER's own database address. Empty (the default) → it uses
+    # CLUE_DATABASE_URL like everything else. The worker VM sets it to a direct Postgres URL:
+    # the controller's leadership is a session advisory lock, which PgBouncer's transaction
+    # pooling would strand on a borrowed server connection. Its children never read it, so they
+    # stay on the container's PgBouncer CLUE_DATABASE_URL (first deployment, Task 3 Step 3).
+    lumen_ingestion_controller_database_url: str = ""
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's

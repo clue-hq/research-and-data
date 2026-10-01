@@ -1522,6 +1522,77 @@ def test_read_media_feeds_transcribes_a_short_episode_and_writes_the_index_claim
     assert writer.drafts[0].value_json[0]["speaker_verified"] is True
 
 
+def _download_for_real(written: list[Path]) -> Any:
+    """A ``download_enclosure`` stand-in that writes the file where asked, as the real one does."""
+
+    def download(episode: Any, dest: Path, caller: Any, *, max_bytes: int) -> AudioFile:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"\x00" * 1024)
+        written.append(dest)
+        return AudioFile(
+            path=dest,
+            bytes=1024,
+            sha256="a" * 64,
+            duration_s=300,
+            content_type="audio/mpeg",
+            cost=_cost(provider="rss", operation="enclosure"),
+        )
+
+    return download
+
+
+def test_read_media_feeds_downloads_under_the_raw_root_and_deletes_the_audio_once_used(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The audio is a temporary input to transcription: the transcript and quotes are what is
+    kept. Left behind, every podcast lookup would add an episode to the worker's disk forever."""
+    root = tmp_path / "arv2-raw"
+    runtime, _, _, _ = _runtime(settings=Settings(arv2_raw_root=str(root)))
+    _stub_podcast(monkeypatch, tmp_path)
+    written: list[Path] = []
+    monkeypatch.setattr(tools, "download_enclosure", _download_for_real(written))
+
+    found = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert found["speaker_verified"] is True
+    assert len(written) == 1
+    assert written[0].parent == root / "media" / str(SCOPE.job_id)
+    assert not written[0].exists(), "the downloaded audio must not outlive the hop"
+    assert not written[0].parent.exists(), "the job's empty media folder goes with it"
+
+
+def test_read_media_feeds_deletes_the_audio_when_transcription_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "arv2-raw"
+    runtime, clients, _, _ = _runtime(settings=Settings(arv2_raw_root=str(root)))
+    _stub_podcast(monkeypatch, tmp_path)
+    written: list[Path] = []
+    monkeypatch.setattr(tools, "download_enclosure", _download_for_real(written))
+
+    def _fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("transcription provider fell over")
+
+    monkeypatch.setattr(clients.media_client, "transcribe_short", _fails)
+
+    failed = _call(
+        runtime,
+        "read_media_feeds",
+        person_name="Nick Fisher",
+        feed_url="https://pod.test/feed",
+        episode_number=42,
+    )
+
+    assert "speaker_verified" not in failed, failed
+    assert len(written) == 1 and not written[0].exists()
+
+
 def test_read_media_feeds_refuses_episode_not_found(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
