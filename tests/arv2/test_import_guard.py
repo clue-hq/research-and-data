@@ -59,6 +59,13 @@ ALLOWED_INTERNAL_PREFIXES: tuple[str, ...] = (
     # Shared observability callback and document-change notification seams (no research owner).
     "clue_api.langfuse_callbacks",
     "clue_api.project_library_refresh",
+    # The lane's own governed research-artifact sink (it imports clue_api.arv2 and sits on the
+    # platform's durable agent artifact store) — dossiers, briefs, model inputs/outputs since
+    # 2026-09-24. No research orchestration behind it.
+    "clue_api.quality_research_artifacts",
+    # Platform execution journal + run-event writer (C5.1 composition over clue_execution, which is
+    # already allowed); account reconciliation emits its run events through it since 2026-09-28.
+    "clue_api.execution_wiring",
 )
 
 #: Provider SDKs. Every ARV2 provider call goes over plain HTTP through the wrapper instead.

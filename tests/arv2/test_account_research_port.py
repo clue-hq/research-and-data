@@ -21,7 +21,10 @@ def test_default_and_new_pins_select_discovery_account_without_changing_person_o
     assert Settings(_env_file=None).arv2_research_catalog_version == "v4"
     bundle = load_quality_resources("arv2-account")
     manifest = json.loads(bundle.profile.body)
-    assert manifest["recipe_version"] == 22
+    # New runs use the newest recipe: every recipe file has been added in the commit that
+    # promoted it, so a literal number here only goes stale on the next promotion.
+    newest = max(int(path.stem.removeprefix("recipe-v")) for path in ROOT.glob("recipe-v*.json"))
+    assert manifest["recipe_version"] == newest
     assert json.loads((ROOT / "recipe-v12.json").read_text())["version"] == 12
     for revision in range(2, 14):
         old = load_quality_resources("arv2-account", version=revision)
