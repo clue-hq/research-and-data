@@ -209,6 +209,12 @@ class Settings(BaseSettings):
     # queue — this knob is per process. 1 is the single loop the fleet shipped with.
     # Env: ``CLUE_FLEET_WORKER_CONCURRENCY``.
     fleet_worker_concurrency: int = Field(default=1, ge=1)
+    # Which task kinds THIS worker process claims (first deployment, 2026-10-01): a comma-separated
+    # list of ``FleetTaskKind`` values, blank = every kind (the behaviour before this setting). It
+    # is how one VM runs separate pools — chat (``agent_turn``), design (``design_job``) and batch
+    # — so a long research job can never hold the slot a chat turn needs.
+    # Env: ``CLUE_FLEET_WORKER_KINDS``.
+    fleet_worker_kinds: str = ""
     # Per-run driver-lease TTL: a killed driver's run is re-drivable after this long. Must be
     # comfortably larger than the heartbeat interval. Env: ``CLUE_FLEET_LEASE_TTL_S``.
     fleet_lease_ttl_s: float = 30.0

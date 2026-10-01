@@ -362,6 +362,24 @@ class _SerializedHandler:
             return await self._inner.handle(context)
 
 
+def selected_worker_kinds(raw: str) -> frozenset[FleetTaskKind] | None:
+    """Parse ``CLUE_FLEET_WORKER_KINDS``: ``None`` (blank) means every kind.
+
+    An unknown name fails loudly — a typo must not start a worker that silently claims nothing.
+    """
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    if not names:
+        return None
+    valid = {kind.value: kind for kind in FleetTaskKind}
+    unknown = [name for name in names if name not in valid]
+    if unknown:
+        raise ValueError(
+            f"CLUE_FLEET_WORKER_KINDS names unknown task kinds {unknown}; "
+            f"valid kinds are {sorted(valid)}"
+        )
+    return frozenset(valid[name] for name in names)
+
+
 def build_multi_work_worker(
     settings: Settings,
     *,
@@ -417,6 +435,9 @@ def build_multi_work_worker(
     ``handle`` is not safe under concurrent calls on ONE instance is wrapped in
     :class:`_SerializedHandler` at the point it joins the worker, so raising the knob can never
     make a handler less correct — only the work that handler gates less parallel.
+
+    ``CLUE_FLEET_WORKER_KINDS`` (first deployment) narrows the registered handlers to the named
+    kinds; blank keeps every kind.
     """
     if (
         entity_research_handler is not None
@@ -492,6 +513,14 @@ def build_multi_work_worker(
         handlers.append(arv2_discovery_handler)
     if arv2_display_page_handler is not None:
         handlers.append(arv2_display_page_handler)
+    selected = selected_worker_kinds(settings.fleet_worker_kinds)
+    if selected is not None:
+        handlers = [handler for handler in handlers if handler.kind in selected]
+        if not handlers:
+            raise ValueError(
+                f"CLUE_FLEET_WORKER_KINDS={settings.fleet_worker_kinds!r} leaves this worker with "
+                "no handler: none of the selected kinds is composed in this deployment"
+            )
     return LeasedWorkWorker(
         handlers=tuple(handlers),
         queue=queue if queue is not None else DbWorkQueue(),

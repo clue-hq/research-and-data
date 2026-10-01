@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -34,6 +35,7 @@ from clue_api.fleet_wiring import (
     build_multi_work_worker,
     enqueue_run_drive,
     register_boot_handlers,
+    selected_worker_kinds,
     tier_priority_from_rubric,
 )
 from clue_config import Secrets, Settings
@@ -889,3 +891,62 @@ def test_design_reaper_started_when_enabled_and_disabled_at_zero_interval() -> N
             await task
 
     run_async(scenario())
+
+
+# --- CLUE_FLEET_WORKER_KINDS: one VM, separate pools (first deployment, 2026-10-01) ---
+
+
+def test_blank_worker_kinds_means_every_kind() -> None:
+    assert selected_worker_kinds("") is None
+    assert selected_worker_kinds("  ") is None
+    assert Settings.model_fields["fleet_worker_kinds"].default == ""
+
+
+def test_worker_kinds_parse_comma_separated_names() -> None:
+    assert selected_worker_kinds("agent_turn, design_job") == frozenset(
+        {FleetTaskKind.AGENT_TURN, FleetTaskKind.DESIGN_JOB}
+    )
+
+
+def test_an_unknown_worker_kind_fails_at_startup() -> None:
+    with pytest.raises(ValueError, match="agent_turns"):
+        selected_worker_kinds("agent_turns")
+
+
+def test_a_worker_limited_to_one_kind_registers_only_that_kind() -> None:
+    worker = build_multi_work_worker(
+        _settings(fleet_worker_kinds="agent_turn", fleet_worker_concurrency=10),
+        driver=build_fleet_run_driver(),
+        graph_handler=_CompositionHandler(FleetTaskKind.EXECUTE_GRAPH),
+        agent_turn_handler=_CompositionHandler(FleetTaskKind.AGENT_TURN),
+        onboarding_handler=_CompositionHandler(FleetTaskKind.ONBOARDING_RUN),
+    )
+    assert set(worker._handlers) == {FleetTaskKind.AGENT_TURN}
+    assert worker.concurrency == 10
+
+
+def test_a_selection_that_leaves_no_handler_fails_at_startup() -> None:
+    # design_job is selected but this deployment composed no design handler.
+    with pytest.raises(ValueError, match="no handler"):
+        build_multi_work_worker(
+            _settings(fleet_worker_kinds="design_job"),
+            driver=build_fleet_run_driver(),
+            graph_handler=_CompositionHandler(FleetTaskKind.EXECUTE_GRAPH),
+        )
+
+
+def test_every_kind_is_registered_when_the_selection_is_blank() -> None:
+    worker = build_multi_work_worker(
+        _settings(),
+        driver=build_fleet_run_driver(),
+        graph_handler=_CompositionHandler(FleetTaskKind.EXECUTE_GRAPH),
+        agent_turn_handler=_CompositionHandler(FleetTaskKind.AGENT_TURN),
+    )
+    assert {FleetTaskKind.DRIVE_RUN, FleetTaskKind.EXECUTE_GRAPH, FleetTaskKind.AGENT_TURN} <= set(
+        worker._handlers
+    )
+
+
+def test_worker_kinds_env_name_is_documented_blank() -> None:
+    text = (Path(__file__).resolve().parents[2] / ".env.example").read_text(encoding="utf-8")
+    assert re.search(r"^CLUE_FLEET_WORKER_KINDS=$", text, re.MULTILINE)
