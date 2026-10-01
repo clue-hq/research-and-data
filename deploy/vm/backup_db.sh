@@ -4,6 +4,22 @@
 set -Eeuo pipefail
 # shellcheck source=/dev/null
 source "${CLUE_BACKUP_ENV:-/srv/clue/backup.env}"
+
+# The backups must live apart from the app's files: the app's fleet workers delete every key in
+# their bucket that has no `artifact` row (clue_storage.sweep_orphan_blobs), and a shared key would
+# let an app bug or a leaked app key delete the backups. Checked first, so a misconfigured env
+# file costs nothing and — with no Sentry check-in — raises the missed-backup alert.
+APP_ENV="${CLUE_ENV_FILE:-/srv/clue/env}"
+app_setting() { sed -nE "s/^$1=[\"']?([^\"']*)[\"']?\$/\1/p" "$APP_ENV" | tail -1; }
+[ -r "$APP_ENV" ] || { echo "backup FAILED: cannot read the app env $APP_ENV to check separation" >&2; exit 1; }
+if [ "$R2_BUCKET" = "$(app_setting CLUE_STORAGE_S3_BUCKET)" ]; then
+  echo "backup FAILED: R2_BUCKET must not share the app's bucket ($R2_BUCKET) — its orphan sweep deletes dumps" >&2
+  exit 1
+fi
+if [ "$AWS_ACCESS_KEY_ID" = "$(app_setting CLUE_STORAGE_S3_ACCESS_KEY_ID)" ]; then
+  echo "backup FAILED: the backup key must not share the app's R2 key — give clue-backups its own token" >&2
+  exit 1
+fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="clue-$STAMP.dump"
 WORK="$(mktemp -d)"

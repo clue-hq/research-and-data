@@ -1072,6 +1072,7 @@ git commit -m "Validate a production env file against the lane defaults it must 
 
 **Interfaces:**
 - Consumes: `/srv/clue/backup.env` on the VM with `PGURL` (direct Railway TCP-proxy URL, `sslmode=require`), `R2_ENDPOINT`, `R2_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `SENTRY_CRON_URL_BACKUP`, `SENTRY_CRON_URL_WATCHDOG`.
+- Ruling (2026-10-01, Problem A): `R2_BUCKET` is a **separate bucket** (`clue-backups`) with its **own token** — the app's orphan sweep (`clue_storage.sweep_orphan_blobs`, every fleet worker, 6-hourly) deletes every object in the app bucket without an `artifact` row, so a dump there would be gone within a day. `backup_db.sh` reads the app env (`CLUE_ENV_FILE`, default `/srv/clue/env`) first and refuses, before any dump and without a Sentry check-in, if the bucket or key matches the app's or the app env is unreadable. Tests: `tests/deploy/test_vm_scripts.py::test_backups_refuse_*`.
 - Produces: nightly objects `s3://$R2_BUCKET/db-backups/clue-YYYYMMDDTHHMMSSZ.dump` (custom format), 14-day retention.
 
 - [ ] **Step 1: Write `deploy/vm/backup_db.sh`:**
@@ -1508,7 +1509,7 @@ This is the founder-facing checklist for every step that happens in a dashboard 
 Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md`. Order matters.
 
 ## 1. Cloudflare [FOUNDER]
-1. R2 → create bucket `clue-prod` (location hint: Eastern North America).
+1. R2 → create bucket `clue-prod` (location hint: Eastern North America). *(Superseded 2026-10-01: also `clue-backups` with its own token — see Task 6's ruling and `docs/deploy/runbook.md` §1.)*
 2. R2 → Manage API tokens → create a token with Object Read & Write on `clue-prod`. Record the
    access key id, secret, and the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`.
 3. Pages delivery: follow `docs/specs/pages-hosting-runbook.md` (Worker, edge secret, Cloudflare

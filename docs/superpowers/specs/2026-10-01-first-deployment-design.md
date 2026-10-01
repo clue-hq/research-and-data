@@ -133,7 +133,10 @@ file is restored, and work resumes — leases and retries already survive a work
 ## 8. Backups and restore
 
 1. Railway's scheduled volume backups on the Postgres service.
-2. A **nightly `pg_dump`** from the VM, uploaded to a separate R2 bucket prefix, 14-day retention.
+2. A **nightly `pg_dump`** from the VM, uploaded to a **separate R2 bucket** (`clue-backups`) with
+   **its own token**, 14-day retention. Not a prefix of the app's bucket: the app's orphan sweep
+   deletes every object there without an `artifact` row, and a shared token would let the app
+   delete its own backups. `backup_db.sh` refuses to run if bucket or key match the app's.
 3. **A restore rehearsal before the first pilot:** restore last night's dump into a scratch database,
    run `alembic current`, check row counts on the main tables, sign in against it.
 4. Accepted risk: up to ~24 hours of data. Revisit (Neon or RDS point-in-time recovery, or WAL

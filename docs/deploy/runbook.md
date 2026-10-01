@@ -9,9 +9,17 @@ Branches: `research-streaming` is staging (internal testing); **`main` is what p
 Releasing = merging a pull request from `research-streaming` into `main`.
 
 ## 1. Cloudflare [FOUNDER]
-1. R2 → create bucket `clue-prod` (location hint: Eastern North America).
-2. R2 → Manage API tokens → a token with **Object Read & Write** on `clue-prod`. Record the access
-   key id, the secret, and the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`.
+1. R2 → create two buckets (location hint: Eastern North America): `clue-prod` for the app's files
+   and `clue-backups` for the nightly database dumps.
+2. R2 → Manage API tokens → **two** tokens, each **Object Read & Write** on **one** bucket:
+   - the app token on `clue-prod` only (Railway services and the VM's `/srv/clue/env`);
+   - the backup token on `clue-backups` only (the VM's `/srv/clue/backup.env`).
+   Record each access key id and secret, and the S3 endpoint
+   `https://<account-id>.r2.cloudflarestorage.com`.
+   **Why two:** the app's fleet workers delete every object in `clue-prod` that has no `artifact`
+   row (the orphan sweep, every 6 hours), which would remove each dump within a day; and a token
+   shared with the app would let an app bug or a leaked app key delete the backups.
+   `backup_db.sh` refuses to run if its bucket or key matches the app's.
 3. Pages delivery: follow `docs/specs/pages-hosting-runbook.md` (Worker, edge secret, Cloudflare for
    SaaS on `pages.cluehq.ai`). Record `CLUE_PAGES_EDGE_SECRET`.
 
@@ -112,9 +120,9 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    ```
    PGURL=postgresql://<owner>:<pw>@<proxy-host>:<port>/railway?sslmode=require
    R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-   R2_BUCKET=clue-prod
-   AWS_ACCESS_KEY_ID=<r2 key id>
-   AWS_SECRET_ACCESS_KEY=<r2 secret>
+   R2_BUCKET=clue-backups
+   AWS_ACCESS_KEY_ID=<backup token key id — NOT the app token>
+   AWS_SECRET_ACCESS_KEY=<backup token secret>
    SENTRY_CRON_URL_BACKUP=<sentry cron check-in url>
    SENTRY_CRON_URL_WATCHDOG=<sentry cron check-in url>
    ```

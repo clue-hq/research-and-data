@@ -70,3 +70,19 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
 - Same class, not fixed: root `.env.example` LUMEN_FONT_LIBRARY_MANIFEST_PATH placeholder
   (`/absolute/path/to/your/checkout/...`) would override the image's correct value if copied.
 - Smoke/Docker build still unrun locally (Docker can't pull) — first proof is the CI image run.
+
+## 2026-10-01 — Problem A fixed: backups in their own bucket; image-owned paths; stale tests
+- Problem A: audited every storage writer (core app, research, design `clue_design.storage`,
+  pages) — all record an `artifact` row before `put`; the only object put in the bucket from
+  outside the app was the nightly dump, which `sweep_orphan_blobs` (every fleet worker, 6-hourly,
+  24h grace) would delete. Fix: bucket `clue-backups` + its own token; `backup_db.sh` reads the app
+  env (`CLUE_ENV_FILE`, default /srv/clue/env) and refuses (before pg_dump, no Sentry check-in) if
+  the bucket or key matches the app's or the app env is unreadable. Runbook §1/§4.6, spec §8, plan
+  Task 6 ruling updated. (Unused `StorageAgentArtifactSink` writes without a row — not wired.)
+- Image-owned paths: check_prod_env refuses ANY line (even empty) for LUMEN_CORE_HELPER,
+  LUMEN_FONT_LIBRARY_MANIFEST_PATH, CLUE_ARV2_RAW_ROOT on every role (blank helper = `cargo run`,
+  absent in the image → every design render fails). Both .env.example files mark the lines.
+- Stale tests reconciled (0215602d6): trial script keeps its own ffprobe `duration_of` and its own
+  file-layout `source_navigation`; recipe pin → "default = newest recipe file"; import guard
+  allowlists `clue_api.quality_research_artifacts` + `clue_api.execution_wiring`. arv2+deploy:
+  1222 pass, 0 fail (406 DB skips — lane DB on 55040 down).
