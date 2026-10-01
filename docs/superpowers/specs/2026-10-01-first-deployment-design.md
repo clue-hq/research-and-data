@@ -41,7 +41,7 @@ separate and larger (§12).
 | Postgres | **Railway Postgres 16 + pgvector** | One platform, cheapest; the VM stays stateless. Accepted trade-off: no point-in-time recovery — worst case a day of data (§8) |
 | Redis | **Railway Redis 7** | The platform API uses Redis too (`clue_api/locks.py`), so it must be reachable from Railway; it holds only short-lived locks and counters |
 | Files | **Cloudflare R2** via the existing S3 backend (`libs/clue-storage/clue_storage/s3.py`) | Provider-independent; stays put through any future provider move; no egress fees |
-| Shipping | A dedicated **`production` branch** that Railway and the VM deploy from | Shipping becomes a deliberate fast-forward from `research-streaming` |
+| Shipping | **`main` is the deployment branch**; `research-streaming` is staging | Releasing = merging a pull request from `research-streaming` into `main` (founder ruling 2026-10-01); `research-streaming` stays the internal testing branch |
 | Later move to AWS | Planned, not now | When startup credits arrive: dump/restore Postgres into RDS, rebuild the VM on EC2 from the same compose file (§13) |
 
 Rejected, with reasons recorded in the conversation: AWS for everything now (~$255+/month);
@@ -146,16 +146,21 @@ file is restored, and work resumes — leases and retries already survive a work
   font manifest. One image means one build, one version, and no drift between the API and workers.
 - **Frontend and page origin** keep their existing Railway Dockerfiles.
 - **Sandbox image** (`docker/agent-sandbox/`) is built on the VM (`make sandbox-image`), as today.
-- GitHub Actions builds the backend image on every push to `production` and pushes it to GHCR,
-  tagged with the commit SHA.
+- GitHub Actions builds the backend image on every push to `main`, boots it (§9.5), and pushes it to
+  GHCR tagged with the commit SHA; the `production` image tag moves only after the boot checks pass.
 
-### 9.2 The `production` branch
+### 9.2 Branches: `research-streaming` is staging, `main` is production
 
-- Railway services and the VM deploy from `production`.
-- Shipping = fast-forward `production` to a tested `research-streaming` commit. Never commit to
-  `production` directly.
+- Railway services and the VM deploy from `main`.
+- `research-streaming` is the staging branch: feature branches merge into it and it is tested
+  internally there.
+- Releasing = a pull request from `research-streaming` into `main`, merged by the founder. Never
+  commit to `main` directly. (Branch protection is not available on this GitHub plan for a private
+  repository, so this is team discipline, backed by the CI checks on every push to `main`.)
+- The first `research-streaming` → `main` merge is clean (checked 2026-10-01: `main`'s one extra
+  commit, the merge of PR #44, has both parents already in `research-streaming`).
 - The frontend's Railway service is repointed from `integration/frontend-design-part-iv-v4` to
-  `production` (founder action in the Railway dashboard).
+  `main` (founder action in the Railway dashboard).
 
 ### 9.3 Deploy order
 
@@ -173,6 +178,28 @@ socket is mounted into them). Two consequences the compose file must honour:
   worker container, because `docker run` mount paths are resolved by the host daemon.
 - A container holding the Docker socket effectively has root on the host. Acceptable on a
   single-purpose VM with no customer data; recorded as a risk (§14).
+
+### 9.5 Checks before an image can be deployed
+
+Founder ask 2026-10-01: catch a broken build before it reaches a server, not after.
+- **Boot smoke** (CI, every push to `main`): against throwaway Postgres (pgvector) + Redis, run the
+  migrations; start the platform API and the design API and require `/healthz` to answer (both APIs
+  gain `/healthz` — neither had one); start a worker and require its
+  `fleet.boot.handlers_registered` and `worker.start` log lines; through the image's own Docker CLI,
+  run `docker_available` and have the sandbox image print `2 + 2` under the runner's lockdown flags.
+  No test suite runs here — minutes, not hours.
+- **Engine handshake gate.** The browser wasm is a committed file
+  (`subsystems/clue-design/apps/editor/public/wasm/`) while the server's Rust helper is compiled from
+  source, and the two must carry the same `schema_version` and `engine_commit` (a content hash of the
+  `lumen-core` sources) or the editor locks canvas editing. Today the frontend build's preflight only
+  warns on a stale wasm (`preflight_editor_wasm.mjs` exits 0). The gate: a strict preflight mode that
+  fails on a mismatch, used by the frontend's Railway build and by CI on every PR/push to
+  `research-streaming`; and, in the deploy workflow, the committed wasm checked against the helper
+  inside the built image.
+- Only when every check passes does the `production` image tag move.
+- **Accepted for now (founder, 2026-10-01), to be closed later:** Railway rebuilds the frontend and the
+  design API separately, so for a minute or two during a deploy they can run different engines; an
+  editor opened in that window shows the mismatch banner until reloaded.
 
 ## 10. Configuration and secrets
 

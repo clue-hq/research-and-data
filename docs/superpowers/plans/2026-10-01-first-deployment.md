@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Put the complete Clue app on hosted infrastructure — web tier, Postgres and Redis on Railway, a stateless OVHcloud worker VM, files in Cloudflare R2 — shipped from a `production` branch.
+**Goal:** Put the complete Clue app on hosted infrastructure — web tier, Postgres and Redis on Railway, a stateless OVHcloud worker VM, files in Cloudflare R2 — shipped from `main` (with `research-streaming` as staging).
 
-**Architecture:** Every image is booted in CI before it can be deployed: both APIs must answer `/healthz`, a worker must register its handlers and start, and the sandbox must run a trivial script. One backend container image runs every Python service (platform API, design API, fleet worker pools, ingestion pool, migrations) with different commands. Railway runs the web services plus Postgres 16 + pgvector and Redis 7; the VM runs three worker pools (chat 1×10, design 1×8, batch 3×10), the ingestion pool, PgBouncer and the Docker code sandbox from one docker compose file, reaching Postgres/Redis through Railway's TLS TCP proxy. GitHub Actions builds and pushes images on every push to `production`.
+**Architecture:** Every image is booted in CI before it can be deployed: both APIs must answer `/healthz`, a worker must register its handlers and start, and the sandbox must run a trivial script. One backend container image runs every Python service (platform API, design API, fleet worker pools, ingestion pool, migrations) with different commands. Railway runs the web services plus Postgres 16 + pgvector and Redis 7; the VM runs three worker pools (chat 1×10, design 1×8, batch 3×10), the ingestion pool, PgBouncer and the Docker code sandbox from one docker compose file, reaching Postgres/Redis through Railway's TLS TCP proxy. GitHub Actions builds and pushes images on every push to `main`.
 
 **Tech Stack:** Docker (multi-stage), uv (Python 3.12), Rust/cargo (`lumen-api-helper`), Node 24 (design editor Tailwind toolchain), Playwright Chromium, docker compose, PgBouncer, GitHub Actions + GHCR, Railway, OVHcloud VPS, Cloudflare R2.
 
@@ -20,7 +20,7 @@
 - Design API on Railway: `LUMEN_EMBEDDED_FLEET_WORKER=0`.
 - Pages: `CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai`, `CLUE_PAGES_PUBLIC_SCHEME=https`, `CLUE_PAGES_TRUST_HOST_HEADER=false`, `CLUE_PAGES_EDGE_SECRET` set.
 - Hostnames: `app.cluehq.ai` (frontend), `api.cluehq.ai` (platform API), `design-api.cluehq.ai` (design API).
-- Shipping: fast-forward `production` from `research-streaming`; never commit to `production` directly.
+- Branches: `research-streaming` is staging; `main` is the deployment branch. Releasing = merging a PR from `research-streaming` into `main`; never commit to `main` directly.
 - Deploy order: build image → `alembic upgrade head` → Railway services + VM restart.
 - Env parity rule (repo CLAUDE.md): every setting the code reads appears in `.env.example` with its default when introduced.
 - Worker containers run as a **non-root** user (the sandbox refuses root — `platform/api/clue_api/sandbox/docker_runner.py:90`).
@@ -53,6 +53,7 @@
 | `deploy/vm/backup_db.sh`, `deploy/vm/restore_check.sh`, `deploy/vm/watchdog.sh`, `deploy/vm/systemd/*` | backups, restore rehearsal, VM alerts | 6 |
 | `deploy/vm/bootstrap.sh`, `deploy/vm/deploy.sh` | VM provisioning and deploys | 7 |
 | `platform/api/clue_api/projections_app.py`, `subsystems/clue-design/apps/api/lumen_api/main.py` | `/healthz` on both APIs | 4A |
+| `subsystems/clue-design/scripts/preflight_editor_wasm.mjs`, `…/verify_handshake.mjs`, `apps/frontend/Dockerfile.railway`, `.github/workflows/ci.yml` | engine handshake gate | 4B |
 | `docker/backend/boot_smoke.sh`, `.github/workflows/deploy-images.yml` | boot every service in CI; publish `production` tags only after it passes | 8 |
 | `docs/deploy/runbook.md` | the whole founder-facing runbook (Railway, Cloudflare, OVHcloud, first ship, rollback, AWS move) | 9 |
 | `_memory/2026-10-01-first-deployment.md` | session record | 10 |
@@ -718,6 +719,151 @@ git commit -m "Add /healthz to the platform API and the design API"
 
 ---
 
+### Task 4B: Engine handshake gate (browser wasm ⇄ server helper)
+
+The browser wasm is a **committed** file (`subsystems/clue-design/apps/editor/public/wasm/lumen_wasm_bg.wasm` + `lumen_wasm.js`); the server's `lumen-api-helper` is compiled from source. Both bake `schema_version` and `engine_commit` (a content hash of `crates/lumen-core` sources — `crates/build_support/engine_stamp.rs`); the editor locks canvas editing when they differ. Today the frontend build's preflight only **warns** on a stale wasm and exits 0 (`subsystems/clue-design/scripts/preflight_editor_wasm.mjs:125`), so a forgotten rebuild ships silently. Spec §9.5.
+
+**Files:**
+- Modify: `subsystems/clue-design/scripts/preflight_editor_wasm.mjs` (strict mode)
+- Modify: `subsystems/clue-design/scripts/verify_handshake.mjs` (helper command override)
+- Modify: `apps/frontend/Dockerfile.railway` (strict preflight in the Railway build, before line 47's `RUN npm run design-system:build && npm run build`)
+- Modify: `apps/frontend/scripts/copy-design-vendor.mjs` (re-throw a failing preflight in strict mode)
+- Modify: `.github/workflows/ci.yml` (fast handshake job on PRs and pushes to `research-streaming` / `main`)
+
+**Interfaces:**
+- Produces: env `WASM_PREFLIGHT_STRICT=1` → the preflight exits **1** on a stale or unreadable committed wasm (and when sources can't be hashed) instead of rebuilding; env `HANDSHAKE_HELPER_CMD` → `verify_handshake.mjs` runs that shell command (stdin = the `build_info` request) instead of `cargo run`. Task 8 consumes both.
+
+- [ ] **Step 1: Confirm today's committed wasm is in sync (baseline)**
+
+Run: `node subsystems/clue-design/scripts/preflight_editor_wasm.mjs`
+Expected: `[wasm-preflight] editor engine up to date (<12-hex>)`. If it says it is stale and starts rebuilding, stop: the committed wasm is already out of date on `research-streaming` — rebuild it (`bash subsystems/clue-design/scripts/build_wasm_core.sh && node subsystems/clue-design/scripts/verify_handshake.mjs`), commit the rebuilt files as their own commit, and tell the founder before continuing.
+
+- [ ] **Step 2: Add strict mode to the preflight** — in `preflight_editor_wasm.mjs`, add after the imports:
+
+```js
+// Deploy/CI mode (first deployment spec §9.5): never rebuild, never warn-and-continue — a stale
+// committed wasm FAILS, because shipping it means an uneditable canvas for every user.
+const STRICT = process.env.WASM_PREFLIGHT_STRICT === "1";
+```
+
+In the `sourceStamp()` failure branch, replace `process.exit(0);` with `process.exit(STRICT ? 1 : 0);`.
+
+Immediately after the `if (built === expected) { … process.exit(0); }` block, add:
+
+```js
+if (STRICT) {
+  console.error(
+    `[wasm-preflight] STRICT: committed editor engine ${built ?? "missing"} != engine sources ${expected}.\n` +
+      "  The browser wasm was not rebuilt after an engine change. Fix, then commit the result:\n" +
+      "    bash subsystems/clue-design/scripts/build_wasm_core.sh\n" +
+      "    node subsystems/clue-design/scripts/verify_handshake.mjs"
+  );
+  process.exit(1);
+}
+```
+
+Update the file's header comment: "Non-fatal by design" → "Non-fatal by design in local dev; `WASM_PREFLIGHT_STRICT=1` (Railway build, CI) makes a stale wasm fatal."
+
+- [ ] **Step 3: Prove strict mode fails on drift and passes when clean**
+
+```bash
+F=subsystems/clue-design/crates/lumen-core/src/lib.rs
+echo "// handshake-gate drift probe" >> "$F"
+WASM_PREFLIGHT_STRICT=1 node subsystems/clue-design/scripts/preflight_editor_wasm.mjs; echo "exit=$?"
+git checkout -- "$F"
+WASM_PREFLIGHT_STRICT=1 node subsystems/clue-design/scripts/preflight_editor_wasm.mjs; echo "exit=$?"
+```
+
+Expected: first run prints `STRICT: committed editor engine … != engine sources …` and `exit=1`; after the revert, `editor engine up to date` and `exit=0`. Confirm `git status` shows `lib.rs` unmodified. (If `lumen-core` has no `src/lib.rs`, use any `.rs` file under `crates/lumen-core/src/`.)
+
+- [ ] **Step 4: Let `verify_handshake.mjs` ask a helper inside an image** — replace its `const helperOutput = execFileSync("cargo", …);` statement with:
+
+```js
+// HANDSHAKE_HELPER_CMD (deploy workflow, spec §9.5): ask the helper INSIDE the built image, so the
+// check compares exactly the two artifacts that will be deployed. Unset = build and run it locally.
+const request = JSON.stringify({ action: "build_info" });
+const helperCmd = process.env.HANDSHAKE_HELPER_CMD;
+const helperOutput = helperCmd
+  ? execFileSync("bash", ["-c", helperCmd], { input: request, encoding: "utf8" })
+  : execFileSync(
+      "cargo",
+      ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "-p", "lumen-api-helper"],
+      { input: request, encoding: "utf8" }
+    );
+```
+
+Verify the local path still works: `node subsystems/clue-design/scripts/verify_handshake.mjs` → prints both versions and exits 0. (It compiles the helper; allow a few minutes on first run.)
+
+- [ ] **Step 5: Make the frontend's Railway build strict** — in `apps/frontend/Dockerfile.railway`, directly above `RUN npm run design-system:build && npm run build`:
+
+```dockerfile
+# A stale committed editor wasm must fail this build, not ship an uneditable canvas
+# (first deployment spec §9.5). copy-design-vendor.mjs runs the preflight during prebuild.
+ENV WASM_PREFLIGHT_STRICT=1
+```
+
+The prebuild wrapper swallows a failing preflight: `apps/frontend/scripts/copy-design-vendor.mjs` (~line 78) runs it inside `try { … } catch (error) { console.warn(…) }` so a crash "must not take the app down". In strict mode that would hide exactly the failure we want. Add, as the first line inside that `catch (error) {` block:
+
+```js
+  // Strict (Railway build, spec §9.5): a stale editor wasm must fail the build, not warn.
+  if (process.env.WASM_PREFLIGHT_STRICT === "1") throw error;
+```
+
+(The preflight inherits the environment — the `execFileSync` call passes no `env` option — so the variable reaches it.)
+
+Verify, still without a full image build:
+
+```bash
+cd apps/frontend
+WASM_PREFLIGHT_STRICT=1 node scripts/copy-design-vendor.mjs; echo "clean exit=$?"
+echo "// handshake-gate drift probe" >> ../../subsystems/clue-design/crates/lumen-core/src/lib.rs
+WASM_PREFLIGHT_STRICT=1 node scripts/copy-design-vendor.mjs; echo "drift exit=$?"
+git checkout -- ../../subsystems/clue-design/crates/lumen-core/src/lib.rs
+cd ../..
+```
+
+Expected: `clean exit=0`; `drift exit=1` with the STRICT message; `lib.rs` restored.
+
+- [ ] **Step 6: Add the fast CI job** — in `.github/workflows/ci.yml`, change the trigger to:
+
+```yaml
+on:
+  push:
+    branches: [main, research-streaming]
+  pull_request:
+```
+
+and add a second job beside `check`:
+
+```yaml
+  engine-handshake:
+    # Seconds, not minutes: hashes the lumen-core sources and reads the committed wasm's stamp.
+    # Catches an engine change merged without a rebuilt browser wasm (first deployment spec §9.5).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Committed editor wasm matches the engine sources
+        env:
+          WASM_PREFLIGHT_STRICT: "1"
+        run: node subsystems/clue-design/scripts/preflight_editor_wasm.mjs
+```
+
+Run: `actionlint .github/workflows/ci.yml` → no errors.
+
+Note for the founder: adding `research-streaming` to `push` also runs the existing `check` job (`make check` + `make db-smoke`) on every push there. If that job is too slow for staging pushes, move it to `pull_request` only and keep `engine-handshake` on both.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add subsystems/clue-design/scripts/preflight_editor_wasm.mjs subsystems/clue-design/scripts/verify_handshake.mjs apps/frontend/Dockerfile.railway apps/frontend/scripts/copy-design-vendor.mjs .github/workflows/ci.yml
+git commit -m "Gate deploys on the editor engine handshake: strict wasm preflight, helper-in-image check"
+```
+
+---
+
 ### Task 5: Production env validator (`deploy/check_prod_env.py`)
 
 **Files:**
@@ -1083,7 +1229,7 @@ mkdir -p /srv/clue/workspaces /srv/clue/engine-cache
 chown -R 1000:1000 /srv/clue/workspaces /srv/clue/engine-cache
 chmod 700 /srv/clue/workspaces
 
-[ -d /srv/clue/app/.git ] || git clone --branch production https://github.com/clue-hq/research-and-data.git /srv/clue/app
+[ -d /srv/clue/app/.git ] || git clone --branch main https://github.com/clue-hq/research-and-data.git /srv/clue/app
 for f in env pgbouncer.env backup.env; do touch "/srv/clue/$f"; chmod 600 "/srv/clue/$f"; done
 DOCKER_GID="$(stat -c %g /var/run/docker.sock)"
 touch /srv/clue/compose.env && chmod 600 /srv/clue/compose.env
@@ -1117,7 +1263,7 @@ set_line() {  # set_line FILE KEY VALUE — replace or append KEY=VALUE
   if grep -q "^$2=" "$1"; then sed -i "s#^$2=.*#$2=$3#" "$1"; else echo "$2=$3" >> "$1"; fi
 }
 
-git -C "$APP" fetch origin production && git -C "$APP" checkout --detach "$SHA"
+git -C "$APP" fetch origin main && git -C "$APP" checkout --detach "$SHA"
 python3 "$APP/deploy/check_prod_env.py" worker /srv/clue/env
 docker pull "$BACKEND"
 docker pull "$SANDBOX"
@@ -1150,7 +1296,7 @@ git commit -m "VM bootstrap and one-command deploy (env check, migrate, restart 
 
 ---
 
-### Task 8: GitHub Actions — build, boot-smoke, then publish images on `production`
+### Task 8: GitHub Actions — build, boot-smoke, then publish images on `main`
 
 The images are pushed under their commit SHA first; the `production` tag moves only after **both** smoke tests pass, so a broken build never becomes the tag anything deploys from. No test suite runs here — this is a boot check, minutes long.
 
@@ -1159,7 +1305,7 @@ The images are pushed under their commit SHA first; the `production` tag moves o
 - Create: `.github/workflows/deploy-images.yml`
 
 **Interfaces:**
-- Consumes: the image entrypoint commands (Task 4), `/healthz` (Task 4A), the worker's boot log events `"event": "fleet.boot.handlers_registered"` and `"event": "worker.start"` (emitted by `clue_api.fleet_main` today), `clue_api.sandbox.docker_runner.docker_available(image) -> tuple[bool, str]`.
+- Consumes: the image entrypoint commands (Task 4), `/healthz` (Task 4A), `WASM_PREFLIGHT_STRICT` and `HANDSHAKE_HELPER_CMD` (Task 4B), the worker's boot log events `"event": "fleet.boot.handlers_registered"` and `"event": "worker.start"` (emitted by `clue_api.fleet_main` today), `clue_api.sandbox.docker_runner.docker_available(image) -> tuple[bool, str]`.
 - Produces: `ghcr.io/clue-hq/clue-backend:<sha>` and `ghcr.io/clue-hq/clue-agent-sandbox:<sha>` on every push; `:production` on both only after the smoke tests pass.
 
 - [ ] **Step 1: Write `docker/backend/boot_smoke.sh`:**
@@ -1229,7 +1375,7 @@ echo "BOOT SMOKE PASSED"
 name: deploy-images
 on:
   push:
-    branches: [production]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -1283,6 +1429,17 @@ jobs:
         run: |
           docker pull "$BACKEND:${{ github.sha }}"
           docker pull "$SANDBOX:${{ github.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Engine handshake — committed browser wasm vs the helper inside the built image
+        env:
+          HANDSHAKE_HELPER_CMD: >-
+            docker run --rm -i --entrypoint /app/subsystems/clue-design/target/release/lumen-api-helper
+            ${{ env.BACKEND }}:${{ github.sha }}
+        run: |
+          WASM_PREFLIGHT_STRICT=1 node subsystems/clue-design/scripts/preflight_editor_wasm.mjs
+          node subsystems/clue-design/scripts/verify_handshake.mjs
       - name: Static smoke (contents)
         run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
       - name: Boot smoke (services start)
@@ -1353,7 +1510,7 @@ Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md`. Order matt
    `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;`
    Enable **TCP proxy** on Postgres; record host and port. Enable scheduled **volume backups**.
 3. Add **Redis** (Redis 7). Enable TCP proxy; record host, port, password.
-4. Add services from this repo, branch `production`, built by Railway from
+4. Add services from this repo, branch `main`, built by Railway from
    `RAILWAY_DOCKERFILE_PATH=/docker/backend/Dockerfile` (the same Dockerfile CI builds for the VM,
    so both run identical code for a given commit):
    - `platform-api`: start command `clue platform-api`, **pre-deploy command `clue migrate`**
@@ -1363,7 +1520,7 @@ Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md`. Order matt
      `LUMEN_EMBEDDED_FLEET_WORKER=0`.
    - `page-origin`: `platform/page_origin/Dockerfile.railway`, memory 256 MB.
 5. Frontend service: change its branch from `integration/frontend-design-part-iv-v4` to
-   `production`; set `CLUE_API_BASE_URL=https://api.cluehq.ai`,
+   `main`; set `CLUE_API_BASE_URL=https://api.cluehq.ai`,
    `LUMEN_API_BASE_URL=https://design-api.cluehq.ai`, `CLUE_APP_ORIGIN=https://app.cluehq.ai`,
    `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`.
 6. Variables for `platform-api` and `design-api`: every key in `.env.example` with its production
@@ -1396,10 +1553,10 @@ Spec: `docs/superpowers/specs/2026-10-01-first-deployment-design.md`. Order matt
 Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 
 ## 6. First ship
-1. `git checkout research-streaming && git pull && git branch -f production research-streaming`
-   and `git push origin production` [FOUNDER go-ahead to push].
+1. Open a pull request from `research-streaming` into `main` and merge it [FOUNDER]. (The first one
+   merges cleanly — checked 2026-10-01.)
 2. Wait for the `deploy-images` workflow to go green (smoke test included).
-3. Railway rebuilds and redeploys from `production`; `platform-api`'s pre-deploy `clue migrate`
+3. Railway rebuilds and redeploys from `main`; `platform-api`'s pre-deploy `clue migrate`
    runs `alembic upgrade head` once.
 4. **Only after Railway's deploy is green**, on the VM: `/srv/clue/app/deploy/vm/deploy.sh <sha>`
    (it refuses if the database is not at head).
@@ -1407,7 +1564,12 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
    `https://api.cluehq.ai/healthz`, `https://design-api.cluehq.ai/healthz` and a published page.
 
 ## 7. Every later ship
-Fast-forward `production` to a tested `research-streaming` commit and push; wait for Railway to go green; then `deploy.sh <sha>` on the VM.
+Merge a pull request from `research-streaming` into `main` once staging is tested; wait for the `deploy-images` workflow and Railway to go green; then `deploy.sh <sha>` on the VM.
+
+## 7a. Known gap — accepted for now, to be closed later
+Railway rebuilds the frontend and the design API separately, so for a minute or two during a deploy
+they can run different engine versions; an editor opened in that window shows the "Canvas editing
+is disabled" banner until reloaded. (Founder, 2026-10-01: acceptable only for now.)
 
 ## 8. Rollback
 Railway: redeploy the previous deployment. VM: `deploy.sh <previous-sha>`. If a migration must be
@@ -1449,7 +1611,7 @@ This task is executed **with the founder**, following `docs/deploy/runbook.md`. 
 
 - [ ] **Step 1:** Founder completes runbook §1–§5. Record each resource name (not secrets) in `_memory/2026-10-01-first-deployment.md`.
 - [ ] **Step 2:** Run the focused test files: `uv run pytest tests/api/test_fleet_wiring.py tests/test_storage_settings_documented.py tests/deploy -v` — all PASS.
-- [ ] **Step 3:** With the founder's go-ahead, create and push `production` (runbook §6.1). Watch `deploy-images` go green.
+- [ ] **Step 3:** The founder opens and merges the `research-streaming` → `main` pull request (runbook §6.1). Watch `deploy-images` go green.
 - [ ] **Step 4:** Run `deploy.sh <sha>` on the VM; `docker compose ps` shows all seven services running.
 - [ ] **Step 5: Acceptance walk (spec §16)**, with memory/CPU sampled on the VM every 15 s (`docker stats --no-stream` in a loop, written to a file):
   1. Sign up; the workspace and its `<label>.pages.cluehq.ai` address exist.
@@ -1466,6 +1628,6 @@ This task is executed **with the founder**, following `docs/deploy/runbook.md`. 
 
 ## Self-review
 
-- **Spec coverage:** §3/§5 hosting and sizing → Tasks 3, 9; §5.1 embedded worker off → Tasks 5, 9; §5.2 pools → Tasks 1, 3; §6 stateless VM → Tasks 3, 7; §7 connections/PgBouncer/least-privilege role → Tasks 3, 9; §8 backups/rehearsal → Task 6; §9.1 one image → Task 4; §9.2 production branch → Tasks 8, 9, 10; §9.3 deploy order → Tasks 7, 9; §9.4 sandbox socket/paths/non-root → Tasks 3, 4, 7; §10 config → Tasks 2, 5, 9; §11 domains/monitoring → Tasks 6, 9; §12 spend caps → Task 9 §5; §13 AWS path → Task 9 §10; §15 app changes → Tasks 1, 2, 4 (the localhost/local-disk audit is covered by `check_prod_env.py` for URLs and by the image's baked `LUMEN_*` paths; anything else surfaces in the Task 4 smoke test and the Task 10 walk); §16 acceptance → Task 10; boot-before-deploy (founder ask 2026-10-01) → Tasks 4A, 8.
+- **Spec coverage:** §3/§5 hosting and sizing → Tasks 3, 9; §5.1 embedded worker off → Tasks 5, 9; §5.2 pools → Tasks 1, 3; §6 stateless VM → Tasks 3, 7; §7 connections/PgBouncer/least-privilege role → Tasks 3, 9; §8 backups/rehearsal → Task 6; §9.1 one image → Task 4; §9.2 production branch → Tasks 8, 9, 10; §9.3 deploy order → Tasks 7, 9; §9.4 sandbox socket/paths/non-root → Tasks 3, 4, 7; §10 config → Tasks 2, 5, 9; §11 domains/monitoring → Tasks 6, 9; §12 spend caps → Task 9 §5; §13 AWS path → Task 9 §10; §15 app changes → Tasks 1, 2, 4 (the localhost/local-disk audit is covered by `check_prod_env.py` for URLs and by the image's baked `LUMEN_*` paths; anything else surfaces in the Task 4 smoke test and the Task 10 walk); §16 acceptance → Task 10; boot-before-deploy (founder ask 2026-10-01) → Tasks 4A, 8; §9.5 engine handshake gate → Tasks 4B, 8; `main` as deployment branch, `research-streaming` as staging (founder ruling 2026-10-01) → Tasks 7, 8, 9, 10.
 - **Known risk carried into execution:** PgBouncer transaction pooling vs session advisory locks — Task 3 Step 3 decides `transaction` vs `session` from a grep before anything ships.
 ````
