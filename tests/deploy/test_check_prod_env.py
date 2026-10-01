@@ -110,6 +110,25 @@ def test_the_railway_services_do_not_need_the_controller_url() -> None:
     assert check.problems(GOOD_COMMON, "platform-api") == []
 
 
+@pytest.mark.parametrize("role", ["platform-api", "design-api", "worker"])
+def test_a_relative_arv2_raw_root_is_refused(role: str) -> None:
+    """The .env.example default (.artifacts/arv2) resolves under /app in the image, which the
+    non-root user cannot write: the first podcast download would fail at mkdir. The image sets an
+    absolute writable path; an env line can only break it."""
+    env = {
+        **GOOD_WORKER,
+        "LUMEN_EMBEDDED_FLEET_WORKER": "0",
+        "CLUE_ARV2_RAW_ROOT": ".artifacts/arv2",
+    }
+    assert any("CLUE_ARV2_RAW_ROOT" in p for p in check.problems(env, role))
+
+
+def test_an_absent_or_absolute_arv2_raw_root_is_fine() -> None:
+    absolute = {**GOOD_WORKER, "CLUE_ARV2_RAW_ROOT": "/var/lib/clue/arv2-raw"}
+    assert check.problems(absolute, "worker") == []
+    assert check.problems(GOOD_WORKER, "worker") == []
+
+
 def test_workers_must_not_pick_their_own_kinds_in_the_shared_env_file() -> None:
     """Pool kinds live in compose.yaml; a kinds line in the shared env file would override them."""
     env = {**GOOD_COMMON, "CLUE_FLEET_WORKER_KINDS": "agent_turn"}

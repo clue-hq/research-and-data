@@ -385,9 +385,11 @@ class Settings(BaseSettings):
     # Above this duration a media item is not eligible for the cheap short-model pass.
     # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
     arv2_media_short_max_seconds: int = 600
-    # Where the file raw sink and the JSONL ledger write in development and tests. Production
-    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``
-    # at A7. Env: ``CLUE_ARV2_RAW_ROOT``.
+    # Where the file raw sink and the JSONL ledger write in development and tests (production
+    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``),
+    # and — in every environment — where research downloads podcast audio, deleted once
+    # transcribed. Relative paths resolve against the working directory; the backend image sets
+    # an absolute, writable one. Env: ``CLUE_ARV2_RAW_ROOT``.
     arv2_raw_root: str = ".artifacts/arv2"
 
     # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------

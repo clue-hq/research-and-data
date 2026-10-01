@@ -37,9 +37,13 @@ RUN python -m playwright install --with-deps chromium && chmod -R a+rX /ms-playw
 COPY --from=helper /src/target/release/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
 COPY --from=editor /src/subsystems/clue-design/apps/editor/public/vendor /app/subsystems/clue-design/apps/editor/public/vendor
+# CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings
+# default, .artifacts/arv2, is relative and would land under the root-owned /app.
 ENV LUMEN_CORE_HELPER=/app/subsystems/clue-design/target/release/lumen-api-helper \
-    LUMEN_FONT_LIBRARY_MANIFEST_PATH=/app/subsystems/clue-design/apps/api/font-library/manifest.json
+    LUMEN_FONT_LIBRARY_MANIFEST_PATH=/app/subsystems/clue-design/apps/api/font-library/manifest.json \
+    CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw
 COPY docker/backend/entrypoint.sh /usr/local/bin/clue
-RUN useradd --uid 1000 --create-home clue && chown -R clue:clue /app/subsystems/clue-design
+RUN useradd --uid 1000 --create-home clue && chown -R clue:clue /app/subsystems/clue-design \
+    && mkdir -p /var/lib/clue/arv2-raw && chown -R 1000:1000 /var/lib/clue/arv2-raw
 USER 1000:1000
 ENTRYPOINT ["clue"]

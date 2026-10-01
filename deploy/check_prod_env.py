@@ -62,6 +62,13 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         value = env.get(name, "")
         if "localhost" in value or "127.0.0.1" in value:
             found.append(f"{name} points at localhost")
+    raw_root = env.get("CLUE_ARV2_RAW_ROOT", "")
+    if raw_root and not raw_root.startswith("/"):
+        found.append(
+            f"CLUE_ARV2_RAW_ROOT={raw_root!r} is relative: in the image it lands under the "
+            "root-owned /app and podcast downloads fail. Remove the line (the image sets "
+            "/var/lib/clue/arv2-raw) or give an absolute, writable path"
+        )
     if role == "design-api" and env.get("LUMEN_EMBEDDED_FLEET_WORKER") != "0":
         found.append(
             "LUMEN_EMBEDDED_FLEET_WORKER must be 0 on Railway (design jobs belong to the VM)"

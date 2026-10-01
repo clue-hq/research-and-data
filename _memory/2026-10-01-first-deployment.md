@@ -53,3 +53,20 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
 - Still open from the `.artifacts` discussion: backups share `clue-prod` with the orphan sweep
   (would be deleted within ~24h) → proposed separate `clue-backups` bucket; `CLUE_ARV2_RAW_ROOT`
   relative default is unwritable in the image (uid 1000, /app root-owned). Awaiting founder go-ahead.
+
+## 2026-10-01 — Problem B fixed: ARV2 raw root in production
+- Only production writer of `CLUE_ARV2_RAW_ROOT`: the podcast hop (`account_research_tools._podcast_hop`
+  → `download_enclosure`, mkdir + mp3 per episode). Raw records/ledger go to the DB in production.
+- Fix: (1) the hop deletes the audio (and the job's empty folder) in a `finally` once transcribed or
+  failed — it never accumulated-safely before; (2) image sets `CLUE_ARV2_RAW_ROOT=/var/lib/clue/arv2-raw`,
+  created + chowned to uid 1000 before `USER`; (3) `smoke.sh` writes there as the image user;
+  (4) `check_prod_env.py` (every role) refuses a relative value — the `.env.example` default copied
+  into an env file would override the image; runbook + spec §10: leave the key out.
+- Tests: 2 hop tests (RED→GREEN), 3 image-source tests, 4 env-check tests; arv2+deploy 1202 pass.
+- Pre-existing, NOT this change (recorded only): `tests/arv2/test_person_{continuation_preview,
+  discovery_trial,trial_source_review}.py` fail to import `duration_of` from media_acquisition;
+  `test_account_research_port` pins recipe_version 22 (resource is 24); `test_import_guard` flags
+  person_research_brief/quality_reconciliation imports.
+- Same class, not fixed: root `.env.example` LUMEN_FONT_LIBRARY_MANIFEST_PATH placeholder
+  (`/absolute/path/to/your/checkout/...`) would override the image's correct value if copied.
+- Smoke/Docker build still unrun locally (Docker can't pull) — first proof is the CI image run.

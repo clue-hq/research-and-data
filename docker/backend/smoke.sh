@@ -27,4 +27,7 @@ echo "ok: chromium launches"
 echo "ok: non-root (uid 1000)"
 run alembic --help > /dev/null
 echo "ok: alembic"
+run sh -c 'case "$CLUE_ARV2_RAW_ROOT" in /*) ;; *) exit 1 ;; esac \
+  && d="$CLUE_ARV2_RAW_ROOT/media/smoke" && mkdir -p "$d" && touch "$d/probe.mp3" && rm -r "$d"'
+echo "ok: arv2 raw root writable"
 echo "SMOKE PASSED"
