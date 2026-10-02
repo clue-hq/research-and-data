@@ -121,3 +121,18 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
 - Local smoke cannot go further on this Mac: cryptography 49's Rust bindings SIGILL (exit 132) on
   Docker Desktop's 5.15.49-linuxkit kernel (same as the sandbox image's pin note), and every service
   imports it. The real amd64 smoke + boot smoke run in the PR's deploy-images job.
+- Fourth failure (CI run 37054466971, dispatched on the branch): runner disk full after 31 min
+  (`No space left on device`). Fix: workflow step `Free runner disk` (removes dotnet/android/ghc/
+  CodeQL/boost, ~30 GB) + the helper RUN deletes target/ and the cargo registry in the same step
+  (layer 39.6 MB locally, was GBs). NOT a BuildKit cache mount: Railway refuses cache mounts whose
+  id lacks the `s/<service-id>-` prefix, and this Dockerfile builds on two Railway services.
+
+### 2026-10-03 — pages.cluehq.ai temporarily used by a static landing page (founder ruling)
+- Founder chose `pages.cluehq.ai/conduit` for an urgent static page (Conduit for Hotel Equities,
+  a design export) in a SEPARATE Railway project `conduit-hotel-equities` (Caddy, files in
+  ~/clue-deploy/conduit-hotel-equities, outside the repo). Cloudflare: `pages` CNAME →
+  <railway target>, DNS only, plus `_railway-verify.pages` TXT.
+- CONFLICT, known and accepted: Part C (docs/specs/pages-hosting-runbook.md §Cloudflare for SaaS)
+  needs `pages` CNAME → page-origin.cluehq.ai, PROXIED, as the fallback origin. Before that step,
+  move or retire the Conduit page (and remove its Railway custom domain), or that page goes dark.
+  `*.pages` (workspace hostnames) does not conflict.
