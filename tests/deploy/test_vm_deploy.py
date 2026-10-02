@@ -40,9 +40,14 @@ GOOD_ENV = "\n".join(
         "CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai",
         "CLUE_PAGES_PUBLIC_SCHEME=https",
         "CLUE_PAGES_TRUST_HOST_HEADER=false",
-        "CLUE_PAGES_EDGE_SECRET=edge",
         "CLUE_SCRAPE_BACKEND=scrapling",
         "CLUE_STAGE0_PAGE_FETCHER=scrapling",
+        "CLUE_STORAGE_S3_REGION=auto",
+        "CLUE_AUTH_ENABLED=true",
+        "CLUE_AUTH_ENVIRONMENT=production",
+        "CLUE_AUTH_MODE=clerk",
+        "CLUE_OPENROUTER_API_KEY=or-key",
+        "LUMEN_API_ORIGIN=https://app.cluehq.ai/api/clue/design-public",
     ]
 )
 

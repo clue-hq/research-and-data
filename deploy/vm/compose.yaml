@@ -26,6 +26,9 @@ x-worker: &worker
 x-worker-env: &worker-env
   CLUE_DATABASE_URL: postgresql+asyncpg://clue_worker:${PGBOUNCER_CLIENT_PASSWORD}@pgbouncer:6432/railway
   CLUE_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces
+  # The design agent's session memory and compaction history; unset, it lands inside the image
+  # (/app/subsystems/clue-design/.deepagent-workspace) and every redeploy would wipe it.
+  LUMEN_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces/lumen-agent
   LUMEN_ASSET_STORE_ROOT: /srv/clue/engine-cache
 
 x-batch: &batch

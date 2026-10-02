@@ -56,3 +56,18 @@ def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tag
     assert movers[0]["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
     for step in steps[:-1]:
         assert "if" not in step, f"every check must run on PRs too: {step.get('name')}"
+
+
+def test_both_apis_listen_on_a_configurable_host_defaulting_to_ipv4() -> None:
+    """The design API is reachable ONLY over Railway's private network, which is IPv6, so its
+    Railway service sets CLUE_BIND_HOST=:: (IPv6-only under uvicorn — measured). Unset, nothing
+    changes: 0.0.0.0 as before (the platform API on Railway, CI's boot smoke)."""
+    entrypoint = (ROOT / "docker" / "backend" / "entrypoint.sh").read_text(encoding="utf-8")
+    for command in ("clue_api.projections_main:app", "lumen_api.main:app"):
+        line = next(line for line in entrypoint.splitlines() if command in line)
+        assert '--host "${CLUE_BIND_HOST:-0.0.0.0}"' in line, line
+
+
+def test_the_bind_host_is_documented() -> None:
+    lines = (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+    assert "CLUE_BIND_HOST=0.0.0.0" in lines
