@@ -20,6 +20,8 @@ CLUE_DESIGN_RUNTIME_ENABLED=1
 CLUE_SANDBOX_ENABLED=true
 CLUE_SANDBOX_IMAGE=$SANDBOX
 LUMEN_EMBEDDED_FLEET_WORKER=0
+# No model key in CI: the worker refuses to boot on a stub gateway unless it is allowed explicitly.
+CLUE_GATEWAY_ALLOW_STUB=true
 ENV
 cleanup() {
   docker rm -f smoke-platform smoke-design smoke-worker > /dev/null 2>&1 || true
