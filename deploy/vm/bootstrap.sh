@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # One-time worker VM setup (first deployment spec §6, §9.4). Idempotent. Run as root on a fresh
-# Ubuntu 24.04 VM: bash bootstrap.sh
+# Ubuntu 24.04 VM, with harden_ssh.sh beside it: sudo bash bootstrap.sh
 set -Eeuo pipefail
 [ "$(id -u)" = "0" ] || { echo "run as root" >&2; exit 1; }
+# Password login off first (refuses, changing nothing, until your SSH key is installed).
+bash "$(dirname "$0")/harden_ssh.sh"
 apt-get update
 apt-get install -y ca-certificates curl git ufw python3
 command -v docker > /dev/null || curl -fsSL https://get.docker.com | sh

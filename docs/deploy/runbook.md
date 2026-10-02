@@ -69,17 +69,27 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    Both must print `OK`.
 
 ## 3. OVHcloud VPS-4 [FOUNDER]
-1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe), US East, **Ubuntu 24.04**, with your SSH key.
+1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe) from the **US** Control Panel
+   (`manager.us.ovhcloud.com`) so it lands in **Virginia (US-EAST-VA)**, next to Railway's US East.
+   Never a US *West* VM: it would add ~70 ms to every database round trip. Image **Ubuntu 24.04**
+   (pick it in the version list; 26.04 is the default), local storage, no commitment. The order
+   asks for no SSH key: the delivery email gives the `ubuntu` user a one-time password link; use it
+   once for `ssh-copy-id ubuntu@<vm>`, then log in with the key. Note the VM's public IPv4.
+   (Ordered 2026-10-02: `vps-2df8067d.vps.ovh.us`, US-EAST-VA, month-to-month.)
 2. GHCR: create a GitHub token with **read:packages** only, for `docker login ghcr.io` on the VM.
 
 ## 4. Worker VM setup
-1. `scp deploy/vm/bootstrap.sh root@<vm>:` then `ssh root@<vm> bash bootstrap.sh`. It stops at the
-   `git clone` step until step 2 is done; re-run it afterwards (it is idempotent).
-2. As root: `sudo -u clue ssh-keygen -t ed25519 -N "" -f /home/clue/.ssh/id_ed25519`; add
+OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is disabled.
+1. `scp deploy/vm/bootstrap.sh deploy/vm/harden_ssh.sh ubuntu@<vm>:` then
+   `ssh ubuntu@<vm> sudo bash bootstrap.sh`. Its first step, `harden_ssh.sh`, turns SSH password
+   login off (and root login) — and refuses, changing nothing, until your key is installed
+   (`ssh-copy-id`, §3), so it cannot lock you out. It stops at the `git clone` step until step 2
+   is done; re-run it afterwards (it is idempotent).
+2. On the VM (`ssh ubuntu@<vm>`): `sudo -u clue ssh-keygen -t ed25519 -N "" -f /home/clue/.ssh/id_ed25519`; add
    `/home/clue/.ssh/id_ed25519.pub` to GitHub → repo → Settings → **Deploy keys** (read-only)
    [FOUNDER]; then `sudo -u clue ssh -o StrictHostKeyChecking=accept-new git@github.com` once, and
-   re-run `bootstrap.sh`.
-3. As `clue`: `docker login ghcr.io` with the read-only token.
+   re-run `sudo bash bootstrap.sh`.
+3. As `clue` (`sudo -iu clue`): `docker login ghcr.io` with the read-only token.
 4. Fill `/srv/clue/env`: every `.env.example` key with production values, plus:
    - `CLUE_DATABASE_URL` = the **direct** Railway TCP-proxy URL for `clue_worker`
      (`postgresql+asyncpg://clue_worker:<pw>@<proxy-host>:<port>/railway?ssl=require`). Every

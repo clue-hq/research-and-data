@@ -90,8 +90,8 @@ from clue_core.ingestion import IngestionJobId
 from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
-from clue_fleet import DbWorkQueue
 from clue_execution.run_events import list_run_events
+from clue_fleet import DbWorkQueue
 from clue_obs import bound_context
 from clue_obs.otel import TracingRuntime, bind_and_annotate
 from clue_projections import (
@@ -906,6 +906,7 @@ def create_projections_app(
         """Liveness for Railway's health check, the uptime monitors and the boot smoke test
         (first deployment spec §9.5). Touches no database or Redis; needs no auth or workspace."""
         return {"status": "ok"}
+
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
     app.state.project_library_closer = project_library_closer

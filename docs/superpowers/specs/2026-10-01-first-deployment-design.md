@@ -37,7 +37,7 @@ separate and larger (§12).
 | Region | US East for everything | Pilots and most vendors (OpenRouter, Exa, Clerk, AI Ark) are US-based; every tier must sit together because the workers and APIs talk to Postgres constantly |
 | Web tier | Railway (frontend already there) | Already in use; no Docker daemon needed by these services |
 | Workers | One VM with Docker | `run_python` shells out to `docker run` on the worker's own host (`platform/api/clue_api/sandbox/docker_runner.py`); Railway gives no Docker daemon |
-| Worker VM provider | **OVHcloud VPS-4** — 8 vCores / 24 GB / 200 GB NVMe, $23.37/month, US East | Cheapest dependable option found on 2026-10-01 (Hetzner US is now $165.99 for 8/32 after its June 2026 price rise; Contabo is cheaper per GB but known for oversold CPU). Holds no customer data, so its reliability risk is bounded (§6) |
+| Worker VM provider | **OVHcloud VPS-4** — 8 vCores / 24 GB / 200 GB NVMe, month-to-month (no commitment), **Virginia (US-EAST-VA)**, ordered 2026-10-02 through the US Control Panel | Cheapest dependable option found on 2026-10-01 (Hetzner US is now $165.99 for 8/32 after its June 2026 price rise; Contabo is cheaper per GB but known for oversold CPU). Holds no customer data, so its reliability risk is bounded (§6) |
 | Postgres | **Railway Postgres 16 + pgvector** | One platform, cheapest; the VM stays stateless. Accepted trade-off: no point-in-time recovery — worst case a day of data (§8) |
 | Redis | **Railway Redis 7** | The platform API uses Redis too (`clue_api/locks.py`), so it must be reachable from Railway; it holds only short-lived locks and counters |
 | Files | **Cloudflare R2** via the existing S3 backend (`libs/clue-storage/clue_storage/s3.py`) | Provider-independent; stays put through any future provider move; no egress fees |
@@ -68,7 +68,7 @@ locks and a `SKIP LOCKED` queue; adopting it would mean rewriting the data layer
                      └────────┬────────┘  └────┬────┘
                    Railway TCP proxy (TLS)     │ TCP proxy
                               │                │
-   OVHcloud VPS-4, US East — stateless (docker compose)
+   OVHcloud VPS-4, US East (Virginia) — stateless (docker compose)
    ┌──────────────────────────┴────────────────┴───────────────┐
    │ PgBouncer │ chat pool │ design pool │ batch pool ×3 │      │
    │ ingestion pool │ code sandbox containers (docker run)     │
@@ -243,7 +243,7 @@ Founder ask 2026-10-01: catch a broken build before it reaches a server, not aft
 
 | Item | $/month |
 |---|---|
-| OVHcloud VPS-4 | 23.37 |
+| OVHcloud VPS-4 (Virginia, no commitment) | ~23–28 |
 | Railway: 4 web services + Postgres + Redis (usage-billed, Pro plan) | ~30–40 |
 | Cloudflare: Workers paid plan, R2 (~$1.50 per 100 GB), custom hostnames (first 100 included) | ~5 |
 | **Infrastructure** | **~$60–70** |

@@ -1143,9 +1143,8 @@ def test_healthz_answers_without_auth_or_workspace() -> None:
     """Liveness for Railway, the uptime monitors and the boot smoke test (first deployment §9.5)."""
 
     async def _run() -> None:
-        async with rollback_conn(seed_pack=False) as conn:
-            async with _client(_app(conn)) as client:
-                response = await client.get("/healthz")
+        async with rollback_conn(seed_pack=False) as conn, _client(_app(conn)) as client:
+            response = await client.get("/healthz")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
