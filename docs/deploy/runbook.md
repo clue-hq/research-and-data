@@ -69,11 +69,13 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    Both must print `OK`.
 
 ## 3. OVHcloud VPS-4 [FOUNDER]
-1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe) at **North America (Canada - East -
-   Beauharnois)**, about 15–20 ms from Railway's US East (the US data centers were out of stock on
-   2026-10-02; a US *West* VM would add ~70 ms to every database round trip — don't). Image
-   **Ubuntu 24.04** (pick it in the version list; 26.04 is the default), local storage, no
-   commitment, with your SSH key. Note the VM's public IPv4.
+1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe) from the **US** Control Panel
+   (`manager.us.ovhcloud.com`) so it lands in **Virginia (US-EAST-VA)**, next to Railway's US East.
+   Never a US *West* VM: it would add ~70 ms to every database round trip. Image **Ubuntu 24.04**
+   (pick it in the version list; 26.04 is the default), local storage, no commitment. The order
+   asks for no SSH key: the delivery email gives the `ubuntu` user a one-time password link; use it
+   once for `ssh-copy-id ubuntu@<vm>`, then log in with the key. Note the VM's public IPv4.
+   (Ordered 2026-10-02: `vps-2df8067d.vps.ovh.us`, US-EAST-VA, month-to-month.)
 2. GHCR: create a GitHub token with **read:packages** only, for `docker login ghcr.io` on the VM.
 
 ## 4. Worker VM setup
