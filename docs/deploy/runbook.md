@@ -92,12 +92,14 @@ fetch images through the frontend's narrow public proxy
      REDIS_PASSWORD=<openssl rand -hex 24>
      REDIS_TLS_CERT_B64=<one line>
      REDIS_TLS_KEY_B64=<one line>
-     REDIS_URL=redis://default:${{REDIS_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:6379/0
+     REDIS_URL=redis://default:${{REDIS_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:6380/0
      ```
    - **Custom Start Command:** the one line in `deploy/railway-redis-start-command.txt`. Redis serves
-     plain **6379** on the private network (Railway's WireGuard mesh; the services use
-     `${{Redis.REDIS_URL}}`) and **TLS on 6380**, with `requirepass` and `noeviction`.
-   - **TCP Proxy → port 6380** (never 6379). The VM's
+     **TLS on 6379** and plain **6380** for the private network only (Railway's WireGuard mesh; the
+     services use `${{Redis.REDIS_URL}}`), with `requirepass` and `noeviction`. TLS sits on the
+     standard port because Railway's **Add Public Access** detects Redis and proxies 6379 without
+     asking.
+   - **Public Access** (the TCP proxy) on **6379** — the TLS port. The VM's
      `CLUE_REDIS_URL=rediss://default:<REDIS_PASSWORD>@<proxy-host>:<proxy-port>/0?ssl_cert_reqs=none`
      (`check_prod_env.py worker` refuses anything else). Tested 2026-10-02 with redis-py: private
      plain and public TLS connect; plain on the TLS port and a wrong password are refused.
