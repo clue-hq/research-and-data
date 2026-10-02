@@ -16,7 +16,12 @@ COPY subsystems/clue-design/Cargo.toml subsystems/clue-design/Cargo.lock ./
 COPY subsystems/clue-design/crates ./crates
 # lumen-skia embeds the Inter faces from the design subsystem's fonts/ (include_bytes!).
 COPY subsystems/clue-design/fonts ./fonts
-RUN cargo build --release -p lumen-api-helper
+# Skia's from-source build leaves several GB in target/ and the cargo registry: delete them in the
+# same step so the layer (and CI's exported build cache) holds only the binary. Not a BuildKit cache
+# mount: Railway's builder refuses cache mounts whose id is not prefixed with the service id.
+RUN cargo build --release -p lumen-api-helper \
+    && cp target/release/lumen-api-helper /usr/local/bin/lumen-api-helper \
+    && rm -rf target /usr/local/cargo/registry
 
 # --- Design editor's Tailwind toolchain (used at web export) ----------------------------------
 FROM node:24-bookworm-slim AS editor
@@ -43,7 +48,7 @@ WORKDIR /app
 COPY . /app
 RUN uv sync --frozen --no-dev --all-packages
 RUN python -m playwright install --with-deps chromium && chmod -R a+rX /ms-playwright
-COPY --from=helper /src/target/release/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
+COPY --from=helper /usr/local/bin/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
 COPY --from=editor /src/subsystems/clue-design/apps/editor/public/vendor /app/subsystems/clue-design/apps/editor/public/vendor
 # CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings

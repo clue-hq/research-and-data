@@ -41,6 +41,13 @@ jobs:
         ports:
           - 6379:6379
     steps:
+      # The backend image (Skia compiled from source, Chromium, the Python environment) does not fit
+      # in the runner's default free disk; drop preinstalled toolchains this job never uses.
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost
+          df -h /
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
