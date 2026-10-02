@@ -14,6 +14,8 @@ RUN apt-get update \
 WORKDIR /src
 COPY subsystems/clue-design/Cargo.toml subsystems/clue-design/Cargo.lock ./
 COPY subsystems/clue-design/crates ./crates
+# lumen-skia embeds the Inter faces from the design subsystem's fonts/ (include_bytes!).
+COPY subsystems/clue-design/fonts ./fonts
 RUN cargo build --release -p lumen-api-helper
 
 # --- Design editor's Tailwind toolchain (used at web export) ----------------------------------

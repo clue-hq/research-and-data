@@ -110,7 +110,8 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   feature set (textlayout+svg+webp, no vulkan) on Linux x86_64 or aarch64 → 404 → full source
   build → `ninja` missing. First CI build of the image ever; deterministic, a rerun cannot help.
   Railway platform-api/design-api build the same Dockerfile → same failure. No tag moved.
-- Fix (branch deploy/skia-build-deps): helper stage installs clang, libclang-dev, ninja-build,
+- Fix (branch deploy/skia-build-deps): helper stage COPYs subsystems/clue-design/fonts (lumen-skia
+  include_bytes! the Inter faces — the second failure, found by the local build) and installs clang, libclang-dev, ninja-build,
   libfontconfig1-dev. Cold build +15–25 min; CI caches the layer (gha), Railway builds it per service.
   Rejected: adding `vulkan` to match a prebuilt (changes the engine's pinned features for packaging).
   Follow-up idea: Railway pulls the CI-built GHCR image instead of building (one Skia compile).
