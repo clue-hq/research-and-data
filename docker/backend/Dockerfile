@@ -46,7 +46,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app
-RUN uv sync --frozen --no-dev --all-packages
+# --group deploy: alembic (`clue migrate`) and the S3/R2 storage SDK, which no member depends on.
+RUN uv sync --frozen --no-dev --group deploy --all-packages
 RUN python -m playwright install --with-deps chromium && chmod -R a+rX /ms-playwright
 COPY --from=helper /usr/local/bin/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
