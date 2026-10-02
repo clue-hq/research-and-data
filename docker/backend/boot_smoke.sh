@@ -20,8 +20,10 @@ CLUE_DESIGN_RUNTIME_ENABLED=1
 CLUE_SANDBOX_ENABLED=true
 CLUE_SANDBOX_IMAGE=$SANDBOX
 LUMEN_EMBEDDED_FLEET_WORKER=0
-# No model key in CI: the worker refuses to boot on a stub gateway unless it is allowed explicitly.
+# No model key in CI: the worker refuses to boot on a stub gateway unless it is allowed explicitly,
+# and the agent model provider needs some key to be built (it makes no request until a turn runs).
 CLUE_GATEWAY_ALLOW_STUB=true
+CLUE_OPENROUTER_API_KEY=boot-smoke-placeholder-not-a-key
 ENV
 cleanup() {
   docker rm -f smoke-platform smoke-design smoke-worker > /dev/null 2>&1 || true
