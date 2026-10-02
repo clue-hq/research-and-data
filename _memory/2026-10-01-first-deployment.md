@@ -130,7 +130,9 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
 ### 2026-10-03 — pages.cluehq.ai temporarily used by a static landing page (founder ruling)
 - Founder chose `pages.cluehq.ai/conduit` for an urgent static page (Conduit for Hotel Equities,
   a design export) in a SEPARATE Railway project `conduit-hotel-equities` (Caddy, files in
-  ~/clue-deploy/conduit-hotel-equities, outside the repo). Cloudflare: `pages` CNAME →
+  ~/clue-deploy/conduit-hotel-equities, outside the repo). 2026-10-03: also `/arlo-hotels/` (Conduit
+  page prepared for Arlo Hotels). One directory per page under pages/ → /srv; Caddy's file_server
+  adds the trailing slash. Live with a Let's Encrypt cert; `/` is a 404 by design. Cloudflare: `pages` CNAME →
   <railway target>, DNS only, plus `_railway-verify.pages` TXT.
 - CONFLICT, known and accepted: Part C (docs/specs/pages-hosting-runbook.md §Cloudflare for SaaS)
   needs `pages` CNAME → page-origin.cluehq.ai, PROXIED, as the fallback origin. Before that step,
