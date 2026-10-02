@@ -80,8 +80,11 @@ Releasing = merging a pull request from `research-streaming` into `main`.
 
 ## 4. Worker VM setup
 OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is disabled.
-1. `scp deploy/vm/bootstrap.sh ubuntu@<vm>:` then `ssh ubuntu@<vm> sudo bash bootstrap.sh`. It stops
-   at the `git clone` step until step 2 is done; re-run it afterwards (it is idempotent).
+1. `scp deploy/vm/bootstrap.sh deploy/vm/harden_ssh.sh ubuntu@<vm>:` then
+   `ssh ubuntu@<vm> sudo bash bootstrap.sh`. Its first step, `harden_ssh.sh`, turns SSH password
+   login off (and root login) — and refuses, changing nothing, until your key is installed
+   (`ssh-copy-id`, §3), so it cannot lock you out. It stops at the `git clone` step until step 2
+   is done; re-run it afterwards (it is idempotent).
 2. On the VM (`ssh ubuntu@<vm>`): `sudo -u clue ssh-keygen -t ed25519 -N "" -f /home/clue/.ssh/id_ed25519`; add
    `/home/clue/.ssh/id_ed25519.pub` to GitHub → repo → Settings → **Deploy keys** (read-only)
    [FOUNDER]; then `sudo -u clue ssh -o StrictHostKeyChecking=accept-new git@github.com` once, and
